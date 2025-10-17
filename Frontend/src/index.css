@@ -1,0 +1,231 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* AuraFlow Design System - Futuristic Discord-like Theme */
+
+@layer base {
+  :root {
+    /* Core Futuristic Palette - Dark Discord-like */
+    --background: 220 13% 18%; /* dark blue-grey like Discord */
+    --foreground: 210 20% 98%; /* near white text */
+
+    /* Surface Colors */
+    --card: 223 14% 16%; /* darker cards */
+    --card-foreground: 210 20% 98%;
+    
+    --popover: 223 14% 16%;
+    --popover-foreground: 210 20% 98%;
+
+    /* Brand Colors - Futuristic Cyan/Blue */
+    --primary: 200 100% 60%; /* bright cyan */
+    --primary-foreground: 210 20% 8%; /* dark text on bright */
+    --primary-light: 200 100% 85%; /* lighter cyan */
+    --primary-dark: 200 100% 40%; /* darker cyan */
+
+    /* Secondary - Discord-like grey */
+    --secondary: 220 9% 46%; /* Discord secondary */
+    --secondary-foreground: 210 20% 98%;
+
+    /* Muted Colors */
+    --muted: 220 13% 30%; /* darker muted */
+    --muted-foreground: 215 16% 65%;
+
+    /* Accent - Electric Purple */
+    --accent: 270 95% 70%; /* electric purple accent */
+    --accent-foreground: 210 20% 8%;
+    --accent-light: 270 95% 85%;
+
+    /* Status Colors - Neon-ish */
+    --success: 142 90% 50%; /* bright green */
+    --success-foreground: 210 20% 8%;
+    --success-light: 142 90% 85%;
+
+    --warning: 48 100% 60%; /* bright yellow */
+    --warning-foreground: 210 20% 8%;
+    --warning-light: 48 100% 85%;
+
+    --destructive: 0 100% 65%; /* bright red */
+    --destructive-foreground: 210 20% 98%;
+    --destructive-light: 0 100% 85%;
+
+    /* UI Elements */
+    --border: 220 13% 25%; /* subtle dark border */
+    --input: 220 13% 25%;
+    --ring: 200 100% 60%;
+
+    /* Chat Colors - Discord-like message bubbles */
+    --chat-user: 200 100% 15%; /* dark cyan for user */
+    --chat-other: 220 13% 20%; /* dark grey for others */
+    --chat-agent: 270 95% 20%; /* dark purple for AI */
+    --chat-system: 48 100% 15%; /* dark yellow for system */
+
+    /* Agent Status */
+    --agent-active: 142 90% 50%;
+    --agent-inactive: 215 16% 65%;
+    --agent-disabled: 220 13% 35%;
+
+    /* Sidebar - Discord-like dark navigation */
+    --sidebar-background: 223 14% 10%; /* very dark like Discord */
+    --sidebar-foreground: 210 20% 75%;
+    --sidebar-primary: 200 100% 60%;
+    --sidebar-primary-foreground: 210 20% 8%;
+    --sidebar-accent: 223 14% 20%; /* darker accent */
+    --sidebar-accent-foreground: 210 20% 85%;
+    --sidebar-border: 223 14% 15%;
+    --sidebar-ring: 200 100% 60%;
+
+    /* Discord-specific colors */
+    --discord-background: 220 13% 18%;
+    --discord-secondary: 223 14% 16%;
+    --discord-tertiary: 220 13% 30%;
+    --discord-accent: 235 85% 64%; /* Discord blurple */
+    
+    /* Channel colors */
+    --channel-default: 220 9% 46%;
+    --channel-hover: 220 13% 35%;
+    --channel-active: 200 100% 60%;
+    --channel-muted: 215 16% 45%;
+    --channel-unread: 0 100% 65%;
+
+    /* Animation & Layout */
+    --radius: 0.5rem; /* Sharper corners like Discord */
+    --shadow-soft: 0 1px 5px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+    --shadow-medium: 0 4px 12px -1px rgb(0 0 0 / 0.4), 0 2px 8px -2px rgb(0 0 0 / 0.4);
+    --shadow-large: 0 25px 50px -12px rgb(0 0 0 / 0.6), 0 8px 16px -8px rgb(0 0 0 / 0.6);
+    --shadow-neon: 0 0 20px hsl(var(--primary) / 0.5), 0 0 40px hsl(var(--primary) / 0.3);
+
+    /* Futuristic Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+    --gradient-dark: linear-gradient(135deg, hsl(var(--background)), hsl(var(--card)));
+    --gradient-neon: linear-gradient(135deg, hsl(var(--primary) / 0.2), hsl(var(--accent) / 0.2));
+    --gradient-sidebar: linear-gradient(180deg, hsl(var(--sidebar-background)), hsl(var(--sidebar-accent)));
+  }
+
+  .dark {
+    /* Already using dark theme by default */
+    --background: 220 13% 18%;
+    --foreground: 210 20% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  }
+}
+
+@layer components {
+  /* Animation Classes */
+  .animate-fade-in {
+    @apply animate-in fade-in duration-300;
+  }
+  
+  .animate-slide-in {
+    @apply animate-in slide-in-from-bottom-4 duration-300;
+  }
+  
+  .animate-scale-in {
+    @apply animate-in zoom-in-95 duration-200;
+  }
+
+  /* Chat Message Variants */
+  .message-user {
+    @apply bg-chat-user text-foreground;
+  }
+  
+  .message-other {
+    @apply bg-chat-other text-foreground;
+  }
+  
+  .message-agent {
+    @apply bg-chat-agent text-foreground border-l-4 border-success;
+  }
+  
+  .message-system {
+    @apply bg-chat-system text-foreground border-l-4 border-warning;
+  }
+
+  /* Agent Status Indicators */
+  .agent-active {
+    @apply bg-success text-success-foreground;
+  }
+  
+  .agent-inactive {
+    @apply bg-muted text-muted-foreground;
+  }
+  
+  .agent-disabled {
+    @apply bg-muted text-muted-foreground opacity-50;
+  }
+
+  /* Futuristic Shadows */
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+  
+  .shadow-medium {
+    box-shadow: var(--shadow-medium);
+  }
+  
+  .shadow-large {
+    box-shadow: var(--shadow-large);
+  }
+
+  .shadow-neon {
+    box-shadow: var(--shadow-neon);
+  }
+
+  /* Smooth Transitions */
+  .transition-smooth {
+    @apply transition-all duration-200 ease-out;
+  }
+  
+  .hover-lift {
+    @apply transition-smooth hover:shadow-medium hover:-translate-y-0.5;
+  }
+
+  /* Futuristic Button Variants */
+  .btn-primary-gradient {
+    background: var(--gradient-primary);
+    @apply text-primary-foreground shadow-medium transition-smooth;
+  }
+
+  .btn-primary-gradient:hover {
+    box-shadow: var(--shadow-neon);
+  }
+  
+  .btn-neon {
+    @apply bg-primary/20 border border-primary text-primary backdrop-blur-sm hover:bg-primary hover:text-primary-foreground transition-smooth;
+    box-shadow: var(--shadow-neon);
+  }
+  
+  .btn-glass {
+    @apply bg-background/60 backdrop-blur-sm border border-border/50 shadow-medium hover:shadow-large transition-smooth;
+  }
+
+  /* Discord-like channel styles */
+  .channel-item {
+    @apply flex items-center px-2 py-1 mx-2 rounded text-channel-default hover:text-foreground hover:bg-channel-hover transition-smooth cursor-pointer;
+  }
+  
+  .channel-item.active {
+    @apply bg-channel-hover text-foreground;
+  }
+  
+  .channel-item.unread {
+    @apply text-foreground;
+  }
+  
+  .channel-item.unread::before {
+    content: '';
+    @apply absolute left-0 w-1 h-2 bg-channel-unread rounded-r;
+  }
+}
