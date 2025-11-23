@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import authService from '../services/authService';
 import { Loader2 } from 'lucide-react';
+import logo from '../assets/logo.png';
+
 
 type Mode = 'login' | 'signup';
 
@@ -10,7 +12,7 @@ interface AuthCardProps {
   onAuth: () => void;
 }
 
-// Login Component - Discord style
+// Login Component
 const Login: React.FC<{ onSwitchToSignup: () => void; darkMode?: boolean; onAuth: () => void }> = ({ onSwitchToSignup, darkMode, onAuth }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -59,14 +61,13 @@ const Login: React.FC<{ onSwitchToSignup: () => void; darkMode?: boolean; onAuth
 
       <div className="space-y-5" onKeyDown={handleKeyPress}>
         <div className="space-y-2">
-          <label className="block text-xs font-semibold text-gray-300 uppercase">Email or Phone Number <span className="text-red-400">*</span></label>
+          <label className="block text-xs font-semibold text-gray-300 uppercase">Email or Username <span className="text-red-400">*</span></label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className={`w-full px-3 py-2.5 bg-slate-900/80 border ${
-              errors.email ? 'border-red-500' : 'border-slate-900'
-            } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
+            className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.email ? 'border-red-500' : 'border-slate-900'
+              } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
           />
           {errors.email && <p className="text-xs text-red-400">{errors.email}</p>}
         </div>
@@ -77,9 +78,8 @@ const Login: React.FC<{ onSwitchToSignup: () => void; darkMode?: boolean; onAuth
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className={`w-full px-3 py-2.5 bg-slate-900/80 border ${
-              errors.password ? 'border-red-500' : 'border-slate-900'
-            } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
+            className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.password ? 'border-red-500' : 'border-slate-900'
+              } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
           />
           {errors.password && <p className="text-xs text-red-400">{errors.password}</p>}
         </div>
@@ -93,9 +93,9 @@ const Login: React.FC<{ onSwitchToSignup: () => void; darkMode?: boolean; onAuth
         >
           {loading && <Loader2 className="h-4 w-4 animate-spin" />}
           {loading ? 'Logging in...' : 'Log In'}
-  </button>
+        </button>
 
-  {errors.general && <p className="text-sm text-red-400 mt-2">{errors.general}</p>}
+        {errors.general && <p className="text-sm text-red-400 mt-2">{errors.general}</p>}
 
         <p className="text-sm text-gray-400">
           Need an account?{' '}
@@ -140,11 +140,14 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
 
     setLoading(true);
     authService
-      .signup({ username: formData.username, password: formData.password })
+      .signup({
+        username: formData.username,
+        password: formData.password,
+        email: formData.email,
+        displayName: formData.displayName
+      })
       .then(() => {
         setLoading(false);
-        // After successful signup, switch to login so the user can authenticate and
-        // the token can be generated/stored by the backend during login.
         onSwitchToLogin();
       })
       .catch((err: any) => {
@@ -174,9 +177,8 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
               type="email"
               value={formData.email}
               onChange={(e) => handleChange('email', e.target.value)}
-              className={`w-full px-3 py-2.5 bg-slate-900/80 border ${
-                errors.email ? 'border-red-500' : 'border-slate-900'
-              } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
+              className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.email ? 'border-red-500' : 'border-slate-900'
+                } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
             />
             {errors.email && <p className="text-xs text-red-400">{errors.email}</p>}
           </div>
@@ -187,9 +189,8 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
               type="text"
               value={formData.displayName}
               onChange={(e) => handleChange('displayName', e.target.value)}
-              className={`w-full px-3 py-2.5 bg-slate-900/80 border ${
-                errors.displayName ? 'border-red-500' : 'border-slate-900'
-              } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
+              className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.displayName ? 'border-red-500' : 'border-slate-900'
+                } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
             />
             {errors.displayName && <p className="text-xs text-red-400">{errors.displayName}</p>}
           </div>
@@ -200,9 +201,8 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
               type="text"
               value={formData.username}
               onChange={(e) => handleChange('username', e.target.value)}
-              className={`w-full px-3 py-2.5 bg-slate-900/80 border ${
-                errors.username ? 'border-red-500' : 'border-slate-900'
-              } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
+              className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.username ? 'border-red-500' : 'border-slate-900'
+                } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
             />
             {errors.username && <p className="text-xs text-red-400">{errors.username}</p>}
           </div>
@@ -213,9 +213,8 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
               type={showPassword ? 'text' : 'password'}
               value={formData.password}
               onChange={(e) => handleChange('password', e.target.value)}
-              className={`w-full px-3 py-2.5 bg-slate-900/80 border ${
-                errors.password ? 'border-red-500' : 'border-slate-900'
-              } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
+              className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.password ? 'border-red-500' : 'border-slate-900'
+                } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
             />
             {errors.password && <p className="text-xs text-red-400">{errors.password}</p>}
           </div>
@@ -260,18 +259,19 @@ const BrandingSection: React.FC = () => (
     {/* Ambient glow effect */}
     <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full filter blur-3xl"></div>
     <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-500/10 rounded-full filter blur-3xl"></div>
-    
+
     <div className="text-center space-y-6 relative z-10">
       {/* Logo */}
       <div className="flex justify-center">
         <div className="relative group">
-          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl blur-xl opacity-40 group-hover:opacity-60 transition-opacity"></div>
-          <div className="relative w-20 h-20 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-2xl transform transition-transform group-hover:scale-105">
-            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-            </svg>
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full blur-2xl opacity-30 group-hover:opacity-50 transition-opacity"></div>
+          <div className="relative w-24 h-24 flex items-center justify-center transform transition-transform group-hover:scale-110">
+            <img
+              src={logo}
+              alt="AuraFlow Logo"
+              className="w-full h-full object-contain drop-shadow-2xl"
+            />
           </div>
-          <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-400 rounded-full border-3 border-slate-800 shadow-lg animate-pulse"></div>
         </div>
       </div>
 
@@ -288,22 +288,22 @@ const BrandingSection: React.FC = () => (
       {/* Features */}
       <div className="space-y-3 text-left w-full">
         {[
-          { 
+          {
             icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>,
             text: 'Real-time AI assistance',
             color: 'from-blue-400 to-cyan-400'
           },
-          { 
+          {
             icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>,
             text: 'Smart insights & analytics',
             color: 'from-purple-400 to-pink-400'
           },
-          { 
+          {
             icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>,
             text: 'Enterprise-grade security',
             color: 'from-green-400 to-emerald-400'
           },
-          { 
+          {
             icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>,
             text: 'Lightning-fast performance',
             color: 'from-yellow-400 to-orange-400'

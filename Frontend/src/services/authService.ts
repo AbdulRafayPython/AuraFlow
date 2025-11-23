@@ -1,7 +1,15 @@
 import api from './appService';
 
-type SignupPayload = { username: string; password: string };
-type LoginPayload = { username: string; password: string };
+type SignupPayload = {
+  username: string;
+  password: string;
+  email?: string;
+  displayName?: string;
+};
+type LoginPayload = {
+  username: string; 
+  password: string;
+};
 
 const AUTH_PREFIX = '/api';
 
@@ -11,22 +19,21 @@ export async function signup(payload: SignupPayload) {
 
 export async function login(payload: LoginPayload) {
   const data: any = await api.post(`${AUTH_PREFIX}/login`, payload, { noAuth: true });
-  // backend returns { token }
   if (data && data.token) {
     try {
       localStorage.setItem('token', data.token);
-    } catch (e) {
-      // ignore storage errors
-    }
+    } catch (e) {}
   }
   return data;
 }
 
 export async function logout() {
   try {
-    localStorage.removeItem('token');
+    await api.post(`${AUTH_PREFIX}/logout`);
   } catch (e) {
-    // ignore
+    console.error('Logout failed:', e);
+  } finally {
+    localStorage.removeItem('token');
   }
 }
 
@@ -34,4 +41,12 @@ export async function getProtected() {
   return await api.get(`${AUTH_PREFIX}/protected`);
 }
 
-export default { signup, login, logout, getProtected };
+export async function getMe() {
+  return await api.get(`${AUTH_PREFIX}/me`);
+}
+
+export async function updateFirstLogin() {
+  return await api.post(`${AUTH_PREFIX}/user/update-first-login`);
+}
+
+export default { signup, login, logout, getProtected, getMe, updateFirstLogin };

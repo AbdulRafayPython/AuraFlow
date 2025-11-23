@@ -3,7 +3,6 @@ Flask-JWT-Extended
 Flask-Cors
 python-dotenv
 PyMySQL
-
-
 bcrypt
 Werkzeug
+flask_socketio

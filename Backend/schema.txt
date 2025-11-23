@@ -1,0 +1,384 @@
+-- =====================================
+-- 🌐 AuraFlow Database Schema
+-- Backend: Flask
+-- Primary DB: MySQL
+-- =====================================
+
+CREATE DATABASE IF NOT EXISTS auraflow;
+USE auraflow;
+
+-- =====================================
+-- 1️⃣ USERS & ROLES
+-- =====================================
+
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(255) UNIQUE,
+  display_name VARCHAR(255),
+  username VARCHAR(255) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  token VARCHAR(1500),
+  bio TEXT,
+  is_first_login TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE TABLE roles (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(50) UNIQUE NOT NULL,
+  description TEXT
+);
+
+CREATE TABLE user_roles (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT,
+  role_id INT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+);
+
+-- =====================================
+-- 2️⃣ CHANNELS & MEMBERS
+-- =====================================
+
+CREATE TABLE channels (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  type ENUM('text','voice','private') DEFAULT 'text',
+  created_by INT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE channel_members (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  channel_id INT,
+  user_id INT,
+  role ENUM('member','admin','moderator') DEFAULT 'member',
+  joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- =====================================
+-- 3️⃣ MESSAGES
+-- =====================================
+
+CREATE TABLE messages (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  channel_id INT,
+  sender_id INT,
+  content TEXT,
+  message_type ENUM('text','image','file','system','ai') DEFAULT 'text',
+  reply_to BIGINT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+  FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (reply_to) REFERENCES messages(id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_channel_id ON messages(channel_id);
+CREATE INDEX idx_sender_id ON messages(sender_id);
+
+-- =====================================
+-- 4️⃣ DIRECT MESSAGES (PRIVATE CHATS)
+-- =====================================
+
+CREATE TABLE direct_messages (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  sender_id INT,
+  receiver_id INT,
+  content TEXT,
+  message_type ENUM('text','image','file','ai') DEFAULT 'text',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- =====================================
+-- 5️⃣ VOICE CHANNELS
+-- =====================================
+
+CREATE TABLE voice_channels (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  channel_id INT,
+  is_active BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+);
+
+CREATE TABLE voice_participants (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  voice_channel_id INT,
+  user_id INT,
+  joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  left_at TIMESTAMP NULL,
+  FOREIGN KEY (voice_channel_id) REFERENCES voice_channels(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- =====================================
+-- 6️⃣ AI AGENTS
+-- =====================================
+
+CREATE TABLE ai_agents (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) UNIQUE NOT NULL,
+  type ENUM('mood','summarizer','translator','moderator','assistant','engagement','knowledge','wellness','context','auto_message'),
+  description TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE ai_agent_logs (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  agent_id INT,
+  user_id INT,
+  channel_id INT NULL,
+  message_id BIGINT NULL,
+  action_type VARCHAR(100),
+  input_text TEXT,
+  output_text TEXT,
+  confidence_score FLOAT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (agent_id) REFERENCES ai_agents(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE SET NULL,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE SET NULL
+);
+
+-- =====================================
+-- 7️⃣ MOOD & WELLNESS TRACKING
+-- =====================================
+
+CREATE TABLE user_mood_history (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT,
+  mood ENUM('happy','sad','angry','neutral','excited','stressed') DEFAULT 'neutral',
+  mood_score FLOAT,
+  detected_by VARCHAR(50) DEFAULT 'mood_agent',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- =====================================
+-- 8️⃣ KNOWLEDGE & SUMMARIZATION
+-- =====================================
+
+CREATE TABLE conversation_summaries (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  channel_id INT,
+  summary TEXT,
+  generated_by VARCHAR(50) DEFAULT 'summarizer_agent',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+);
+
+CREATE TABLE knowledge_base (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(255),
+  content TEXT,
+  source ENUM('chat','document','summary','agent'),
+  related_channel INT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (related_channel) REFERENCES channels(id) ON DELETE SET NULL
+);
+
+-- =====================================
+-- 9️⃣ ACTIVITY & LOGGING
+-- =====================================
+
+CREATE TABLE user_activity_log (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT,
+  activity_type VARCHAR(100),
+  details TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- =====================================
+-- 🔟 INDEX OPTIMIZATION
+-- =====================================
+
+CREATE INDEX idx_user_email ON users(email);
+CREATE INDEX idx_channel_name ON channels(name);
+CREATE INDEX idx_agent_type ON ai_agents(type);
+CREATE INDEX idx_activity_type ON user_activity_log(activity_type);
+
+-- =====================================
+-- ✅ END OF SCHEMA
+-- =====================================
+
+
+-- =====================================
+-- AURAFLOW v4.0 - FINAL DATABASE SCHEMA
+-- FIXED + ALL MISSING TABLES + DYNAMIC FRIENDS + COMMUNITIES
+-- READY FOR FYP DEFENSE & DEPLOYMENT
+-- =====================================
+CREATE DATABASE IF NOT EXISTS auraflow;
+USE auraflow;
+
+-- 1. USERS (Enhanced with status + avatar)
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(255) UNIQUE,
+  display_name VARCHAR(255),
+  username VARCHAR(255) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  token VARCHAR(1500),
+  bio TEXT,
+  avatar_url VARCHAR(500) DEFAULT 'https://api.dicebear.com/7.x/avataaars/svg?seed=%s',
+  status ENUM('online','idle','dnd','offline') DEFAULT 'offline',
+  custom_status VARCHAR(255),
+  is_first_login TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- 2. ROLES & USER ROLES
+CREATE TABLE roles (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(50) UNIQUE NOT NULL,
+  description TEXT
+);
+
+CREATE TABLE user_roles (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT,
+  role_id INT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+);
+
+-- 3. COMMUNITIES (Dynamic "Servers")
+CREATE TABLE communities (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  icon CHAR(2) DEFAULT 'AF',
+  color VARCHAR(7) DEFAULT '#8B5CF6',
+  banner_url VARCHAR(500),
+  created_by INT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE community_members (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  community_id INT,
+  user_id INT,
+  role ENUM('owner','admin','member') DEFAULT 'member',
+  joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_member (community_id, user_id)
+);
+
+-- 4. CHANNELS (Now belong to communities)
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS community_id INT NULL;
+ALTER TABLE channels ADD FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE CASCADE;
+CREATE INDEX idx_community_channels ON channels(community_id);
+
+-- 5. FRIENDS SYSTEM (Complete)
+CREATE TABLE friend_requests (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sender_id INT,
+  receiver_id INT,
+  status ENUM('pending','accepted','rejected','cancelled') DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_request (sender_id, receiver_id)
+);
+
+CREATE TABLE friends (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT,
+  friend_id INT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (friend_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_friendship (user_id, friend_id)
+);
+
+-- 6. DIRECT MESSAGES (Enhanced)
+ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE;
+ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMP NULL;
+CREATE INDEX idx_dm_pair ON direct_messages(sender_id, receiver_id, created_at DESC);
+
+-- 7. MESSAGE REACTIONS
+CREATE TABLE message_reactions (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  message_id BIGINT,
+  user_id INT,
+  emoji VARCHAR(50),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_reaction (message_id, user_id, emoji)
+);
+
+-- 8. ATTACHMENTS (Files, Images)
+CREATE TABLE attachments (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  message_id BIGINT NULL,
+  direct_message_id BIGINT NULL,
+  file_name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  file_size BIGINT,
+  mime_type VARCHAR(100),
+  uploaded_by INT,
+  uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (direct_message_id) REFERENCES direct_messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- 9. TYPING INDICATORS
+CREATE TABLE typing_indicators (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  channel_id INT NULL,
+  dm_conversation_id VARCHAR(100) NULL,
+  user_id INT,
+  expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL 5 SECOND),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_expires (expires_at)
+);
+
+-- 10. PINNED MESSAGES
+CREATE TABLE pinned_messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  channel_id INT,
+  message_id BIGINT,
+  pinned_by INT,
+  pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (pinned_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- 11. NOTIFICATIONS
+CREATE TABLE notifications (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT,
+  type ENUM('mention','reply','reaction','friend_request','system') NOT NULL,
+  title VARCHAR(255),
+  body TEXT,
+  related_message_id BIGINT NULL,
+  related_channel_id INT NULL,
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (related_message_id) REFERENCES messages(id) ON DELETE SET NULL,
+  FOREIGN KEY (related_channel_id) REFERENCES channels(id) ON DELETE SET NULL
+);
+
+-- 12. FINAL INDEXES
+CREATE FULLTEXT INDEX ft_messages ON messages(content);
+CREATE INDEX idx_friends_user ON friends(user_id);
+CREATE INDEX idx_friends_friend ON friends(friend_id);
+CREATE INDEX idx_messages_time ON messages(created_at DESC);

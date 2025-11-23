@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { WorkspaceProvider } from './contexts/WorkspaceContext';
+import { FriendsProvider } from './contexts/FriendsContext';
+import { RealtimeProvider } from './contexts/RealtimeContext';
 import AuthPageWrapper from '@/pages/AuthPageWrapper';
 import Welcome from './components/onboarding/Welcome';
 import WorkspaceSetup from './components/onboarding/WorkspaceSetup';
@@ -10,23 +12,23 @@ import MainLayout from './components/layout/MainLayout';
 import Dashboard from '@/pages/Dashboard';
 
 function AppRouter() {
-  const { user, isAuthenticated, updateUser } = useAuth(); // Added updateUser from AuthContext
+  const { user, isAuthenticated, completeOnboarding } = useAuth();
   const [onboardingStep, setOnboardingStep] = useState(1);
 
   useEffect(() => {
     // Reset onboarding step when user changes
-    if (user?.isFirstLogin) {
+    if (user?.is_first_login) {
       setOnboardingStep(1);
     }
   }, [user]);
 
-  // Not logged in - show your existing AuthPage
+  // Not logged in - show auth page
   if (!isAuthenticated) {
     return <AuthPageWrapper />;
   }
 
   // First-time login - show onboarding flow
-  if (user?.isFirstLogin) {
+  if (user?.is_first_login) {
     if (onboardingStep === 1) {
       return <Welcome onContinue={() => setOnboardingStep(2)} />;
     }
@@ -42,14 +44,11 @@ function AppRouter() {
       return (
         <ProfileSetup
           onComplete={async () => {
-            // Update user to mark onboarding as complete
             try {
-              if (updateUser) {
-                await updateUser({ ...user, isFirstLogin: false });
-              }
-              // No need to setOnboardingStep, as user.isFirstLogin change will trigger dashboard rendering
+              await completeOnboarding();
+              // user.is_first_login change will trigger re-render to dashboard
             } catch (error) {
-              console.error("Failed to update user:", error);
+              console.error("Failed to complete onboarding:", error);
               alert("Error completing onboarding. Please try again.");
             }
           }}
@@ -59,11 +58,13 @@ function AppRouter() {
     }
   }
 
-  // Returning user or onboarding complete - show main app
+  // Returning user or onboarding complete - show main app with real-time support
   return (
-    <MainLayout>
-      <Dashboard />
-    </MainLayout>
+    <RealtimeProvider>
+      <MainLayout>
+        <Dashboard />
+      </MainLayout>
+    </RealtimeProvider>
   );
 }
 
@@ -72,7 +73,9 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <WorkspaceProvider>
-          <AppRouter />
+          <FriendsProvider>
+            <AppRouter />
+          </FriendsProvider>
         </WorkspaceProvider>
       </AuthProvider>
     </ThemeProvider>
