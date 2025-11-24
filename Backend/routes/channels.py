@@ -1,4 +1,4 @@
-# routes/channels.py (Fixed + Enhanced with get_db_connection())
+# routes/channels.py - Complete with Member Management
 from flask import jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
@@ -396,6 +396,251 @@ def delete_channel(channel_id):
         if conn:
             conn.rollback()
         return jsonify({'error': 'Failed to delete channel'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# 🆕 SEARCH USERS (for adding to community)
+# =====================================
+@jwt_required()
+def search_users():
+    """
+    Search users by username (fuzzy match) or email (exact match).
+    Used for finding users to invite to communities.
+    
+    Query params:
+        query: Search term (min 2 characters)
+    
+    Returns:
+        List of matching users (excluding current user)
+    """
+    conn = None
+    try:
+        query = request.args.get('query', '').strip()
+        
+        # Validate query
+        if not query or len(query) < 2:
+            return jsonify([]), 200
+
+        username = get_jwt_identity()
+        conn = get_db_connection()
+        
+        with conn.cursor() as cur:
+            # Get current user ID
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            current_user_id = user_row['id']
+
+            # Search by username (fuzzy) or email (exact)
+            search_pattern = f"%{query}%"
+            cur.execute("""
+                SELECT id, username, email, display_name, avatar_url
+                FROM users
+                WHERE (username LIKE %s OR email = %s)
+                  AND id != %s
+                ORDER BY 
+                    CASE 
+                        WHEN username = %s THEN 1
+                        WHEN username LIKE %s THEN 2
+                        WHEN email = %s THEN 3
+                        ELSE 4
+                    END,
+                    username ASC
+                LIMIT 20
+            """, (search_pattern, query, current_user_id, query, f"{query}%", query))
+            users = cur.fetchall()
+
+        # Format results
+        result = [{
+            'id': u['id'],
+            'username': u['username'],
+            'email': u['email'],
+            'display_name': u['display_name'] or u['username'],
+            'avatar_url': u['avatar_url'] or f"https://api.dicebear.com/7.x/avataaars/svg?seed={u['username']}"
+        } for u in users]
+
+        print(f"[INFO] search_users: Found {len(result)} users for query '{query}'")
+        return jsonify(result), 200
+
+    except Exception as e:
+        print(f"[ERROR] search_users: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Search failed'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# 🆕 GET COMMUNITY MEMBERS
+# =====================================
+@jwt_required()
+def get_community_members():
+    """
+    Get all members of a community with their roles.
+    
+    Query params:
+        communityId: ID of the community
+    
+    Returns:
+        List of community members with user info and roles
+    """
+    conn = None
+    try:
+        community_id = request.args.get('communityId', type=int)
+        
+        # Validate community ID
+        if not community_id:
+            return jsonify({'error': 'Community ID is required'}), 400
+
+        username = get_jwt_identity()
+        conn = get_db_connection()
+        
+        with conn.cursor() as cur:
+            # Get current user
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+
+            # Check if user is a member of the community
+            cur.execute("""
+                SELECT role FROM community_members 
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id))
+            membership = cur.fetchone()
+            
+            if not membership:
+                return jsonify({'error': "You don't have permission to view members"}), 403
+
+            # Get all community members
+            cur.execute("""
+                SELECT 
+                    u.id, u.username, u.email, u.display_name, u.avatar_url, 
+                    cm.role, cm.joined_at
+                FROM community_members cm
+                JOIN users u ON cm.user_id = u.id
+                WHERE cm.community_id = %s
+                ORDER BY 
+                    CASE cm.role 
+                        WHEN 'owner' THEN 1
+                        WHEN 'admin' THEN 2
+                        ELSE 3
+                    END,
+                    u.username ASC
+            """, (community_id,))
+            members = cur.fetchall()
+
+        # Format results
+        result = [{
+            'id': m['id'],
+            'username': m['username'],
+            'email': m['email'],
+            'display_name': m['display_name'] or m['username'],
+            'avatar_url': m['avatar_url'] or f"https://api.dicebear.com/7.x/avataaars/svg?seed={m['username']}",
+            'role': m['role'],
+            'joined_at': m['joined_at'].isoformat() if m['joined_at'] else None
+        } for m in members]
+
+        print(f"[INFO] get_community_members: Found {len(result)} members for community {community_id}")
+        return jsonify(result), 200
+
+    except Exception as e:
+        print(f"[ERROR] get_community_members: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Failed to load members'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# 🆕 ADD MEMBER TO COMMUNITY
+# =====================================
+@jwt_required()
+def add_community_member():
+    """
+    Add a user to a community as a member.
+    Only owners and admins can add members.
+    
+    Request body:
+        communityId: ID of the community
+        userId: ID of the user to add
+    
+    Returns:
+        Success message or error
+    """
+    conn = None
+    try:
+        username = get_jwt_identity()
+        data = request.get_json() or {}
+        
+        community_id = data.get('communityId')
+        user_id_to_add = data.get('userId')
+
+        # Validate input
+        if not community_id or not user_id_to_add:
+            return jsonify({'error': 'Both community ID and user ID are required'}), 400
+
+        conn = get_db_connection()
+        
+        with conn.cursor() as cur:
+            # Get current user
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            current_user_id = user_row['id']
+
+            # Check if current user has permission (admin or owner)
+            cur.execute("""
+                SELECT role FROM community_members 
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, current_user_id))
+            membership = cur.fetchone()
+            
+            if not membership or membership['role'] not in ['admin', 'owner']:
+                return jsonify({'error': "You don't have permission to add members"}), 403
+
+            # Check if user to add exists
+            cur.execute("SELECT id, username FROM users WHERE id = %s", (user_id_to_add,))
+            target_user = cur.fetchone()
+            if not target_user:
+                return jsonify({'error': 'User not found'}), 404
+
+            # Check if user is already a member
+            cur.execute("""
+                SELECT 1 FROM community_members 
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id_to_add))
+            
+            if cur.fetchone():
+                return jsonify({'error': 'User is already a member'}), 409
+
+            # Add user to community
+            cur.execute("""
+                INSERT INTO community_members (community_id, user_id, role)
+                VALUES (%s, %s, 'member')
+            """, (community_id, user_id_to_add))
+
+        conn.commit()
+        print(f"[INFO] add_community_member: User {user_id_to_add} ({target_user['username']}) added to community {community_id}")
+        return jsonify({'message': 'Member added successfully'}), 201
+
+    except Exception as e:
+        print(f"[ERROR] add_community_member: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to add member'}), 500
     finally:
         if conn:
             conn.close()

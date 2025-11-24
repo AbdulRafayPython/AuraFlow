@@ -11,7 +11,9 @@ from routes.auth import signup, login, logout, update_first_login, get_me
 from routes.channels import (
     get_communities, get_community_channels, get_friends,
     create_channel, join_channel, leave_channel,
-    create_community, delete_channel
+    create_community, delete_channel,
+    # NEW: Member management routes
+    search_users, get_community_members, add_community_member
 )
 from routes.messages import (
     get_channel_messages, send_message,
@@ -22,15 +24,24 @@ from routes.friends import (
     send_friend_request, get_pending_requests,
     accept_friend_request, reject_friend_request,
     cancel_friend_request, remove_friend
-    # block_user, unblock_user
 )
 from routes.sockets import register_socket_events
 
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": ["http://localhost:8080"]}}, supports_credentials=True)
 
+# CORS Configuration - Allow both ports for development
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:8080", "http://localhost:3000"],
+        "supports_credentials": True,
+        "allow_headers": ["Content-Type", "Authorization"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    }
+})
+
+# JWT Configuration
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "super-secret-key")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", "10")))
 
@@ -39,7 +50,7 @@ jwt = JWTManager(app)
 # Initialize SocketIO with threading mode
 socketio = SocketIO(
     app, 
-    cors_allowed_origins="*",
+    cors_allowed_origins=["http://localhost:8080", "http://localhost:3000"],
     async_mode="threading",
     logger=True,
     engineio_logger=True
@@ -67,6 +78,13 @@ app.route("/api/channels/<int:channel_id>/leave", methods=["POST"])(leave_channe
 app.route("/api/channels/<int:channel_id>", methods=["DELETE"])(delete_channel)
 
 # ======================================================================
+# COMMUNITY MEMBER ROUTES (NEW)
+# ======================================================================
+app.route("/api/channels/users/search", methods=["GET"])(search_users)
+app.route("/api/channels/community/members", methods=["GET"])(get_community_members)
+app.route("/api/channels/community/add-member", methods=["POST"])(add_community_member)
+
+# ======================================================================
 # MESSAGE ROUTES
 # ======================================================================
 app.route("/api/messages/channel/<int:channel_id>", methods=["GET"])(get_channel_messages)
@@ -87,8 +105,6 @@ app.route("/api/friends/request/<int:request_id>/accept", methods=["POST"])(acce
 app.route("/api/friends/request/<int:request_id>/reject", methods=["POST"])(reject_friend_request)
 app.route("/api/friends/request/<int:request_id>/cancel", methods=["POST"])(cancel_friend_request)
 app.route("/api/friends/<int:friend_id>", methods=["DELETE"])(remove_friend)
-# app.route("/api/friends/block/<int:user_id_to_block>", methods=["POST"])(block_user)
-# app.route("/api/friends/unblock/<int:user_id_to_unblock>", methods=["POST"])(unblock_user)
 
 # ======================================================================
 # SOCKET EVENTS
@@ -96,8 +112,33 @@ app.route("/api/friends/<int:friend_id>", methods=["DELETE"])(remove_friend)
 register_socket_events(socketio)
 
 # ======================================================================
+# ERROR HANDLERS
+# ======================================================================
+@app.errorhandler(404)
+def not_found(error):
+    return {"error": "Route not found"}, 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return {"error": "Internal server error"}, 500
+
+# ======================================================================
+# HEALTH CHECK
+# ======================================================================
+@app.route("/api/health", methods=["GET"])
+def health_check():
+    return {"status": "ok", "message": "AuraFlow API is running"}, 200
+
+# ======================================================================
 # RUN APPLICATION
 # ======================================================================
 if __name__ == "__main__":
+    print("=" * 60)
+    print("AuraFlow Backend Server Starting...")
+    print(f"Server: http://localhost:5000")
+    print(f"WebSocket: ws://localhost:5000")
+    print(f"CORS Enabled for: localhost:8080, localhost:3000")
+    print("=" * 60)
+    
     # Use socketio.run() instead of app.run() for WebSocket support
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)

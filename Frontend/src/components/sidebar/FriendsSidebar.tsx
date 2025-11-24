@@ -4,6 +4,8 @@ import { useFriends } from "../../contexts/FriendsContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useRealtime } from "../../contexts/RealtimeContext";
 import { Users, Plus, Home, Settings, ChevronLeft, ChevronRight, MessageCircle, Phone, Video, LogOut, Moon, Sun } from "lucide-react";
+import CreateCommunityModal, { CommunityFormData } from "../modals/CreateCommunityModal";
+import { channelService } from "../../services/channelService";
 
 interface FriendsSidebarProps {
   onNavigate: (view: string, communityId?: string) => void;
@@ -35,6 +37,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const [showQuickActions, setShowQuickActions] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
 
   // Get online friends with real-time status
   const onlineFriends = realtimeFriends.filter(f => {
@@ -61,6 +64,18 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     selectFriend(friendId);
     onNavigate("dashboard");
     setShowQuickActions(null);
+  };
+
+  const handleCreateCommunity = async (data: CommunityFormData) => {
+    try {
+      const newCommunity = await channelService.createCommunity(data);
+      // Refresh communities list
+      await selectCommunity(newCommunity.id);
+      onNavigate("dashboard", newCommunity.id.toString());
+    } catch (error) {
+      console.error("Failed to create community:", error);
+      throw error;
+    }
   };
 
   const getAvatarInitials = (name: string) => {
@@ -233,6 +248,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
             onMouseLeave={() => setHoveredItem(null)}
           >
             <button
+              onClick={() => setShowCreateCommunityModal(true)}
               className={`w-12 h-12 rounded-3xl flex items-center justify-center transition-all duration-200 ${
                 hoveredItem === 'add-community'
                   ? 'bg-green-600 rounded-2xl text-white'
@@ -425,6 +441,13 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
           <ChevronRight className="w-4 h-4" />
         </button>
       )}
+
+      {/* Create Community Modal */}
+      <CreateCommunityModal
+        isOpen={showCreateCommunityModal}
+        onClose={() => setShowCreateCommunityModal(false)}
+        onCreateCommunity={handleCreateCommunity}
+      />
     </div>
   );
 }
