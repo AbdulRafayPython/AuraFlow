@@ -39,6 +39,19 @@ CREATE TABLE user_roles (
 );
 
 -- =====================================
+-- OTP CODES (for password reset)
+-- =====================================
+CREATE TABLE IF NOT EXISTS otp_codes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(255) NOT NULL,
+  otp_hash VARCHAR(255) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX (email)
+);
+
+
+-- =====================================
 -- 2️⃣ CHANNELS & MEMBERS
 -- =====================================
 
@@ -382,3 +395,5 @@ CREATE FULLTEXT INDEX ft_messages ON messages(content);
 CREATE INDEX idx_friends_user ON friends(user_id);
 CREATE INDEX idx_friends_friend ON friends(friend_id);
 CREATE INDEX idx_messages_time ON messages(created_at DESC);
+
+--------------------------------------

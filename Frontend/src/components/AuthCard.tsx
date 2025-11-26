@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import authService from '../services/authService';
-import { Loader2 } from 'lucide-react';
+import { authService as passwordResetService } from '../services/authService';
+import { Loader2, X } from 'lucide-react';
 import logo from '../assets/logo.png';
-
 
 type Mode = 'login' | 'signup';
 
@@ -12,8 +12,247 @@ interface AuthCardProps {
   onAuth: () => void;
 }
 
+// Forgot Password Modal Component
+const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [step, setStep] = useState<'email' | 'otp' | 'reset'>('email');
+  const [email, setEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const handleRequestOtp = async () => {
+    if (!email) {
+      setError('Email is required');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    
+    try {
+      await passwordResetService.requestPasswordReset(email);
+      setSuccess('OTP sent to your email!');
+      setTimeout(() => {
+        setSuccess('');
+        setStep('otp');
+      }, 1500);
+    } catch (err: any) {
+      setError(err.message || 'Failed to send OTP');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otp) {
+      setError('OTP is required');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    
+    try {
+      await passwordResetService.verifyOtp(email, otp);
+      setSuccess('OTP verified!');
+      setTimeout(() => {
+        setSuccess('');
+        setStep('reset');
+      }, 1500);
+    } catch (err: any) {
+      setError(err.message || 'Invalid OTP');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!newPassword || !confirmPassword) {
+      setError('All fields are required');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    
+    try {
+      await passwordResetService.resetPassword(email, otp, newPassword);
+      setSuccess('Password reset successful!');
+      setTimeout(() => {
+        onClose();
+      }, 1500);
+    } catch (err: any) {
+      setError(err.message || 'Failed to reset password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent, action: () => void) => {
+    if (e.key === 'Enter') {
+      action();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-800 rounded-lg shadow-2xl w-full max-w-md relative animate-fade-in">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-slate-700">
+          <h2 className="text-xl font-semibold text-white">
+            {step === 'email' && 'Reset Password'}
+            {step === 'otp' && 'Verify OTP'}
+            {step === 'reset' && 'Set New Password'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6">
+          {/* Email Step */}
+          {step === 'email' && (
+            <div className="space-y-4" onKeyDown={(e) => handleKeyPress(e, handleRequestOtp)}>
+              <p className="text-sm text-gray-400">
+                Enter your email address and we'll send you an OTP to reset your password.
+              </p>
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-gray-300 uppercase">
+                  Email Address <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-900/80 border border-slate-700 rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                  placeholder="Enter your email"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* OTP Step */}
+          {step === 'otp' && (
+            <div className="space-y-4" onKeyDown={(e) => handleKeyPress(e, handleVerifyOtp)}>
+              <p className="text-sm text-gray-400">
+                We've sent a 6-digit OTP to <span className="text-white font-medium">{email}</span>
+              </p>
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-gray-300 uppercase">
+                  Enter OTP <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  maxLength={6}
+                  className="w-full px-3 py-2.5 bg-slate-900/80 border border-slate-700 rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors text-center text-2xl tracking-widest"
+                  placeholder="000000"
+                />
+              </div>
+              <button
+                onClick={() => setStep('email')}
+                className="text-sm text-indigo-400 hover:underline"
+              >
+                Change email address
+              </button>
+            </div>
+          )}
+
+          {/* Reset Password Step */}
+          {step === 'reset' && (
+            <div className="space-y-4" onKeyDown={(e) => handleKeyPress(e, handleResetPassword)}>
+              <p className="text-sm text-gray-400">
+                Create a new password for your account.
+              </p>
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-gray-300 uppercase">
+                  New Password <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-900/80 border border-slate-700 rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                  placeholder="Enter new password"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-gray-300 uppercase">
+                  Confirm Password <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-900/80 border border-slate-700 rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                  placeholder="Confirm new password"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-400">
+              {error}
+            </div>
+          )}
+
+          {/* Success Message */}
+          {success && (
+            <div className="mt-4 p-3 bg-green-500/10 border border-green-500/30 rounded text-sm text-green-400">
+              {success}
+            </div>
+          )}
+
+          {/* Action Button */}
+          <button
+            onClick={() => {
+              if (step === 'email') handleRequestOtp();
+              else if (step === 'otp') handleVerifyOtp();
+              else if (step === 'reset') handleResetPassword();
+            }}
+            disabled={loading}
+            className="w-full mt-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
+          >
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            {loading ? 'Processing...' : (
+              step === 'email' ? 'Send OTP' :
+              step === 'otp' ? 'Verify OTP' :
+              'Reset Password'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Login Component
-const Login: React.FC<{ onSwitchToSignup: () => void; darkMode?: boolean; onAuth: () => void }> = ({ onSwitchToSignup, darkMode, onAuth }) => {
+const Login: React.FC<{ 
+  onSwitchToSignup: () => void; 
+  darkMode?: boolean; 
+  onAuth: () => void;
+  onForgotPassword: () => void;
+}> = ({ onSwitchToSignup, darkMode, onAuth, onForgotPassword }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -84,7 +323,13 @@ const Login: React.FC<{ onSwitchToSignup: () => void; darkMode?: boolean; onAuth
           {errors.password && <p className="text-xs text-red-400">{errors.password}</p>}
         </div>
 
-        <button className="text-sm text-indigo-400 hover:underline">Forgot your password?</button>
+        <button 
+          type="button"
+          onClick={onForgotPassword}
+          className="text-sm text-indigo-400 hover:underline"
+        >
+          Forgot your password?
+        </button>
 
         <button
           onClick={handleSubmit}
@@ -108,7 +353,7 @@ const Login: React.FC<{ onSwitchToSignup: () => void; darkMode?: boolean; onAuth
   );
 };
 
-// Signup Component - Discord style with smooth scroll
+// Signup Component
 const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth: () => void }> = ({ onSwitchToLogin, darkMode, onAuth }) => {
   const [formData, setFormData] = useState({ email: '', displayName: '', username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
@@ -228,7 +473,7 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
                 className="w-4 h-4 mt-0.5 text-indigo-500 bg-slate-900/80 border-slate-700 rounded focus:ring-indigo-500"
               />
               <span className="text-xs text-gray-400">
-                I have read and agree to Discord's Terms of Service and Privacy Policy.
+                I have read and agree to AuraFlow's Terms of Service and Privacy Policy.
               </span>
             </label>
             {errors.terms && <p className="text-xs text-red-400">{errors.terms}</p>}
@@ -253,15 +498,13 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
   );
 };
 
-// Branding Section Component - Always visible on both login and signup
+// Branding Section Component
 const BrandingSection: React.FC = () => (
   <div className="hidden lg:flex lg:flex-col items-center justify-center w-[360px] border-l border-slate-700/50 p-8 bg-gradient-to-br from-purple-900/30 via-indigo-900/20 to-slate-900/40 relative overflow-hidden">
-    {/* Ambient glow effect */}
     <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full filter blur-3xl"></div>
     <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-500/10 rounded-full filter blur-3xl"></div>
 
     <div className="text-center space-y-6 relative z-10">
-      {/* Logo */}
       <div className="flex justify-center">
         <div className="relative group">
           <div className="absolute inset-0 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full blur-2xl opacity-30 group-hover:opacity-50 transition-opacity"></div>
@@ -275,7 +518,6 @@ const BrandingSection: React.FC = () => (
         </div>
       </div>
 
-      {/* Brand Text */}
       <div className="space-y-2">
         <h3 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
           AuraFlow
@@ -285,7 +527,6 @@ const BrandingSection: React.FC = () => (
         </p>
       </div>
 
-      {/* Features */}
       <div className="space-y-3 text-left w-full">
         {[
           {
@@ -321,27 +562,36 @@ const BrandingSection: React.FC = () => (
   </div>
 );
 
-// Main AuthCard component - Discord-like design with branding section
+// Main AuthCard component
 const AuthCard: React.FC<AuthCardProps> = ({ mode, onModeChange, onAuth }) => {
   const [darkMode, setDarkMode] = useState(true);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   return (
     <div className={darkMode ? 'dark' : ''}>
       <div className="w-full max-w-4xl">
         <div className="flex backdrop-blur-xl bg-slate-800/95 dark:bg-slate-800/95 rounded-lg shadow-2xl overflow-hidden">
-          {/* Left side - Auth Form */}
           <div className="w-full lg:w-[480px] p-8">
             {mode === 'login' ? (
-              <Login onSwitchToSignup={() => onModeChange('signup')} darkMode={darkMode} onAuth={onAuth} />
+              <Login 
+                onSwitchToSignup={() => onModeChange('signup')} 
+                darkMode={darkMode} 
+                onAuth={onAuth}
+                onForgotPassword={() => setShowForgotPassword(true)}
+              />
             ) : (
               <Signup onSwitchToLogin={() => onModeChange('login')} darkMode={darkMode} onAuth={onAuth} />
             )}
           </div>
 
-          {/* Right side - Branding Section (visible on both login and signup) */}
           <BrandingSection />
         </div>
       </div>
+
+      {/* Forgot Password Modal */}
+      {showForgotPassword && (
+        <ForgotPasswordModal onClose={() => setShowForgotPassword(false)} />
+      )}
 
       <style>{`
         @keyframes fade-in {
@@ -350,7 +600,6 @@ const AuthCard: React.FC<AuthCardProps> = ({ mode, onModeChange, onAuth }) => {
         }
         .animate-fade-in { animation: fade-in 0.3s ease-out; }
         
-        /* Custom scrollbar styling */
         .custom-scrollbar {
           scrollbar-width: thin;
           scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
