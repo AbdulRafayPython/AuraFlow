@@ -120,42 +120,74 @@ def create_channel(community_id):
 
         conn = get_db_connection()
         with conn.cursor() as cur:
+            # Get user info
             cur.execute("SELECT id FROM users WHERE username = %s", (username,))
             user_row = cur.fetchone()
             if not user_row:
                 return jsonify({'error': 'User not found'}), 404
             user_id = user_row['id']
 
+            # Check permissions
             cur.execute("SELECT role FROM community_members WHERE community_id = %s AND user_id = %s",
                         (community_id, user_id))
             member = cur.fetchone()
             if not member or member['role'] not in ['admin', 'owner']:
                 return jsonify({'error': 'Permission denied'}), 403
 
+            # 1. Create the channel
             cur.execute("""
                 INSERT INTO channels (community_id, name, type, description, created_by)
                 VALUES (%s, %s, %s, %s, %s)
             """, (community_id, name, channel_type, description, user_id))
             channel_id = cur.lastrowid
+            print(f"[INFO] Created channel {channel_id}: {name}")
+
+            # 🔥 FIX: 2. Get ALL members of this community
+            cur.execute("""
+                SELECT user_id, role FROM community_members 
+                WHERE community_id = %s
+            """, (community_id,))
+            community_members = cur.fetchall()
+
+            # 🔥 FIX: 3. Add ALL community members to this channel
+            members_added = 0
+            for cm in community_members:
+                try:
+                    # Community admins/owners become channel admins
+                    channel_role = 'admin' if cm['role'] in ['admin', 'owner'] else 'member'
+                    
+                    cur.execute("""
+                        INSERT INTO channel_members (channel_id, user_id, role)
+                        VALUES (%s, %s, %s)
+                    """, (channel_id, cm['user_id'], channel_role))
+                    members_added += 1
+                except Exception as mem_err:
+                    print(f"[WARNING] Failed to add member {cm['user_id']} to channel: {mem_err}")
+
+            print(f"[INFO] ✅ Added {members_added} members to channel {channel_id}")
 
         conn.commit()
+        print(f"[SUCCESS] Channel '{name}' created with {members_added} members")
+        
         return jsonify({
             'id': channel_id,
             'name': name,
             'type': channel_type,
             'description': description,
-            'community_id': community_id
+            'community_id': community_id,
+            'members_added': members_added
         }), 201
 
     except Exception as e:
         print(f"[ERROR] create_channel: {e}")
+        import traceback
+        traceback.print_exc()
         if conn:
             conn.rollback()
         return jsonify({'error': 'Failed to create channel'}), 500
     finally:
         if conn:
             conn.close()
-
 
 # =====================================
 # JOIN CHANNEL
@@ -315,29 +347,46 @@ def create_community():
 
         conn = get_db_connection()
         with conn.cursor() as cur:
+            # Get user ID
             cur.execute("SELECT id FROM users WHERE username = %s", (username,))
             user_row = cur.fetchone()
             if not user_row:
                 return jsonify({'error': 'User not found'}), 404
             user_id = user_row['id']
 
+            # 1. Create community
             cur.execute("""
                 INSERT INTO communities (name, description, icon, color, created_by)
                 VALUES (%s, %s, %s, %s, %s)
             """, (name, description, icon, color, user_id))
             community_id = cur.lastrowid
+            print(f"[INFO] Created community {community_id}: {name}")
 
+            # 2. Add creator as owner in community_members
             cur.execute("""
                 INSERT INTO community_members (community_id, user_id, role)
                 VALUES (%s, %s, 'owner')
             """, (community_id, user_id))
+            print(f"[INFO] Added user {user_id} as owner of community {community_id}")
 
+            # 3. Create default "general" channel
             cur.execute("""
                 INSERT INTO channels (community_id, name, type, description, created_by)
                 VALUES (%s, 'general', 'text', 'General chat', %s)
             """, (community_id, user_id))
+            general_channel_id = cur.lastrowid
+            print(f"[INFO] Created general channel {general_channel_id}")
+
+            # 🔥 FIX: Add creator to the general channel as member
+            cur.execute("""
+                INSERT INTO channel_members (channel_id, user_id, role)
+                VALUES (%s, %s, 'admin')
+            """, (general_channel_id, user_id))
+            print(f"[INFO] ✅ Added user {user_id} to channel_members for channel {general_channel_id}")
 
         conn.commit()
+        print(f"[SUCCESS] Community creation complete for {name}")
+        
         return jsonify({
             'id': community_id,
             'name': name,
@@ -349,6 +398,8 @@ def create_community():
 
     except Exception as e:
         print(f"[ERROR] create_community: {e}")
+        import traceback
+        traceback.print_exc()
         if conn:
             conn.rollback()
         return jsonify({'error': 'Failed to create community'}), 500
@@ -567,7 +618,7 @@ def get_community_members():
 @jwt_required()
 def add_community_member():
     """
-    Add a user to a community as a member.
+    Add a user to a community AND all its channels.
     Only owners and admins can add members.
     
     Request body:
@@ -624,15 +675,40 @@ def add_community_member():
             if cur.fetchone():
                 return jsonify({'error': 'User is already a member'}), 409
 
-            # Add user to community
+            # 1. Add user to community_members
             cur.execute("""
                 INSERT INTO community_members (community_id, user_id, role)
                 VALUES (%s, %s, 'member')
             """, (community_id, user_id_to_add))
+            print(f"[INFO] Added user {user_id_to_add} to community {community_id}")
+
+            # 🔥 FIX: 2. Get all channels in this community
+            cur.execute("""
+                SELECT id, name FROM channels 
+                WHERE community_id = %s
+            """, (community_id,))
+            channels = cur.fetchall()
+
+            # 🔥 FIX: 3. Add user to ALL channels in the community
+            channels_added = 0
+            for channel in channels:
+                try:
+                    cur.execute("""
+                        INSERT INTO channel_members (channel_id, user_id, role)
+                        VALUES (%s, %s, 'member')
+                    """, (channel['id'], user_id_to_add))
+                    channels_added += 1
+                    print(f"[INFO] ✅ Added user {user_id_to_add} to channel {channel['id']} ({channel['name']})")
+                except Exception as ch_err:
+                    print(f"[WARNING] Failed to add to channel {channel['id']}: {ch_err}")
 
         conn.commit()
-        print(f"[INFO] add_community_member: User {user_id_to_add} ({target_user['username']}) added to community {community_id}")
-        return jsonify({'message': 'Member added successfully'}), 201
+        print(f"[SUCCESS] User {target_user['username']} added to community {community_id} and {channels_added} channels")
+        
+        return jsonify({
+            'message': 'Member added successfully',
+            'channels_added': channels_added
+        }), 201
 
     except Exception as e:
         print(f"[ERROR] add_community_member: {e}")

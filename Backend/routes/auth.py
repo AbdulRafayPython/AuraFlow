@@ -1,6 +1,7 @@
 from flask import request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from database import get_db_connection
+from utils import get_avatar_url, format_user_data
 import bcrypt
 
 # ----------------------------------------------------------------------
@@ -29,14 +30,20 @@ def signup():
                     return jsonify({'error': 'Email already in use'}), 400
 
             hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            
+            # 🔥 FIX: Generate proper avatar URL
+            avatar_url = get_avatar_url(username)
+            print("[DEBUG] Generated avatar URL during signup:", avatar_url)
+            
             cur.execute(
                 """
-                INSERT INTO users (email, display_name, username, password, is_first_login)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO users (email, display_name, username, password, avatar_url, is_first_login)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                (email, display_name, username, hashed, 1)
+                (email, display_name or username, username, hashed, avatar_url, 1)
             )
         conn.commit()
+        print(f"[INFO] User registered: {username} with avatar: {avatar_url}")
     finally:
         conn.close()
 
@@ -57,7 +64,12 @@ def login():
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT * FROM users WHERE username = %s OR email = %s",
+                """
+                SELECT id, username, email, display_name, bio, avatar_url, 
+                       status, custom_status, is_first_login, password
+                FROM users 
+                WHERE username = %s OR email = %s
+                """,
                 (identifier, identifier)
             )
             row = cur.fetchone()
@@ -74,15 +86,13 @@ def login():
     finally:
         conn.close()
 
+    # 🔥 FIX: Use format_user_data helper for consistent avatar URL
+    user_data = format_user_data(row)
+    user_data['is_first_login'] = bool(row.get('is_first_login', False))
+
     return jsonify({
         "token": token,
-        "user": {
-            "username": row["username"],
-            "email": row.get("email"),
-            "display_name": row.get("display_name"),
-            "bio": row.get("bio"),
-            "is_first_login": bool(row.get("is_first_login", False))
-        }
+        "user": user_data
     }), 200
 
 # ----------------------------------------------------------------------
@@ -128,7 +138,12 @@ def get_me():
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT username, email, display_name, bio, is_first_login FROM users WHERE username = %s",
+                """
+                SELECT id, username, email, display_name, bio, avatar_url,
+                       status, custom_status, is_first_login
+                FROM users 
+                WHERE username = %s
+                """,
                 (current_user,)
             )
             row = cur.fetchone()
@@ -137,10 +152,8 @@ def get_me():
     finally:
         conn.close()
 
-    return jsonify({
-        "username": row["username"],
-        "email": row.get("email"),
-        "display_name": row.get("display_name"),
-        "bio": row.get("bio"),
-        "is_first_login": bool(row.get("is_first_login", False))
-    }), 200
+    # 🔥 FIX: Use format_user_data helper
+    user_data = format_user_data(row)
+    user_data['is_first_login'] = bool(row.get('is_first_login', False))
+
+    return jsonify(user_data), 200

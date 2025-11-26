@@ -11,7 +11,7 @@ import {
   Loader2 
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
-import { useRealtime } from "@/contexts/RealtimeContext";
+import { useRealtime } from "@/hooks/useRealtime";
 import { channelService } from "@/services/channelService";
 import CommunityMembersAddModal from "@/components/modals/CommunityMembersAddModal";
 import toast from "react-hot-toast";

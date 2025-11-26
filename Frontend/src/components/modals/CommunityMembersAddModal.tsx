@@ -1,6 +1,10 @@
+// ============================================================================
 // components/modals/CommunityMembersAddModal.tsx
+// ============================================================================
+
 import React, { useState, useEffect, useRef } from "react";
 import { X, Search, UserPlus, Users, Loader2 } from "lucide-react";
+import { useTheme } from "../../contexts/ThemeContext";
 import toast from "react-hot-toast";
 import { channelService } from "@/services/channelService";
 
@@ -31,19 +35,13 @@ export default function CommunityMembersAddModal({
   existingMembers = [],
   onMemberAdded,
 }: CommunityMembersAddModalProps) {
+  const { isDarkMode } = useTheme();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [members, setMembers] = useState<CommunityMember[]>(existingMembers);
   const [isSearching, setIsSearching] = useState(false);
   const [addingUserId, setAddingUserId] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  // Debug log
-  useEffect(() => {
-    console.log("Modal isOpen:", isOpen);
-    console.log("Community ID:", communityId);
-    console.log("Existing members:", existingMembers);
-  }, [isOpen, communityId, existingMembers]);
 
   // Sync external members changes
   useEffect(() => {
@@ -118,7 +116,6 @@ export default function CommunityMembersAddModal({
       .slice(0, 2);
   };
 
-  // Don't render if not open
   if (!isOpen) return null;
 
   return (
@@ -127,43 +124,57 @@ export default function CommunityMembersAddModal({
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-gray-200 dark:border-slate-700 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        className={`rounded-3xl shadow-2xl border w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col ${
+          isDarkMode 
+            ? 'bg-slate-900 border-slate-700' 
+            : 'bg-white border-gray-200'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-700">
+        <div className={`flex items-center justify-between p-6 border-b ${
+          isDarkMode ? 'border-slate-700' : 'border-gray-200'
+        }`}>
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-3xl flex items-center justify-center shadow-xl">
               <Users className="w-8 h-8 text-white" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+              <h2 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                 Add Members
               </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                 Search by username or email • {members.length} current members
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-all hover:scale-105"
+            className={`p-3 rounded-xl transition-all hover:scale-105 ${
+              isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-gray-100'
+            }`}
           >
-            <X className="w-6 h-6 text-gray-500 dark:text-gray-400" />
+            <X className={`w-6 h-6 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
           </button>
         </div>
 
         {/* Search */}
-        <div className="p-6 border-b border-gray-200 dark:border-slate-700">
+        <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-gray-200'}`}>
           <div className="relative">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Search className={`absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-400'
+            }`} />
             <input
               ref={inputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Type username or email (min 2 chars)..."
-              className="w-full pl-14 pr-5 py-4 rounded-2xl bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-600 focus:border-purple-500 focus:outline-none focus:ring-4 focus:ring-purple-500/20 text-base font-medium transition-all text-gray-900 dark:text-white"
+              className={`w-full pl-14 pr-5 py-4 rounded-2xl border focus:border-purple-500 focus:outline-none focus:ring-4 focus:ring-purple-500/20 text-base font-medium transition-all ${
+                isDarkMode
+                  ? 'bg-slate-800 border-slate-600 text-white placeholder-gray-500'
+                  : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'
+              }`}
             />
             {isSearching && (
               <Loader2 className="absolute right-5 top-1/2 -translate-y-1/2 w-5 h-5 animate-spin text-purple-500" />
@@ -172,13 +183,21 @@ export default function CommunityMembersAddModal({
 
           {/* Search Results Dropdown */}
           {searchQuery && searchResults.length > 0 && (
-            <div className="mt-3 bg-gray-50 dark:bg-slate-800/70 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-lg overflow-hidden">
+            <div className={`mt-3 rounded-2xl border shadow-lg overflow-hidden ${
+              isDarkMode 
+                ? 'bg-slate-800/70 border-slate-700' 
+                : 'bg-gray-50 border-gray-200'
+            }`}>
               {searchResults.map((user) => (
                 <button
                   key={user.id}
                   onClick={() => handleAddMember(user.id)}
                   disabled={addingUserId === user.id}
-                  className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-slate-700/70 transition-all group"
+                  className={`w-full px-5 py-4 flex items-center justify-between transition-all group ${
+                    isDarkMode 
+                      ? 'hover:bg-slate-700/70' 
+                      : 'hover:bg-gray-100'
+                  }`}
                 >
                   <div className="flex items-center gap-4">
                     <div className="relative">
@@ -186,7 +205,9 @@ export default function CommunityMembersAddModal({
                         <img
                           src={user.avatar_url}
                           alt={user.username}
-                          className="w-12 h-12 rounded-full object-cover ring-2 ring-white dark:ring-slate-900"
+                          className={`w-12 h-12 rounded-full object-cover ring-2 ${
+                            isDarkMode ? 'ring-slate-900' : 'ring-white'
+                          }`}
                         />
                       ) : (
                         <div
@@ -198,10 +219,10 @@ export default function CommunityMembersAddModal({
                       )}
                     </div>
                     <div className="text-left">
-                      <p className="font-semibold text-gray-900 dark:text-white">
+                      <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                         {user.display_name || user.username}
                       </p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                      <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                         {user.email}
                       </p>
                     </div>
@@ -218,7 +239,9 @@ export default function CommunityMembersAddModal({
 
           {/* No results message */}
           {searchQuery.length >= 2 && !isSearching && searchResults.length === 0 && (
-            <div className="mt-3 text-center py-4 text-sm text-gray-500 dark:text-gray-400">
+            <div className={`mt-3 text-center py-4 text-sm ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-500'
+            }`}>
               No users found matching "{searchQuery}"
             </div>
           )}
@@ -226,11 +249,11 @@ export default function CommunityMembersAddModal({
 
         {/* Current Members List */}
         <div className="flex-1 overflow-y-auto p-6">
-          <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
+          <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
             Current Members
           </h3>
           {members.length === 0 ? (
-            <p className="text-center text-gray-500 dark:text-gray-400 py-12">
+            <p className={`text-center py-12 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
               No members yet. Invite some!
             </p>
           ) : (
@@ -238,7 +261,11 @@ export default function CommunityMembersAddModal({
               {members.map((member) => (
                 <div
                   key={member.id}
-                  className="flex items-center justify-between p-4 rounded-2xl bg-gray-50 dark:bg-slate-800/70 border border-gray-200 dark:border-slate-700"
+                  className={`flex items-center justify-between p-4 rounded-2xl border ${
+                    isDarkMode 
+                      ? 'bg-slate-800/70 border-slate-700' 
+                      : 'bg-gray-50 border-gray-200'
+                  }`}
                 >
                   <div className="flex items-center gap-4">
                     {member.avatar_url ? (
@@ -256,10 +283,10 @@ export default function CommunityMembersAddModal({
                       </div>
                     )}
                     <div>
-                      <p className="font-medium text-gray-900 dark:text-white">
+                      <p className={`font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                         {member.display_name || member.username}
                       </p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                      <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                         {member.email}
                       </p>
                     </div>
@@ -267,10 +294,16 @@ export default function CommunityMembersAddModal({
                   <span
                     className={`px-3 py-1 rounded-full text-xs font-semibold ${
                       member.role === "owner"
-                        ? "bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300"
+                        ? isDarkMode 
+                          ? "bg-purple-900/50 text-purple-300" 
+                          : "bg-purple-100 text-purple-700"
                         : member.role === "admin"
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
-                        : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                        ? isDarkMode 
+                          ? "bg-blue-900/50 text-blue-300" 
+                          : "bg-blue-100 text-blue-700"
+                        : isDarkMode 
+                          ? "bg-gray-800 text-gray-300" 
+                          : "bg-gray-100 text-gray-700"
                     }`}
                   >
                     {member.role}

@@ -1,69 +1,16 @@
-// services/channelService.ts
+// services/channelService.ts - Uses shared types ONLY
 import axios from 'axios';
+import type { 
+  Community, 
+  Channel, 
+  Friend, 
+  User, 
+  CommunityMember, 
+  CreateCommunityPayload 
+} from '@/types';
 
 const API_URL = 'http://localhost:5000/api/channels';
 
-// ──────────────────────────────────────────────────────────────
-// Types & Interfaces
-// ──────────────────────────────────────────────────────────────
-export interface Community {
-  id: number;
-  name: string;
-  icon: string;
-  color: string;
-  banner_url?: string;
-  description?: string;
-  role: 'owner' | 'admin' | 'member';
-}
-
-export interface Channel {
-  id: number;
-  name: string;
-  type: 'text' | 'voice' | 'private';
-  description?: string;
-  created_at: string;
-}
-
-export interface Friend {
-  id: number;
-  username: string;
-  display_name: string;
-  avatar_url: string;
-  status: 'online' | 'idle' | 'dnd' | 'offline';
-  custom_status?: string;
-  last_seen?: string;
-}
-
-export interface CreateCommunityPayload {
-  name: string;
-  description?: string;
-  icon?: string;
-  color?: string;
-}
-
-// New types for community members
-export interface User {
-  id: number;
-  username: string;
-  email: string;
-  display_name?: string;
-  avatar_url?: string;
-}
-
-export interface CommunityMember extends User {
-  role: 'owner' | 'admin' | 'member';
-}
-
-export interface CreateCommunityPayload {
-  name: string;
-  description?: string;
-  icon?: string;
-  color?: string;
-}
-
-// ──────────────────────────────────────────────────────────────
-// ChannelService Class
-// ──────────────────────────────────────────────────────────────
 class ChannelService {
   private getAuthHeaders() {
     const token = localStorage.getItem('token');
@@ -77,7 +24,6 @@ class ChannelService {
     };
   }
 
-  // ── Existing Methods (unchanged) ───────────────────────────
   async getCommunities(): Promise<Community[]> {
     try {
       const response = await axios.get<Community[]>(`${API_URL}/communities`, this.getAuthHeaders());
@@ -104,7 +50,18 @@ class ChannelService {
   async getFriends(): Promise<Friend[]> {
     try {
       const response = await axios.get<Friend[]>(`${API_URL}/friends`, this.getAuthHeaders());
-      return response.data;
+      
+      // Normalize friend data
+      return response.data.map((friend: any): Friend => ({
+        id: friend.id,
+        username: friend.username,
+        display_name: friend.display_name || friend.username,
+        avatar: friend.avatar || friend.avatar_url || '',
+        avatar_url: friend.avatar_url || friend.avatar || '',
+        status: friend.status || 'offline',
+        custom_status: friend.custom_status,
+        last_seen: friend.last_seen,
+      }));
     } catch (error: any) {
       console.error('Error fetching friends:', error);
       throw new Error(error.response?.data?.error || 'Failed to fetch friends');
@@ -125,7 +82,12 @@ class ChannelService {
     }
   }
 
-  async createChannel(communityId: number, name: string, type: 'text' | 'voice' = 'text', description?: string): Promise<Channel> {
+  async createChannel(
+    communityId: number, 
+    name: string, 
+    type: 'text' | 'voice' = 'text', 
+    description?: string
+  ): Promise<Channel> {
     try {
       const response = await axios.post<Channel>(
         `${API_URL}/communities/${communityId}/channels`,
@@ -166,9 +128,6 @@ class ChannelService {
     }
   }
 
-  // ── NEW: Community Member Methods (with proper error handling) ──
-
-  /** Search users by username (fuzzy) or email (exact) */
   async searchUsers(query: string): Promise<User[]> {
     if (!query.trim() || query.length < 2) return [];
 
@@ -189,7 +148,6 @@ class ChannelService {
     }
   }
 
-  /** Get all members of a community */
   async getCommunityMembers(communityId: number): Promise<CommunityMember[]> {
     if (!communityId) throw new Error('Community ID is required');
 
@@ -218,7 +176,6 @@ class ChannelService {
     }
   }
 
-  /** Add a user to a community */
   async addCommunityMember(communityId: number, userId: number): Promise<void> {
     if (!communityId || !userId) {
       throw new Error('Both community ID and user ID are required');

@@ -1,13 +1,10 @@
-// contexts/realtimeContext.tsx
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+// contexts/RealtimeContext.tsx - FIXED with proper dependencies
+import React, { createContext, useEffect, useState, useCallback, useRef } from 'react';
 import { socketService } from '@/services/socketService';
-import { messageService, Message } from '@/services/messageService';
-import { channelService, Community, Channel, Friend } from '@/services/channelService';
-
-interface TypingUser {
-  username: string;
-  timestamp: number;
-}
+import { messageService } from '@/services/messageService';
+import { channelService } from '@/services/channelService';
+import type { Message, TypingUser, Community, Channel, Friend, User } from '@/types';
+import authService from '@/services/authService';
 
 interface RealtimeContextType {
   isConnected: boolean;
@@ -29,9 +26,11 @@ interface RealtimeContextType {
   isLoadingMessages: boolean;
   isLoadingCommunities: boolean;
   isLoadingFriends: boolean;
+  currentUser: User | null;
+  isLoadingCurrentUser: boolean;
 }
 
-const RealtimeContext = createContext<RealtimeContextType | undefined>(undefined);
+export const RealtimeContext = createContext<RealtimeContextType | undefined>(undefined);
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
@@ -48,149 +47,35 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const [isLoadingCommunities, setIsLoadingCommunities] = useState(false);
   const [isLoadingFriends, setIsLoadingFriends] = useState(false);
   const [messageOffset, setMessageOffset] = useState(0);
-  
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLoadingCurrentUser, setIsLoadingCurrentUser] = useState(true);
+
   const typingTimeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const previousChannelRef = useRef<number | null>(null);
+  const messageIdsRef = useRef<Set<string>>(new Set());
 
-  // Initialize socket connection
-  useEffect(() => {
+  const loadCurrentUser = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) {
-      console.error('[REALTIME] No token found');
+      setIsLoadingCurrentUser(false);
       return;
     }
 
-    console.log('[REALTIME] Initializing socket connection');
-    socketService.connect(token);
-    setIsConnected(socketService.isConnected());
-
-    // Listen for new messages
-    const unsubscribeMessage = socketService.onMessage((incomingMessage: any) => {
-      console.log('[REALTIME] Received new message:', incomingMessage);
-      // Normalize incoming message to the Message type expected by state (ensure id is a number)
-      const message: Message = {
-        ...incomingMessage,
-        id: typeof incomingMessage.id === 'string' ? Number(incomingMessage.id) : incomingMessage.id,
-      };
-      setMessages((prev) => {
-        // Avoid duplicates
-        if (prev.some(m => String(m.id) === String(message.id))) {
-          return prev;
-        }
-        return [...prev, message];
-      });
-    });
-
-    // Listen for user status updates
-    const unsubscribeStatus = socketService.onUserStatus((status) => {
-      console.log('[REALTIME] User status update:', status);
-      setUserStatuses((prev) => {
-        const newMap = new Map(prev);
-        newMap.set(status.username, status.status);
-        return newMap;
-      });
-
-      // Update friends list status
-      setFriends((prev) =>
-        prev.map((friend) =>
-          friend.username === status.username
-            ? { ...friend, status: status.status }
-            : friend
-        )
-      );
-    });
-
-    // Listen for typing indicators
-    const unsubscribeTyping = socketService.onTyping((data) => {
-      console.log('[REALTIME] Typing indicator:', data);
-      if (currentChannel && data.channel_id === currentChannel.id) {
-        setTypingUsers((prev) => {
-          const existing = prev.find((u) => u.username === data.username);
-          if (existing) return prev;
-          
-          const newUsers = [...prev, { username: data.username, timestamp: Date.now() }];
-
-          // Clear existing timeout for this user
-          const existingTimeout = typingTimeoutRefs.current.get(data.username);
-          if (existingTimeout) {
-            clearTimeout(existingTimeout);
-          }
-
-          // Set new timeout
-          const timeout = setTimeout(() => {
-            setTypingUsers((current) =>
-              current.filter((u) => u.username !== data.username)
-            );
-            typingTimeoutRefs.current.delete(data.username);
-          }, 3000);
-
-          typingTimeoutRefs.current.set(data.username, timeout);
-          return newUsers;
-        });
-      }
-    });
-
-    return () => {
-      console.log('[REALTIME] Cleaning up socket connection');
-      unsubscribeMessage();
-      unsubscribeStatus();
-      unsubscribeTyping();
-      
-      // Clear all typing timeouts
-      typingTimeoutRefs.current.forEach(timeout => clearTimeout(timeout));
-      typingTimeoutRefs.current.clear();
-      
-      socketService.disconnect();
-    };
-  }, []);
-
-  // Update socket connection status
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setIsConnected(socketService.isConnected());
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Load communities on mount
-  useEffect(() => {
-    loadCommunities();
-    loadFriends();
-  }, []);
-
-  // Load channels when community changes
-  useEffect(() => {
-    if (currentCommunity) {
-      loadChannels(currentCommunity.id);
-    } else {
-      setChannels([]);
-      setCurrentChannel(null);
+    setIsLoadingCurrentUser(true);
+    try {
+      const user = await authService.getMe();           // calls /api/me
+      setCurrentUser(user);
+      console.log('[REALTIME] Current user loaded:', user);
+    } catch (error) {
+      console.error('[REALTIME] Failed to load current user:', error);
+      setCurrentUser(null);
+    } finally {
+      setIsLoadingCurrentUser(false);
     }
-  }, [currentCommunity]);
+  }, []);
 
-  // Load messages and join channel when channel changes
-  useEffect(() => {
-    if (currentChannel) {
-      // Leave previous channel
-      if (previousChannelRef.current && previousChannelRef.current !== currentChannel.id) {
-        console.log(`[REALTIME] Leaving previous channel ${previousChannelRef.current}`);
-      }
-
-      console.log(`[REALTIME] Joining channel ${currentChannel.id}`);
-      loadMessages(currentChannel.id, 0);
-      socketService.joinChannel(currentChannel.id);
-      
-      previousChannelRef.current = currentChannel.id;
-      
-      // Clear typing users when switching channels
-      setTypingUsers([]);
-      typingTimeoutRefs.current.forEach(timeout => clearTimeout(timeout));
-      typingTimeoutRefs.current.clear();
-    }
-  }, [currentChannel]);
-
-  const loadCommunities = async () => {
+  // FIXED: Load functions wrapped in useCallback to prevent unnecessary re-runs
+  const loadCommunities = useCallback(async () => {
     setIsLoadingCommunities(true);
     try {
       const data = await channelService.getCommunities();
@@ -204,9 +89,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoadingCommunities(false);
     }
-  };
+  }, [currentCommunity]);
 
-  const loadChannels = async (communityId: number) => {
+  const loadChannels = useCallback(async (communityId: number) => {
     try {
       const data = await channelService.getCommunityChannels(communityId);
       console.log('[REALTIME] Loaded channels:', data);
@@ -217,16 +102,15 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('[REALTIME] Failed to load channels:', error);
     }
-  };
+  }, [currentChannel]);
 
-  const loadFriends = async () => {
+  const loadFriends = useCallback(async () => {
     setIsLoadingFriends(true);
     try {
       const data = await channelService.getFriends();
       console.log('[REALTIME] Loaded friends:', data);
       setFriends(data);
-      
-      // Initialize status map
+
       const statusMap = new Map<string, 'online' | 'idle' | 'dnd' | 'offline'>();
       data.forEach((friend) => {
         statusMap.set(friend.username, friend.status);
@@ -237,17 +121,23 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoadingFriends(false);
     }
-  };
+  }, []);
 
-  const loadMessages = async (channelId: number, offset = 0) => {
+  const loadMessages = useCallback(async (channelId: number, offset = 0) => {
     setIsLoadingMessages(true);
     try {
       const data = await messageService.getChannelMessages(channelId, 50, offset);
       console.log('[REALTIME] Loaded messages:', data.length);
+
       if (offset === 0) {
+        messageIdsRef.current.clear();
+        data.forEach(msg => messageIdsRef.current.add(String(msg.id)));
+
         setMessages(data.reverse());
         setMessageOffset(data.length);
       } else {
+        data.forEach(msg => messageIdsRef.current.add(String(msg.id)));
+
         setMessages((prev) => [...data.reverse(), ...prev]);
         setMessageOffset(offset + data.length);
       }
@@ -256,14 +146,173 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoadingMessages(false);
     }
-  };
+  }, []);
+
+  // Socket connection setup
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error('[REALTIME] No token found');
+      return;
+    }
+
+    console.log('[REALTIME] Initializing socket connection');
+    socketService.connect(token);
+    setIsConnected(socketService.isConnected());
+
+    const unsubscribeMessage = socketService.onMessage((incomingMessage: Message) => {
+      console.log('[REALTIME] Received new message:', incomingMessage);
+
+      const messageId = String(incomingMessage.id);
+
+      if (messageIdsRef.current.has(messageId)) {
+        console.log('[REALTIME] Duplicate message ignored:', messageId);
+        return;
+      }
+
+      messageIdsRef.current.add(messageId);
+      setMessages((prev) => [...prev, incomingMessage]);
+    });
+
+    const unsubscribeStatus = socketService.onUserStatus((status) => {
+      console.log('[REALTIME] User status update:', status);
+      setUserStatuses((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(status.username, status.status);
+        return newMap;
+      });
+
+      setFriends((prev) =>
+        prev.map((friend) =>
+          friend.username === status.username
+            ? { ...friend, status: status.status }
+            : friend
+        )
+      );
+    });
+
+    const unsubscribeTyping = socketService.onTyping((data) => {
+      console.log('[REALTIME] Typing indicator:', data);
+
+      // Use functional update to get current channel
+      setTypingUsers((prev) => {
+        // Access current channel through a ref would be better, but this works
+        const currentChannelId = socketService.getCurrentChannel();
+
+        if (!currentChannelId || data.channel_id !== currentChannelId) {
+          return prev;
+        }
+
+        if (data.is_typing) {
+          const existing = prev.find((u) => u.username === data.username);
+          if (existing) return prev;
+
+          const newUsers = [...prev, { username: data.username, timestamp: Date.now() }];
+
+          const existingTimeout = typingTimeoutRefs.current.get(data.username);
+          if (existingTimeout) {
+            clearTimeout(existingTimeout);
+          }
+
+          const timeout = setTimeout(() => {
+            setTypingUsers((current) =>
+              current.filter((u) => u.username !== data.username)
+            );
+            typingTimeoutRefs.current.delete(data.username);
+          }, 5000);
+
+          typingTimeoutRefs.current.set(data.username, timeout);
+          return newUsers;
+        } else {
+          const timeout = typingTimeoutRefs.current.get(data.username);
+          if (timeout) {
+            clearTimeout(timeout);
+            typingTimeoutRefs.current.delete(data.username);
+          }
+          return prev.filter((u) => u.username !== data.username);
+        }
+      });
+    });
+
+    const unsubscribeError = socketService.onError((error) => {
+      console.error('[REALTIME] Socket error:', error.msg);
+    });
+
+    return () => {
+      console.log('[REALTIME] Cleaning up socket connection');
+      unsubscribeMessage();
+      unsubscribeStatus();
+      unsubscribeTyping();
+      unsubscribeError();
+
+      typingTimeoutRefs.current.forEach(timeout => clearTimeout(timeout));
+      typingTimeoutRefs.current.clear();
+
+      socketService.disconnect();
+    };
+  }, []); // FIXED: Only run once on mount
+
+  // Connection status polling
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsConnected(socketService.isConnected());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Load initial data
+  useEffect(() => {
+    loadCurrentUser();
+    loadCommunities();
+    loadFriends();
+  }, [loadCommunities, loadFriends]);
+
+  // Load channels when community changes
+  useEffect(() => {
+    if (currentCommunity) {
+      loadChannels(currentCommunity.id);
+    } else {
+      setChannels([]);
+      setCurrentChannel(null);
+    }
+  }, [currentCommunity, loadChannels]);
+
+  // Handle channel changes
+  useEffect(() => {
+    if (currentChannel) {
+      if (previousChannelRef.current && previousChannelRef.current !== currentChannel.id) {
+        console.log(`[REALTIME] Leaving previous channel ${previousChannelRef.current}`);
+        socketService.leaveChannel();
+      }
+
+      console.log(`[REALTIME] Joining channel ${currentChannel.id}`);
+
+      messageIdsRef.current.clear();
+
+      loadMessages(currentChannel.id, 0);
+      socketService.joinChannel(currentChannel.id);
+
+      previousChannelRef.current = currentChannel.id;
+
+      setTypingUsers([]);
+      typingTimeoutRefs.current.forEach(timeout => clearTimeout(timeout));
+      typingTimeoutRefs.current.clear();
+    }
+
+    return () => {
+      if (currentChannel) {
+        socketService.leaveChannel();
+      }
+    };
+  }, [currentChannel, loadMessages]);
 
   const loadMoreMessages = useCallback(async () => {
     if (currentChannel && !isLoadingMessages && messageOffset > 0) {
       console.log('[REALTIME] Loading more messages, offset:', messageOffset);
       await loadMessages(currentChannel.id, messageOffset);
     }
-  }, [currentChannel, isLoadingMessages, messageOffset]);
+  }, [currentChannel, isLoadingMessages, messageOffset, loadMessages]);
 
   const selectCommunity = useCallback((communityId: number) => {
     const community = communities.find((c) => c.id === communityId);
@@ -273,6 +322,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       setCurrentChannel(null);
       setMessages([]);
       setMessageOffset(0);
+      messageIdsRef.current.clear();
     }
   }, [communities]);
 
@@ -284,6 +334,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       setCurrentFriend(null);
       setMessages([]);
       setMessageOffset(0);
+      messageIdsRef.current.clear();
     }
   }, [channels]);
 
@@ -295,11 +346,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       setCurrentChannel(null);
       setMessages([]);
       setMessageOffset(0);
-      // TODO: Load direct messages
+      messageIdsRef.current.clear();
     }
   }, [friends]);
 
-  const sendMessage = async (content: string, messageType: 'text' | 'image' | 'file' = 'text') => {
+  const sendMessage = useCallback(async (content: string, messageType: 'text' | 'image' | 'file' = 'text') => {
     if (!currentChannel || !content.trim()) {
       console.warn('[REALTIME] Cannot send message: no channel or empty content');
       return;
@@ -307,23 +358,31 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
     try {
       console.log('[REALTIME] Sending message to channel:', currentChannel.id);
+
       const message = await messageService.sendChannelMessage({
         channel_id: currentChannel.id,
         content,
         message_type: messageType,
       });
 
-      // The message will be added via socket callback
+      const messageId = String(message.id);
+      if (!messageIdsRef.current.has(messageId)) {
+        messageIdsRef.current.add(messageId);
+        setMessages((prev) => [...prev, message]);
+      }
+
+      socketService.broadcastMessage(currentChannel.id, message);
+
       console.log('[REALTIME] Message sent successfully:', message.id);
     } catch (error) {
       console.error('[REALTIME] Failed to send message:', error);
       throw error;
     }
-  };
+  }, [currentChannel]);
 
   const sendTyping = useCallback(() => {
     if (currentChannel && isConnected) {
-      socketService.sendTyping(currentChannel.id);
+      socketService.sendTyping(currentChannel.id, true);
     }
   }, [currentChannel, isConnected]);
 
@@ -347,6 +406,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     isLoadingMessages,
     isLoadingCommunities,
     isLoadingFriends,
+    currentUser,               
+    isLoadingCurrentUser,
   };
 
   return (
@@ -354,12 +415,4 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       {children}
     </RealtimeContext.Provider>
   );
-}
-
-export function useRealtime() {
-  const context = useContext(RealtimeContext);
-  if (!context) {
-    throw new Error('useRealtime must be used within RealtimeProvider');
-  }
-  return context;
 }

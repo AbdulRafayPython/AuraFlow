@@ -1,20 +1,8 @@
-// services/friendService.ts
+// services/friendService.ts - Uses shared types ONLY
 import axios from 'axios';
+import type { FriendRequest } from '@/types';
 
 const API_URL = 'http://localhost:5000/api/friends';
-
-export interface FriendRequest {
-  id: number;
-  sender_id: number;
-  receiver_id: number;
-  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
-  created_at: string;
-  sender?: {
-    username: string;
-    display_name: string;
-    avatar_url: string;
-  };
-}
 
 class FriendService {
   private getAuthHeaders() {
@@ -26,7 +14,6 @@ class FriendService {
     };
   }
 
-  // Send friend request
   async sendFriendRequest(username: string): Promise<FriendRequest> {
     try {
       const response = await axios.post<FriendRequest>(
@@ -34,17 +21,19 @@ class FriendService {
         { username },
         this.getAuthHeaders()
       );
-      return response.data as FriendRequest;
+      return response.data;
     } catch (error) {
       console.error('Error sending friend request:', error);
       throw error;
     }
   }
 
-  // Get pending friend requests
   async getPendingRequests(): Promise<FriendRequest[]> {
     try {
-      const response = await axios.get<FriendRequest[]>(`${API_URL}/requests/pending`, this.getAuthHeaders());
+      const response = await axios.get<FriendRequest[]>(
+        `${API_URL}/requests/pending`, 
+        this.getAuthHeaders()
+      );
       return response.data;
     } catch (error) {
       console.error('Error fetching friend requests:', error);
@@ -52,7 +41,6 @@ class FriendService {
     }
   }
 
-  // Accept friend request
   async acceptFriendRequest(requestId: number): Promise<void> {
     try {
       await axios.post(
@@ -66,7 +54,6 @@ class FriendService {
     }
   }
 
-  // Reject friend request
   async rejectFriendRequest(requestId: number): Promise<void> {
     try {
       await axios.post(
@@ -80,7 +67,6 @@ class FriendService {
     }
   }
 
-  // Remove friend
   async removeFriend(friendId: number): Promise<void> {
     try {
       await axios.delete(`${API_URL}/${friendId}`, this.getAuthHeaders());
@@ -90,7 +76,6 @@ class FriendService {
     }
   }
 
-  // Block user
   async blockUser(userId: number): Promise<void> {
     try {
       await axios.post(
@@ -104,7 +89,6 @@ class FriendService {
     }
   }
 
-  // Unblock user
   async unblockUser(userId: number): Promise<void> {
     try {
       await axios.post(

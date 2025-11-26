@@ -2,6 +2,7 @@
 from flask import jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
+from utils import get_avatar_url
 
 
 # Helper: format user avatar fallback
@@ -57,9 +58,9 @@ def get_channel_messages(channel_id):
             'created_at': m['created_at'].isoformat() if m['created_at'] else None,
             'author': m['username'],
             'display_name': m['display_name'] or m['username'],
-            'avatar': _avatar_url(m['username'], m['avatar_url'])
+            'avatar_url': get_avatar_url(m['username'], m['avatar_url'])  # ← FIXED!
         } for m in rows]
-
+        print("[DEBUG] Fetched channel messages:", result)
         return jsonify(result), 200
 
     except Exception as e:
@@ -106,10 +107,8 @@ def send_message():
             """, (channel_id, user_id, content, message_type, reply_to or None))
             message_id = cur.lastrowid
 
-            # Fetch full message
             cur.execute("""
-                SELECT m.id, m.channel_id, m.content, m.message_type, m.reply_to, m.created_at,
-                       u.username, u.display_name, u.avatar_url
+                SELECT m.*, u.username, u.display_name, u.avatar_url
                 FROM messages m
                 JOIN users u ON m.sender_id = u.id
                 WHERE m.id = %s
@@ -117,7 +116,11 @@ def send_message():
             msg = cur.fetchone()
 
         conn.commit()
-        return jsonify({
+
+        # ← CRITICAL: Use get_avatar_url() here too!
+        avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
+
+        response = {
             'id': msg['id'],
             'channel_id': msg['channel_id'],
             'sender_id': user_id,
@@ -127,8 +130,10 @@ def send_message():
             'created_at': msg['created_at'].isoformat(),
             'author': msg['username'],
             'display_name': msg['display_name'] or msg['username'],
-            'avatar': _avatar_url(msg['username'], msg['avatar_url'])
-        }), 201
+            'avatar_url': avatar_url  # ← Now correct!
+        }
+
+        return jsonify(response), 201
 
     except Exception as e:
         print(f"[ERROR] send_message: {e}")

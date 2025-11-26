@@ -1,4 +1,5 @@
 import api from './appService';
+import type { User } from '@/types';
 
 type SignupPayload = {
   username: string;
@@ -41,8 +42,8 @@ export async function getProtected() {
   return await api.get(`${AUTH_PREFIX}/protected`);
 }
 
-export async function getMe() {
-  return await api.get(`${AUTH_PREFIX}/me`);
+export async function getMe(): Promise<User> {
+  return (await api.get(`${AUTH_PREFIX}/me`)) as User;
 }
 
 export async function updateFirstLogin() {

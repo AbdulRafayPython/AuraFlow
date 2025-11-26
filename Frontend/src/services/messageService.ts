@@ -1,36 +1,8 @@
-// services/messageService.ts
+// services/messageService.ts - Uses shared types ONLY
 import axios from 'axios';
+import type { Message, DirectMessage, SendMessageData } from '@/types';
 
 const API_URL = 'http://localhost:5000/api';
-
-export interface Message {
-  id: number;
-  channel_id: number;
-  sender_id: number;
-  content: string;
-  message_type: 'text' | 'image' | 'file' | 'system' | 'ai';
-  reply_to?: number;
-  created_at: string;
-  author?: string;
-  avatar?: string;
-}
-
-export interface SendMessageData {
-  channel_id: number;
-  content: string;
-  message_type?: 'text' | 'image' | 'file';
-  reply_to?: number;
-}
-
-export interface DirectMessage {
-  id: number;
-  sender_id: number;
-  receiver_id: number;
-  content: string;
-  message_type: 'text' | 'image' | 'file' | 'ai';
-  created_at: string;
-  is_read: boolean;
-}
 
 class MessageService {
   private getAuthHeaders() {
@@ -43,21 +15,32 @@ class MessageService {
     };
   }
 
-  // Get messages for a channel
   async getChannelMessages(channelId: number, limit = 50, offset = 0): Promise<Message[]> {
     try {
       const response = await axios.get<Message[]>(
         `${API_URL}/messages/channel/${channelId}?limit=${limit}&offset=${offset}`,
         this.getAuthHeaders()
       );
-      return response.data;
+      
+      // Normalize the response
+      return response.data.map((msg: any): Message => ({
+        id: typeof msg.id === 'string' ? Number(msg.id) : msg.id,
+        channel_id: msg.channel_id,
+        sender_id: msg.sender_id,
+        content: msg.content,
+        message_type: msg.message_type || 'text',
+        created_at: msg.created_at,
+        author: msg.author || msg.username || 'Unknown',
+        avatar_url: msg.avatar || msg.avatar_url || '',
+        edited_at: msg.edited_at || null,
+        reply_to: msg.reply_to || null,
+      }));
     } catch (error) {
       console.error('Error fetching channel messages:', error);
       throw error;
     }
   }
 
-  // Send a message to a channel
   async sendChannelMessage(data: SendMessageData): Promise<Message> {
     try {
       const response = await axios.post<Message>(
@@ -65,14 +48,27 @@ class MessageService {
         data,
         this.getAuthHeaders()
       );
-      return response.data;
+      
+      // Normalize the response
+      const msg = response.data;
+      return {
+        id: typeof msg.id === 'string' ? Number(msg.id) : msg.id,
+        channel_id: msg.channel_id,
+        sender_id: msg.sender_id,
+        content: msg.content,
+        message_type: msg.message_type || 'text',
+        created_at: msg.created_at,
+        author: (msg as any).author || (msg as any).username || 'You',
+        avatar_url: (msg as any).avatar || (msg as any).avatar_url || '',
+        edited_at: (msg as any).edited_at || null,
+        reply_to: (msg as any).reply_to || null,
+      };
     } catch (error) {
       console.error('Error sending message:', error);
       throw error;
     }
   }
 
-  // Get direct messages with a user
   async getDirectMessages(userId: number, limit = 50, offset = 0): Promise<DirectMessage[]> {
     try {
       const response = await axios.get<DirectMessage[]>(
@@ -86,7 +82,6 @@ class MessageService {
     }
   }
 
-  // Send a direct message
   async sendDirectMessage(receiverId: number, content: string, messageType = 'text'): Promise<DirectMessage> {
     try {
       const response = await axios.post<DirectMessage>(
@@ -105,7 +100,6 @@ class MessageService {
     }
   }
 
-  // Mark messages as read
   async markAsRead(messageIds: number[]): Promise<void> {
     try {
       await axios.post(
@@ -119,7 +113,6 @@ class MessageService {
     }
   }
 
-  // Delete a message
   async deleteMessage(messageId: number): Promise<void> {
     try {
       await axios.delete(
@@ -132,7 +125,6 @@ class MessageService {
     }
   }
 
-  // Edit a message
   async editMessage(messageId: number, content: string): Promise<Message> {
     try {
       const response = await axios.put<Message>(
