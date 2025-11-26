@@ -10,6 +10,10 @@ import WorkspaceSetup from './components/onboarding/WorkspaceSetup';
 import ProfileSetup from './components/onboarding/ProfileSetup';
 import MainLayout from './components/layout/MainLayout';
 import Dashboard from '@/pages/Dashboard';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import ForgotPassword from './pages/ForgotPassword';
+import OtpVerification from './pages/OtpVerification';
+import ResetPassword from './pages/ResetPassword';
 
 function AppRouter() {
   const { user, isAuthenticated, completeOnboarding } = useAuth();
@@ -67,6 +71,7 @@ function AppRouter() {
     </RealtimeProvider>
   );
 }
+
 
 export default function App() {
   return (

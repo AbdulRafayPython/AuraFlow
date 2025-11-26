@@ -1,8 +1,17 @@
-from flask import request, jsonify
+
+import logging
+from flask import  request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from database import get_db_connection
+from services.otp_service import verify_otp
+import secrets
+from datetime import datetime, timedelta
 from utils import get_avatar_url, format_user_data
 import bcrypt
+import uuid
+
+logging.basicConfig(level=logging.DEBUG)
+
 
 # ----------------------------------------------------------------------
 # SIGNUP
@@ -157,3 +166,132 @@ def get_me():
     user_data['is_first_login'] = bool(row.get('is_first_login', False))
 
     return jsonify(user_data), 200
+    return jsonify({
+        "username": row["username"],
+        "email": row.get("email"),
+        "display_name": row.get("display_name"),
+        "bio": row.get("bio"),
+        "is_first_login": bool(row.get("is_first_login", False))
+    }), 200
+#---------------------------------------------------------------------------------
+# forgot-password
+#----------------------------------------------------------------------------------
+def forgot_password():
+    from services.email_service import send_otp_email
+    from services.otp_service import create_and_store_otp
+    
+    data = request.get_json()
+    email = data.get("email")
+
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+    
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM users WHERE email=%s", (email,))
+            user = cur.fetchone()
+
+            if not user:
+                return jsonify({"error": "User not found"}), 404
+
+            # Generate 6-digit OTP using otp_service
+            otp = create_and_store_otp(email)
+            
+            # Send OTP via email
+            send_otp_email(email, otp)
+    finally:
+        conn.close()
+
+    return jsonify({
+        "message": "Reset password OTP has been sent to your email"
+    }), 200
+
+def verify_otp_endpoint():
+    from services.otp_service import verify_otp
+    
+    data = request.get_json()
+    email = data.get("email")
+    otp = data.get("otp")
+
+    if not email or not otp:
+        return jsonify({"error": "Email and OTP are required"}), 400
+
+    valid, error_msg = verify_otp(email, otp)
+    
+    if not valid:
+        return jsonify({"error": error_msg}), 400
+
+    return jsonify({
+        "message": "OTP verified successfully",
+        "email": email
+    }), 200
+
+#----------------------------------------------------------------------------------------
+# reset password
+#------------------------------------------------------------------------
+
+def reset_password():
+    logging.debug("========== Reset Password API Called ==========")
+
+    data = request.get_json()
+    logging.debug(f"Incoming Request Data: {data}")
+
+    email = data.get("email")
+    otp = data.get("otp")
+    new_password = data.get("new_password")
+
+    if not email or not otp or not new_password:
+        logging.error("Missing fields: Email, OTP, or Password not provided.")
+        return jsonify({"error": "Email, OTP, and new password are required"}), 400
+
+    # OTP validation
+    logging.debug(f"Verifying OTP for email: {email}, OTP: {otp}")
+    valid, error_msg = verify_otp(email, otp)
+
+    logging.debug(f"OTP Verification result: valid={valid}, message={error_msg}")
+
+    if not valid:
+        logging.error(f"OTP Validation Failed: {error_msg}")
+        return jsonify({"error": error_msg}), 400
+
+    # Updating password in DB
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            logging.debug(f"Checking if user exists for email: {email}")
+            cur.execute("SELECT id FROM users WHERE email=%s", (email,))
+            user = cur.fetchone()
+
+            logging.debug(f"User lookup result: {user}")
+
+            if not user:
+                logging.error("User not found in database.")
+                return jsonify({"error": "User not found"}), 404
+
+            # Password hashing
+            hashed_pw = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode('utf-8')
+            logging.debug(f"Generated hashed password: {hashed_pw}")
+
+            logging.debug("Updating user password in database...")
+            cur.execute("UPDATE users SET password=%s WHERE id=%s", (hashed_pw, user["id"]))
+
+            logging.debug("Deleting OTP from otp_store for this email...")
+            cur.execute("DELETE FROM otp_store WHERE email=%s", (email,))
+
+
+        conn.commit()
+        logging.debug("Password update committed to DB successfully.")
+
+    except Exception as e:
+        logging.exception("Unexpected error during password reset")
+        return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
+
+    finally:
+        conn.close()
+        logging.debug("Database connection closed.")
+
+    logging.debug("Password reset successfully completed.")
+    logging.debug("==============================================")
+
+    return jsonify({"message": "Password reset successfully"}), 200
