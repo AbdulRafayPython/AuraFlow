@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { X, Hash, Volume2, Plus } from "lucide-react";
 import { channelService } from "@/services/channelService";
+import { socketService } from "@/services/socketService";
 import { useNotifications } from "@/hooks/useNotifications";
 
 interface CreateChannelModalProps {
   isOpen: boolean;
   onClose: () => void;
   communityId: number;
+  currentChannelType?: 'text' | 'voice';
   onChannelCreated?: (channel: any) => void;
 }
 
@@ -15,6 +17,7 @@ export default function CreateChannelModal({
   isOpen,
   onClose,
   communityId,
+  currentChannelType = 'text',
   onChannelCreated,
 }: CreateChannelModalProps) {
   const { isDarkMode } = useTheme();
@@ -23,9 +26,19 @@ export default function CreateChannelModal({
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    type: "text" as 'text' | 'voice',
+    type: 'text' as 'text' | 'voice',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Update channel type when current channel type changes or modal opens
+  useEffect(() => {
+    setFormData({
+      name: "",
+      description: "",
+      type: currentChannelType,
+    });
+    setErrors({});
+  }, [currentChannelType]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -59,6 +72,16 @@ export default function CreateChannelModal({
       );
       
       showSuccess({ title: `Channel "${channel.name}" created successfully` });
+      
+      // Broadcast the channel creation via socket
+      if (socketService.isConnected()) {
+        socketService.broadcastChannelCreated({
+          ...channel,
+          community_id: communityId,
+        });
+      }
+      
+      // Call the callback with the new channel
       onChannelCreated?.(channel);
       
       // Reset form

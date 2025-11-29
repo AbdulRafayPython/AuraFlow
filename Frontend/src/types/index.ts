@@ -21,6 +21,17 @@ export interface DirectMessage {
   message_type: 'text' | 'image' | 'file' | 'ai';
   created_at: string;
   is_read: boolean;
+  edited_at?: string | null;
+  sender?: {
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+  };
+  receiver?: {
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+  };
 }
 
 export interface SendMessageData {
@@ -28,6 +39,12 @@ export interface SendMessageData {
   content: string;
   message_type?: 'text' | 'image' | 'file';
   reply_to?: number;
+}
+
+export interface SendDirectMessageData {
+  receiver_id: number;
+  content: string;
+  message_type?: 'text' | 'image' | 'file';
 }
 
 export interface UserStatus {
@@ -86,10 +103,18 @@ export interface FriendRequest {
   receiver_id: number;
   status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
   created_at: string;
+  updated_at?: string;
   sender?: {
     username: string;
     display_name: string;
     avatar_url: string;
+    id: number;
+  };
+  receiver?: {
+    username: string;
+    display_name: string;
+    avatar_url: string;
+    id: number;
   };
 }
 
@@ -99,6 +124,20 @@ export interface User {
   email: string;
   display_name?: string;
   avatar_url?: string;
+  status?: 'online' | 'idle' | 'dnd' | 'offline';
+  custom_status?: string;
+  last_seen?: string;
+}
+
+export interface BlockedUser {
+  id: number;
+  blocked_user_id: number;
+  created_at: string;
+  user?: {
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+  };
 }
 
 export interface CommunityMember extends User {

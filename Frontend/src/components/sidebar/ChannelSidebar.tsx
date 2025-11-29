@@ -40,12 +40,14 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
     channels,
     currentChannel,
     selectChannel,
+    addChannel,
     friends,
     selectFriend,
     currentFriend,
     userStatuses,
     isLoadingCommunities,
     currentUser,
+    reloadCommunities,
   } = useRealtime();
 
   // Modal & Members State
@@ -125,9 +127,19 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
     setIsCommunityManagementOpen(true);
   };
 
-  const handleChannelCreated = () => {
-    // Reload channels after creation
+  const handleChannelCreated = (newChannel: any) => {
+    // Close the modal
     setIsCreateChannelModalOpen(false);
+    
+    // Immediately add channel to the list (don't wait for socket)
+    if (newChannel && newChannel.id) {
+      addChannel(newChannel);
+      
+      // Automatically select the newly created channel
+      setTimeout(() => {
+        selectChannel(newChannel.id);
+      }, 100); // Small delay to ensure state is updated
+    }
   };
 
   const handleChannelDeleted = () => {
@@ -140,8 +152,10 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
     onNavigate?.("dashboard");
   };
 
-  const handleCommunityLeft = () => {
+  const handleCommunityLeft = async () => {
     setIsCommunityManagementOpen(false);
+    // Reload communities to refresh the list after leaving
+    await reloadCommunities();
     onNavigate?.("dashboard");
   };
 
@@ -542,6 +556,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
           isOpen={isCreateChannelModalOpen}
           onClose={() => setIsCreateChannelModalOpen(false)}
           communityId={currentCommunity.id}
+          currentChannelType={currentChannel?.type || 'text'}
           onChannelCreated={handleChannelCreated}
         />
       )}
@@ -551,6 +566,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
         isOpen={!!selectedChannelForManagement}
         onClose={() => setSelectedChannelForManagement(null)}
         channel={selectedChannelForManagement}
+        communityId={currentCommunity?.id}
         userRole={currentCommunity ? "admin" : "member"} // TODO: Get actual user role from context
         onChannelUpdated={(updated) => {
           // Handle channel update

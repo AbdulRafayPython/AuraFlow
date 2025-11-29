@@ -14,6 +14,7 @@ interface RealtimeContextType {
   currentChannel: Channel | null;
   selectCommunity: (communityId: number) => void;
   selectChannel: (channelId: number) => void;
+  addChannel: (channel: Channel) => void;
   friends: Friend[];
   currentFriend: Friend | null;
   selectFriend: (friendId: number) => void;
@@ -251,6 +252,52 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       });
     });
 
+    // Channel operation event handler
+    const unsubscribeChannel = socketService.onChannel((eventData) => {
+      const { type, data } = eventData;
+      console.log(`[REALTIME] Channel ${type} event received:`, data);
+
+      if (type === 'created') {
+        // Check if this is for the current community
+        if (currentCommunity && data.community_id === currentCommunity.id) {
+          setChannels((prev) => {
+            const exists = prev.some(ch => ch.id === data.id);
+            if (exists) return prev;
+            return [...prev, data];
+          });
+        }
+      } else if (type === 'updated') {
+        // Update the channel in the list
+        setChannels((prev) =>
+          prev.map((ch) =>
+            ch.id === data.id
+              ? { ...ch, name: data.name, description: data.description, type: data.type }
+              : ch
+          )
+        );
+        // Update current channel if it's the one being edited
+        if (currentChannel && currentChannel.id === data.id) {
+          setCurrentChannel((prev) =>
+            prev
+              ? { ...prev, name: data.name, description: data.description, type: data.type }
+              : null
+          );
+        }
+      } else if (type === 'deleted') {
+        // Remove the channel from the list
+        setChannels((prev) => prev.filter((ch) => ch.id !== data.id));
+        // If current channel was deleted, clear it
+        if (currentChannel && currentChannel.id === data.id) {
+          setCurrentChannel(null);
+          setMessages([]);
+          messageIdsRef.current.clear();
+        }
+      } else if (type === 'member_added') {
+        // Optionally reload communities to update member lists
+        console.log('[REALTIME] Member added to community:', data.community_id);
+      }
+    });
+
     return () => {
       console.log('[REALTIME] Cleaning up socket connection');
       unsubscribeMessage();
@@ -258,6 +305,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       unsubscribeTyping();
       unsubscribeError();
       unsubscribeCommunity();
+      unsubscribeChannel();
 
       typingTimeoutRefs.current.forEach(timeout => clearTimeout(timeout));
       typingTimeoutRefs.current.clear();
@@ -405,6 +453,15 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentChannel, isConnected]);
 
+  const addChannel = useCallback((channel: Channel) => {
+    console.log('[REALTIME] Adding channel to list:', channel.name);
+    setChannels((prev) => {
+      const exists = prev.some(ch => ch.id === channel.id);
+      if (exists) return prev;
+      return [...prev, channel];
+    });
+  }, []);
+
   const value: RealtimeContextType = {
     isConnected,
     communities,
@@ -413,6 +470,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     currentChannel,
     selectCommunity,
     selectChannel,
+    addChannel,
     friends,
     currentFriend,
     selectFriend,

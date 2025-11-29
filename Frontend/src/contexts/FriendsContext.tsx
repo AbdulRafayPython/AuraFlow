@@ -1,215 +1,290 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-
-export type FriendStatus = "online" | "idle" | "dnd" | "offline";
-export type FriendRequestStatus = "pending" | "accepted" | "blocked";
-
-export interface Friend {
-  id: string;
-  username: string;
-  displayName: string;
-  avatar?: string;
-  status: FriendStatus;
-  customStatus?: string;
-  since: string;
-}
-
-export interface FriendRequest {
-  id: string;
-  username: string;
-  displayName: string;
-  avatar?: string;
-  type: "incoming" | "outgoing";
-  timestamp: string;
-}
-
-export interface BlockedUser {
-  id: string;
-  username: string;
-  displayName: string;
-  avatar?: string;
-  blockedAt: string;
-}
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import type { Friend, FriendRequest, BlockedUser } from "@/types";
+import { friendService } from "@/services/friendService";
+import { socketService } from "@/services/socketService";
 
 interface FriendsContextType {
   friends: Friend[];
-  friendRequests: FriendRequest[];
+  pendingRequests: FriendRequest[];
+  sentRequests: FriendRequest[];
   blockedUsers: BlockedUser[];
-  addFriend: (username: string) => Promise<void>;
-  acceptFriendRequest: (id: string) => void;
-  declineFriendRequest: (id: string) => void;
-  removeFriend: (id: string) => void;
-  blockUser: (id: string) => void;
-  unblockUser: (id: string) => void;
-  cancelFriendRequest: (id: string) => void;
+  loading: boolean;
+  error: string | null;
+
+  // Friend operations
+  getFriends: () => Promise<void>;
+  getPendingRequests: () => Promise<void>;
+  getSentRequests: () => Promise<void>;
+  getBlockedUsers: () => Promise<void>;
+  searchUsers: (query: string) => Promise<any[]>;
+  sendFriendRequest: (username: string) => Promise<void>;
+  acceptFriendRequest: (requestId: number) => Promise<void>;
+  rejectFriendRequest: (requestId: number) => Promise<void>;
+  cancelFriendRequest: (requestId: number) => Promise<void>;
+  removeFriend: (friendId: number) => Promise<void>;
+  blockUser: (userId: number) => Promise<void>;
+  unblockUser: (userId: number) => Promise<void>;
+
+  // Local state updates
+  addFriend: (friend: Friend) => void;
+  removeFriendLocal: (friendId: number) => void;
+  updateFriendStatus: (friendId: number, status: string) => void;
+  addPendingRequest: (request: FriendRequest) => void;
+  removePendingRequest: (requestId: number) => void;
 }
 
 const FriendsContext = createContext<FriendsContextType | undefined>(undefined);
 
-// Mock data for demo
-const mockFriends: Friend[] = [
-  {
-    id: "1",
-    username: "techguru",
-    displayName: "Tech Guru",
-    status: "online",
-    customStatus: "Building the future 🚀",
-    since: "2024-01-15",
-  },
-  {
-    id: "2",
-    username: "designpro",
-    displayName: "Design Pro",
-    status: "idle",
-    customStatus: "Coffee break ☕",
-    since: "2024-02-20",
-  },
-  {
-    id: "3",
-    username: "codemaster",
-    displayName: "Code Master",
-    status: "dnd",
-    customStatus: "Focus mode - Do not disturb",
-    since: "2024-03-10",
-  },
-  {
-    id: "4",
-    username: "aienthusiast",
-    displayName: "AI Enthusiast",
-    status: "offline",
-    since: "2024-01-05",
-  },
-  {
-    id: "5",
-    username: "datawhiz",
-    displayName: "Data Whiz",
-    status: "online",
-    customStatus: "Analyzing data 📊",
-    since: "2024-02-28",
-  },
-];
-
-const mockRequests: FriendRequest[] = [
-  {
-    id: "r1",
-    username: "newuser123",
-    displayName: "New User",
-    type: "incoming",
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-  },
-  {
-    id: "r2",
-    username: "awaiting_accept",
-    displayName: "Pending User",
-    type: "outgoing",
-    timestamp: new Date(Date.now() - 7200000).toISOString(),
-  },
-];
-
 export function FriendsProvider({ children }: { children: React.ReactNode }) {
-  const [friends, setFriends] = useState<Friend[]>(() => {
-    const saved = localStorage.getItem("auraflow_friends");
-    return saved ? JSON.parse(saved) : mockFriends;
-  });
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
+  const [sentRequests, setSentRequests] = useState<FriendRequest[]>([]);
+  const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>(() => {
-    const saved = localStorage.getItem("auraflow_friend_requests");
-    return saved ? JSON.parse(saved) : mockRequests;
-  });
+  // Fetch friends
+  const getFriends = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await friendService.getFriends();
+      setFriends(data);
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to fetch friends");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>(() => {
-    const saved = localStorage.getItem("auraflow_blocked_users");
-    return saved ? JSON.parse(saved) : [];
-  });
+  // Fetch pending requests
+  const getPendingRequests = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await friendService.getPendingRequests();
+      setPendingRequests(data);
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to fetch pending requests");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  useEffect(() => {
-    localStorage.setItem("auraflow_friends", JSON.stringify(friends));
+  // Fetch sent requests
+  const getSentRequests = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await friendService.getSentRequests();
+      setSentRequests(data);
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to fetch sent requests");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Fetch blocked users
+  const getBlockedUsers = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await friendService.getBlockedUsers();
+      setBlockedUsers(data);
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to fetch blocked users");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Search users
+  const searchUsers = async (query: string) => {
+    if (!query.trim()) return [];
+    try {
+      const data = await friendService.searchUsers(query);
+      return data;
+    } catch (err) {
+      console.error("Error searching users:", err);
+      return [];
+    }
+  };
+
+  // Send friend request
+  const sendFriendRequest = useCallback(async (username: string) => {
+    setError(null);
+    try {
+      const request = await friendService.sendFriendRequest(username);
+      setSentRequests([...sentRequests, request]);
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to send friend request");
+      throw err;
+    }
+  }, [sentRequests]);
+
+  // Accept friend request
+  const acceptFriendRequest = useCallback(async (requestId: number) => {
+    setError(null);
+    try {
+      await friendService.acceptFriendRequest(requestId);
+      // Remove from pending
+      setPendingRequests(pendingRequests.filter(r => r.id !== requestId));
+      // Refresh friends list
+      await getFriends();
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to accept friend request");
+      throw err;
+    }
+  }, [pendingRequests, getFriends]);
+
+  // Reject friend request
+  const rejectFriendRequest = useCallback(async (requestId: number) => {
+    setError(null);
+    try {
+      await friendService.rejectFriendRequest(requestId);
+      setPendingRequests(pendingRequests.filter(r => r.id !== requestId));
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to reject friend request");
+      throw err;
+    }
+  }, [pendingRequests]);
+
+  // Cancel sent friend request
+  const cancelFriendRequest = useCallback(async (requestId: number) => {
+    setError(null);
+    try {
+      await friendService.cancelFriendRequest(requestId);
+      setSentRequests(sentRequests.filter(r => r.id !== requestId));
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to cancel friend request");
+      throw err;
+    }
+  }, [sentRequests]);
+
+  // Remove friend
+  const removeFriend = useCallback(async (friendId: number) => {
+    setError(null);
+    try {
+      await friendService.removeFriend(friendId);
+      setFriends(friends.filter(f => f.id !== friendId));
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to remove friend");
+      throw err;
+    }
   }, [friends]);
 
-  useEffect(() => {
-    localStorage.setItem("auraflow_friend_requests", JSON.stringify(friendRequests));
-  }, [friendRequests]);
+  // Block user
+  const blockUser = useCallback(async (userId: number) => {
+    setError(null);
+    try {
+      await friendService.blockUser(userId);
+      // Remove from friends if they are a friend
+      setFriends(friends.filter(f => f.id !== userId));
+      await getBlockedUsers();
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to block user");
+      throw err;
+    }
+  }, [friends, getBlockedUsers]);
 
-  useEffect(() => {
-    localStorage.setItem("auraflow_blocked_users", JSON.stringify(blockedUsers));
+  // Unblock user
+  const unblockUser = useCallback(async (userId: number) => {
+    setError(null);
+    try {
+      await friendService.unblockUser(userId);
+      setBlockedUsers(blockedUsers.filter(b => b.blocked_user_id !== userId));
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to unblock user");
+      throw err;
+    }
   }, [blockedUsers]);
 
-  const addFriend = async (username: string) => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 500));
+  // Local state updates
+  const addFriend = useCallback((friend: Friend) => {
+    setFriends(prev => {
+      if (prev.some(f => f.id === friend.id)) return prev;
+      return [...prev, friend];
+    });
+  }, []);
 
-    const newRequest: FriendRequest = {
-      id: `r${Date.now()}`,
-      username: username.toLowerCase(),
-      displayName: username,
-      type: "outgoing",
-      timestamp: new Date().toISOString(),
+  const removeFriendLocal = useCallback((friendId: number) => {
+    setFriends(prev => prev.filter(f => f.id !== friendId));
+  }, []);
+
+  const updateFriendStatus = useCallback((friendId: number, status: string) => {
+    setFriends(prev =>
+      prev.map(f =>
+        f.id === friendId ? { ...f, status: status as any } : f
+      )
+    );
+  }, []);
+
+  const addPendingRequest = useCallback((request: FriendRequest) => {
+    setPendingRequests(prev => {
+      if (prev.some(r => r.id === request.id)) return prev;
+      return [...prev, request];
+    });
+  }, []);
+
+  const removePendingRequest = useCallback((requestId: number) => {
+    setPendingRequests(prev => prev.filter(r => r.id !== requestId));
+  }, []);
+
+  // Setup socket listeners
+  useEffect(() => {
+    // Friend request received
+    const unsubscribeFriendRequest = socketService.onFriendRequest((request) => {
+      addPendingRequest(request);
+    });
+
+    // Friend status changed
+    const unsubscribeFriendStatus = socketService.onFriendStatus((data) => {
+      if (data.status !== "removed" && data.status !== "blocked" && data.status !== "unblocked") {
+        updateFriendStatus(data.friend_id, data.status);
+      } else if (data.status === "removed") {
+        removeFriendLocal(data.friend_id);
+      }
+    });
+
+    // Join friend status room for live updates
+    socketService.joinFriendStatusRoom();
+
+    return () => {
+      unsubscribeFriendRequest();
+      unsubscribeFriendStatus();
+      socketService.leaveFriendStatusRoom();
     };
+  }, [addPendingRequest, updateFriendStatus, removeFriendLocal]);
 
-    setFriendRequests([...friendRequests, newRequest]);
-  };
-
-  const acceptFriendRequest = (id: string) => {
-    const request = friendRequests.find(r => r.id === id && r.type === "incoming");
-    if (request) {
-      const newFriend: Friend = {
-        id: request.id,
-        username: request.username,
-        displayName: request.displayName,
-        avatar: request.avatar,
-        status: "online",
-        since: new Date().toISOString(),
-      };
-
-      setFriends([...friends, newFriend]);
-      setFriendRequests(friendRequests.filter(r => r.id !== id));
-    }
-  };
-
-  const declineFriendRequest = (id: string) => {
-    setFriendRequests(friendRequests.filter(r => r.id !== id));
-  };
-
-  const cancelFriendRequest = (id: string) => {
-    setFriendRequests(friendRequests.filter(r => r.id !== id));
-  };
-
-  const removeFriend = (id: string) => {
-    setFriends(friends.filter(f => f.id !== id));
-  };
-
-  const blockUser = (id: string) => {
-    const friend = friends.find(f => f.id === id);
-    if (friend) {
-      const blockedUser: BlockedUser = {
-        id: friend.id,
-        username: friend.username,
-        displayName: friend.displayName,
-        avatar: friend.avatar,
-        blockedAt: new Date().toISOString(),
-      };
-
-      setBlockedUsers([...blockedUsers, blockedUser]);
-      setFriends(friends.filter(f => f.id !== id));
-    }
-  };
-
-  const unblockUser = (id: string) => {
-    setBlockedUsers(blockedUsers.filter(u => u.id !== id));
+  const value: FriendsContextType = {
+    friends,
+    pendingRequests,
+    sentRequests,
+    blockedUsers,
+    loading,
+    error,
+    getFriends,
+    getPendingRequests,
+    getSentRequests,
+    getBlockedUsers,
+    searchUsers,
+    sendFriendRequest,
+    acceptFriendRequest,
+    rejectFriendRequest,
+    cancelFriendRequest,
+    removeFriend,
+    blockUser,
+    unblockUser,
+    addFriend,
+    removeFriendLocal,
+    updateFriendStatus,
+    addPendingRequest,
+    removePendingRequest,
   };
 
   return (
-    <FriendsContext.Provider value={{
-      friends,
-      friendRequests,
-      blockedUsers,
-      addFriend,
-      acceptFriendRequest,
-      declineFriendRequest,
-      removeFriend,
-      blockUser,
-      unblockUser,
-      cancelFriendRequest,
-    }}>
+    <FriendsContext.Provider value={value}>
       {children}
     </FriendsContext.Provider>
   );

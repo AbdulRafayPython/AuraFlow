@@ -1,4 +1,4 @@
-# routes/sockets.py - DEBUG VERSION with detailed logging
+# routes/sockets.py - Real-time channel and message events
 from flask_socketio import emit, join_room, leave_room
 from flask_jwt_extended import decode_token
 from flask import request
@@ -10,31 +10,35 @@ from utils import get_avatar_url
 log = logging.getLogger(__name__)
 
 def register_socket_events(socketio):
-    """Register all real-time Socket.IO events with detailed debugging."""
+    """Register all real-time Socket.IO events including channel operations."""
 
     def get_user_from_socket():
         """Extract and verify JWT from socket connection."""
         try:
             auth = request.args.get('token') or request.headers.get('Authorization')
-            
+
             if not auth:
-                log.error("[SOCKET DEBUG] No token in connection")
+                log.error("[SOCKET] No token in connection")
                 return None
-                
+
             token = auth.replace('Bearer ', '') if auth.startswith('Bearer ') else auth
             decoded = decode_token(token)
             username = decoded.get('sub')
-            
+
             if not username:
-                log.error("[SOCKET DEBUG] No username in token")
+                log.error("[SOCKET] No username in token")
                 return None
-            
-            log.info(f"[SOCKET DEBUG] ✅ Token valid for user: {username}")
+
+            log.info(f"[SOCKET] Token valid for user: {username}")
             return username
-            
+
         except Exception as e:
-            log.error(f"[SOCKET DEBUG] Token validation failed: {e}")
+            log.error(f"[SOCKET] Token validation failed: {e}")
             return None
+
+    # ============================================================================
+    # CONNECTION EVENTS
+    # ============================================================================
 
     @socketio.on('connect')
     def handle_connect():
@@ -42,14 +46,14 @@ def register_socket_events(socketio):
         try:
             username = get_user_from_socket()
             if not username:
-                log.error("[SOCKET DEBUG] Connect rejected: Invalid token")
+                log.error("[SOCKET] Connect rejected: Invalid token")
                 return False
 
             conn = get_db_connection()
             with conn.cursor() as cur:
                 cur.execute("""
-                    UPDATE users 
-                    SET status = 'online', last_seen = NOW() 
+                    UPDATE users
+                    SET status = 'online', last_seen = NOW()
                     WHERE username = %s
                 """, (username,))
             conn.commit()
@@ -59,11 +63,10 @@ def register_socket_events(socketio):
                 'status': 'online'
             }, broadcast=True, include_self=False)
 
-            log.info(f"[SOCKET DEBUG] ✅ {username} connected → online")
+            log.info(f"[SOCKET] {username} connected - online")
 
         except Exception as e:
-            log.error(f"[SOCKET DEBUG] ❌ connect failed: {e}")
-            return False
+            log.error(f"[SOCKET] Connection error: {e}")
         finally:
             if conn:
                 conn.close()
@@ -79,8 +82,8 @@ def register_socket_events(socketio):
             conn = get_db_connection()
             with conn.cursor() as cur:
                 cur.execute("""
-                    UPDATE users 
-                    SET status = 'offline', last_seen = NOW() 
+                    UPDATE users
+                    SET status = 'offline', last_seen = NOW()
                     WHERE username = %s
                 """, (username,))
             conn.commit()
@@ -88,15 +91,19 @@ def register_socket_events(socketio):
             emit('user_status', {
                 'username': username,
                 'status': 'offline'
-            }, broadcast=True, include_self=False)
+            }, broadcast=True)
 
-            log.info(f"[SOCKET DEBUG] {username} disconnected → offline")
+            log.info(f"[SOCKET] {username} disconnected - offline")
 
         except Exception as e:
-            log.warning(f"[SOCKET DEBUG] disconnect cleanup failed: {e}")
+            log.error(f"[SOCKET] Disconnect error: {e}")
         finally:
             if conn:
                 conn.close()
+
+    # ============================================================================
+    # CHANNEL ROOM MANAGEMENT
+    # ============================================================================
 
     @socketio.on('join_channel')
     def on_join_channel(data):
@@ -104,66 +111,28 @@ def register_socket_events(socketio):
         try:
             username = get_user_from_socket()
             if not username:
-                log.error("[SOCKET DEBUG] ❌ join_channel: No username")
-                emit('error', {'msg': 'Authentication required'})
                 return
 
             channel_id = data.get('channel_id')
-            log.info(f"[SOCKET DEBUG] 🔍 User {username} attempting to join channel {channel_id}")
+            log.info(f"[SOCKET] User {username} attempting to join channel {channel_id}")
 
             if not channel_id or not str(channel_id).isdigit():
-                log.error(f"[SOCKET DEBUG] ❌ Invalid channel_id: {channel_id}")
-                emit('error', {'msg': 'Invalid channel_id'})
+                log.error(f"[SOCKET] Invalid channel_id: {channel_id}")
                 return
 
+            # Verify user is member of the channel
             conn = get_db_connection()
             with conn.cursor() as cur:
-                # Get user ID
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                user = cur.fetchone()
-                if not user:
-                    log.error(f"[SOCKET DEBUG] ❌ User {username} not found in database")
-                    emit('error', {'msg': 'User not found'})
-                    return
-
-                user_id = user['id']
-                log.info(f"[SOCKET DEBUG] ✅ Found user {username} with ID {user_id}")
-
-                # Check channel membership
                 cur.execute("""
-                    SELECT 1 FROM channel_members 
-                    WHERE channel_id = %s AND user_id = %s
-                """, (channel_id, user_id))
-                membership = cur.fetchone()
-                
-                if not membership:
-                    # DEBUG: Show what memberships this user HAS
-                    cur.execute("""
-                        SELECT cm.channel_id, c.name 
-                        FROM channel_members cm
-                        JOIN channels c ON cm.channel_id = c.id
-                        WHERE cm.user_id = %s
-                    """, (user_id,))
-                    user_channels = cur.fetchall()
-                    
-                    log.error(f"[SOCKET DEBUG] ❌ User {username} (ID {user_id}) is NOT a member of channel {channel_id}")
-                    log.error(f"[SOCKET DEBUG] 📋 User IS a member of channels: {user_channels}")
-                    
-                    # DEBUG: Show who IS in the requested channel
-                    cur.execute("""
-                        SELECT u.username, u.id 
-                        FROM channel_members cm
-                        JOIN users u ON cm.user_id = u.id
-                        WHERE cm.channel_id = %s
-                    """, (channel_id,))
-                    channel_members = cur.fetchall()
-                    
-                    log.error(f"[SOCKET DEBUG] 📋 Channel {channel_id} members: {channel_members}")
-                    
-                    emit('error', {'msg': 'Access denied to channel'})
-                    return
-                
-                log.info(f"[SOCKET DEBUG] ✅ User {username} IS a member of channel {channel_id}")
+                    SELECT 1 FROM channel_members
+                    WHERE user_id = (SELECT id FROM users WHERE username = %s)
+                    AND channel_id = %s
+                """, (username, channel_id))
+                is_member = cur.fetchone()
+
+            if not is_member:
+                log.warning(f"[SOCKET] User {username} NOT a member of channel {channel_id}")
+                return
 
             room = f"channel_{channel_id}"
             join_room(room)
@@ -174,11 +143,10 @@ def register_socket_events(socketio):
                 'type': 'join'
             }, room=room)
 
-            log.info(f"[SOCKET DEBUG] ✅ {username} joined room: {room}")
+            log.info(f"[SOCKET] {username} joined room: {room}")
 
         except Exception as e:
-            log.error(f"[SOCKET DEBUG] ❌ join_channel exception: {e}", exc_info=True)
-            emit('error', {'msg': 'Failed to join channel'})
+            log.error(f"[SOCKET] join_channel error: {e}")
         finally:
             if conn:
                 conn.close()
@@ -191,26 +159,26 @@ def register_socket_events(socketio):
                 return
 
             channel_id = data.get('channel_id')
-            if not channel_id:
-                return
-
             room = f"channel_{channel_id}"
-            leave_room(room)
 
+            leave_room(room)
             emit('status', {
                 'msg': f"{username} left the channel",
                 'username': username,
                 'type': 'leave'
             }, room=room)
 
-            log.info(f"[SOCKET DEBUG] {username} left room: {room}")
+            log.info(f"[SOCKET] {username} left room: {room}")
 
         except Exception as e:
-            log.error(f"[SOCKET DEBUG] ❌ leave_channel: {e}")
+            log.error(f"[SOCKET] leave_channel error: {e}")
+
+    # ============================================================================
+    # TYPING INDICATORS
+    # ============================================================================
 
     @socketio.on('typing')
     def on_typing(data):
-        """Handle typing indicators with start/stop support."""
         try:
             username = get_user_from_socket()
             if not username:
@@ -219,111 +187,166 @@ def register_socket_events(socketio):
             channel_id = data.get('channel_id')
             is_typing = data.get('is_typing', True)
 
-            if not channel_id:
-                return
-
             room = f"channel_{channel_id}"
             emit('user_typing', {
                 'username': username,
                 'channel_id': channel_id,
-                'is_typing': bool(is_typing)
+                'is_typing': is_typing
             }, room=room, include_self=False)
 
-            log.debug(f"[SOCKET DEBUG] ⌨️ {username} typing={is_typing} in channel {channel_id}")
+            log.debug(f"[SOCKET] {username} typing={is_typing} in channel {channel_id}")
 
         except Exception as e:
-            log.error(f"[SOCKET DEBUG] ❌ typing event: {e}")
+            log.error(f"[SOCKET] typing error: {e}")
+
+    # ============================================================================
+    # MESSAGE EVENTS
+    # ============================================================================
 
     @socketio.on('new_message')
     def on_new_message(data):
-        """Broadcast message with proper avatar_url using fallback logic."""
-        conn = None
         try:
             username = get_user_from_socket()
             if not username:
-                emit('error', {'msg': 'Authentication required'})
                 return
 
             channel_id = data.get('channel_id')
-            message = data.get('message', {})
-
-            if not channel_id or not message:
-                emit('error', {'msg': 'Missing channel_id or message'})
-                return
-
-            # Extract raw data
-            msg_id = message.get('id')
-            content = message.get('content')
-            author = message.get('author') or username
-            raw_avatar_url = message.get('avatar_url') or message.get('avatar')  # support both
-            print("[DEBUG] Raw avatar URL from message:", raw_avatar_url)
-
-            conn = get_db_connection()
-            with conn.cursor() as cur:
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                user = cur.fetchone()
-                if not user:
-                    emit('error', {'msg': 'User not found'})
-                    return
-
-                # Verify membership
-                cur.execute("""
-                    SELECT 1 FROM channel_members 
-                    WHERE channel_id = %s AND user_id = %s
-                """, (channel_id, user['id']))
-                if not cur.fetchone():
-                    emit('error', {'msg': 'Not in channel'})
-                    return
+            message = data.get('message')
 
             room = f"channel_{channel_id}"
-
-            # THIS IS THE KEY: Use the same fallback logic as API!
-            from utils import get_avatar_url
-            final_avatar_url = get_avatar_url(author, raw_avatar_url)
-
-            # Broadcast with correct avatar_url
             emit('message_received', {
-                'id': msg_id,
-                'channel_id': channel_id,
-                'sender_id': message.get('sender_id'),
-                'content': content,
-                'message_type': message.get('message_type', 'text'),
-                'created_at': message.get('created_at'),
-                'author': author,
-                'display_name': message.get('display_name') or author,
-                'avatar_url': final_avatar_url,  # ← PERFECT NOW!
-            }, room=room, include_self=False)
+                **message,
+                'author': username
+            }, room=room)
 
-            log.info(f"[SOCKET] Message {msg_id} broadcast with avatar: {final_avatar_url}")
+            log.info(f"[SOCKET] Message from {username} to channel {channel_id}")
 
         except Exception as e:
-            log.error(f"[SOCKET] new_message broadcast failed: {e}", exc_info=True)
-            emit('error', {'msg': 'Failed to broadcast message'})
-        finally:
-            if conn:
-                conn.close()
+            log.error(f"[SOCKET] new_message error: {e}")
 
-    @socketio.on('message_read')
-    def on_message_read(data):
+    # ============================================================================
+    # COMMUNITY EVENTS
+    # ============================================================================
+
+    @socketio.on('community_created')
+    def on_community_created(data):
         try:
             username = get_user_from_socket()
             if not username:
                 return
 
-            message_ids = data.get('message_ids', [])
-            if not message_ids:
-                return
-
-            emit('messages_read', {
-                'username': username,
-                'message_ids': message_ids,
-                'read_at': data.get('read_at') or datetime.utcnow().isoformat()
-            }, broadcast=True, include_self=False)
-
-            log.debug(f"[SOCKET DEBUG] {username} read {len(message_ids)} messages")
+            log.info(f"[SOCKET] Community created by {username}: {data.get('name')}")
+            emit('community_created', data, broadcast=True)
 
         except Exception as e:
-            log.error(f"[SOCKET DEBUG] ❌ message_read: {e}")
+            log.error(f"[SOCKET] community_created error: {e}")
 
-    log.info("[SOCKETS] All real-time events registered with DEBUG logging")
-    print("[SOCKETS] 🐛 DEBUG MODE - Detailed logging enabled")
+    # ============================================================================
+    # CHANNEL OPERATIONS (NEW)
+    # ============================================================================
+
+    @socketio.on('channel_created')
+    def on_channel_created(data):
+        """Broadcast when a new channel is created."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            community_id = data.get('community_id')
+            channel_id = data.get('id')
+            channel_name = data.get('name')
+
+            # Broadcast to all users (they'll filter by community on frontend)
+            emit('channel_created', {
+                'id': channel_id,
+                'community_id': community_id,
+                'name': channel_name,
+                'type': data.get('type', 'text'),
+                'description': data.get('description'),
+                'created_at': data.get('created_at'),
+            }, broadcast=True)
+
+            log.info(f"[SOCKET] Channel created: {channel_name} (ID: {channel_id}) in community {community_id}")
+
+        except Exception as e:
+            log.error(f"[SOCKET] channel_created error: {e}")
+
+    @socketio.on('channel_updated')
+    def on_channel_updated(data):
+        """Broadcast when a channel is updated."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            channel_id = data.get('id')
+            community_id = data.get('community_id')
+
+            emit('channel_updated', {
+                'id': channel_id,
+                'community_id': community_id,
+                'name': data.get('name'),
+                'type': data.get('type'),
+                'description': data.get('description'),
+                'updated_at': datetime.now().isoformat(),
+            }, broadcast=True)
+
+            log.info(f"[SOCKET] Channel updated: {channel_id}")
+
+        except Exception as e:
+            log.error(f"[SOCKET] channel_updated error: {e}")
+
+    @socketio.on('channel_deleted')
+    def on_channel_deleted(data):
+        """Broadcast when a channel is deleted."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            channel_id = data.get('id')
+            community_id = data.get('community_id')
+
+            # Leave the room before broadcasting deletion
+            room = f"channel_{channel_id}"
+            emit('status', {
+                'msg': f"Channel has been deleted",
+                'type': 'delete'
+            }, room=room)
+
+            emit('channel_deleted', {
+                'id': channel_id,
+                'community_id': community_id,
+            }, broadcast=True)
+
+            log.info(f"[SOCKET] Channel deleted: {channel_id}")
+
+        except Exception as e:
+            log.error(f"[SOCKET] channel_deleted error: {e}")
+
+    @socketio.on('community_member_added')
+    def on_community_member_added(data):
+        """Broadcast when a member is added to a community."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            community_id = data.get('community_id')
+            member_id = data.get('member_id')
+            member_username = data.get('member_username')
+
+            emit('community_member_added', {
+                'community_id': community_id,
+                'member_id': member_id,
+                'member_username': member_username,
+                'added_at': datetime.now().isoformat(),
+            }, broadcast=True)
+
+            log.info(f"[SOCKET] Member {member_username} added to community {community_id}")
+
+        except Exception as e:
+            log.error(f"[SOCKET] community_member_added error: {e}")
+
+    log.info("[SOCKET] All socket events registered successfully")

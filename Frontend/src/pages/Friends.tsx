@@ -36,7 +36,7 @@ const statusLabels = {
 
 export default function Friends() {
   const { isDarkMode } = useTheme();
-  const { friends, friendRequests, blockedUsers, addFriend, acceptFriendRequest, declineFriendRequest, removeFriend, blockUser, unblockUser, cancelFriendRequest } = useFriends();
+  const { friends, pendingRequests, blockedUsers, addFriend, acceptFriendRequest, declineFriendRequest, removeFriend, blockUser, unblockUser, cancelFriendRequest } = useFriends();
   const [activeTab, setActiveTab] = useState<Tab>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [addFriendInput, setAddFriendInput] = useState("");
@@ -46,7 +46,7 @@ export default function Friends() {
   const tabs = [
     { id: "all" as Tab, label: "All Friends", icon: Users, count: friends.length },
     { id: "online" as Tab, label: "Online", icon: Users, count: friends.filter(f => f.status === "online").length },
-    { id: "pending" as Tab, label: "Pending", icon: Inbox, count: friendRequests.length },
+    { id: "pending" as Tab, label: "Pending", icon: Inbox, count: pendingRequests.length },
     { id: "blocked" as Tab, label: "Blocked", icon: Ban, count: blockedUsers.length },
     { id: "add" as Tab, label: "Add Friend", icon: UserPlus, count: 0 },
   ];
@@ -400,7 +400,7 @@ export default function Friends() {
           </div>
         ) : activeTab === "pending" ? (
           <div className="max-w-4xl mx-auto space-y-3">
-            {friendRequests.length === 0 ? (
+            {pendingRequests.length === 0 ? (
               <div className="text-center py-16">
                 <Inbox className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? "text-gray-600" : "text-gray-400"}`} />
                 <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
@@ -411,7 +411,7 @@ export default function Friends() {
                 </p>
               </div>
             ) : (
-              friendRequests.map((request) => (
+              pendingRequests.map((request) => (
                 <PendingRequestCard key={request.id} request={request} />
               ))
             )}

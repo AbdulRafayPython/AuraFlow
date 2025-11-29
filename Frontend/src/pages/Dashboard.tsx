@@ -324,19 +324,15 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
 
             {messages.map((msg, index) => {
               const showDateDivider = shouldShowDateDivider(msg, messages[index - 1]);
-              const showAvatar = index === 0 || messages[index - 1]?.sender_id !== msg.sender_id;
-              const isConsecutive = index > 0 && messages[index - 1]?.sender_id === msg.sender_id;
+              const showAuthor = index === 0 || messages[index - 1]?.sender_id !== msg.sender_id;
               const authorName = msg.author || "Unknown User";
-              const timeSinceLastMsg = index > 0 
-                ? new Date(msg.created_at).getTime() - new Date(messages[index - 1].created_at).getTime()
-                : 0;
-              const showTimestamp = !isConsecutive || timeSinceLastMsg > 300000; // 5 minutes
+              const nextMsgSameSender = index < messages.length - 1 && messages[index + 1]?.sender_id === msg.sender_id;
 
               return (
                 <div key={`${msg.id}-${index}`}>
                   {/* Date Divider */}
                   {showDateDivider && (
-                    <div className="flex items-center gap-3 my-6">
+                    <div className="flex items-center gap-3 my-4">
                       <div className={`flex-1 h-px ${isDarkMode ? "bg-slate-700" : "bg-gray-200"}`} />
                       <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
                         isDarkMode ? "bg-slate-800 text-gray-300" : "bg-gray-100 text-gray-700"
@@ -347,52 +343,44 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                     </div>
                   )}
 
-                  {/* Message */}
-                  <div 
-                    className={`group flex gap-3 px-4 py-1 rounded-lg transition-colors ${
-                      isConsecutive && !showTimestamp ? "hover:bg-slate-800/30" : "mt-4 hover:bg-slate-800/30"
-                    } ${isDarkMode ? "" : "hover:bg-gray-100/50"}`}
-                  >
-                    {/* Avatar */}
-                    <div className="flex-shrink-0 w-10">
-                      {showAvatar ? (
+                  {/* Message - Discord Style */}
+                  <div className={`flex gap-3 group px-4 transition-all ${
+                    showAuthor ? 'pt-3 pb-1' : 'pt-0 pb-0'
+                  } ${nextMsgSameSender ? '' : 'pb-3'} hover:${isDarkMode ? 'bg-slate-800/40' : 'bg-gray-100/50'} rounded-lg`}>
+                    {/* Avatar Column */}
+                    <div className="flex-shrink-0">
+                      {showAuthor ? (
                         msg.avatar_url ? (
                           <img
                             src={msg.avatar_url}
                             alt={authorName}
-                            className="w-10 h-10 rounded-full object-cover ring-2 ring-transparent hover:ring-blue-500/50 transition-all duration-200 cursor-pointer"
+                            className="w-10 h-10 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
                           />
                         ) : (
-                          <div className={`w-10 h-10 rounded-full ${getAvatarColor(authorName)} flex items-center justify-center text-white font-semibold text-sm cursor-pointer hover:opacity-90 transition-opacity`}>
+                          <div className={`w-10 h-10 rounded-full ${getAvatarColor(authorName)} flex items-center justify-center text-white font-semibold text-sm shadow-sm cursor-pointer hover:opacity-80 transition-opacity`}>
                             {getAvatarInitials(authorName)}
                           </div>
                         )
                       ) : (
-                        <div className="flex items-center justify-center h-full">
-                          <span className={`text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ${
-                            isDarkMode ? "text-gray-500" : "text-gray-400"
-                          }`}>
-                            {new Date(msg.created_at).getHours() % 12 || 12}:{String(new Date(msg.created_at).getMinutes()).padStart(2, '0')}
-                          </span>
-                        </div>
+                        <div className="w-10"></div>
                       )}
                     </div>
 
-                    {/* Content */}
+                    {/* Content Column */}
                     <div className="flex-1 min-w-0">
-                      {showAvatar && (
-                        <div className="flex items-baseline gap-2 mb-1">
-                          <span className={`font-semibold text-sm hover:underline cursor-pointer ${
+                      {showAuthor && (
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`font-semibold text-sm ${
                             isDarkMode ? "text-white" : "text-gray-900"
                           }`}>
                             {authorName}
                           </span>
-                          <span className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                          <span className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}>
                             {formatMessageTime(msg.created_at)}
                           </span>
                         </div>
                       )}
-                      <div className={`text-[15px] leading-relaxed break-words ${
+                      <div className={`text-sm leading-relaxed break-words ${
                         isDarkMode ? "text-gray-200" : "text-gray-800"
                       }`}>
                         {msg.content}
@@ -405,21 +393,24 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
 
             {/* Typing Indicators */}
             {typingUsers.length > 0 && (
-              <div className="flex items-start gap-3 px-4 py-2 mt-2">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  isDarkMode ? "bg-slate-700" : "bg-gray-200"
-                }`}>
-                  <div className="flex gap-1">
-                    <div className={`w-2 h-2 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-600"}`} style={{ animationDelay: "0ms" }}></div>
-                    <div className={`w-2 h-2 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-600"}`} style={{ animationDelay: "150ms" }}></div>
-                    <div className={`w-2 h-2 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-600"}`} style={{ animationDelay: "300ms" }}></div>
-                  </div>
+              <div className="flex gap-3 group px-4 pt-2 pb-3 hover:bg-slate-800/40 rounded-lg">
+                <div className={`w-10 h-10 rounded-full ${getAvatarColor(typingUsers[0]?.username)} flex items-center justify-center text-white font-semibold text-sm shadow-sm`}>
+                  {getAvatarInitials(typingUsers[0]?.username || "")}
                 </div>
-                <div className="flex-1 pt-2">
-                  <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                    <span className="font-medium">{typingUsers.map((u) => u.username).join(", ")}</span>
-                    {" "}{typingUsers.length === 1 ? "is" : "are"} typing...
-                  </p>
+                <div className="flex-1">
+                  <div className="flex items-center gap-1">
+                    <span className={`text-sm font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                      {typingUsers.map((u) => u.username).join(", ")}
+                    </span>
+                    <span className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}>
+                      typing...
+                    </span>
+                  </div>
+                  <div className="flex gap-1 mt-1">
+                    <div className={`w-2 h-2 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-500"}`} style={{ animationDelay: "0ms" }}></div>
+                    <div className={`w-2 h-2 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-500"}`} style={{ animationDelay: "150ms" }}></div>
+                    <div className={`w-2 h-2 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-500"}`} style={{ animationDelay: "300ms" }}></div>
+                  </div>
                 </div>
               </div>
             )}

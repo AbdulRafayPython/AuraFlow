@@ -1,6 +1,6 @@
 // services/socketService.ts - FIXED: Proper token passing
 import { io, Socket } from 'socket.io-client';
-import type { Message } from '@/types';
+import type { Message, DirectMessage } from '@/types';
 
 interface UserStatus {
   username: string;
@@ -13,11 +13,38 @@ interface TypingIndicator {
   is_typing: boolean;
 }
 
+interface DirectMessageEvent {
+  id: number;
+  sender_id: number;
+  receiver_id: number;
+  content: string;
+  message_type: 'text' | 'image' | 'file' | 'ai';
+  created_at: string;
+  is_read: boolean;
+}
+
+interface FriendRequestEvent {
+  id: number;
+  sender_id: number;
+  receiver_id: number;
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  created_at: string;
+  sender?: {
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+  };
+}
+
 type MessageHandler = (message: Message) => void;
 type StatusHandler = (status: UserStatus) => void;
 type TypingHandler = (data: TypingIndicator) => void;
 type ErrorHandler = (error: { msg: string }) => void;
 type CommunityHandler = (data: any) => void;
+type ChannelHandler = (data: any) => void;
+type DirectMessageHandler = (message: DirectMessageEvent) => void;
+type FriendRequestHandler = (request: FriendRequestEvent) => void;
+type FriendStatusHandler = (data: { friend_id: number; status: string }) => void;
 
 class SocketService {
   private socket: Socket | null = null;
@@ -29,7 +56,12 @@ class SocketService {
   private typingHandlers: TypingHandler[] = [];
   private errorHandlers: ErrorHandler[] = [];
   private communityHandlers: CommunityHandler[] = [];
+  private channelHandlers: ChannelHandler[] = [];
+  private directMessageHandlers: DirectMessageHandler[] = [];
+  private friendRequestHandlers: FriendRequestHandler[] = [];
+  private friendStatusHandlers: FriendStatusHandler[] = [];
   private currentChannel: number | null = null;
+  private currentDMUser: number | null = null;
   private typingTimeout: NodeJS.Timeout | null = null;
 
   connect(token: string) {
@@ -135,9 +167,183 @@ class SocketService {
       console.log('[SOCKET] 🏘️ New community created:', data);
       this.communityHandlers.forEach(handler => handler(data));
     });
+
+    // Channel operation events
+    this.socket.on('channel_created', (data: any) => {
+      console.log('[SOCKET] ✨ Channel created:', data);
+      this.channelHandlers.forEach(handler => handler({ type: 'created', data }));
+    });
+
+    this.socket.on('channel_updated', (data: any) => {
+      console.log('[SOCKET] ✏️ Channel updated:', data);
+      this.channelHandlers.forEach(handler => handler({ type: 'updated', data }));
+    });
+
+    this.socket.on('channel_deleted', (data: any) => {
+      console.log('[SOCKET] 🗑️ Channel deleted:', data);
+      this.channelHandlers.forEach(handler => handler({ type: 'deleted', data }));
+    });
+
+    this.socket.on('community_member_added', (data: any) => {
+      console.log('[SOCKET] 👥 Member added to community:', data);
+      this.channelHandlers.forEach(handler => handler({ type: 'member_added', data }));
+    });
+
+    // Direct message events
+    this.socket.on('direct_message_received', (data: DirectMessageEvent) => {
+      console.log('[SOCKET] 💬 Direct message received:', data);
+      this.directMessageHandlers.forEach(handler => handler(data));
+    });
+
+    this.socket.on('direct_message_read', (data: { message_id: number; read_by: number }) => {
+      console.log('[SOCKET] ✓ Message marked as read:', data);
+      this.directMessageHandlers.forEach(handler => 
+        handler({ ...data, id: data.message_id } as any)
+      );
+    });
+
+    this.socket.on('user_typing_dm', (data: { user_id: number; is_typing: boolean }) => {
+      console.log('[SOCKET] ⌨️ User typing in DM:', data);
+      this.typingHandlers.forEach(handler => handler({
+        username: '',
+        channel_id: 0,
+        is_typing: data.is_typing
+      }));
+    });
+
+    // Friend request events
+    this.socket.on('friend_request_received', (data: FriendRequestEvent) => {
+      console.log('[SOCKET] 👋 Friend request received:', data);
+      this.friendRequestHandlers.forEach(handler => handler(data));
+    });
+
+    this.socket.on('friend_request_accepted', (data: FriendRequestEvent) => {
+      console.log('[SOCKET] ✓ Friend request accepted:', data);
+      this.friendRequestHandlers.forEach(handler => handler(data));
+    });
+
+    this.socket.on('friend_request_rejected', (data: FriendRequestEvent) => {
+      console.log('[SOCKET] ✗ Friend request rejected:', data);
+      this.friendRequestHandlers.forEach(handler => handler(data));
+    });
+
+    this.socket.on('friend_status_changed', (data: { friend_id: number; status: 'online' | 'offline' | 'idle' | 'dnd' }) => {
+      console.log('[SOCKET] 👤 Friend status changed:', data);
+      this.friendStatusHandlers.forEach(handler => handler(data));
+    });
+
+    this.socket.on('friend_removed', (data: { friend_id: number }) => {
+      console.log('[SOCKET] 👋 Friend removed:', data);
+      this.friendStatusHandlers.forEach(handler => handler({ friend_id: data.friend_id, status: 'removed' }));
+    });
+
+    this.socket.on('user_blocked', (data: { blocked_user_id: number }) => {
+      console.log('[SOCKET] 🚫 User blocked:', data);
+      this.friendStatusHandlers.forEach(handler => handler({ friend_id: data.blocked_user_id, status: 'blocked' }));
+    });
+
+    this.socket.on('user_unblocked', (data: { unblocked_user_id: number }) => {
+      console.log('[SOCKET] ✓ User unblocked:', data);
+      this.friendStatusHandlers.forEach(handler => handler({ friend_id: data.unblocked_user_id, status: 'unblocked' }));
+    });
   }
 
-  // Join a channel room
+  // Join a direct message conversation
+  joinDMConversation(userId: number) {
+    if (!this.socket?.connected) {
+      console.warn('[SOCKET] Not connected, cannot join DM');
+      return;
+    }
+
+    this.currentDMUser = userId;
+    this.socket.emit('join_dm', { user_id: userId });
+    console.log(`[SOCKET] 💬 Joined DM conversation with user ${userId}`);
+  }
+
+  // Leave DM conversation
+  leaveDMConversation() {
+    if (!this.socket?.connected || !this.currentDMUser) return;
+
+    this.socket.emit('leave_dm', { user_id: this.currentDMUser });
+    console.log(`[SOCKET] 💬 Left DM conversation with user ${this.currentDMUser}`);
+    this.currentDMUser = null;
+  }
+
+  // Send typing indicator in DM
+  sendDMTyping(userId: number, isTyping: boolean = true) {
+    if (!this.socket?.connected) return;
+
+    this.socket.emit('typing_dm', { 
+      user_id: userId,
+      is_typing: isTyping 
+    });
+
+    if (isTyping) {
+      if (this.typingTimeout) clearTimeout(this.typingTimeout);
+      this.typingTimeout = setTimeout(() => {
+        this.sendDMTyping(userId, false);
+      }, 3000);
+    } else {
+      if (this.typingTimeout) {
+        clearTimeout(this.typingTimeout);
+        this.typingTimeout = null;
+      }
+    }
+  }
+
+  // Broadcast direct message
+  broadcastDirectMessage(message: DirectMessageEvent) {
+    if (!this.socket?.connected) {
+      console.warn('[SOCKET] Not connected, cannot broadcast DM');
+      return;
+    }
+
+    this.socket.emit('new_direct_message', message);
+    console.log(`[SOCKET] 💬 Broadcasting DM to user ${message.receiver_id}`);
+  }
+
+  // Broadcast friend request sent
+  broadcastFriendRequest(request: FriendRequestEvent) {
+    if (!this.socket?.connected) {
+      console.warn('[SOCKET] Not connected, cannot broadcast friend request');
+      return;
+    }
+
+    this.socket.emit('friend_request_sent', request);
+    console.log(`[SOCKET] 👋 Broadcasting friend request to user ${request.receiver_id}`);
+  }
+
+  // Broadcast friend request acceptance
+  broadcastFriendRequestAccepted(requestId: number, userId: number) {
+    if (!this.socket?.connected) {
+      console.warn('[SOCKET] Not connected, cannot broadcast acceptance');
+      return;
+    }
+
+    this.socket.emit('friend_request_accepted_response', { request_id: requestId, user_id: userId });
+    console.log(`[SOCKET] ✓ Broadcasting friend request acceptance`);
+  }
+
+  // Join friend status room
+  joinFriendStatusRoom() {
+    if (!this.socket?.connected) {
+      console.warn('[SOCKET] Not connected, cannot join friend status room');
+      return;
+    }
+
+    this.socket.emit('join_friend_status');
+    console.log('[SOCKET] 👥 Joined friend status room');
+  }
+
+  // Leave friend status room
+  leaveFriendStatusRoom() {
+    if (!this.socket?.connected) return;
+
+    this.socket.emit('leave_friend_status');
+    console.log('[SOCKET] 👥 Left friend status room');
+  }
+
+  // Join a channel
   joinChannel(channelId: number) {
     if (!this.socket?.connected) {
       console.warn('[SOCKET] Not connected, cannot join channel');
@@ -222,6 +428,54 @@ class SocketService {
     console.log(`[SOCKET] 🏘️ Broadcasting new community ${community.id} - ${community.name}`);
   }
 
+  // Broadcast channel creation
+  broadcastChannelCreated(channel: any) {
+    if (!this.socket?.connected) {
+      console.warn('[SOCKET] Not connected, cannot broadcast channel creation');
+      return;
+    }
+
+    this.socket.emit('channel_created', channel);
+    console.log(`[SOCKET] ✨ Broadcasting new channel ${channel.id} - ${channel.name}`);
+  }
+
+  // Broadcast channel update
+  broadcastChannelUpdated(channel: any) {
+    if (!this.socket?.connected) {
+      console.warn('[SOCKET] Not connected, cannot broadcast channel update');
+      return;
+    }
+
+    this.socket.emit('channel_updated', channel);
+    console.log(`[SOCKET] ✏️ Broadcasting channel update ${channel.id}`);
+  }
+
+  // Broadcast channel deletion
+  broadcastChannelDeleted(channelId: number, communityId: number) {
+    if (!this.socket?.connected) {
+      console.warn('[SOCKET] Not connected, cannot broadcast channel deletion');
+      return;
+    }
+
+    this.socket.emit('channel_deleted', { id: channelId, community_id: communityId });
+    console.log(`[SOCKET] 🗑️ Broadcasting channel deletion ${channelId}`);
+  }
+
+  // Broadcast community member added
+  broadcastCommunityMemberAdded(communityId: number, memberId: number, memberUsername: string) {
+    if (!this.socket?.connected) {
+      console.warn('[SOCKET] Not connected, cannot broadcast member addition');
+      return;
+    }
+
+    this.socket.emit('community_member_added', {
+      community_id: communityId,
+      member_id: memberId,
+      member_username: memberUsername,
+    });
+    console.log(`[SOCKET] 👥 Broadcasting member addition to community ${communityId}`);
+  }
+
   // Event listeners
   onMessage(handler: MessageHandler) {
     this.messageHandlers.push(handler);
@@ -255,6 +509,34 @@ class SocketService {
     this.communityHandlers.push(handler);
     return () => {
       this.communityHandlers = this.communityHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onChannel(handler: ChannelHandler) {
+    this.channelHandlers.push(handler);
+    return () => {
+      this.channelHandlers = this.channelHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onDirectMessage(handler: DirectMessageHandler) {
+    this.directMessageHandlers.push(handler);
+    return () => {
+      this.directMessageHandlers = this.directMessageHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onFriendRequest(handler: FriendRequestHandler) {
+    this.friendRequestHandlers.push(handler);
+    return () => {
+      this.friendRequestHandlers = this.friendRequestHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onFriendStatus(handler: FriendStatusHandler) {
+    this.friendStatusHandlers.push(handler);
+    return () => {
+      this.friendStatusHandlers = this.friendStatusHandlers.filter(h => h !== handler);
     };
   }
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { X, Hash, Volume2, Edit2, Trash2, AlertCircle } from "lucide-react";
 import { channelService } from "@/services/channelService";
+import { socketService } from "@/services/socketService";
 import { useNotifications } from "@/hooks/useNotifications";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -14,6 +15,7 @@ interface ChannelManagementModalProps {
     type: 'text' | 'voice';
     description?: string;
   } | null;
+  communityId?: number;
   userRole?: 'admin' | 'owner' | 'member';
   onChannelUpdated?: (channel: any) => void;
   onChannelDeleted?: () => void;
@@ -23,6 +25,7 @@ export default function ChannelManagementModal({
   isOpen,
   onClose,
   channel,
+  communityId,
   userRole,
   onChannelUpdated,
   onChannelDeleted,
@@ -68,6 +71,19 @@ export default function ChannelManagementModal({
         formData.type
       );
       showSuccess({ title: `Channel "${updated.name}" updated successfully` });
+      
+      // Update local form data to reflect changes
+      setFormData({
+        name: updated.name,
+        description: updated.description || "",
+        type: updated.type,
+      });
+      
+      // Broadcast the channel update via socket
+      if (socketService.isConnected()) {
+        socketService.broadcastChannelUpdated(updated);
+      }
+      
       onChannelUpdated?.(updated);
       setIsEditing(false);
     } catch (error: any) {
@@ -84,6 +100,12 @@ export default function ChannelManagementModal({
     try {
       await channelService.deleteChannel(channel.id);
       showSuccess({ title: "Channel deleted successfully" });
+      
+      // Broadcast the channel deletion via socket
+      if (socketService.isConnected() && communityId) {
+        socketService.broadcastChannelDeleted(channel.id, communityId);
+      }
+      
       onChannelDeleted?.();
       onClose();
     } catch (error: any) {
@@ -225,18 +247,18 @@ export default function ChannelManagementModal({
                   CHANNEL NAME
                 </p>
                 <p className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                  {channel.name}
+                  {formData.name}
                 </p>
               </div>
 
               {/* Description Display */}
-              {channel.description && (
+              {formData.description && (
                 <div>
                   <p className={`text-xs font-semibold mb-1 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
                     DESCRIPTION
                   </p>
                   <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-                    {channel.description}
+                    {formData.description}
                   </p>
                 </div>
               )}

@@ -33,7 +33,7 @@ const statusColors = {
 
 export default function FriendsSidebar({ onNavigate, currentView, selectedCommunity }: FriendsSidebarProps) {
   const { isDarkMode, toggleTheme } = useTheme();
-  const { friendRequests } = useFriends();
+  const { pendingRequests } = useFriends();
   const { logout } = useAuth();
   const { 
     communities, 
@@ -254,11 +254,11 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
               }`}
             >
               <Users className={`w-6 h-6 ${isDarkMode || currentView === "friends" || hoveredItem === 'friends' ? 'text-white' : 'text-gray-900'}`} />
-              {friendRequests.length > 0 && (
+              {pendingRequests.length > 0 && (
                 <div className={`absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 ${
                   isDarkMode ? 'border-slate-900' : 'border-gray-100'
                 }`}>
-                  {friendRequests.length > 9 ? '9+' : friendRequests.length}
+                  {pendingRequests.length > 9 ? '9+' : pendingRequests.length}
                 </div>
               )}
             </button>
@@ -267,9 +267,9 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                 isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200'
               }`}>
                 Friends
-                {friendRequests.length > 0 && (
+                {pendingRequests.length > 0 && (
                   <span className="ml-2 px-1.5 py-0.5 bg-red-500 rounded text-xs">
-                    {friendRequests.length}
+                    {pendingRequests.length}
                   </span>
                 )}
               </div>
