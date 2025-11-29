@@ -207,6 +207,64 @@ class ChannelService {
       throw new Error(msg);
     }
   }
+
+  async updateChannel(
+    channelId: number,
+    name?: string,
+    description?: string,
+    type?: 'text' | 'voice'
+  ): Promise<Channel> {
+    const payload: any = {};
+    if (name !== undefined) payload.name = name;
+    if (description !== undefined) payload.description = description;
+    if (type !== undefined) payload.type = type;
+
+    try {
+      const response = await axios.put<Channel>(
+        `${API_URL}/${channelId}`,
+        payload,
+        this.getAuthHeaders()
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Error updating channel:', error);
+      throw new Error(error.response?.data?.error || 'Failed to update channel');
+    }
+  }
+
+  async deleteCommunity(communityId: number): Promise<void> {
+    try {
+      await axios.delete(`${API_URL}/communities/${communityId}`, this.getAuthHeaders());
+    } catch (error: any) {
+      console.error('Error deleting community:', error);
+      throw new Error(error.response?.data?.error || 'Failed to delete community');
+    }
+  }
+
+  async leaveCommunity(communityId: number): Promise<void> {
+    try {
+      await axios.post(
+        `${API_URL}/communities/${communityId}/leave`,
+        {},
+        this.getAuthHeaders()
+      );
+    } catch (error: any) {
+      console.error('Error leaving community:', error);
+      throw new Error(error.response?.data?.error || 'Failed to leave community');
+    }
+  }
+
+  async getUserRoleInCommunity(communityId: number, userId: number): Promise<'owner' | 'admin' | 'member'> {
+    try {
+      const members = await this.getCommunityMembers(communityId);
+      const member = members.find(m => m.id === userId);
+      return member?.role || 'member';
+    } catch (error: any) {
+      console.error('Error getting user role:', error);
+      // Default to member if we can't fetch
+      return 'member';
+    }
+  }
 }
 
 export const channelService = new ChannelService();

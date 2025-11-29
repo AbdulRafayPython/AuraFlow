@@ -13,7 +13,9 @@ from routes.channels import (
     create_channel, join_channel, leave_channel,
     create_community, delete_channel,
     # NEW: Member management routes
-    search_users, get_community_members, add_community_member
+    search_users, get_community_members, add_community_member,
+    # NEW: Channel and community management
+    update_channel, delete_community, leave_community
 )
 from routes.messages import (
     get_channel_messages, send_message,
@@ -81,6 +83,9 @@ app.route("/api/channels/communities", methods=["POST"])(create_community)
 app.route("/api/channels/<int:channel_id>/join", methods=["POST"])(join_channel)
 app.route("/api/channels/<int:channel_id>/leave", methods=["POST"])(leave_channel)
 app.route("/api/channels/<int:channel_id>", methods=["DELETE"])(delete_channel)
+app.route("/api/channels/<int:channel_id>", methods=["PUT"])(update_channel)
+app.route("/api/channels/communities/<int:community_id>", methods=["DELETE"])(delete_community)
+app.route("/api/channels/communities/<int:community_id>/leave", methods=["POST"])(leave_community)
 
 # ======================================================================
 # COMMUNITY MEMBER ROUTES (NEW)
@@ -147,3 +152,5 @@ if __name__ == "__main__":
     
     # Use socketio.run() instead of app.run() for WebSocket support
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+
+

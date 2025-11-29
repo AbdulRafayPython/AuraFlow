@@ -8,12 +8,16 @@ import {
   Users, 
   Plus, 
   Settings as SettingsIcon,
-  Loader2 
+  Loader2,
+  MoreVertical
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { channelService } from "@/services/channelService";
 import CommunityMembersAddModal from "@/components/modals/CommunityMembersAddModal";
+import CreateChannelModal from "@/components/modals/CreateChannelModal";
+import ChannelManagementModal from "@/components/modals/ChannelManagementModal";
+import CommunityManagementModal from "@/components/modals/CommunityManagementModal";
 import toast from "react-hot-toast";
 
 interface ChannelSidebarProps {
@@ -41,12 +45,18 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
     currentFriend,
     userStatuses,
     isLoadingCommunities,
+    currentUser,
   } = useRealtime();
 
   // Modal & Members State
   const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
   const [communityMembers, setCommunityMembers] = useState<CommunityMember[]>([]);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [isCreateChannelModalOpen, setIsCreateChannelModalOpen] = useState(false);
+  const [selectedChannelForManagement, setSelectedChannelForManagement] = useState<any>(null);
+  const [isCommunityManagementOpen, setIsCommunityManagementOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; channelId?: number } | null>(null);
+  const [userRoleInCommunity, setUserRoleInCommunity] = useState<'owner' | 'admin' | 'member'>('member');
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
@@ -70,6 +80,12 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
     try {
       const members = await channelService.getCommunityMembers(currentCommunity.id);
       setCommunityMembers(members);
+      
+      // Fetch current user's role in the community
+      if (currentUser?.id) {
+        const userRole = await channelService.getUserRoleInCommunity(currentCommunity.id, currentUser.id);
+        setUserRoleInCommunity(userRole);
+      }
     } catch (err: any) {
       console.error("Failed to load members:", err);
       // Silent fail - don't show error toast for members loading
@@ -92,6 +108,40 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
 
   const handleFriendClick = (friendId: number) => {
     selectFriend(friendId);
+    onNavigate?.("dashboard");
+  };
+
+  const handleChannelContextMenu = (e: React.MouseEvent, channelId: number) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, channelId });
+  };
+
+  const handleChannelSettingsClick = (channel: any) => {
+    setSelectedChannelForManagement(channel);
+    setContextMenu(null);
+  };
+
+  const handleCommunityManagementClick = () => {
+    setIsCommunityManagementOpen(true);
+  };
+
+  const handleChannelCreated = () => {
+    // Reload channels after creation
+    setIsCreateChannelModalOpen(false);
+  };
+
+  const handleChannelDeleted = () => {
+    setSelectedChannelForManagement(null);
+  };
+
+  const handleCommunityDeleted = () => {
+    setIsCommunityManagementOpen(false);
+    // Navigate away from deleted community
+    onNavigate?.("dashboard");
+  };
+
+  const handleCommunityLeft = () => {
+    setIsCommunityManagementOpen(false);
     onNavigate?.("dashboard");
   };
 
@@ -165,6 +215,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                 {isLoadingCommunities ? "Loading..." : currentCommunity?.name || "Select Community"}
               </h1>
               <button
+                onClick={handleCommunityManagementClick}
                 className={`p-1 rounded transition-colors ${
                   isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-200 text-gray-600"
                 }`}
@@ -209,7 +260,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                       title="Create Channel"
                       onClick={(e) => {
                         e.stopPropagation();
-                        // TODO: Open create channel modal
+                        setIsCreateChannelModalOpen(true);
                       }}
                     >
                       <Plus className="w-3 h-3" />
@@ -221,6 +272,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                         <button
                           key={channel.id}
                           onClick={() => handleChannelClick(channel.id)}
+                          onContextMenu={(e) => handleChannelContextMenu(e, channel.id)}
                           className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 transition-colors group ${
                             currentChannel?.id === channel.id
                               ? isDarkMode
@@ -269,7 +321,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                       title="Create Voice Channel"
                       onClick={(e) => {
                         e.stopPropagation();
-                        // TODO: Open create voice channel modal
+                        setIsCreateChannelModalOpen(true);
                       }}
                     >
                       <Plus className="w-3 h-3" />
@@ -281,6 +333,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                         <button
                           key={channel.id}
                           onClick={() => handleChannelClick(channel.id)}
+                          onContextMenu={(e) => handleChannelContextMenu(e, channel.id)}
                           className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 transition-colors ${
                             currentChannel?.id === channel.id
                               ? isDarkMode
@@ -481,6 +534,76 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
             toast.success("Member added!");
           }}
         />
+      )}
+
+      {/* Create Channel Modal */}
+      {currentCommunity && (
+        <CreateChannelModal
+          isOpen={isCreateChannelModalOpen}
+          onClose={() => setIsCreateChannelModalOpen(false)}
+          communityId={currentCommunity.id}
+          onChannelCreated={handleChannelCreated}
+        />
+      )}
+
+      {/* Channel Management Modal */}
+      <ChannelManagementModal
+        isOpen={!!selectedChannelForManagement}
+        onClose={() => setSelectedChannelForManagement(null)}
+        channel={selectedChannelForManagement}
+        userRole={currentCommunity ? "admin" : "member"} // TODO: Get actual user role from context
+        onChannelUpdated={(updated) => {
+          // Handle channel update
+          handleChannelCreated();
+        }}
+        onChannelDeleted={handleChannelDeleted}
+      />
+
+      {/* Community Management Modal */}
+      {currentCommunity && (
+        <CommunityManagementModal
+          isOpen={isCommunityManagementOpen}
+          onClose={() => setIsCommunityManagementOpen(false)}
+          community={{
+            id: currentCommunity.id,
+            name: currentCommunity.name,
+            description: currentCommunity.description,
+            icon: currentCommunity.icon || "AF",
+            color: currentCommunity.color || "#8B5CF6",
+          }}
+          userRole={userRoleInCommunity}
+          onCommunityDeleted={handleCommunityDeleted}
+          onCommunityLeft={handleCommunityLeft}
+        />
+      )}
+
+      {/* Context Menu for Channels */}
+      {contextMenu && (
+        <div
+          className={`fixed bg-white rounded-lg shadow-lg z-50 border ${
+            isDarkMode ? "bg-slate-800 border-slate-700" : "border-gray-200"
+          }`}
+          style={{
+            top: `${contextMenu.y}px`,
+            left: `${contextMenu.x}px`,
+          }}
+          onMouseLeave={() => setContextMenu(null)}
+        >
+          <button
+            onClick={() => {
+              const channel = channels.find(c => c.id === contextMenu.channelId);
+              if (channel) handleChannelSettingsClick(channel);
+            }}
+            className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${
+              isDarkMode
+                ? "hover:bg-slate-700 text-gray-200"
+                : "hover:bg-gray-100 text-gray-900"
+            }`}
+          >
+            <SettingsIcon className="w-4 h-4" />
+            Channel Settings
+          </button>
+        </div>
       )}
     </>
   );
