@@ -4,6 +4,7 @@ import { useFriends } from "../../contexts/FriendsContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { Users, Plus, Home, ChevronLeft, ChevronRight, LogOut, Moon, Sun, Settings, User, Bell, Shield, Palette, HelpCircle, MessageSquare } from "lucide-react";
 import CreateCommunityModal from "../modals/CreateCommunityModal";
+import JoinCommunityModal from "../modals/JoinCommunityModal";
 import { channelService } from "../../services/channelService";
 import { socketService } from "../../services/socketService";
 import { useRealtime } from "@/hooks/useRealtime";
@@ -44,6 +45,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
+  const [showJoinCommunityModal, setShowJoinCommunityModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userStatus, setUserStatus] = useState<'online' | 'idle' | 'dnd' | 'offline'>('online');
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
@@ -114,6 +116,25 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
       onNavigate("dashboard", newCommunity.id.toString());
     } catch (error) {
       console.error("Failed to create community:", error);
+      throw error;
+    }
+  };
+
+  const handleJoinCommunity = async (communityId: number) => {
+    try {
+      await channelService.joinCommunity(communityId);
+      console.log('[FRIENDS_SIDEBAR] Community joined:', communityId);
+      
+      // Reload communities to refresh the list
+      await reloadCommunities();
+      
+      // Select the joined community
+      await selectCommunity(communityId);
+      
+      // Navigate to the joined community
+      onNavigate("dashboard", communityId.toString());
+    } catch (error) {
+      console.error("Failed to join community:", error);
       throw error;
     }
   };
@@ -326,10 +347,36 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
               <Plus className="w-6 h-6" />
             </button>
             {hoveredItem === 'add-community' && (
-              <div className={`absolute left-[72px] top-0 ml-2 px-3 py-2 text-sm font-semibold rounded-lg shadow-xl z-50 whitespace-nowrap ${
-                isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200'
+              <div className={`absolute left-[72px] top-0 ml-2 rounded-xl shadow-2xl z-50 overflow-hidden border ${
+                isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
               }`}>
-                Add a Community
+                <button
+                  onClick={() => {
+                    setShowCreateCommunityModal(true);
+                    setHoveredItem(null);
+                  }}
+                  className={`w-full px-4 py-2 text-sm font-semibold text-left transition-colors whitespace-nowrap ${
+                    isDarkMode
+                      ? 'text-green-400 hover:bg-slate-700'
+                      : 'text-green-600 hover:bg-gray-100'
+                  }`}
+                >
+                  Create Community
+                </button>
+                <div className={`h-px ${isDarkMode ? 'bg-slate-700' : 'bg-gray-200'}`} />
+                <button
+                  onClick={() => {
+                    setShowJoinCommunityModal(true);
+                    setHoveredItem(null);
+                  }}
+                  className={`w-full px-4 py-2 text-sm font-semibold text-left transition-colors whitespace-nowrap ${
+                    isDarkMode
+                      ? 'text-cyan-400 hover:bg-slate-700'
+                      : 'text-cyan-600 hover:bg-gray-100'
+                  }`}
+                >
+                  Join Community
+                </button>
               </div>
             )}
           </div>
@@ -562,6 +609,14 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         isOpen={showCreateCommunityModal}
         onClose={() => setShowCreateCommunityModal(false)}
         onCreateCommunity={handleCreateCommunity}
+      />
+
+      {/* Join Community Modal */}
+      <JoinCommunityModal
+        isOpen={showJoinCommunityModal}
+        onClose={() => setShowJoinCommunityModal(false)}
+        onJoinCommunity={handleJoinCommunity}
+        onDiscoverCommunities={channelService.discoverCommunities.bind(channelService)}
       />
 
       {/* Logout Confirmation Dialog */}

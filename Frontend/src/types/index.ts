@@ -51,6 +51,13 @@ export interface Community {
   display_name?: string;
   bio?: string;
   role?: 'owner' | 'admin' | 'member';
+  member_count?: number;
+  created_at?: string;
+  creator?: {
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+  };
 }
 
 export interface Channel {

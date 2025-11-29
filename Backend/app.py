@@ -15,7 +15,9 @@ from routes.channels import (
     # NEW: Member management routes
     search_users, get_community_members, add_community_member,
     # NEW: Channel and community management
-    update_channel, delete_community, leave_community
+    update_channel, delete_community, leave_community,
+    # NEW: Community discovery and joining
+    discover_communities, join_community
 )
 from routes.messages import (
     get_channel_messages, send_message,
@@ -77,6 +79,8 @@ app.route("/api/verify-otp", methods=["POST"])(verify_otp_endpoint)
 # COMMUNITY & CHANNEL ROUTES
 # ======================================================================
 app.route("/api/channels/communities", methods=["GET"])(get_communities)
+app.route("/api/channels/communities/discover", methods=["GET"])(discover_communities)
+app.route("/api/channels/communities/<int:community_id>/join", methods=["POST"])(join_community)
 app.route("/api/channels/communities/<int:community_id>/channels", methods=["GET"])(get_community_channels)
 app.route("/api/channels/communities/<int:community_id>/channels", methods=["POST"])(create_channel)
 app.route("/api/channels/communities", methods=["POST"])(create_community)

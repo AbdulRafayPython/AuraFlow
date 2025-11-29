@@ -967,3 +967,187 @@ def leave_community(community_id):
     finally:
         if conn:
             conn.close()
+
+
+# =====================================
+# DISCOVER COMMUNITIES (Public Browse)
+# =====================================
+@jwt_required()
+def discover_communities():
+    """
+    Get all available communities to join (public communities).
+    Excludes communities already joined by the user.
+    Supports search and pagination.
+    
+    Query Parameters:
+        - search: Search term for community name/description
+        - limit: Number of results (default: 20)
+        - offset: Pagination offset (default: 0)
+    
+    Returns:
+        List of available communities with member count
+    """
+    conn = None
+    try:
+        username = get_jwt_identity()
+        search = request.args.get('search', '').strip()
+        limit = int(request.args.get('limit', 20))
+        offset = int(request.args.get('offset', 0))
+        
+        # Validate pagination parameters
+        limit = min(limit, 100)  # Max 100 per page
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get user ID
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+
+            # Build search query
+            search_condition = ""
+            params = [user_id]
+            
+            if search:
+                search_condition = "AND (c.name LIKE %s OR c.description LIKE %s)"
+                search_term = f"%{search}%"
+                params.extend([search_term, search_term])
+            
+            # Get communities NOT joined by user with member count
+            query = f"""
+                SELECT 
+                    c.id, c.name, c.description, c.icon, c.color, 
+                    c.banner_url, c.created_at,
+                    COUNT(DISTINCT cm.user_id) as member_count,
+                    u.username as creator_username,
+                    u.display_name as creator_name,
+                    u.avatar_url as creator_avatar
+                FROM communities c
+                LEFT JOIN community_members cm ON c.id = cm.community_id
+                LEFT JOIN users u ON c.created_by = u.id
+                WHERE c.id NOT IN (
+                    SELECT community_id FROM community_members WHERE user_id = %s
+                )
+                {search_condition}
+                GROUP BY c.id
+                ORDER BY c.created_at DESC
+                LIMIT %s OFFSET %s
+            """
+            
+            params.extend([limit, offset])
+            cur.execute(query, params)
+            communities = cur.fetchall()
+
+        result = [{
+            'id': c['id'],
+            'name': c['name'],
+            'description': c['description'],
+            'icon': c['icon'],
+            'color': c['color'],
+            'banner_url': c['banner_url'],
+            'member_count': c['member_count'],
+            'created_at': c['created_at'].isoformat() if c['created_at'] else None,
+            'creator': {
+                'username': c['creator_username'],
+                'display_name': c['creator_name'],
+                'avatar_url': c['creator_avatar']
+            } if c['creator_username'] else None
+        } for c in communities]
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        print(f"[ERROR] discover_communities: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Failed to discover communities'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# JOIN COMMUNITY
+# =====================================
+@jwt_required()
+def join_community(community_id):
+    """
+    Join a community and add user to all public channels in the community.
+    
+    Returns:
+        Success message with community details
+    """
+    conn = None
+    try:
+        username = get_jwt_identity()
+        conn = get_db_connection()
+        
+        with conn.cursor() as cur:
+            # Get user ID
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+
+            # Check if community exists
+            cur.execute("SELECT id, name FROM communities WHERE id = %s", (community_id,))
+            community = cur.fetchone()
+            if not community:
+                return jsonify({'error': 'Community not found'}), 404
+
+            # Check if already a member
+            cur.execute("""
+                SELECT id FROM community_members 
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id))
+            existing_member = cur.fetchone()
+            
+            if existing_member:
+                return jsonify({'error': 'Already a member of this community'}), 400
+
+            # Add user to community as 'member'
+            cur.execute("""
+                INSERT INTO community_members (community_id, user_id, role)
+                VALUES (%s, %s, 'member')
+            """, (community_id, user_id))
+
+            # Get all public channels in the community and add user to them
+            cur.execute("""
+                SELECT id FROM channels 
+                WHERE community_id = %s
+            """, (community_id,))
+            channels = cur.fetchall()
+            
+            for channel in channels:
+                channel_id = channel['id']
+                # Check if user is not already in channel
+                cur.execute("""
+                    SELECT id FROM channel_members 
+                    WHERE channel_id = %s AND user_id = %s
+                """, (channel_id, user_id))
+                if not cur.fetchone():
+                    cur.execute("""
+                        INSERT INTO channel_members (channel_id, user_id, role)
+                        VALUES (%s, %s, 'member')
+                    """, (channel_id, user_id))
+
+        conn.commit()
+        print(f"[SUCCESS] User {user_id} joined community {community_id}")
+        return jsonify({
+            'message': f'Successfully joined {community["name"]}',
+            'community_id': community_id
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] join_community: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to join community'}), 500
+    finally:
+        if conn:
+            conn.close()

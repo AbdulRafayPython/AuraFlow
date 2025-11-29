@@ -254,6 +254,38 @@ class ChannelService {
     }
   }
 
+  async discoverCommunities(search: string = '', limit: number = 20, offset: number = 0): Promise<Community[]> {
+    try {
+      const params = new URLSearchParams({
+        ...(search && { search }),
+        limit: limit.toString(),
+        offset: offset.toString(),
+      });
+      
+      const response = await axios.get<Community[]>(
+        `${API_URL}/communities/discover?${params}`,
+        this.getAuthHeaders()
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Error discovering communities:', error);
+      throw new Error(error.response?.data?.error || 'Failed to discover communities');
+    }
+  }
+
+  async joinCommunity(communityId: number): Promise<void> {
+    try {
+      await axios.post(
+        `${API_URL}/communities/${communityId}/join`,
+        {},
+        this.getAuthHeaders()
+      );
+    } catch (error: any) {
+      console.error('Error joining community:', error);
+      throw new Error(error.response?.data?.error || 'Failed to join community');
+    }
+  }
+
   async getUserRoleInCommunity(communityId: number, userId: number): Promise<'owner' | 'admin' | 'member'> {
     try {
       const members = await this.getCommunityMembers(communityId);
