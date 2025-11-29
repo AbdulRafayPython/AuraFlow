@@ -211,6 +211,17 @@ class SocketService {
     console.log(`[SOCKET] 📤 Broadcasting message ${message.id} to channel ${channelId}`);
   }
 
+  // Broadcast community creation
+  broadcastCommunityCreated(community: any) {
+    if (!this.socket?.connected) {
+      console.warn('[SOCKET] Not connected, cannot broadcast community creation');
+      return;
+    }
+
+    this.socket.emit('community_created', community);
+    console.log(`[SOCKET] 🏘️ Broadcasting new community ${community.id} - ${community.name}`);
+  }
+
   // Event listeners
   onMessage(handler: MessageHandler) {
     this.messageHandlers.push(handler);

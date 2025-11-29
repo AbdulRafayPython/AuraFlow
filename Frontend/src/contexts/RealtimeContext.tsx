@@ -28,6 +28,7 @@ interface RealtimeContextType {
   isLoadingFriends: boolean;
   currentUser: User | null;
   isLoadingCurrentUser: boolean;
+  reloadCommunities: () => Promise<void>;
 }
 
 export const RealtimeContext = createContext<RealtimeContextType | undefined>(undefined);
@@ -363,6 +364,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [friends]);
 
+  const reloadCommunities = useCallback(async () => {
+    console.log('[REALTIME] Reloading communities...');
+    await loadCommunities();
+  }, [loadCommunities]);
+
   const sendMessage = useCallback(async (content: string, messageType: 'text' | 'image' | 'file' = 'text') => {
     if (!currentChannel || !content.trim()) {
       console.warn('[REALTIME] Cannot send message: no channel or empty content');
@@ -421,6 +427,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     isLoadingFriends,
     currentUser,               
     isLoadingCurrentUser,
+    reloadCommunities,
   };
 
   return (

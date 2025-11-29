@@ -36,7 +36,8 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const { logout } = useAuth();
   const { 
     communities, 
-    selectCommunity
+    selectCommunity,
+    reloadCommunities,
   } = useRealtime();
   
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -93,7 +94,23 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const handleCreateCommunity = async (data: CommunityFormData) => {
     try {
       const newCommunity = await channelService.createCommunity(data);
+      console.log('[FRIENDS_SIDEBAR] Community created:', newCommunity);
+      
+      // Reload communities to get the new community instantly
+      console.log('[FRIENDS_SIDEBAR] Reloading communities list...');
+      await reloadCommunities();
+      
+      // Select the newly created community
       await selectCommunity(newCommunity.id);
+      
+      // Broadcast the community creation event via socket
+      if (socketService.isConnected()) {
+        socketService.broadcastCommunityCreated(newCommunity);
+        console.log('[FRIENDS_SIDEBAR] Community broadcast event sent');
+      } else {
+        console.warn('[FRIENDS_SIDEBAR] Socket not connected, community won\'t be broadcast');
+      }
+      
       onNavigate("dashboard", newCommunity.id.toString());
     } catch (error) {
       console.error("Failed to create community:", error);

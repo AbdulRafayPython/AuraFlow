@@ -188,24 +188,24 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
               {/* Text Channels */}
               {textChannels.length > 0 && (
                 <div className="mb-3">
-                  <button
-                    onClick={() => toggleSection("text")}
-                    className={`flex items-center justify-between w-full px-2 py-1 text-xs font-semibold uppercase tracking-wide rounded transition-colors ${
-                      isDarkMode
-                        ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700/30"
-                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-200"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-between w-full px-2 py-1 text-xs font-semibold uppercase tracking-wide rounded transition-colors">
+                    <button
+                      onClick={() => toggleSection("text")}
+                      className={`flex items-center gap-1 flex-1 ${
+                        isDarkMode
+                          ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700/30"
+                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-200"
+                      }`}
+                    >
                       {expandedSections.text ? (
                         <ChevronDown className="w-3 h-3" />
                       ) : (
                         <ChevronRight className="w-3 h-3" />
                       )}
                       Text Channels
-                    </div>
-                    <button
-                      className={`p-0.5 rounded hover:bg-slate-700/50`}
+                    </button>
+                    <div
+                      className={`p-0.5 rounded hover:bg-slate-700/50 cursor-pointer`}
                       title="Create Channel"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -213,8 +213,8 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                       }}
                     >
                       <Plus className="w-3 h-3" />
-                    </button>
-                  </button>
+                    </div>
+                  </div>
                   {expandedSections.text && (
                     <div className="mt-1 space-y-0.5">
                       {textChannels.map((channel) => (
@@ -248,24 +248,24 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
               {/* Voice Channels */}
               {voiceChannels.length > 0 && (
                 <div className="mb-3">
-                  <button
-                    onClick={() => toggleSection("voice")}
-                    className={`flex items-center justify-between w-full px-2 py-1 text-xs font-semibold uppercase tracking-wide rounded transition-colors ${
-                      isDarkMode
-                        ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700/30"
-                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-200"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-between w-full px-2 py-1 text-xs font-semibold uppercase tracking-wide rounded transition-colors">
+                    <button
+                      onClick={() => toggleSection("voice")}
+                      className={`flex items-center gap-1 flex-1 ${
+                        isDarkMode
+                          ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700/30"
+                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-200"
+                      }`}
+                    >
                       {expandedSections.voice ? (
                         <ChevronDown className="w-3 h-3" />
                       ) : (
                         <ChevronRight className="w-3 h-3" />
                       )}
                       Voice Channels
-                    </div>
-                    <button
-                      className={`p-0.5 rounded hover:bg-slate-700/50`}
+                    </button>
+                    <div
+                      className={`p-0.5 rounded hover:bg-slate-700/50 cursor-pointer`}
                       title="Create Voice Channel"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -273,8 +273,8 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                       }}
                     >
                       <Plus className="w-3 h-3" />
-                    </button>
-                  </button>
+                    </div>
+                  </div>
                   {expandedSections.voice && (
                     <div className="mt-1 space-y-0.5">
                       {voiceChannels.map((channel) => (
