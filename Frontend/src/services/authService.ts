@@ -96,4 +96,8 @@ export async function updateFirstLogin() {
   return await api.post(`${AUTH_PREFIX}/user/update-first-login`);
 }
 
-export default { signup, login, logout, getProtected, getMe, updateFirstLogin };
+export async function updateProfile(data: { display_name?: string; bio?: string; avatar_url?: string }) {
+  return await api.put(`${AUTH_PREFIX}/user/profile`, data);
+}
+
+export default { signup, login, logout, getProtected, getMe, updateFirstLogin, updateProfile };

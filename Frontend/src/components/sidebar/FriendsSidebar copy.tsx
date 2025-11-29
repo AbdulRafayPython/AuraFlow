@@ -3,6 +3,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { useFriends } from "../../contexts/FriendsContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { Users, Plus, Home, Settings as SettingsIcon, ChevronLeft, ChevronRight, MessageCircle, Phone, Video, LogOut, Moon, Sun, Hash } from "lucide-react";
+import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 
 interface FriendsSidebarProps {
   onNavigate: (view: string) => void;
@@ -37,10 +38,15 @@ export default function FriendsSidebar({ onNavigate, currentView }: FriendsSideb
   const onlineFriends = friends.filter(f => f.status === "online");
   const allFriendsToShow = isCollapsed ? onlineFriends.slice(0, 5) : onlineFriends.slice(0, 10);
 
-  const handleLogout = () => {
-    if (window.confirm("Are you sure you want to logout?")) {
-      logout();
-    }
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+
+  const handleLogout = async () => {
+    setShowLogoutDialog(true);
+  };
+
+  const confirmLogout = async () => {
+    await logout();
+    setShowLogoutDialog(false);
   };
 
   return (
@@ -397,6 +403,18 @@ export default function FriendsSidebar({ onNavigate, currentView }: FriendsSideb
           background: rgba(100, 116, 139, 0.7);
         }
       `}</style>
+
+      {/* Logout Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showLogoutDialog}
+        title="Logout"
+        description="Are you sure you want to logout? You will need to log in again to access your account."
+        cancelText="Cancel"
+        confirmText="Logout"
+        isDangerous={true}
+        onConfirm={confirmLogout}
+        onCancel={() => setShowLogoutDialog(false)}
+      />
     </div>
   );
 }

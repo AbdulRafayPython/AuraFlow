@@ -5,8 +5,10 @@ import { useAuth } from "../../contexts/AuthContext";
 import { Users, Plus, Home, ChevronLeft, ChevronRight, LogOut, Moon, Sun, Settings, User, Bell, Shield, Palette, HelpCircle, MessageSquare } from "lucide-react";
 import CreateCommunityModal from "../modals/CreateCommunityModal";
 import { channelService } from "../../services/channelService";
+import { socketService } from "../../services/socketService";
 import { useRealtime } from "@/hooks/useRealtime";
 import authService from "@/services/authService";
+import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 
 export interface CommunityFormData {
   name: string;
@@ -43,6 +45,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userStatus, setUserStatus] = useState<'online' | 'idle' | 'dnd' | 'offline'>('online');
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   // Load current user data
   useEffect(() => {
@@ -69,11 +72,14 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showProfileMenu]);
 
-  const handleLogout = () => {
-    if (window.confirm("Are you sure you want to logout?")) {
-      logout();
-      setShowProfileMenu(false);
-    }
+  const handleLogout = async () => {
+    setShowLogoutDialog(true);
+  };
+
+  const confirmLogout = async () => {
+    await logout();
+    setShowProfileMenu(false);
+    setShowLogoutDialog(false);
   };
 
   const handleCommunityClick = (communityId: string) => {
@@ -539,6 +545,18 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         isOpen={showCreateCommunityModal}
         onClose={() => setShowCreateCommunityModal(false)}
         onCreateCommunity={handleCreateCommunity}
+      />
+
+      {/* Logout Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showLogoutDialog}
+        title="Logout"
+        description="Are you sure you want to logout? You will need to log in again to access your account."
+        cancelText="Cancel"
+        confirmText="Logout"
+        isDangerous={true}
+        onConfirm={confirmLogout}
+        onCancel={() => setShowLogoutDialog(false)}
       />
     </div>
   );

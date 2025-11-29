@@ -404,8 +404,8 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
             {/* Bottom Section - Members Button with Count */}
             {currentCommunity && (
               <div
-                className={`px-3 py-3 border-t ${
-                  isDarkMode ? "border-slate-700/50 bg-slate-900/30" : "border-gray-200 bg-gray-50"
+                className={`px-4 py-3 border-t ${
+                  isDarkMode ? "border-slate-700/50 bg-slate-800/50" : "border-gray-200 bg-gray-50"
                 }`}
               >
                 <button

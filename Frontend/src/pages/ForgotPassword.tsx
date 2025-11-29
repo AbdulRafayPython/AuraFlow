@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { authService } from "../services/authService"; // Adjust path as needed
+import { authService } from "../services/authService";
+import { useNotifications } from "@/hooks/useNotifications";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { showSuccess, showError } = useNotifications();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -14,13 +16,19 @@ export default function ForgotPassword() {
     try {
       const response = await authService.requestPasswordReset(email);
 
-      alert(response.message || "OTP sent successfully!");
+      showSuccess({
+        title: "OTP Sent",
+        description: response.message || "Check your email for the OTP code.",
+      });
 
       // Navigate to OTP page with email
-      navigate("/verify-otp", { state: { email } });
+      navigate("/otp-verification", { state: { email } });
 
     } catch (err: any) {
-      alert(err.message || "Error sending reset request");
+      showError({
+        title: "Error",
+        description: err.message || "Failed to send reset request.",
+      });
     } finally {
       setLoading(false);
     }

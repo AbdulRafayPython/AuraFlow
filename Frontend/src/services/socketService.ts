@@ -17,6 +17,7 @@ type MessageHandler = (message: Message) => void;
 type StatusHandler = (status: UserStatus) => void;
 type TypingHandler = (data: TypingIndicator) => void;
 type ErrorHandler = (error: { msg: string }) => void;
+type CommunityHandler = (data: any) => void;
 
 class SocketService {
   private socket: Socket | null = null;
@@ -27,6 +28,7 @@ class SocketService {
   private statusHandlers: StatusHandler[] = [];
   private typingHandlers: TypingHandler[] = [];
   private errorHandlers: ErrorHandler[] = [];
+  private communityHandlers: CommunityHandler[] = [];
   private currentChannel: number | null = null;
   private typingTimeout: NodeJS.Timeout | null = null;
 
@@ -126,6 +128,12 @@ class SocketService {
     this.socket.on('error', (data: { msg: string }) => {
       console.error('[SOCKET] ❌ Error:', data.msg);
       this.errorHandlers.forEach(handler => handler(data));
+    });
+
+    // Community creation event
+    this.socket.on('community_created', (data: any) => {
+      console.log('[SOCKET] 🏘️ New community created:', data);
+      this.communityHandlers.forEach(handler => handler(data));
     });
   }
 
@@ -229,6 +237,13 @@ class SocketService {
     this.errorHandlers.push(handler);
     return () => {
       this.errorHandlers = this.errorHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onCommunityCreated(handler: CommunityHandler) {
+    this.communityHandlers.push(handler);
+    return () => {
+      this.communityHandlers = this.communityHandlers.filter(h => h !== handler);
     };
   }
 

@@ -10,24 +10,36 @@ interface ProfileSetupProps {
 
 export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) {
   const { isDarkMode } = useTheme();
-  const { user, updateUser } = useAuth(); 
+  const { user, updateProfile, completeOnboarding } = useAuth(); 
   const [isLoading, setIsLoading] = useState(false);
-  const [displayName, setDisplayName] = useState(user?.name || "");
-  const [bio, setBio] = useState("");
+  const [displayName, setDisplayName] = useState(user?.display_name || user?.username || "");
+  const [bio, setBio] = useState(user?.bio || "");
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
+    
+    if (!displayName.trim()) {
+      setError("Display name is required");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      if (updateUser) {
-        await updateUser({ name: displayName });
-      }
+      // Update profile with display_name and bio
+      await updateProfile({
+        display_name: displayName,
+        bio: bio || undefined,
+      });
+
+      // Complete onboarding
+      await completeOnboarding();
       onComplete();
-    } catch (error) {
-      alert("Failed to update profile. Please try again.");
+    } catch (err: any) {
+      console.error("Failed to update profile:", err);
+      setError(err.message || "Failed to update profile. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -49,6 +61,21 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
           </p>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className={`mb-6 p-4 rounded-lg border ${isDarkMode ? 'bg-red-900/20 border-red-700 text-red-400' : 'bg-red-50 border-red-300 text-red-600'}`}>
+            {error}
+          </div>
+        )}
+
+        {/* Current Username Display */}
+        <div className={`mb-6 p-4 rounded-lg border-2 border-dashed ${isDarkMode ? 'border-slate-600 bg-slate-700/50' : 'border-gray-300 bg-gray-50'}`}>
+          <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Your registration username:</p>
+          <p className={`text-lg font-semibold ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+            @{user?.username}
+          </p>
+        </div>
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
@@ -59,7 +86,7 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Enter your display name"
+              placeholder="How should we call you?"
               required
               className={`w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                 isDarkMode 
@@ -67,6 +94,9 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
                   : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
               }`}
             />
+            <p className={`text-xs mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-600'}`}>
+              This is how other users will see your name in the community
+            </p>
           </div>
 
           <div>
@@ -76,28 +106,32 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
             <textarea
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              placeholder="Tell us about yourself"
-              rows={3}
+              placeholder="Tell us about yourself. What are your interests, skills, or what brings you here?"
+              rows={4}
+              maxLength={500}
               className={`w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none ${
                 isDarkMode 
                   ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-500' 
                   : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
               }`}
             />
+            <p className={`text-xs mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-600'}`}>
+              {bio.length}/500 characters
+            </p>
           </div>
 
           <div className="flex flex-col md:flex-row gap-4">
             <button
               type="button"
               onClick={onBack}
-              className={`flex-1 py-4 bg-transparent border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl font-semibold transition-all transform hover:scale-[1.02] shadow-lg flex items-center justify-center gap-2`}
+              className={`flex-1 py-4 border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl font-semibold transition-all transform hover:scale-[1.02] shadow-lg flex items-center justify-center gap-2`}
             >
               <ArrowLeft className="w-5 h-5" /> Back
             </button>
             <button
               type="submit"
               disabled={isLoading || !displayName.trim()}
-              className="flex-1 py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl font-semibold transition-all transform hover:scale-[1.02] shadow-lg flex items-center justify-center gap-2"
+              className="flex-1 py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl font-semibold transition-all transform hover:scale-[1.02] shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <>

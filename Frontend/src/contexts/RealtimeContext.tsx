@@ -238,12 +238,25 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       console.error('[REALTIME] Socket error:', error.msg);
     });
 
+    const unsubscribeCommunity = socketService.onCommunityCreated((communityData) => {
+      console.log('[REALTIME] Community created event received:', communityData);
+      setCommunities((prev) => {
+        // Check if community already exists
+        const exists = prev.some(c => c.id === communityData.id);
+        if (exists) {
+          return prev;
+        }
+        return [...prev, communityData];
+      });
+    });
+
     return () => {
       console.log('[REALTIME] Cleaning up socket connection');
       unsubscribeMessage();
       unsubscribeStatus();
       unsubscribeTyping();
       unsubscribeError();
+      unsubscribeCommunity();
 
       typingTimeoutRefs.current.forEach(timeout => clearTimeout(timeout));
       typingTimeoutRefs.current.clear();

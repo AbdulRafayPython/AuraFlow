@@ -7,7 +7,7 @@ import os
 from flask_socketio import SocketIO
 
 # Import all route functions
-from routes.auth import signup, login, logout, update_first_login, get_me, reset_password, forgot_password, verify_otp_endpoint
+from routes.auth import signup, login, logout, update_first_login, get_me, reset_password, forgot_password, verify_otp_endpoint , update_profile
 from routes.channels import (
     get_communities, get_community_channels, get_friends,
     create_channel, join_channel, leave_channel,
@@ -62,6 +62,7 @@ socketio = SocketIO(
 app.route("/api/signup", methods=["POST"])(signup)
 app.route("/api/login", methods=["POST"])(login)
 app.route("/api/first-login", methods=["POST"])(update_first_login)
+app.route("/api/user/profile", methods=['PUT'])(update_profile)
 app.route("/api/logout", methods=["POST"])(logout)
 app.route("/api/me", methods=["GET"])(get_me)
 app.route("/api/user/update-first-login", methods=["POST"])(update_first_login)

@@ -16,8 +16,9 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   login: (identifier: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => void;
+  updateProfile: (data: { display_name?: string; bio?: string; avatar_url?: string }) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   setUser: (user: User | null) => void; 
   setIsAuthenticated: (auth: boolean) => void;
@@ -56,17 +57,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const logout = () => {
-    authService.logout();
-    setUser(null);
-    setIsAuthenticated(false);
-    localStorage.removeItem("auraflow_user");
+  const logout = async () => {
+    try {
+      // Call logout API to clear token on backend
+      await authService.logout();
+    } catch (error) {
+      console.error('Logout API call failed:', error);
+      // Continue with logout even if API call fails
+    } finally {
+      // Clear all local auth data
+      localStorage.removeItem('token');
+      localStorage.removeItem('auraflow_user');
+      setUser(null);
+      setIsAuthenticated(false);
+    }
   };
 
   const updateUser = (updates: Partial<User>) => {
     if (user) {
       const updated = { ...user, ...updates };
       setUser(updated);
+    }
+  };
+
+  const updateProfile = async (data: { display_name?: string; bio?: string; avatar_url?: string }) => {
+    try {
+      await authService.updateProfile(data);
+      updateUser(data);
+    } catch (error) {
+      console.error('Failed to update profile:', error);
+      throw error;
     }
   };
 
@@ -77,17 +97,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-  user,
-  isAuthenticated,
-  login,
-  logout,
-  updateUser,
-  completeOnboarding,
-  setUser,                // Add this
-  setIsAuthenticated,     // Add this
-}}>
-  {children}
-</AuthContext.Provider>
+      user,
+      isAuthenticated,
+      login,
+      logout,
+      updateUser,
+      updateProfile,
+      completeOnboarding,
+      setUser,
+      setIsAuthenticated,
+    }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 

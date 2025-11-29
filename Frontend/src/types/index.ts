@@ -48,6 +48,8 @@ export interface Community {
   color?: string;
   banner_url?: string;
   description?: string;
+  display_name?: string;
+  bio?: string;
   role?: 'owner' | 'admin' | 'member';
 }
 
@@ -101,6 +103,8 @@ export interface CreateCommunityPayload {
   description?: string;
   icon?: string;
   color?: string;
+  display_name?: string;
+  bio?: string;
 }
 
 export interface TypingUser {

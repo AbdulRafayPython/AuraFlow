@@ -166,13 +166,7 @@ def get_me():
     user_data['is_first_login'] = bool(row.get('is_first_login', False))
 
     return jsonify(user_data), 200
-    return jsonify({
-        "username": row["username"],
-        "email": row.get("email"),
-        "display_name": row.get("display_name"),
-        "bio": row.get("bio"),
-        "is_first_login": bool(row.get("is_first_login", False))
-    }), 200
+
 #---------------------------------------------------------------------------------
 # forgot-password
 #----------------------------------------------------------------------------------
@@ -295,3 +289,55 @@ def reset_password():
     logging.debug("==============================================")
 
     return jsonify({"message": "Password reset successfully"}), 200
+
+
+#----------------------------------------------------------------------------------------
+# Update Profile
+#------------------------------------------------------------------------
+
+@jwt_required()
+def update_profile():
+    """Update user profile (display_name, bio, avatar_url)"""
+    current_user = get_jwt_identity()
+    data = request.get_json() or {}
+    
+    display_name = data.get('display_name')
+    bio = data.get('bio')
+    avatar_url = data.get('avatar_url')
+    
+    # At least one field must be provided
+    if not any([display_name, bio, avatar_url]):
+        return jsonify({'error': 'At least one field (display_name, bio, or avatar_url) is required'}), 400
+    
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            # Build dynamic update query based on what fields are provided
+            update_fields = []
+            update_values = []
+            
+            if display_name is not None:
+                update_fields.append('display_name = %s')
+                update_values.append(display_name)
+            
+            if bio is not None:
+                update_fields.append('bio = %s')
+                update_values.append(bio)
+            
+            if avatar_url is not None:
+                update_fields.append('avatar_url = %s')
+                update_values.append(avatar_url)
+            
+            update_values.append(current_user)
+            
+            query = f"UPDATE users SET {', '.join(update_fields)} WHERE username = %s"
+            cur.execute(query, update_values)
+        
+        conn.commit()
+    except Exception as e:
+        logging.error(f"Error updating profile: {str(e)}")
+        return jsonify({'error': 'Failed to update profile'}), 500
+    finally:
+        conn.close()
+    
+    return jsonify({'message': 'Profile updated successfully'}), 200

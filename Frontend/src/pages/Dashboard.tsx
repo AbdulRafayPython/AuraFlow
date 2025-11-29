@@ -430,73 +430,74 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
       </main>
 
       {/* Input */}
-      <footer className={`px-4 py-3 border-t ${
+      <footer className={`border-t ${
         isDarkMode ? "bg-slate-800/50 border-slate-700/50 backdrop-blur-sm" : "bg-white/80 border-gray-200 backdrop-blur-sm"
       }`}>
-        <div className="max-w-4xl mx-auto">
-          <div className={`flex items-end gap-2 rounded-xl px-4 py-3 border transition-all ${
-            isDarkMode 
-              ? "bg-slate-900 border-slate-700 focus-within:border-blue-500" 
-              : "bg-white border-gray-300 focus-within:border-blue-500 shadow-sm"
-          }`}>
-            <button
-              className={`p-2 rounded-lg transition-colors ${
-                isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
-              }`}
-              disabled={!currentChannel || !isConnected}
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-
-            <input
-              ref={inputRef}
-              type="text"
-              placeholder={currentChannel ? `Message #${currentChannel.name}` : "Select a channel to start messaging"}
-              value={message}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              disabled={!currentChannel || isSending || !isConnected}
-              className={`flex-1 bg-transparent outline-none text-[15px] py-1 ${
-                isDarkMode ? "text-white placeholder-gray-500" : "text-gray-900 placeholder-gray-400"
-              } disabled:opacity-50`}
-            />
-
-            <div className="flex items-center gap-1">
+        <div className="px-4 py-2">
+          <div className="max-w-4xl mx-auto">
+            <div className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 border transition-all ${
+              isDarkMode 
+                ? "bg-slate-900 border-slate-700 focus-within:border-blue-500" 
+                : "bg-white border-gray-300 focus-within:border-blue-500 shadow-sm"
+            }`}>
               <button
-                className={`p-2 rounded-lg transition-colors ${
+                className={`p-1.5 rounded-md transition-colors ${
                   isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
                 }`}
                 disabled={!currentChannel || !isConnected}
               >
-                <Paperclip className="w-5 h-5" />
+                <Plus className="w-4 h-4" />
               </button>
-              <button
-                className={`p-2 rounded-lg transition-colors ${
-                  isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
-                }`}
-                disabled={!currentChannel || !isConnected}
-              >
-                <Smile className="w-5 h-5" />
-              </button>
-              <button
-                onClick={handleSendMessage}
-                disabled={!currentChannel || !message.trim() || isSending || !isConnected}
-                className={`p-2 rounded-lg transition-all ${
-                  message.trim() && currentChannel && isConnected
-                    ? "bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/25"
-                    : isDarkMode
-                      ? "bg-slate-700 text-gray-500 cursor-not-allowed"
-                      : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                }`}
-              >
-                {isSending ? (
-                  <div className="w-5 h-5 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <Send className="w-5 h-5" />
-                )}
-              </button>
+
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder={currentChannel ? `Message #${currentChannel.name}` : "Select a channel to start messaging"}
+                value={message}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                disabled={!currentChannel || isSending || !isConnected}
+                className={`flex-1 bg-transparent outline-none text-sm py-0 ${
+                  isDarkMode ? "text-white placeholder-gray-500" : "text-gray-900 placeholder-gray-400"
+                } disabled:opacity-50`}
+              />
+
+              <div className="flex items-center gap-0.5">
+                <button
+                  className={`p-1.5 rounded-md transition-colors ${
+                    isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
+                  }`}
+                  disabled={!currentChannel || !isConnected}
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+                <button
+                  className={`p-1.5 rounded-md transition-colors ${
+                    isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
+                  }`}
+                  disabled={!currentChannel || !isConnected}
+                >
+                  <Smile className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!currentChannel || !message.trim() || isSending || !isConnected}
+                  className={`p-1.5 rounded-md transition-all ${
+                    message.trim() && currentChannel && isConnected
+                      ? "bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/25"
+                      : isDarkMode
+                        ? "bg-slate-700 text-gray-500 cursor-not-allowed"
+                        : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  }`}
+                >
+                  {isSending ? (
+                    <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </div>
-          </div>
 
           {!isConnected && (
             <div className="mt-2 flex items-center gap-2 text-xs text-red-500">
@@ -504,6 +505,7 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
               <span>Connection lost. Attempting to reconnect...</span>
             </div>
           )}
+          </div>
         </div>
       </footer>
     </div>
