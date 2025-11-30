@@ -233,6 +233,15 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
 
   // Setup socket listeners
   useEffect(() => {
+    // Load initial data
+    const loadInitialData = async () => {
+      await getFriends();
+      await getPendingRequests();
+      await getSentRequests();
+    };
+    
+    loadInitialData();
+
     // Friend request received
     const unsubscribeFriendRequest = socketService.onFriendRequest((request) => {
       addPendingRequest(request);
@@ -240,10 +249,19 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
 
     // Friend status changed
     const unsubscribeFriendStatus = socketService.onFriendStatus((data) => {
-      if (data.status !== "removed" && data.status !== "blocked" && data.status !== "unblocked") {
+      if (data.status === "online" || data.status === "offline" || data.status === "idle" || data.status === "dnd") {
+        // Update friend status
         updateFriendStatus(data.friend_id, data.status);
       } else if (data.status === "removed") {
+        // Remove friend from list
         removeFriendLocal(data.friend_id);
+      } else if (data.status === "blocked") {
+        // Friend blocked - remove from friends and add to blocked
+        removeFriendLocal(data.friend_id);
+        getBlockedUsers();
+      } else if (data.status === "unblocked") {
+        // Friend unblocked - reload blocked users
+        getBlockedUsers();
       }
     });
 
@@ -255,7 +273,7 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
       unsubscribeFriendStatus();
       socketService.leaveFriendStatusRoom();
     };
-  }, [addPendingRequest, updateFriendStatus, removeFriendLocal]);
+  }, [getFriends, addPendingRequest, updateFriendStatus, removeFriendLocal, getPendingRequests, getSentRequests, getBlockedUsers]);
 
   const value: FriendsContextType = {
     friends,

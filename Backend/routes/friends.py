@@ -110,7 +110,7 @@ def get_pending_requests():
                 return jsonify({'error': 'User not found'}), 404
             user_id = user_row['id']
 
-            # Incoming requests
+            # Incoming requests (received from others)
             cur.execute("""
                 SELECT fr.id, fr.sender_id, u.username, u.display_name, u.avatar_url, fr.created_at
                 FROM friend_requests fr
@@ -118,17 +118,7 @@ def get_pending_requests():
                 WHERE fr.receiver_id = %s AND fr.status = 'pending'
                 ORDER BY fr.created_at DESC
             """, (user_id,))
-            incoming = cur.fetchall()
-
-            # Outgoing requests
-            cur.execute("""
-                SELECT fr.id, fr.receiver_id AS target_id, u.username, u.display_name, u.avatar_url, fr.created_at
-                FROM friend_requests fr
-                JOIN users u ON fr.receiver_id = u.id
-                WHERE fr.sender_id = %s AND fr.status = 'pending'
-                ORDER BY fr.created_at DESC
-            """, (user_id,))
-            outgoing = cur.fetchall()
+            requests = cur.fetchall()
 
         def format_user(user_row):
             username = user_row['username']
@@ -139,22 +129,16 @@ def get_pending_requests():
                              f"https://api.dicebear.com/7.x/avataaars/svg?seed={username}"
             }
 
-        result = {
-            'incoming': [
-                {
-                    'id': r['id'],
-                    'sender': format_user(r),
-                    'created_at': r['created_at'].isoformat() if r['created_at'] else None
-                } for r in incoming
-            ],
-            'outgoing': [
-                {
-                    'id': r['id'],
-                    'receiver': format_user(r),
-                    'created_at': r['created_at'].isoformat() if r['created_at'] else None
-                } for r in outgoing
-            ]
-        }
+        result = [
+            {
+                'id': r['id'],
+                'sender_id': r['sender_id'],
+                'username': r['username'],
+                'display_name': r['display_name'] or r['username'],
+                'avatar_url': r['avatar_url'] or f"https://api.dicebear.com/7.x/avataaars/svg?seed={r['username']}",
+                'created_at': r['created_at'].isoformat() if r['created_at'] else None
+            } for r in requests
+        ]
 
         return jsonify(result), 200
 
@@ -164,6 +148,62 @@ def get_pending_requests():
     finally:
         if conn:
             conn.close()
+
+
+# GET SENT FRIEND REQUESTS
+# =====================================
+@jwt_required()
+def get_sent_requests():
+    conn = None
+    try:
+        current_user = get_jwt_identity()
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+
+            # Outgoing requests (sent by current user)
+            cur.execute("""
+                SELECT fr.id, fr.receiver_id, u.username, u.display_name, u.avatar_url, fr.created_at
+                FROM friend_requests fr
+                JOIN users u ON fr.receiver_id = u.id
+                WHERE fr.sender_id = %s AND fr.status = 'pending'
+                ORDER BY fr.created_at DESC
+            """, (user_id,))
+            requests = cur.fetchall()
+
+        def format_user(user_row):
+            username = user_row['username']
+            return {
+                'username': username,
+                'display_name': user_row['display_name'] or username,
+                'avatar_url': user_row['avatar_url'] or 
+                             f"https://api.dicebear.com/7.x/avataaars/svg?seed={username}"
+            }
+
+        result = [
+            {
+                'id': r['id'],
+                'receiver_id': r['receiver_id'],
+                'username': r['username'],
+                'display_name': r['display_name'] or r['username'],
+                'avatar_url': r['avatar_url'] or f"https://api.dicebear.com/7.x/avataaars/svg?seed={r['username']}",
+                'created_at': r['created_at'].isoformat() if r['created_at'] else None
+            } for r in requests
+        ]
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        print(f"[ERROR] get_sent_requests: {e}")
+        return jsonify({'error': 'Failed to fetch sent requests'}), 500
+    finally:
+        if conn:
+            conn.close()
+
 
 
 # =====================================

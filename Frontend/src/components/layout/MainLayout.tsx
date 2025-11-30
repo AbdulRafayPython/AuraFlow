@@ -5,6 +5,7 @@ import FriendsSidebar from "../sidebar/FriendsSidebar";
 import ChannelSidebar from "../sidebar/ChannelSidebar";
 import RightSidebar from "../sidebar/RightSidebar";
 import Friends from "@/pages/Friends";
+import SettingsPage from "@/pages/Settings";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 
@@ -135,20 +136,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
             <Friends />
           </div>
         ) : currentView === "settings" ? (
-          <div className={`flex items-center justify-center h-full px-4 ${
-            isDarkMode ? 'bg-slate-800' : 'bg-gray-50'
-          }`}>
-            <div className={`text-center max-w-md ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              <div className={`w-20 h-20 mx-auto mb-6 rounded-3xl flex items-center justify-center ${
-                isDarkMode ? 'bg-slate-700' : 'bg-gray-200'
-              }`}>
-                <Settings className={`w-10 h-10 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-              </div>
-              <h2 className="text-2xl font-bold mb-2">Settings</h2>
-              <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Settings page coming soon...
-              </p>
-            </div>
+          <div className="flex-1 overflow-hidden">
+            <SettingsPage />
           </div>
         ) : hasCommunitySelected ? (
           // Show main content (Dashboard) when a community is selected

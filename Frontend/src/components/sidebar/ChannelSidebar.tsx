@@ -367,86 +367,6 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                 </div>
               )}
 
-              {/* Direct Messages / Friends */}
-              {friends.length > 0 && (
-                <div className="mb-3">
-                  <button
-                    onClick={() => toggleSection("friends")}
-                    className={`flex items-center justify-between w-full px-2 py-1 text-xs font-semibold uppercase tracking-wide rounded transition-colors ${
-                      isDarkMode
-                        ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700/30"
-                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-200"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1">
-                      {expandedSections.friends ? (
-                        <ChevronDown className="w-3 h-3" />
-                      ) : (
-                        <ChevronRight className="w-3 h-3" />
-                      )}
-                      Direct Messages
-                    </div>
-                    <span
-                      className={`text-xs px-1.5 py-0.5 rounded ${
-                        isDarkMode ? "bg-slate-700 text-slate-300" : "bg-gray-200 text-gray-700"
-                      }`}
-                    >
-                      {onlineFriendsCount}
-                    </span>
-                  </button>
-                  {expandedSections.friends && (
-                    <div className="mt-1 space-y-0.5">
-                      {friends.map((friend) => {
-                        const status = userStatuses.get(friend.username) || friend.status;
-                        const isOnline = status === "online";
-                        
-                        return (
-                          <button
-                            key={friend.id}
-                            onClick={() => handleFriendClick(friend.id)}
-                            className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 transition-colors group ${
-                              currentFriend?.id === friend.id
-                                ? isDarkMode
-                                  ? "bg-slate-700/70 text-white"
-                                  : "bg-gray-200 text-gray-900"
-                                : isDarkMode
-                                ? "text-slate-400 hover:bg-slate-700/50 hover:text-slate-200"
-                                : "text-gray-600 hover:bg-gray-200 hover:text-gray-900"
-                            }`}
-                            title={`${friend.display_name} - ${getStatusText(status)}`}
-                          >
-                            <div className="relative flex-shrink-0">
-                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold ${
-                                isOnline ? "bg-green-600" : "bg-gray-600"
-                              }`}>
-                                {getAvatarInitials(friend.display_name)}
-                              </div>
-                              <div
-                                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 ${
-                                  isDarkMode ? "border-slate-800" : "border-gray-100"
-                                } ${getStatusColor(status)}`}
-                              ></div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="truncate font-medium text-xs">
-                                {friend.display_name}
-                              </div>
-                              {friend.custom_status && (
-                                <div className={`text-xs truncate ${
-                                  isDarkMode ? "text-slate-500" : "text-gray-500"
-                                }`}>
-                                  {friend.custom_status}
-                                </div>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
               {/* Empty State */}
               {!isLoadingCommunities && 
                textChannels.length === 0 && 
@@ -556,7 +476,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
           isOpen={isCreateChannelModalOpen}
           onClose={() => setIsCreateChannelModalOpen(false)}
           communityId={currentCommunity.id}
-          currentChannelType={currentChannel?.type || 'text'}
+          currentChannelType={(currentChannel?.type as 'text' | 'voice') || 'text'}
           onChannelCreated={handleChannelCreated}
         />
       )}
@@ -570,7 +490,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
         userRole={currentCommunity ? "admin" : "member"} // TODO: Get actual user role from context
         onChannelUpdated={(updated) => {
           // Handle channel update
-          handleChannelCreated();
+          handleChannelCreated(updated);
         }}
         onChannelDeleted={handleChannelDeleted}
       />
