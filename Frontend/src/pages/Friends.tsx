@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
-import { useFriends, Friend, FriendRequest } from "@/contexts/FriendsContext";
+import { useFriends } from "@/contexts/FriendsContext";
+import type { Friend, FriendRequest } from "@/types";
+import { useDirectMessages } from "@/contexts/DirectMessagesContext";
+import AddFriendModal from "@/components/modals/AddFriendModal";
+import FriendProfileModal from "@/components/modals/FriendProfileModal";
 import {
   Users,
   UserPlus,
@@ -16,9 +20,10 @@ import {
   X,
   Clock,
   Shield,
+  Send,
 } from "lucide-react";
 
-type Tab = "all" | "online" | "pending" | "blocked" | "add";
+type Tab = "all" | "requests" | "add";
 
 const statusColors = {
   online: "bg-green-500",
@@ -36,26 +41,44 @@ const statusLabels = {
 
 export default function Friends() {
   const { isDarkMode } = useTheme();
-  const { friends, pendingRequests, blockedUsers, addFriend, acceptFriendRequest, declineFriendRequest, removeFriend, blockUser, unblockUser, cancelFriendRequest } = useFriends();
+  const { friends, pendingRequests = [], sentRequests = [], blockedUsers, addFriend, acceptFriendRequest, rejectFriendRequest, removeFriend, blockUser, unblockUser, cancelFriendRequest, sendFriendRequest } = useFriends();
+  const { selectConversation } = useDirectMessages();
   const [activeTab, setActiveTab] = useState<Tab>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [addFriendInput, setAddFriendInput] = useState("");
   const [showMenu, setShowMenu] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
+  const [requestsTab, setRequestsTab] = useState<"incoming" | "outgoing">("incoming");
+  const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  
+  // Handle opening direct message with friend
+  const handleMessageFriend = async (friendId: number) => {
+    try {
+      await selectConversation(friendId);
+      // Navigate to DM view (this could trigger a route change in the main layout)
+      console.log("Opening DM with friend:", friendId);
+    } catch (error) {
+      console.error("Failed to open conversation:", error);
+    }
+  };
+  
+  // Load pending and sent requests on mount
+  useEffect(() => {
+    // Requests are automatically fetched by FriendsContext on mount
+  }, []);
 
   const tabs = [
     { id: "all" as Tab, label: "All Friends", icon: Users, count: friends.length },
-    { id: "online" as Tab, label: "Online", icon: Users, count: friends.filter(f => f.status === "online").length },
-    { id: "pending" as Tab, label: "Pending", icon: Inbox, count: pendingRequests.length },
-    { id: "blocked" as Tab, label: "Blocked", icon: Ban, count: blockedUsers.length },
+    { id: "requests" as Tab, label: "Requests", icon: Inbox, count: pendingRequests.length + sentRequests.length },
     { id: "add" as Tab, label: "Add Friend", icon: UserPlus, count: 0 },
   ];
 
   const filteredFriends = friends.filter(friend => {
-    const matchesSearch = friend.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    const matchesSearch = friend.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          friend.username.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTab = activeTab === "all" || (activeTab === "online" && friend.status === "online");
-    return matchesSearch && matchesTab;
+    return matchesSearch;
   });
 
   const handleAddFriend = async () => {
@@ -72,9 +95,31 @@ export default function Friends() {
     }
   };
 
-  const FriendCard = ({ friend }: { friend: Friend }) => (
+  const FriendCard = ({ friend }: { friend: Friend }) => {
+    const getLastSeenText = (lastSeen?: string) => {
+      if (!lastSeen) return "No data";
+      const date = new Date(lastSeen);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+      
+      if (diffMins < 1) return "Just now";
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffDays === 1) return "Yesterday";
+      if (diffDays < 7) return `${diffDays}d ago`;
+      return date.toLocaleDateString();
+    };
+
+    return (
     <div
-      className={`flex items-center justify-between p-4 rounded-lg border transition-all hover:shadow-md ${
+      onClick={() => {
+        setSelectedFriend(friend);
+        setShowProfileModal(true);
+      }}
+      className={`flex items-center justify-between p-4 rounded-lg border transition-all hover:shadow-md cursor-pointer ${
         isDarkMode
           ? "bg-slate-800 border-slate-700 hover:bg-slate-750"
           : "bg-white border-gray-200 hover:bg-gray-50"
@@ -86,28 +131,50 @@ export default function Friends() {
           <div className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold text-lg ${
             isDarkMode ? "bg-slate-700 text-slate-300" : "bg-gray-200 text-gray-700"
           }`}>
-            {friend.displayName.charAt(0).toUpperCase()}
+            {friend.display_name.charAt(0).toUpperCase()}
           </div>
           <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 ${
             isDarkMode ? "border-slate-800" : "border-white"
-          } ${statusColors[friend.status]}`} />
+          } ${statusColors[friend.status]} shadow-lg`} title={statusLabels[friend.status]} />
         </div>
 
         {/* User Info */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mb-1">
             <h3 className={`font-semibold truncate ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-              {friend.displayName}
+              {friend.display_name}
             </h3>
-            <span className={`text-xs px-2 py-0.5 rounded ${
-              isDarkMode ? "bg-slate-700 text-slate-400" : "bg-gray-100 text-gray-600"
+            <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded font-medium ${
+              friend.status === "online"
+                ? isDarkMode
+                  ? "bg-green-500/20 text-green-400"
+                  : "bg-green-100 text-green-700"
+                : friend.status === "idle"
+                ? isDarkMode
+                  ? "bg-yellow-500/20 text-yellow-400"
+                  : "bg-yellow-100 text-yellow-700"
+                : friend.status === "dnd"
+                ? isDarkMode
+                  ? "bg-red-500/20 text-red-400"
+                  : "bg-red-100 text-red-700"
+                : isDarkMode
+                ? "bg-gray-700 text-gray-400"
+                : "bg-gray-100 text-gray-600"
             }`}>
+              <div className={`w-1.5 h-1.5 rounded-full ${statusColors[friend.status]}`} />
               {statusLabels[friend.status]}
             </span>
           </div>
-          <p className={`text-sm truncate ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-            {friend.customStatus || `@${friend.username}`}
-          </p>
+          <div className={`text-sm flex items-center gap-2 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+            <span className="truncate">
+              {friend.custom_status || `@${friend.username}`}
+            </span>
+            {friend.status !== "online" && friend.last_seen && (
+              <span className={`text-xs flex-shrink-0 ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}>
+                • {getLastSeenText(friend.last_seen)}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -169,7 +236,8 @@ export default function Friends() {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   const PendingRequestCard = ({ request }: { request: FriendRequest }) => (
     <div
@@ -183,63 +251,41 @@ export default function Friends() {
         <div className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold text-lg ${
           isDarkMode ? "bg-slate-700 text-slate-300" : "bg-gray-200 text-gray-700"
         }`}>
-          {request.displayName.charAt(0).toUpperCase()}
+          {request.display_name?.charAt(0).toUpperCase() || request.username?.charAt(0).toUpperCase() || "?"}
         </div>
         <div>
           <h3 className={`font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-            {request.displayName}
+            {request.display_name || request.username}
           </h3>
           <p className={`text-sm flex items-center gap-1 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-            {request.type === "incoming" ? (
-              <>
-                <Clock className="w-3 h-3" />
-                Incoming Friend Request
-              </>
-            ) : (
-              <>
-                <Clock className="w-3 h-3" />
-                Outgoing Friend Request
-              </>
-            )}
+            <Clock className="w-3 h-3" />
+            Incoming Friend Request
           </p>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        {request.type === "incoming" ? (
-          <>
-            <button
-              onClick={() => acceptFriendRequest(request.id)}
-              className="p-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors"
-            >
-              <Check className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => declineFriendRequest(request.id)}
-              className={`p-2 rounded-lg transition-colors ${
-                isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
-              }`}
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </>
-        ) : (
-          <button
-            onClick={() => cancelFriendRequest(request.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              isDarkMode
-                ? "bg-slate-700 hover:bg-slate-600 text-white"
-                : "bg-gray-200 hover:bg-gray-300 text-gray-900"
-            }`}
-          >
-            Cancel Request
-          </button>
-        )}
+        <button
+          onClick={() => acceptFriendRequest(request.id)}
+          className="p-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors"
+          title="Accept request"
+        >
+          <Check className="w-5 h-5" />
+        </button>
+        <button
+          onClick={() => rejectFriendRequest(request.id)}
+          className={`p-2 rounded-lg transition-colors ${
+            isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
+          }`}
+          title="Reject request"
+        >
+          <X className="w-5 h-5" />
+        </button>
       </div>
     </div>
   );
 
-  const BlockedUserCard = ({ user }: { user: typeof blockedUsers[0] }) => (
+  const SentRequestCard = ({ request }: { request: FriendRequest }) => (
     <div
       className={`flex items-center justify-between p-4 rounded-lg border ${
         isDarkMode
@@ -247,30 +293,32 @@ export default function Friends() {
           : "bg-white border-gray-200"
       }`}
     >
-      <div className="flex items-center gap-4">
-        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold text-lg relative ${
+      <div className="flex items-center gap-4 flex-1">
+        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold text-lg ${
           isDarkMode ? "bg-slate-700 text-slate-300" : "bg-gray-200 text-gray-700"
         }`}>
-          {user.displayName.charAt(0).toUpperCase()}
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full">
-            <Ban className="w-6 h-6 text-red-500" />
-          </div>
+          {request.display_name?.charAt(0).toUpperCase() || request.username?.charAt(0).toUpperCase() || "?"}
         </div>
         <div>
           <h3 className={`font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-            {user.displayName}
+            {request.display_name || request.username}
           </h3>
-          <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-            @{user.username}
+          <p className={`text-sm flex items-center gap-1 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+            <Send className="w-3 h-3" />
+            Outgoing Friend Request
           </p>
         </div>
       </div>
 
       <button
-        onClick={() => unblockUser(user.id)}
-        className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
+        onClick={() => cancelFriendRequest(request.id)}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+          isDarkMode
+            ? "bg-slate-700 hover:bg-slate-600 text-white"
+            : "bg-gray-200 hover:bg-gray-300 text-gray-900"
+        }`}
       >
-        Unblock
+        Cancel
       </button>
     </div>
   );
@@ -311,7 +359,13 @@ export default function Friends() {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  if (tab.id === "add") {
+                    setShowAddFriendModal(true);
+                  } else {
+                    setActiveTab(tab.id);
+                  }
+                }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                   activeTab === tab.id
                     ? isDarkMode
@@ -343,95 +397,94 @@ export default function Friends() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        {activeTab === "add" ? (
-          <div className="max-w-2xl mx-auto">
-            <div className={`p-8 rounded-xl border ${
-              isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-            }`}>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
-                  <UserPlus className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h2 className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                    Add Friend
-                  </h2>
-                  <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                    You can add friends with their username
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-                    Username
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={addFriendInput}
-                      onChange={(e) => setAddFriendInput(e.target.value)}
-                      onKeyPress={(e) => e.key === "Enter" && handleAddFriend()}
-                      placeholder="Enter username..."
-                      className={`flex-1 px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        isDarkMode
-                          ? "bg-slate-700 border-slate-600 text-white placeholder-gray-500"
-                          : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                      }`}
-                    />
-                    <button
-                      onClick={handleAddFriend}
-                      disabled={isAdding || !addFriendInput.trim()}
-                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isAdding ? "Sending..." : "Send Request"}
-                    </button>
-                  </div>
-                </div>
-
-                <div className={`p-4 rounded-lg ${isDarkMode ? "bg-blue-900/20" : "bg-blue-50"}`}>
-                  <p className={`text-sm ${isDarkMode ? "text-blue-400" : "text-blue-600"}`}>
-                    💡 <strong>Tip:</strong> Username must match exactly. Friend requests are sent instantly.
-                  </p>
-                </div>
-              </div>
+        {activeTab === "requests" ? (
+          <div className="max-w-4xl mx-auto">
+            {/* Request Tabs */}
+            <div className="flex gap-4 mb-6 border-b border-slate-700">
+              <button
+                onClick={() => setRequestsTab("incoming")}
+                className={`px-4 py-2 font-medium text-sm border-b-2 transition-all ${
+                  requestsTab === "incoming"
+                    ? isDarkMode
+                      ? "border-blue-500 text-blue-400"
+                      : "border-blue-600 text-blue-600"
+                    : isDarkMode
+                    ? "border-transparent text-gray-400 hover:text-gray-300"
+                    : "border-transparent text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Incoming
+                {pendingRequests && pendingRequests.length > 0 && (
+                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                    isDarkMode ? "bg-slate-700 text-gray-300" : "bg-gray-200 text-gray-700"
+                  }`}>
+                    {pendingRequests.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setRequestsTab("outgoing")}
+                className={`px-4 py-2 font-medium text-sm border-b-2 transition-all ${
+                  requestsTab === "outgoing"
+                    ? isDarkMode
+                      ? "border-blue-500 text-blue-400"
+                      : "border-blue-600 text-blue-600"
+                    : isDarkMode
+                    ? "border-transparent text-gray-400 hover:text-gray-300"
+                    : "border-transparent text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Outgoing
+                {sentRequests && sentRequests.length > 0 && (
+                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                    isDarkMode ? "bg-slate-700 text-gray-300" : "bg-gray-200 text-gray-700"
+                  }`}>
+                    {sentRequests.length}
+                  </span>
+                )}
+              </button>
             </div>
-          </div>
-        ) : activeTab === "pending" ? (
-          <div className="max-w-4xl mx-auto space-y-3">
-            {pendingRequests.length === 0 ? (
-              <div className="text-center py-16">
-                <Inbox className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? "text-gray-600" : "text-gray-400"}`} />
-                <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                  No pending requests
-                </h3>
-                <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                  You don't have any pending friend requests.
-                </p>
+
+            {/* Incoming Requests */}
+            {requestsTab === "incoming" && (
+              <div className="space-y-3">
+                {!pendingRequests || pendingRequests.length === 0 ? (
+                  <div className="text-center py-16">
+                    <Inbox className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? "text-gray-600" : "text-gray-400"}`} />
+                    <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                      No incoming requests
+                    </h3>
+                    <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                      You don't have any incoming friend requests.
+                    </p>
+                  </div>
+                ) : (
+                  pendingRequests.map((request) => (
+                    <PendingRequestCard key={request.id} request={request} />
+                  ))
+                )}
               </div>
-            ) : (
-              pendingRequests.map((request) => (
-                <PendingRequestCard key={request.id} request={request} />
-              ))
             )}
-          </div>
-        ) : activeTab === "blocked" ? (
-          <div className="max-w-4xl mx-auto space-y-3">
-            {blockedUsers.length === 0 ? (
-              <div className="text-center py-16">
-                <Shield className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? "text-gray-600" : "text-gray-400"}`} />
-                <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                  No blocked users
-                </h3>
-                <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                  You haven't blocked anyone yet.
-                </p>
+
+            {/* Outgoing Requests */}
+            {requestsTab === "outgoing" && (
+              <div className="space-y-3">
+                {!sentRequests || sentRequests.length === 0 ? (
+                  <div className="text-center py-16">
+                    <Send className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? "text-gray-600" : "text-gray-400"}`} />
+                    <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                      No outgoing requests
+                    </h3>
+                    <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                      You haven't sent any friend requests.
+                    </p>
+                  </div>
+                ) : (
+                  sentRequests.map((request) => (
+                    <SentRequestCard key={request.id} request={request} />
+                  ))
+                )}
               </div>
-            ) : (
-              blockedUsers.map((user) => (
-                <BlockedUserCard key={user.id} user={user} />
-              ))
             )}
           </div>
         ) : (
@@ -440,7 +493,7 @@ export default function Friends() {
               <div className="text-center py-16">
                 <Users className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? "text-gray-600" : "text-gray-400"}`} />
                 <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                  {searchQuery ? "No friends found" : activeTab === "online" ? "No friends online" : "No friends yet"}
+                  {searchQuery ? "No friends found" : "No friends yet"}
                 </h3>
                 <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
                   {searchQuery
@@ -456,6 +509,26 @@ export default function Friends() {
           </div>
         )}
       </div>
+
+      {/* Add Friend Modal */}
+      <AddFriendModal
+        isOpen={showAddFriendModal}
+        onClose={() => setShowAddFriendModal(false)}
+        onSendRequest={sendFriendRequest}
+      />
+
+      {/* Friend Profile Modal */}
+      <FriendProfileModal
+        isOpen={showProfileModal}
+        onClose={() => {
+          setShowProfileModal(false);
+          setSelectedFriend(null);
+        }}
+        friend={selectedFriend}
+        onMessage={handleMessageFriend}
+        onRemove={removeFriend}
+        onBlock={blockUser}
+      />
     </div>
   );
 }

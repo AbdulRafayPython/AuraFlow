@@ -297,6 +297,19 @@ class ChannelService {
       return 'member';
     }
   }
+
+  async searchUsers(query: string): Promise<any[]> {
+    try {
+      const response = await axios.get<any[]>(
+        `${API_URL}/users/search?query=${encodeURIComponent(query)}`,
+        this.getAuthHeaders()
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Error searching users:', error);
+      throw new Error(error.response?.data?.error || 'Failed to search users');
+    }
+  }
 }
 
 export const channelService = new ChannelService();

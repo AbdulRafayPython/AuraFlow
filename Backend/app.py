@@ -25,7 +25,7 @@ from routes.messages import (
     mark_as_read, delete_message, edit_message
 )
 from routes.friends import (
-    send_friend_request, get_pending_requests,
+    send_friend_request, get_pending_requests, get_sent_requests,
     accept_friend_request, reject_friend_request,
     cancel_friend_request, remove_friend
 )
@@ -115,6 +115,7 @@ app.route("/api/messages/<int:message_id>", methods=["PUT"])(edit_message)
 app.route("/api/channels/friends", methods=["GET"])(get_friends)
 app.route("/api/friends/request", methods=["POST"])(send_friend_request)
 app.route("/api/friends/requests/pending", methods=["GET"])(get_pending_requests)
+app.route("/api/friends/requests/sent", methods=["GET"])(get_sent_requests)
 app.route("/api/friends/request/<int:request_id>/accept", methods=["POST"])(accept_friend_request)
 app.route("/api/friends/request/<int:request_id>/reject", methods=["POST"])(reject_friend_request)
 app.route("/api/friends/request/<int:request_id>/cancel", methods=["POST"])(cancel_friend_request)

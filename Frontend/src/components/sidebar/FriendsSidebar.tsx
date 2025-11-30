@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useFriends } from "../../contexts/FriendsContext";
 import { useAuth } from "../../contexts/AuthContext";
-import { Users, Plus, Home, ChevronLeft, ChevronRight, LogOut, Moon, Sun, Settings, User, Bell, Shield, Palette, HelpCircle, MessageSquare } from "lucide-react";
+import { Users, Plus, Home, ChevronLeft, ChevronRight, LogOut, Moon, Sun, Settings, User, Bell, Shield, Palette, HelpCircle, MessageSquare, ChevronDown } from "lucide-react";
 import CreateCommunityModal from "../modals/CreateCommunityModal";
 import JoinCommunityModal from "../modals/JoinCommunityModal";
 import { channelService } from "../../services/channelService";
@@ -33,12 +33,15 @@ const statusColors = {
 
 export default function FriendsSidebar({ onNavigate, currentView, selectedCommunity }: FriendsSidebarProps) {
   const { isDarkMode, toggleTheme } = useTheme();
-  const { pendingRequests } = useFriends();
+  const { pendingRequests, friends = [] } = useFriends();
   const { logout } = useAuth();
   const { 
     communities, 
     selectCommunity,
     reloadCommunities,
+    selectFriend,
+    currentFriend,
+    userStatuses,
   } = useRealtime();
   
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -49,6 +52,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userStatus, setUserStatus] = useState<'online' | 'idle' | 'dnd' | 'offline'>('online');
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [expandedFriendsSection, setExpandedFriendsSection] = useState(true);
 
   // Load current user data
   useEffect(() => {
@@ -152,6 +156,34 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const getCommunityColor = (index: number) => {
     const colors = ["bg-blue-600", "bg-purple-600", "bg-green-600", "bg-red-600", "bg-yellow-600", "bg-pink-600"];
     return colors[index % colors.length];
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'online': return 'bg-green-500';
+      case 'idle': return 'bg-yellow-500';
+      case 'dnd': return 'bg-red-500';
+      case 'offline': return 'bg-gray-500';
+      default: return 'bg-gray-500';
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'online': return 'Online';
+      case 'idle': return 'Idle';
+      case 'dnd': return 'Do Not Disturb';
+      case 'offline': return 'Offline';
+      default: return status;
+    }
+  };
+
+  const handleFriendClick = (friendId: number) => {
+    const friend = friends.find(f => f.id === friendId);
+    if (friend) {
+      selectFriend(friend.id);
+      onNavigate("dashboard");
+    }
   };
 
   const renderUserAvatar = () => {
@@ -586,6 +618,139 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                   {currentUser?.display_name || currentUser?.username || 'Your Profile'}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Friends & Communities Detail Panel - Shows when viewing friends section */}
+      {currentView === "friends" && !isCollapsed && (
+        <div className={`w-64 flex flex-col h-full border-l ${
+          isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
+        }`}>
+          {/* Header */}
+          <div className={`px-4 py-3 border-b ${
+            isDarkMode ? 'border-slate-700/50' : 'border-gray-200'
+          }`}>
+            <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+              Friends & Communities
+            </h2>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto">
+            {/* Friends Section */}
+            <div className="px-4 py-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className={`text-xs font-semibold uppercase tracking-wider ${
+                  isDarkMode ? 'text-slate-400' : 'text-gray-600'
+                }`}>
+                  Recent Friends
+                </h3>
+                <button
+                  onClick={() => setExpandedFriendsSection(!expandedFriendsSection)}
+                  className={`p-1 rounded transition-colors ${
+                    isDarkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  {expandedFriendsSection ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {expandedFriendsSection && (
+                <div className="space-y-2">
+                  {friends.length === 0 ? (
+                    <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                      No friends yet
+                    </p>
+                  ) : (
+                    friends.map((friend) => {
+                      const status = userStatuses.get(friend.username) || friend.status;
+                      return (
+                        <button
+                          key={friend.id}
+                          onClick={() => handleFriendClick(friend.id)}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
+                            currentFriend?.id === friend.id
+                              ? isDarkMode
+                                ? 'bg-slate-700 text-white'
+                                : 'bg-gray-100 text-gray-900'
+                              : isDarkMode
+                              ? 'text-slate-300 hover:bg-slate-700/50'
+                              : 'text-gray-700 hover:bg-gray-50'
+                          }`}
+                          title={`${friend.display_name} - ${getStatusText(status)}`}
+                        >
+                          <div className="relative flex-shrink-0">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${
+                              status === 'online' ? 'bg-green-600' : status === 'idle' ? 'bg-yellow-600' : status === 'dnd' ? 'bg-red-600' : 'bg-gray-600'
+                            }`}>
+                              {getAvatarInitials(friend.display_name)}
+                            </div>
+                            <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-white ${getStatusColor(status)}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="truncate font-medium text-sm">
+                              {friend.display_name}
+                            </div>
+                            {friend.custom_status && (
+                              <div className={`text-xs truncate ${
+                                isDarkMode ? 'text-slate-500' : 'text-gray-500'
+                              }`}>
+                                {friend.custom_status}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Divider */}
+            <div className={`h-px mx-4 ${isDarkMode ? 'bg-slate-700/50' : 'bg-gray-200'}`} />
+
+            {/* Communities Section */}
+            <div className="px-4 py-4">
+              <h3 className={`text-xs font-semibold uppercase tracking-wider mb-3 ${
+                isDarkMode ? 'text-slate-400' : 'text-gray-600'
+              }`}>
+                Your Communities
+              </h3>
+              <div className="space-y-2">
+                {communities.length === 0 ? (
+                  <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                    No communities yet
+                  </p>
+                ) : (
+                  communities.map((community) => (
+                    <button
+                      key={community.id}
+                      onClick={() => handleCommunityClick(community.id.toString())}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
+                        selectedCommunity === community.id.toString()
+                          ? isDarkMode
+                            ? 'bg-slate-700 text-white'
+                            : 'bg-gray-100 text-gray-900'
+                          : isDarkMode
+                          ? 'text-slate-300 hover:bg-slate-700/50'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-semibold text-white text-xs ${getCommunityColor(communities.indexOf(community))}`}>
+                        {community.icon || community.name.substring(0, 2).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate font-medium text-sm">
+                          {community.name}
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>
