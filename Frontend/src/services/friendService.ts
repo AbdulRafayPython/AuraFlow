@@ -9,6 +9,7 @@ class FriendService {
     const token = localStorage.getItem('token');
     return {
       headers: {
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
     };
@@ -18,7 +19,7 @@ class FriendService {
   async getFriends(): Promise<Friend[]> {
     try {
       const response = await axios.get<Friend[]>(
-        `${API_BASE}/friends`,
+        `${API_BASE}/channels/friends`,
         this.getAuthHeaders()
       );
       return response.data;

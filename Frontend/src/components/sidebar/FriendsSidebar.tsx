@@ -54,7 +54,6 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [expandedFriendsSection, setExpandedFriendsSection] = useState(true);
 
-  // Load current user data
   useEffect(() => {
     const loadUserData = async () => {
       try {
@@ -67,7 +66,6 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     loadUserData();
   }, []);
 
-  // Close profile menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -100,21 +98,11 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const handleCreateCommunity = async (data: CommunityFormData) => {
     try {
       const newCommunity = await channelService.createCommunity(data);
-      console.log('[FRIENDS_SIDEBAR] Community created:', newCommunity);
-      
-      // Reload communities to get the new community instantly
-      console.log('[FRIENDS_SIDEBAR] Reloading communities list...');
       await reloadCommunities();
-      
-      // Select the newly created community
       await selectCommunity(newCommunity.id);
       
-      // Broadcast the community creation event via socket
       if (socketService.isConnected()) {
         socketService.broadcastCommunityCreated(newCommunity);
-        console.log('[FRIENDS_SIDEBAR] Community broadcast event sent');
-      } else {
-        console.warn('[FRIENDS_SIDEBAR] Socket not connected, community won\'t be broadcast');
       }
       
       onNavigate("dashboard", newCommunity.id.toString());
@@ -127,15 +115,8 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const handleJoinCommunity = async (communityId: number) => {
     try {
       await channelService.joinCommunity(communityId);
-      console.log('[FRIENDS_SIDEBAR] Community joined:', communityId);
-      
-      // Reload communities to refresh the list
       await reloadCommunities();
-      
-      // Select the joined community
       await selectCommunity(communityId);
-      
-      // Navigate to the joined community
       onNavigate("dashboard", communityId.toString());
     } catch (error) {
       console.error("Failed to join community:", error);
@@ -145,12 +126,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
 
   const getAvatarInitials = (name: string) => {
     if (!name) return "?";
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
+    return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
   };
 
   const getCommunityColor = (index: number) => {
@@ -208,451 +184,231 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
 
   const handleStatusChange = (status: 'online' | 'idle' | 'dnd' | 'offline') => {
     setUserStatus(status);
-    // TODO: Send status update to server
   };
 
   return (
-    <div className={`relative flex-shrink-0 h-full transition-all duration-200 ${isCollapsed ? 'w-0' : 'w-[72px]'}`}>
-      {/* Main Content */}
-      {!isCollapsed && (
-        <div className={`flex flex-col items-center py-3 gap-2 w-[72px] h-full ${
-          isDarkMode ? 'bg-slate-900' : 'bg-gray-100'
-        }`}>
-          {/* Collapse Button */}
+    <div className={`flex-shrink-0 h-full flex transition-all duration-200 ${isDarkMode ? 'bg-slate-900' : 'bg-gray-50'}`}>
+      {/* Icon Sidebar - Always visible */}
+      <div className={`flex flex-col items-center py-3 gap-2 flex-shrink-0 w-20 ${isDarkMode ? 'border-r border-slate-700' : 'border-r border-gray-200'}`}>
+        {/* Toggle Button */}
+        <div className="relative group">
           <button
-            onClick={() => setIsCollapsed(true)}
-            className={`absolute -right-3 top-3 z-50 w-6 h-6 rounded-full flex items-center justify-center transition-all shadow-lg ${
-              isDarkMode ? 'bg-slate-700 hover:bg-slate-600 border border-slate-600' : 'bg-gray-200 hover:bg-gray-300 border border-gray-300'
-            }`}
-            title="Collapse sidebar"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'hover:bg-slate-700 text-slate-400 hover:text-white' : 'hover:bg-gray-200 text-gray-600 hover:text-gray-900'}`}
+            title={isCollapsed ? "Expand" : "Collapse"}
           >
-            <ChevronLeft className={`w-3.5 h-3.5 ${isDarkMode ? 'text-white' : 'text-gray-900'}`} />
+            {isCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
           </button>
-
-          {/* Home/Dashboard Button */}
-          <div
-            className="relative w-full flex justify-center"
-            onMouseEnter={() => setHoveredItem('home')}
-            onMouseLeave={() => setHoveredItem(null)}
-          >
-            {currentView === "dashboard" && !selectedCommunity && (
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-white rounded-r-full" />
-            )}
-            <button
-              onClick={() => onNavigate("dashboard")}
-              className={`w-12 h-12 rounded-3xl flex items-center justify-center transition-all duration-200 ${
-                currentView === "dashboard" && !selectedCommunity
-                  ? "bg-blue-600 rounded-2xl"
-                  : hoveredItem === 'home'
-                    ? "bg-blue-600 rounded-2xl"
-                    : isDarkMode
-                      ? "bg-slate-700 hover:bg-blue-600 hover:rounded-2xl"
-                      : "bg-gray-200 hover:bg-blue-600 hover:rounded-2xl text-gray-900 hover:text-white"
-              }`}
-            >
-              <Home className={`w-6 h-6 ${isDarkMode || (currentView === "dashboard" && !selectedCommunity) || hoveredItem === 'home' ? 'text-white' : 'text-gray-900'}`} />
-            </button>
-            {hoveredItem === 'home' && (
-              <div className={`absolute left-[72px] top-0 ml-2 px-3 py-2 text-sm font-semibold rounded-lg shadow-xl z-50 whitespace-nowrap ${
-                isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200'
-              }`}>
-                Home
-              </div>
-            )}
-          </div>
-
-          {/* Divider */}
-          <div className={`h-0.5 w-8 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`} />
-
-          {/* Friends Button */}
-          <div
-            className="relative w-full flex justify-center"
-            onMouseEnter={() => setHoveredItem('friends')}
-            onMouseLeave={() => setHoveredItem(null)}
-          >
-            {currentView === "friends" && (
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-white rounded-r-full" />
-            )}
-            <button
-              onClick={() => onNavigate("friends")}
-              className={`relative w-12 h-12 rounded-3xl flex items-center justify-center transition-all duration-200 ${
-                currentView === "friends"
-                  ? "bg-green-600 rounded-2xl"
-                  : hoveredItem === 'friends'
-                    ? "bg-green-600 rounded-2xl"
-                    : isDarkMode
-                      ? "bg-slate-700 hover:bg-green-600 hover:rounded-2xl"
-                      : "bg-gray-200 hover:bg-green-600 hover:rounded-2xl text-gray-900 hover:text-white"
-              }`}
-            >
-              <Users className={`w-6 h-6 ${isDarkMode || currentView === "friends" || hoveredItem === 'friends' ? 'text-white' : 'text-gray-900'}`} />
-              {pendingRequests.length > 0 && (
-                <div className={`absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 ${
-                  isDarkMode ? 'border-slate-900' : 'border-gray-100'
-                }`}>
-                  {pendingRequests.length > 9 ? '9+' : pendingRequests.length}
-                </div>
-              )}
-            </button>
-            {hoveredItem === 'friends' && (
-              <div className={`absolute left-[72px] top-0 ml-2 px-3 py-2 text-sm font-semibold rounded-lg shadow-xl z-50 whitespace-nowrap ${
-                isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200'
-              }`}>
-                Friends
-                {pendingRequests.length > 0 && (
-                  <span className="ml-2 px-1.5 py-0.5 bg-red-500 rounded text-xs">
-                    {pendingRequests.length}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Divider */}
-          <div className={`h-0.5 w-8 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`} />
-
-          {/* Communities */}
-          <div className="w-full flex flex-col items-center gap-2 overflow-y-auto flex-1 scrollbar-none">
-            {communities.map((community, index) => {
-              const communityId = community.id.toString();
-              const color = getCommunityColor(index);
-              const initials = community.name
-                .split(" ")
-                .map((n) => n[0])
-                .join("")
-                .toUpperCase()
-                .slice(0, 2);
-
-              return (
-                <div
-                  key={community.id}
-                  className="relative w-full flex justify-center"
-                  onMouseEnter={() => setHoveredItem(communityId)}
-                  onMouseLeave={() => setHoveredItem(null)}
-                >
-                  {selectedCommunity === communityId && (
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-white rounded-r-full" />
-                  )}
-                  <button
-                    onClick={() => handleCommunityClick(communityId)}
-                    className={`w-12 h-12 rounded-3xl flex items-center justify-center font-bold text-white text-sm transition-all duration-200 ${
-                      selectedCommunity === communityId
-                        ? `${color} rounded-2xl`
-                        : hoveredItem === communityId
-                          ? `${color} rounded-2xl`
-                          : isDarkMode
-                            ? `bg-slate-700 hover:${color} hover:rounded-2xl`
-                            : `bg-gray-200 hover:${color} hover:rounded-2xl text-gray-900 hover:text-white`
-                    }`}
-                  >
-                    {community.icon || initials}
-                  </button>
-                  {hoveredItem === communityId && (
-                    <div className={`absolute left-[72px] top-0 ml-2 px-3 py-2 text-sm font-semibold rounded-lg shadow-xl z-50 whitespace-nowrap ${
-                      isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200'
-                    }`}>
-                      {community.name}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Add Community */}
-          <div
-            className="relative w-full flex justify-center mt-2"
-            onMouseEnter={() => setHoveredItem('add-community')}
-            onMouseLeave={() => setHoveredItem(null)}
-          >
-            <button
-              onClick={() => setShowCreateCommunityModal(true)}
-              className={`w-12 h-12 rounded-3xl flex items-center justify-center transition-all duration-200 ${
-                hoveredItem === 'add-community'
-                  ? 'bg-green-600 rounded-2xl text-white'
-                  : isDarkMode
-                    ? 'bg-slate-700 hover:bg-green-600 hover:rounded-2xl text-green-500 hover:text-white'
-                    : 'bg-gray-200 hover:bg-green-600 hover:rounded-2xl text-green-500 hover:text-white'
-              }`}
-              title="Create or join a community"
-            >
-              <Plus className="w-6 h-6" />
-            </button>
-            {hoveredItem === 'add-community' && (
-              <div className={`absolute left-[72px] top-0 ml-2 rounded-xl shadow-2xl z-50 overflow-hidden border ${
-                isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
-              }`}>
-                <button
-                  onClick={() => {
-                    setShowCreateCommunityModal(true);
-                    setHoveredItem(null);
-                  }}
-                  className={`w-full px-4 py-2 text-sm font-semibold text-left transition-colors whitespace-nowrap ${
-                    isDarkMode
-                      ? 'text-green-400 hover:bg-slate-700'
-                      : 'text-green-600 hover:bg-gray-100'
-                  }`}
-                >
-                  Create Community
-                </button>
-                <div className={`h-px ${isDarkMode ? 'bg-slate-700' : 'bg-gray-200'}`} />
-                <button
-                  onClick={() => {
-                    setShowJoinCommunityModal(true);
-                    setHoveredItem(null);
-                  }}
-                  className={`w-full px-4 py-2 text-sm font-semibold text-left transition-colors whitespace-nowrap ${
-                    isDarkMode
-                      ? 'text-cyan-400 hover:bg-slate-700'
-                      : 'text-cyan-600 hover:bg-gray-100'
-                  }`}
-                >
-                  Join Community
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Bottom Section - User Profile */}
-          <div className="flex flex-col items-center gap-2 pt-2 profile-menu-container">
-            <div
-              className="relative w-full flex justify-center"
-              onMouseEnter={() => setHoveredItem('profile')}
-              onMouseLeave={() => setHoveredItem(null)}
-            >
-              <button 
-                onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className={`relative w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 overflow-visible ring-2 ${
-                  showProfileMenu 
-                    ? 'ring-blue-500 scale-105' 
-                    : isDarkMode 
-                      ? 'ring-slate-700 hover:ring-blue-500/50 hover:scale-105' 
-                      : 'ring-gray-300 hover:ring-blue-500/50 hover:scale-105'
-                }`}
-              >
-                <div className="w-full h-full rounded-full overflow-hidden">
-                  {renderUserAvatar()}
-                </div>
-                <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 ${
-                  isDarkMode ? 'border-slate-900' : 'border-gray-100'
-                } ${statusColors[userStatus]}`} 
-                style={{ transform: 'translate(25%, 25%)' }}
-                />
-              </button>
-
-              {/* Professional Profile Menu */}
-              {showProfileMenu && currentUser && (
-                <div className={`absolute bottom-full left-full ml-2 mb-2 w-72 rounded-xl shadow-2xl border overflow-hidden z-[100] animate-in slide-in-from-bottom-2 duration-200 ${
-                  isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
-                }`}>
-                  {/* User Info Header */}
-                  <div className={`p-4 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-900/80 to-slate-800/80 border-slate-700' : 'bg-gradient-to-br from-blue-50/50 to-white border-gray-200'}`}>
-                    <div className="flex items-center gap-3">
-                      <div className="relative w-14 h-14 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-blue-500 shadow-lg">
-                        {renderUserAvatar()}
-                        <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-3 ${
-                          isDarkMode ? 'border-slate-900' : 'border-blue-50'
-                        } ${statusColors[userStatus]}`} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className={`font-semibold text-base truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                          {currentUser.display_name || currentUser.username}
-                        </div>
-                        <div className={`text-sm truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                          @{currentUser.username}
-                        </div>
-                        <div className={`flex items-center gap-1.5 mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                          <div className={`w-2 h-2 rounded-full ${statusColors[userStatus]}`} />
-                          <span className="capitalize">{userStatus}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Status Selector */}
-                  <div className={`p-3 border-b ${isDarkMode ? 'border-slate-700/50' : 'border-gray-200'}`}>
-                    <div className={`text-xs font-semibold mb-2 tracking-wide ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      SET STATUS
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(['online', 'idle', 'dnd', 'offline'] as const).map((status) => (
-                        <button
-                          key={status}
-                          onClick={() => handleStatusChange(status)}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                            userStatus === status
-                              ? isDarkMode 
-                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' 
-                                : 'bg-blue-500 text-white shadow-lg shadow-blue-500/30'
-                              : isDarkMode 
-                                ? 'bg-slate-700/50 hover:bg-slate-700 text-gray-300' 
-                                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                          }`}
-                        >
-                          <div className={`w-2.5 h-2.5 rounded-full ${userStatus === status ? 'bg-white' : statusColors[status]}`} />
-                          <span className="capitalize">{status === 'dnd' ? 'DND' : status}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Menu Options */}
-                  <div className="p-2 max-h-80 overflow-y-auto scrollbar-thin">
-                    <button
-                      onClick={() => {
-                        setShowProfileMenu(false);
-                        onNavigate("profile");
-                      }}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                        isDarkMode ? 'hover:bg-slate-700 text-white hover:translate-x-0.5' : 'hover:bg-gray-100 text-gray-900 hover:translate-x-0.5'
-                      }`}
-                    >
-                      <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}>
-                        <User className="w-4 h-4" />
-                      </div>
-                      <span>My Profile</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setShowProfileMenu(false);
-                        onNavigate("settings");
-                      }}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                        isDarkMode ? 'hover:bg-slate-700 text-white hover:translate-x-0.5' : 'hover:bg-gray-100 text-gray-900 hover:translate-x-0.5'
-                      }`}
-                    >
-                      <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}>
-                        <Settings className="w-4 h-4" />
-                      </div>
-                      <span>Settings</span>
-                    </button>
-
-                    <button
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                        isDarkMode ? 'hover:bg-slate-700 text-white hover:translate-x-0.5' : 'hover:bg-gray-100 text-gray-900 hover:translate-x-0.5'
-                      }`}
-                    >
-                      <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}>
-                        <Bell className="w-4 h-4" />
-                      </div>
-                      <span>Notifications</span>
-                    </button>
-
-                    <button
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                        isDarkMode ? 'hover:bg-slate-700 text-white hover:translate-x-0.5' : 'hover:bg-gray-100 text-gray-900 hover:translate-x-0.5'
-                      }`}
-                    >
-                      <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}>
-                        <Shield className="w-4 h-4" />
-                      </div>
-                      <span>Privacy & Safety</span>
-                    </button>
-
-                    <div className={`my-2 h-px ${isDarkMode ? 'bg-slate-700/50' : 'bg-gray-200'}`} />
-
-                    <button
-                      onClick={toggleTheme}
-                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                        isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}>
-                          <Palette className="w-4 h-4" />
-                        </div>
-                        <span>Appearance</span>
-                      </div>
-                      <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold ${
-                        isDarkMode ? 'bg-slate-900 text-blue-400' : 'bg-blue-50 text-blue-600'
-                      }`}>
-                        {isDarkMode ? <Moon className="w-3 h-3" /> : <Sun className="w-3 h-3" />}
-                        <span>{isDarkMode ? 'Dark' : 'Light'}</span>
-                      </div>
-                    </button>
-
-                    <button
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                        isDarkMode ? 'hover:bg-slate-700 text-white hover:translate-x-0.5' : 'hover:bg-gray-100 text-gray-900 hover:translate-x-0.5'
-                      }`}
-                    >
-                      <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}>
-                        <MessageSquare className="w-4 h-4" />
-                      </div>
-                      <span>Feedback</span>
-                    </button>
-
-                    <button
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                        isDarkMode ? 'hover:bg-slate-700 text-white hover:translate-x-0.5' : 'hover:bg-gray-100 text-gray-900 hover:translate-x-0.5'
-                      }`}
-                    >
-                      <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}>
-                        <HelpCircle className="w-4 h-4" />
-                      </div>
-                      <span>Help & Support</span>
-                    </button>
-
-                    <div className={`my-2 h-px ${isDarkMode ? 'bg-slate-700/50' : 'bg-gray-200'}`} />
-
-                    <button
-                      onClick={handleLogout}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-                        isDarkMode ? 'hover:bg-red-900/30 text-red-400 hover:translate-x-0.5' : 'hover:bg-red-50 text-red-600 hover:translate-x-0.5'
-                      }`}
-                    >
-                      <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-red-900/20' : 'bg-red-100'}`}>
-                        <LogOut className="w-4 h-4" />
-                      </div>
-                      <span>Logout</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {hoveredItem === 'profile' && !showProfileMenu && (
-                <div className={`absolute left-[72px] top-0 ml-2 px-3 py-2 text-sm font-semibold rounded-lg shadow-xl z-50 whitespace-nowrap ${
-                  isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200'
-                }`}>
-                  {currentUser?.display_name || currentUser?.username || 'Your Profile'}
-                </div>
-              )}
-            </div>
+          <div className={`absolute left-20 top-1/2 -translate-y-1/2 px-2 py-1 text-xs font-medium rounded whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity ${isDarkMode ? 'bg-slate-900 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200'}`}>
+            {isCollapsed ? "Expand" : "Collapse"}
           </div>
         </div>
-      )}
 
-      {/* Friends & Communities Detail Panel - Shows when viewing friends section */}
-      {currentView === "friends" && !isCollapsed && (
-        <div className={`w-64 flex flex-col h-full border-l ${
-          isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
-        }`}>
-          {/* Header */}
-          <div className={`px-4 py-3 border-b ${
-            isDarkMode ? 'border-slate-700/50' : 'border-gray-200'
-          }`}>
-            <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              Friends & Communities
-            </h2>
+        <div className={`h-0.5 w-8 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`} />
+
+        {/* Home Button */}
+        <div className="relative group w-full flex justify-center">
+          {currentView === "dashboard" && !selectedCommunity && (
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-blue-500 rounded-r-full" />
+          )}
+          <button
+            onClick={() => onNavigate("dashboard")}
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${currentView === "dashboard" && !selectedCommunity ? "bg-blue-600 text-white" : isDarkMode ? "bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white" : "bg-gray-200 hover:bg-blue-600 text-gray-600 hover:text-white"}`}
+          >
+            <Home className="w-5 h-5" />
+          </button>
+          <div className={`absolute left-20 top-1/2 -translate-y-1/2 px-2 py-1 text-xs font-medium rounded whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity ${isDarkMode ? 'bg-slate-900 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200'}`}>Home</div>
+        </div>
+
+        {/* Friends Button */}
+        <div className="relative group w-full flex justify-center">
+          {currentView === "friends" && (
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-green-500 rounded-r-full" />
+          )}
+          <button
+            onClick={() => onNavigate("friends")}
+            className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${currentView === "friends" ? "bg-green-600 text-white" : isDarkMode ? "bg-slate-700 hover:bg-green-600 text-slate-400 hover:text-white" : "bg-gray-200 hover:bg-green-600 text-gray-600 hover:text-white"}`}
+          >
+            <Users className="w-5 h-5" />
+            {pendingRequests.length > 0 && (
+              <div className={`absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 ${isDarkMode ? 'border-slate-900' : 'border-gray-50'}`}>
+                {pendingRequests.length > 9 ? '9+' : pendingRequests.length}
+              </div>
+            )}
+          </button>
+          <div className={`absolute left-20 top-1/2 -translate-y-1/2 px-2 py-1 text-xs font-medium rounded whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity ${isDarkMode ? 'bg-slate-900 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200'}`}>Friends {pendingRequests.length > 0 && `(${pendingRequests.length})`}</div>
+        </div>
+
+        <div className={`h-0.5 w-8 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`} />
+
+        {/* Communities */}
+        <div className="w-full flex flex-col items-center gap-2 overflow-y-auto flex-1">
+          {communities.map((community, index) => {
+            const communityId = community.id.toString();
+            const color = getCommunityColor(index);
+            const initials = community.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+
+            return (
+              <div key={community.id} className="relative group w-full flex justify-center">
+                {selectedCommunity === communityId && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-white rounded-r-full" />
+                )}
+                <button
+                  onClick={() => handleCommunityClick(communityId)}
+                  className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white text-sm transition-all ${selectedCommunity === communityId ? color : isDarkMode ? `bg-slate-700 hover:${color}` : `bg-gray-200 hover:${color}`}`}
+                >
+                  {community.icon || initials}
+                </button>
+                <div className={`absolute left-20 top-1/2 -translate-y-1/2 px-2 py-1 text-xs font-medium rounded whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity ${isDarkMode ? 'bg-slate-900 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200'}`}>{community.name}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Add Community */}
+        <div className="relative group w-full flex justify-center">
+          <button
+            onClick={() => setShowCreateCommunityModal(true)}
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-700 hover:bg-green-600 text-green-500 hover:text-white' : 'bg-gray-200 hover:bg-green-600 text-green-600 hover:text-white'}`}
+          >
+            <Plus className="w-5 h-5" />
+          </button>
+          <div className={`absolute left-20 top-1/2 -translate-y-1/2 rounded-lg shadow-2xl overflow-hidden border opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
+            <button
+              onClick={() => { setShowCreateCommunityModal(true); }}
+              className={`px-3 py-2 text-xs font-semibold text-left transition-colors whitespace-nowrap ${isDarkMode ? 'text-green-400 hover:bg-slate-700' : 'text-green-600 hover:bg-gray-100'}`}
+            >
+              Create
+            </button>
+            <div className={`h-px ${isDarkMode ? 'bg-slate-700' : 'bg-gray-200'}`} />
+            <button
+              onClick={() => setShowJoinCommunityModal(true)}
+              className={`px-3 py-2 text-xs font-semibold text-left transition-colors whitespace-nowrap ${isDarkMode ? 'text-cyan-400 hover:bg-slate-700' : 'text-cyan-600 hover:bg-gray-100'}`}
+            >
+              Join
+            </button>
+          </div>
+        </div>
+
+        {/* Profile */}
+        <div className="flex flex-col items-center gap-2 pt-2 profile-menu-container">
+          <div className="relative group w-full flex justify-center">
+            <button 
+              onClick={() => setShowProfileMenu(!showProfileMenu)}
+              className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ring-2 ${showProfileMenu ? 'ring-blue-500 scale-105' : isDarkMode ? 'ring-slate-700 hover:ring-blue-500/50 hover:scale-105' : 'ring-gray-300 hover:ring-blue-500/50 hover:scale-105'}`}
+            >
+              <div className="w-full h-full rounded-full overflow-hidden">
+                {renderUserAvatar()}
+              </div>
+              <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 ${isDarkMode ? 'border-slate-900' : 'border-gray-50'} ${statusColors[userStatus]}`} style={{ transform: 'translate(25%, 25%)' }} />
+            </button>
+
+            {showProfileMenu && currentUser && (
+              <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 rounded-xl shadow-2xl border overflow-hidden z-[100] ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
+                <div className={`p-4 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-900/80 to-slate-800/80 border-slate-700' : 'bg-gradient-to-br from-blue-50/50 to-white border-gray-200'}`}>
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-14 h-14 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-blue-500 shadow-lg">
+                      {renderUserAvatar()}
+                      <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-3 ${isDarkMode ? 'border-slate-900' : 'border-blue-50'} ${statusColors[userStatus]}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-semibold text-base truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                        {currentUser.display_name || currentUser.username}
+                      </div>
+                      <div className={`text-sm truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        @{currentUser.username}
+                      </div>
+                      <div className={`flex items-center gap-1.5 mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                        <div className={`w-2 h-2 rounded-full ${statusColors[userStatus]}`} />
+                        <span className="capitalize">{userStatus}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`p-3 border-b ${isDarkMode ? 'border-slate-700/50' : 'border-gray-200'}`}>
+                  <div className={`text-xs font-semibold mb-2 tracking-wide ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>SET STATUS</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['online', 'idle', 'dnd', 'offline'] as const).map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => handleStatusChange(status)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${userStatus === status ? (isDarkMode ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-blue-500 text-white shadow-lg shadow-blue-500/30') : (isDarkMode ? 'bg-slate-700/50 hover:bg-slate-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700')}`}
+                      >
+                        <div className={`w-2.5 h-2.5 rounded-full ${userStatus === status ? 'bg-white' : statusColors[status]}`} />
+                        <span className="capitalize">{status === 'dnd' ? 'DND' : status}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="p-2 max-h-80 overflow-y-auto scrollbar-thin">
+                  <button onClick={() => { setShowProfileMenu(false); onNavigate("profile"); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
+                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><User className="w-4 h-4" /></div>
+                    <span>My Profile</span>
+                  </button>
+                  <button onClick={() => { setShowProfileMenu(false); onNavigate("settings"); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
+                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><Settings className="w-4 h-4" /></div>
+                    <span>Settings</span>
+                  </button>
+                  <button className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
+                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><Bell className="w-4 h-4" /></div>
+                    <span>Notifications</span>
+                  </button>
+                  <button className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
+                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><Shield className="w-4 h-4" /></div>
+                    <span>Privacy & Safety</span>
+                  </button>
+                  <div className={`my-2 h-px ${isDarkMode ? 'bg-slate-700/50' : 'bg-gray-200'}`} />
+                  <button onClick={toggleTheme} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><Palette className="w-4 h-4" /></div>
+                      <span>Appearance</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold ${isDarkMode ? 'bg-slate-900 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>
+                      {isDarkMode ? <Moon className="w-3 h-3" /> : <Sun className="w-3 h-3" />}
+                      <span>{isDarkMode ? 'Dark' : 'Light'}</span>
+                    </div>
+                  </button>
+                  <button className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
+                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><MessageSquare className="w-4 h-4" /></div>
+                    <span>Feedback</span>
+                  </button>
+                  <button className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
+                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><HelpCircle className="w-4 h-4" /></div>
+                    <span>Help & Support</span>
+                  </button>
+                  <div className={`my-2 h-px ${isDarkMode ? 'bg-slate-700/50' : 'bg-gray-200'}`} />
+                  <button onClick={handleLogout} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${isDarkMode ? 'hover:bg-red-900/30 text-red-400' : 'hover:bg-red-50 text-red-600'}`}>
+                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-red-900/20' : 'bg-red-100'}`}><LogOut className="w-4 h-4" /></div>
+                    <span>Logout</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!showProfileMenu && hoveredItem === 'profile' && (
+              <div className={`absolute left-20 top-1/2 -translate-y-1/2 px-2 py-1 text-xs font-medium rounded whitespace-nowrap pointer-events-none ${isDarkMode ? 'bg-slate-900 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200'}`}>
+                {currentUser?.display_name || currentUser?.username || 'Profile'}
+              </div>
+            )}
+            {!showProfileMenu && <div onMouseEnter={() => setHoveredItem('profile')} onMouseLeave={() => setHoveredItem(null)} className="absolute inset-0" />}
+          </div>
+        </div>
+      </div>
+
+      {/* Detail Panel - Friends & Communities */}
+      {!isCollapsed && currentView === "friends" && (
+        <div className={`flex-1 flex flex-col h-full border-l max-w-xs ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
+          <div className={`px-4 py-3 border-b ${isDarkMode ? 'border-slate-700/50' : 'border-gray-200'}`}>
+            <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Friends & Communities</h2>
           </div>
 
-          {/* Content */}
           <div className="flex-1 overflow-y-auto">
-            {/* Friends Section */}
             <div className="px-4 py-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className={`text-xs font-semibold uppercase tracking-wider ${
-                  isDarkMode ? 'text-slate-400' : 'text-gray-600'
-                }`}>
-                  Recent Friends
-                </h3>
-                <button
-                  onClick={() => setExpandedFriendsSection(!expandedFriendsSection)}
-                  className={`p-1 rounded transition-colors ${
-                    isDarkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-gray-100 text-gray-600'
-                  }`}
-                >
+                <h3 className={`text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>Friends</h3>
+                <button onClick={() => setExpandedFriendsSection(!expandedFriendsSection)} className={`p-1 rounded transition-colors ${isDarkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-gray-100 text-gray-600'}`}>
                   {expandedFriendsSection ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                 </button>
               </div>
@@ -660,46 +416,25 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
               {expandedFriendsSection && (
                 <div className="space-y-2">
                   {friends.length === 0 ? (
-                    <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>
-                      No friends yet
-                    </p>
+                    <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>No friends yet</p>
                   ) : (
                     friends.map((friend) => {
                       const status = userStatuses.get(friend.username) || friend.status;
                       return (
-                        <button
-                          key={friend.id}
-                          onClick={() => handleFriendClick(friend.id)}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
-                            currentFriend?.id === friend.id
-                              ? isDarkMode
-                                ? 'bg-slate-700 text-white'
-                                : 'bg-gray-100 text-gray-900'
-                              : isDarkMode
-                              ? 'text-slate-300 hover:bg-slate-700/50'
-                              : 'text-gray-700 hover:bg-gray-50'
-                          }`}
-                          title={`${friend.display_name} - ${getStatusText(status)}`}
-                        >
+                        <button key={friend.id} onClick={() => handleFriendClick(friend.id)} className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${currentFriend?.id === friend.id ? (isDarkMode ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-900') : (isDarkMode ? 'text-slate-300 hover:bg-slate-700/50' : 'text-gray-700 hover:bg-gray-50')}`}>
                           <div className="relative flex-shrink-0">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${
-                              status === 'online' ? 'bg-green-600' : status === 'idle' ? 'bg-yellow-600' : status === 'dnd' ? 'bg-red-600' : 'bg-gray-600'
-                            }`}>
-                              {getAvatarInitials(friend.display_name)}
-                            </div>
-                            <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-white ${getStatusColor(status)}`} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="truncate font-medium text-sm">
-                              {friend.display_name}
-                            </div>
-                            {friend.custom_status && (
-                              <div className={`text-xs truncate ${
-                                isDarkMode ? 'text-slate-500' : 'text-gray-500'
-                              }`}>
-                                {friend.custom_status}
+                            {friend.avatar_url ? (
+                              <img src={friend.avatar_url} alt={friend.display_name} className="w-8 h-8 rounded-full object-cover" />
+                            ) : (
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${status === 'online' ? 'bg-green-600' : status === 'idle' ? 'bg-yellow-600' : status === 'dnd' ? 'bg-red-600' : 'bg-gray-600'}`}>
+                                {getAvatarInitials(friend.display_name)}
                               </div>
                             )}
+                            <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-slate-800 ${getStatusColor(status)}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="truncate font-medium text-sm">{friend.display_name}</div>
+                            {friend.custom_status && <div className={`text-xs truncate ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>{friend.custom_status}</div>}
                           </div>
                         </button>
                       );
@@ -709,44 +444,23 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
               )}
             </div>
 
-            {/* Divider */}
             <div className={`h-px mx-4 ${isDarkMode ? 'bg-slate-700/50' : 'bg-gray-200'}`} />
 
-            {/* Communities Section */}
             <div className="px-4 py-4">
-              <h3 className={`text-xs font-semibold uppercase tracking-wider mb-3 ${
-                isDarkMode ? 'text-slate-400' : 'text-gray-600'
-              }`}>
-                Your Communities
-              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className={`text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>Communities</h3>
+                <button onClick={() => setShowJoinCommunityModal(true)} className={`p-1 rounded transition-colors ${isDarkMode ? 'hover:bg-slate-700 text-slate-400 hover:text-green-400' : 'hover:bg-gray-100 text-gray-600 hover:text-green-600'}`}><Plus className="w-4 h-4" /></button>
+              </div>
               <div className="space-y-2">
                 {communities.length === 0 ? (
-                  <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>
-                    No communities yet
-                  </p>
+                  <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>No communities yet</p>
                 ) : (
                   communities.map((community) => (
-                    <button
-                      key={community.id}
-                      onClick={() => handleCommunityClick(community.id.toString())}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
-                        selectedCommunity === community.id.toString()
-                          ? isDarkMode
-                            ? 'bg-slate-700 text-white'
-                            : 'bg-gray-100 text-gray-900'
-                          : isDarkMode
-                          ? 'text-slate-300 hover:bg-slate-700/50'
-                          : 'text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-semibold text-white text-xs ${getCommunityColor(communities.indexOf(community))}`}>
+                    <button key={community.id} onClick={() => handleCommunityClick(community.id.toString())} className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${selectedCommunity === community.id.toString() ? (isDarkMode ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-900') : (isDarkMode ? 'text-slate-300 hover:bg-slate-700/50' : 'text-gray-700 hover:bg-gray-50')}`}>
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-semibold text-white text-xs flex-shrink-0 ${getCommunityColor(communities.indexOf(community))}`}>
                         {community.icon || community.name.substring(0, 2).toUpperCase()}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="truncate font-medium text-sm">
-                          {community.name}
-                        </div>
-                      </div>
+                      <div className="flex-1 min-w-0"><div className="truncate font-medium text-sm">{community.name}</div></div>
                     </button>
                   ))
                 )}
@@ -756,45 +470,9 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         </div>
       )}
 
-      {/* Collapsed State - Expand Button */}
-      {isCollapsed && (
-        <button
-          onClick={() => setIsCollapsed(false)}
-          className={`absolute left-0 top-3 w-6 h-6 rounded-r-lg flex items-center justify-center transition-colors shadow-lg z-10 ${
-            isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-400 border border-l-0 border-slate-700' : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border border-l-0 border-gray-200'
-          }`}
-          title="Expand sidebar"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      )}
-
-      {/* Create Community Modal */}
-      <CreateCommunityModal
-        isOpen={showCreateCommunityModal}
-        onClose={() => setShowCreateCommunityModal(false)}
-        onCreateCommunity={handleCreateCommunity}
-      />
-
-      {/* Join Community Modal */}
-      <JoinCommunityModal
-        isOpen={showJoinCommunityModal}
-        onClose={() => setShowJoinCommunityModal(false)}
-        onJoinCommunity={handleJoinCommunity}
-        onDiscoverCommunities={channelService.discoverCommunities.bind(channelService)}
-      />
-
-      {/* Logout Confirmation Dialog */}
-      <ConfirmDialog
-        isOpen={showLogoutDialog}
-        title="Logout"
-        description="Are you sure you want to logout? You will need to log in again to access your account."
-        cancelText="Cancel"
-        confirmText="Logout"
-        isDangerous={true}
-        onConfirm={confirmLogout}
-        onCancel={() => setShowLogoutDialog(false)}
-      />
+      <CreateCommunityModal isOpen={showCreateCommunityModal} onClose={() => setShowCreateCommunityModal(false)} onCreateCommunity={handleCreateCommunity} />
+      <JoinCommunityModal isOpen={showJoinCommunityModal} onClose={() => setShowJoinCommunityModal(false)} onJoinCommunity={handleJoinCommunity} onDiscoverCommunities={channelService.discoverCommunities.bind(channelService)} />
+      <ConfirmDialog isOpen={showLogoutDialog} title="Logout" description="Are you sure you want to logout? You will need to log in again to access your account." cancelText="Cancel" confirmText="Logout" isDangerous={true} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
     </div>
   );
 }

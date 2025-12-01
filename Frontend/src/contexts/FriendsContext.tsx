@@ -235,16 +235,38 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Load initial data
     const loadInitialData = async () => {
-      await getFriends();
-      await getPendingRequests();
-      await getSentRequests();
+      // Check if token exists before making requests
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.warn('[FriendsContext] No token found, skipping data load');
+        return;
+      }
+      
+      try {
+        await getFriends();
+        await getPendingRequests();
+        await getSentRequests();
+      } catch (error) {
+        console.error('[FriendsContext] Error loading initial data:', error);
+      }
     };
     
     loadInitialData();
 
     // Friend request received
     const unsubscribeFriendRequest = socketService.onFriendRequest((request) => {
-      addPendingRequest(request);
+      const friendRequest: FriendRequest = {
+        id: request.id,
+        sender_id: request.sender_id,
+        receiver_id: request.receiver_id,
+        status: request.status,
+        created_at: request.created_at,
+        username: request.sender?.username || '',
+        display_name: request.sender?.display_name || '',
+        avatar_url: request.sender?.avatar_url,
+        sender: request.sender,
+      };
+      addPendingRequest(friendRequest);
     });
 
     // Friend status changed

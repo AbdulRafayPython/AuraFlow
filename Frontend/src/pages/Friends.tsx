@@ -25,6 +25,10 @@ import {
 
 type Tab = "all" | "requests" | "add";
 
+interface FriendsProps {
+  onOpenDM?: (friendId: number) => void;
+}
+
 const statusColors = {
   online: "bg-green-500",
   idle: "bg-yellow-500",
@@ -39,14 +43,14 @@ const statusLabels = {
   offline: "Offline",
 };
 
-export default function Friends() {
+export default function Friends({ onOpenDM }: FriendsProps) {
   const { isDarkMode } = useTheme();
   const { friends, pendingRequests = [], sentRequests = [], blockedUsers, addFriend, acceptFriendRequest, rejectFriendRequest, removeFriend, blockUser, unblockUser, cancelFriendRequest, sendFriendRequest } = useFriends();
   const { selectConversation } = useDirectMessages();
   const [activeTab, setActiveTab] = useState<Tab>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [addFriendInput, setAddFriendInput] = useState("");
-  const [showMenu, setShowMenu] = useState<string | null>(null);
+  const [showMenu, setShowMenu] = useState<number | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [showAddFriendModal, setShowAddFriendModal] = useState(false);
   const [requestsTab, setRequestsTab] = useState<"incoming" | "outgoing">("incoming");
@@ -56,9 +60,13 @@ export default function Friends() {
   // Handle opening direct message with friend
   const handleMessageFriend = async (friendId: number) => {
     try {
-      await selectConversation(friendId);
-      // Navigate to DM view (this could trigger a route change in the main layout)
-      console.log("Opening DM with friend:", friendId);
+      if (onOpenDM) {
+        // Use the callback from MainLayout which handles navigation
+        onOpenDM(friendId);
+      } else {
+        // Fallback if no callback provided
+        await selectConversation(friendId);
+      }
     } catch (error) {
       console.error("Failed to open conversation:", error);
     }
@@ -66,7 +74,20 @@ export default function Friends() {
   
   // Load pending and sent requests on mount
   useEffect(() => {
-    // Requests are automatically fetched by FriendsContext on mount
+    // Initialize friend data from context
+    const initializeFriends = async () => {
+      try {
+        // Ensure friends are loaded
+        if (friends.length === 0) {
+          // This is handled by FriendsContext on mount, so we don't need to call it here
+          // But you can uncomment if needed for manual refresh
+        }
+      } catch (error) {
+        console.error("Failed to load friends:", error);
+      }
+    };
+    
+    initializeFriends();
   }, []);
 
   const tabs = [
@@ -86,7 +107,7 @@ export default function Friends() {
     
     setIsAdding(true);
     try {
-      await addFriend(addFriendInput);
+      await sendFriendRequest(addFriendInput);
       setAddFriendInput("");
     } catch (error) {
       console.error("Failed to add friend:", error);
@@ -115,24 +136,27 @@ export default function Friends() {
 
     return (
     <div
-      onClick={() => {
-        setSelectedFriend(friend);
-        setShowProfileModal(true);
-      }}
-      className={`flex items-center justify-between p-4 rounded-lg border transition-all hover:shadow-md cursor-pointer ${
+      className={`flex items-center justify-between p-4 rounded-lg border transition-all hover:shadow-md ${
         isDarkMode
           ? "bg-slate-800 border-slate-700 hover:bg-slate-750"
           : "bg-white border-gray-200 hover:bg-gray-50"
       }`}
     >
-      <div className="flex items-center gap-4 flex-1 min-w-0">
+      {/* Friend Info - Clickable to open profile */}
+      <div 
+        onClick={() => {
+          setSelectedFriend(friend);
+          setShowProfileModal(true);
+        }}
+        className="flex items-center gap-4 flex-1 min-w-0 cursor-pointer"
+      >
         {/* Avatar with Status */}
         <div className="relative flex-shrink-0">
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold text-lg ${
-            isDarkMode ? "bg-slate-700 text-slate-300" : "bg-gray-200 text-gray-700"
-          }`}>
-            {friend.display_name.charAt(0).toUpperCase()}
-          </div>
+          <img
+            src={friend.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friend.username}`}
+            alt={friend.display_name}
+            className="w-12 h-12 rounded-full object-cover"
+          />
           <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 ${
             isDarkMode ? "border-slate-800" : "border-white"
           } ${statusColors[friend.status]} shadow-lg`} title={statusLabels[friend.status]} />
@@ -180,9 +204,16 @@ export default function Friends() {
 
       {/* Actions */}
       <div className="flex items-center gap-2">
-        <button className={`p-2 rounded-lg transition-colors ${
-          isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
-        }`}>
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            handleMessageFriend(friend.id);
+          }}
+          className={`p-2 rounded-lg transition-colors ${
+            isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
+          }`}
+          title="Send message"
+        >
           <MessageCircle className="w-5 h-5" />
         </button>
         <button className={`p-2 rounded-lg transition-colors ${
@@ -248,11 +279,11 @@ export default function Friends() {
       }`}
     >
       <div className="flex items-center gap-4 flex-1">
-        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold text-lg ${
-          isDarkMode ? "bg-slate-700 text-slate-300" : "bg-gray-200 text-gray-700"
-        }`}>
-          {request.display_name?.charAt(0).toUpperCase() || request.username?.charAt(0).toUpperCase() || "?"}
-        </div>
+        <img
+          src={request.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${request.username}`}
+          alt={request.display_name || request.username}
+          className="w-12 h-12 rounded-full object-cover"
+        />
         <div>
           <h3 className={`font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
             {request.display_name || request.username}
@@ -294,11 +325,11 @@ export default function Friends() {
       }`}
     >
       <div className="flex items-center gap-4 flex-1">
-        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold text-lg ${
-          isDarkMode ? "bg-slate-700 text-slate-300" : "bg-gray-200 text-gray-700"
-        }`}>
-          {request.display_name?.charAt(0).toUpperCase() || request.username?.charAt(0).toUpperCase() || "?"}
-        </div>
+        <img
+          src={request.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${request.username}`}
+          alt={request.display_name || request.username}
+          className="w-12 h-12 rounded-full object-cover"
+        />
         <div>
           <h3 className={`font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
             {request.display_name || request.username}

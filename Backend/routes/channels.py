@@ -292,11 +292,11 @@ def get_friends():
             user_id = user_row['id']
 
             cur.execute("""
-                SELECT u.id, u.username, u.display_name, u.avatar_url, 
+                SELECT DISTINCT u.id, u.username, u.display_name, u.avatar_url, 
                        u.status, u.custom_status, u.last_seen
                 FROM friends f
-                JOIN users u ON u.id IN (f.friend_id, f.user_id)
-                WHERE (f.user_id = %s OR f.friend_id = %s) AND u.id != %s
+                JOIN users u ON u.id = (CASE WHEN f.user_id = %s THEN f.friend_id ELSE f.user_id END)
+                WHERE f.user_id = %s OR f.friend_id = %s
             """, (user_id, user_id, user_id))
             friends = cur.fetchall()
 

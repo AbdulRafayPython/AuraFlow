@@ -107,7 +107,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   // Initialize workspaces on mount
   useEffect(() => {
     loadWorkspaces();
-    getPendingRequests();
+    
+    // Only load friend requests if token is available
+    const token = localStorage.getItem('token');
+    if (token) {
+      getPendingRequests();
+    }
   }, []);
 
   const loadWorkspaces = useCallback(async () => {

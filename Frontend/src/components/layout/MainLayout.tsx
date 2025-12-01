@@ -6,8 +6,11 @@ import ChannelSidebar from "../sidebar/ChannelSidebar";
 import RightSidebar from "../sidebar/RightSidebar";
 import Friends from "@/pages/Friends";
 import SettingsPage from "@/pages/Settings";
+import { DirectMessageView } from "../DirectMessageView";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
+import { useDirectMessages } from "@/contexts/DirectMessagesContext";
+import { useFriends } from "@/contexts/FriendsContext";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -16,10 +19,13 @@ interface MainLayoutProps {
 export default function MainLayout({ children }: MainLayoutProps) {
   const { isDarkMode } = useTheme();
   const { currentCommunity, selectCommunity, currentChannel } = useRealtime();
+  const { selectConversation } = useDirectMessages();
+  const { friends } = useFriends();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [currentView, setCurrentView] = useState<"dashboard" | "friends" | "settings">("dashboard");
+  const [currentView, setCurrentView] = useState<"dashboard" | "friends" | "settings" | "direct-message">("dashboard");
   const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [selectedDMUser, setSelectedDMUser] = useState<{ id: number; username: string; display_name: string; avatar_url?: string } | null>(null);
 
   // Detect mobile screen size
   useEffect(() => {
@@ -48,13 +54,37 @@ export default function MainLayout({ children }: MainLayoutProps) {
   }, [mobileMenuOpen, isMobile]);
 
   const handleNavigation = (view: string, communityId?: string) => {
-    setCurrentView(view as "dashboard" | "friends" | "settings");
+    setCurrentView(view as "dashboard" | "friends" | "settings" | "direct-message");
     if (view === "dashboard" && communityId) {
       selectCommunity(parseInt(communityId));
     } else if (view === "dashboard" && !communityId) {
       // Navigate to dashboard without community
     }
     setMobileMenuOpen(false);
+  };
+
+  const handleOpenDM = async (friendId: number) => {
+    const friend = friends.find(f => f.id === friendId);
+    if (friend) {
+      try {
+        setSelectedDMUser({
+          id: friend.id,
+          username: friend.username,
+          display_name: friend.display_name,
+          avatar_url: friend.avatar_url
+        });
+        await selectConversation(friendId);
+        setCurrentView("direct-message");
+        setMobileMenuOpen(false);
+      } catch (error) {
+        console.error("Failed to open DM:", error);
+      }
+    }
+  };
+
+  const handleCloseDM = () => {
+    setCurrentView("friends");
+    setSelectedDMUser(null);
   };
 
   const toggleRightSidebar = () => {
@@ -133,11 +163,21 @@ export default function MainLayout({ children }: MainLayoutProps) {
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {currentView === "friends" ? (
           <div className="flex-1 overflow-hidden">
-            <Friends />
+            <Friends onOpenDM={handleOpenDM} />
           </div>
         ) : currentView === "settings" ? (
           <div className="flex-1 overflow-hidden">
             <SettingsPage />
+          </div>
+        ) : currentView === "direct-message" && selectedDMUser ? (
+          <div className="flex-1 overflow-hidden">
+            <DirectMessageView 
+              userId={selectedDMUser.id} 
+              username={selectedDMUser.username} 
+              displayName={selectedDMUser.display_name}
+              avatar={selectedDMUser.avatar_url} 
+              onClose={handleCloseDM} 
+            />
           </div>
         ) : hasCommunitySelected ? (
           // Show main content (Dashboard) when a community is selected

@@ -1,5 +1,5 @@
 # routes/friends.py
-from flask import jsonify, request
+from flask import jsonify, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
 
@@ -77,8 +77,30 @@ def send_friend_request():
                 VALUES (%s, %s, 'pending')
             """, (sender_id, receiver_id))
             request_id = cur.lastrowid
+            
+            # Get sender display name for notification
+            cur.execute("SELECT display_name FROM users WHERE id = %s", (sender_id,))
+            sender_data = cur.fetchone()
+            sender_display_name = sender_data['display_name'] if sender_data else current_user
 
         conn.commit()
+        
+        # Emit socket event to notify receiver in real-time
+        try:
+            # Lazy import to avoid circular dependency issues
+            import sys
+            if 'app' in sys.modules:
+                from app import socketio
+                socketio.emit('friend_request_received', {
+                    'request_id': request_id,
+                    'sender_id': sender_id,
+                    'receiver_id': receiver_id,
+                    'sender_username': current_user,
+                    'sender_display_name': sender_display_name
+                }, room=f"user_{receiver_id}", namespace='/')
+        except Exception as socket_error:
+            print(f"[WARNING] Failed to emit friend_request_received event: {socket_error}")
+        
         return jsonify({
             'message': 'Friend request sent',
             'request_id': request_id

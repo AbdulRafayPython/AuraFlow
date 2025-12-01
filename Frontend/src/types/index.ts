@@ -21,6 +21,19 @@ export interface DirectMessage {
   message_type: 'text' | 'image' | 'file' | 'ai';
   created_at: string;
   is_read: boolean;
+  edited_at?: string | null;
+  sender?: {
+    id: number;
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+  };
+  receiver?: {
+    id: number;
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+  };
 }
 
 export interface SendMessageData {
@@ -92,7 +105,7 @@ export interface FriendRequest {
   sender?: {
     username: string;
     display_name: string;
-    avatar_url: string;
+    avatar_url?: string;
   };
 }
 
@@ -108,6 +121,18 @@ export interface CommunityMember extends User {
   role: 'owner' | 'admin' | 'member';
 }
 
+export interface BlockedUser {
+  id: number;
+  blocked_user_id: number;
+  blocked_by_id?: number;
+  blocked_at: string;
+  blocked_user: {
+    id: number;
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+  };
+}
 export interface CreateCommunityPayload {
   name: string;
   description?: string;

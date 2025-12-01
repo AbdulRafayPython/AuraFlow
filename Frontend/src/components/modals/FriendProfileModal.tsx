@@ -83,13 +83,14 @@ export default function FriendProfileModal({
           {/* Avatar */}
           <div className="flex justify-center -mt-16 mb-4">
             <div className="relative">
-              <div className={`w-28 h-28 rounded-full flex items-center justify-center font-bold text-3xl border-4 shadow-lg ${
-                isDarkMode
-                  ? "bg-slate-700 text-slate-300 border-slate-800"
-                  : "bg-gray-200 text-gray-700 border-white"
-              }`}>
-                {friend.display_name.charAt(0).toUpperCase()}
-              </div>
+              <img
+                src={friend.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friend.username}`}
+                alt={friend.display_name}
+                className="w-28 h-28 rounded-full border-4 shadow-lg object-cover"
+                style={{
+                  borderColor: isDarkMode ? '#1e293b' : 'white'
+                }}
+              />
               <div className={`absolute bottom-2 right-2 w-6 h-6 rounded-full border-3 ${
                 isDarkMode ? "border-slate-800" : "border-white"
               } ${statusColors[friend.status]} shadow-lg`} title={statusLabels[friend.status]} />

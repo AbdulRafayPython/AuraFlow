@@ -129,6 +129,22 @@ register_socket_events(socketio)
 # ======================================================================
 # ERROR HANDLERS
 # ======================================================================
+@jwt.expired_token_loader
+def expired_token_callback(jwt_header, jwt_data):
+    return {"error": "Token has expired"}, 401
+
+@jwt.invalid_token_loader
+def invalid_token_callback(error):
+    return {"error": f"Invalid token: {str(error)}"}, 401
+
+@jwt.unauthorized_loader
+def missing_token_callback(error):
+    return {"error": "Missing authorization token"}, 401
+
+@jwt.revoked_token_loader
+def revoked_token_callback(jwt_header, jwt_data):
+    return {"error": "Token has been revoked"}, 401
+
 @app.errorhandler(404)
 def not_found(error):
     return {"error": "Route not found"}, 404
