@@ -63,6 +63,9 @@ class SocketService {
   private currentChannel: number | null = null;
   private currentDMUser: number | null = null;
   private typingTimeout: NodeJS.Timeout | null = null;
+  
+  // Global DM listener tracker
+  private dmListenerRegistered: boolean = false;
 
   connect(token: string) {
     if (this.socket?.connected) {
@@ -190,9 +193,18 @@ class SocketService {
     });
 
     // Direct message events
-    this.socket.on('direct_message_received', (data: DirectMessageEvent) => {
-      console.log('[SOCKET] 💬 Direct message received:', data);
+    console.log('[SOCKET] 🔌 SETTING UP PERMANENT receive_direct_message LISTENER IN SETUPEVENTLISTENERS');
+    this.socket.on('receive_direct_message', (data: DirectMessageEvent) => {
+      console.log('[SOCKET] 📡📡📡 receive_direct_message EVENT FIRED IN SETUPEVENTLISTENERS');
+      console.log('[SOCKET] 💬 Direct message received:', {
+        id: data.id,
+        sender_id: data.sender_id,
+        receiver_id: data.receiver_id,
+        content: data.content?.substring(0, 30)
+      });
+      console.log('[SOCKET] Calling all directMessageHandlers...');
       this.directMessageHandlers.forEach(handler => handler(data));
+      console.log('[SOCKET] All handlers called');
     });
 
     this.socket.on('direct_message_read', (data: { message_id: number; read_by: number }) => {
@@ -293,13 +305,23 @@ class SocketService {
 
   // Broadcast direct message
   broadcastDirectMessage(message: DirectMessageEvent) {
+    console.log('[SOCKET] 📤📤📤 broadcastDirectMessage called');
+    console.log('[SOCKET] 📤 Socket connected?', this.socket?.connected);
+    
     if (!this.socket?.connected) {
-      console.warn('[SOCKET] Not connected, cannot broadcast DM');
+      console.warn('[SOCKET] ❌ Not connected, cannot broadcast DM');
       return;
     }
 
-    this.socket.emit('new_direct_message', message);
-    console.log(`[SOCKET] 💬 Broadcasting DM to user ${message.receiver_id}`);
+    // Emit the message to the backend with proper event name
+    console.log('[SOCKET] 📤 Emitting send_direct_message event to backend');
+    this.socket.emit('send_direct_message', message);
+    console.log(`[SOCKET] 📤✅ Sent direct message to user ${message.receiver_id}:`, {
+      id: message.id,
+      sender_id: message.sender_id,
+      receiver_id: message.receiver_id,
+      content: message.content?.substring(0, 30)
+    });
   }
 
   // Broadcast friend request sent
@@ -520,9 +542,16 @@ class SocketService {
   }
 
   onDirectMessage(handler: DirectMessageHandler) {
+    // SIMPLIFIED: Just add handler to the array
+    // The listener is already registered in setupEventListeners
+    console.log('[SOCKET] 📡 onDirectMessage called - adding handler to directMessageHandlers');
     this.directMessageHandlers.push(handler);
+    console.log('[SOCKET] ✅ Handler added, total handlers:', this.directMessageHandlers.length);
+    
     return () => {
+      console.log('[SOCKET] 🗑️ Removing handler from directMessageHandlers');
       this.directMessageHandlers = this.directMessageHandlers.filter(h => h !== handler);
+      console.log('[SOCKET] ✅ Handler removed, remaining handlers:', this.directMessageHandlers.length);
     };
   }
 

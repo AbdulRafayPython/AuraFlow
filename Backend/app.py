@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from datetime import timedelta
 import os
 from flask_socketio import SocketIO
+from flask import request, make_response
 
 # Import all route functions
 from routes.auth import signup, login, logout, update_first_login, get_me, reset_password, forgot_password, verify_otp_endpoint , update_profile
@@ -36,14 +37,41 @@ load_dotenv()
 app = Flask(__name__)
 
 # CORS Configuration - Allow both ports for development
-CORS(app, resources={
-    r"/api/*": {
-        "origins": ["http://localhost:8080", "http://localhost:3000"],
-        "supports_credentials": True,
-        "allow_headers": ["Content-Type", "Authorization"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-    }
-})
+CORS(app, 
+     resources={
+        r"/api/*": {
+            "origins": ["http://localhost:8080", "http://localhost:3000", "http://localhost:5173"],
+            "supports_credentials": True,
+            "allow_headers": ["Content-Type", "Authorization"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "max_age": 3600
+        }
+    },
+    expose_headers=["Content-Type", "Authorization"]
+)
+
+# Handle OPTIONS requests (preflight)
+@app.before_request
+def handle_preflight():
+    if request.method == 'OPTIONS':
+        response = {
+            'statusCode': 200
+        }
+        origin = request.headers.get('Origin')
+        allowed_origins = ["http://localhost:8080", "http://localhost:3000", "http://localhost:5173"]
+        
+        if origin in allowed_origins:
+            response_obj = {
+                'statusCode': 200
+            }
+            response_obj = make_response(response_obj, 200)
+            response_obj.headers['Access-Control-Allow-Origin'] = origin
+            response_obj.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response_obj.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            response_obj.headers['Access-Control-Allow-Credentials'] = 'true'
+            response_obj.headers['Access-Control-Max-Age'] = '3600'
+            return response_obj
+        return {}, 200
 
 # JWT Configuration
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "super-secret-key")

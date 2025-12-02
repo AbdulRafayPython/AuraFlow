@@ -128,25 +128,25 @@ class ChannelService {
     }
   }
 
-  async searchUsers(query: string): Promise<User[]> {
-    if (!query.trim() || query.length < 2) return [];
+  // async searchUsers(query: string): Promise<User[]> {
+  //   if (!query.trim() || query.length < 2) return [];
 
-    try {
-      const response = await axios.get<User[]>(
-        `${API_URL}/users/search`,
-        {
-          ...this.getAuthHeaders(),
-          params: { query: query.trim() },
-          timeout: 8000,
-        }
-      );
-      return response.data || [];
-    } catch (error: any) {
-      console.error('[ChannelService] searchUsers failed:', error);
-      const msg = error.response?.data?.error || 'Search failed';
-      throw new Error(msg);
-    }
-  }
+  //   try {
+  //     const response = await axios.get<User[]>(
+  //       `${API_URL}/users/search`,
+  //       {
+  //         ...this.getAuthHeaders(),
+  //         params: { query: query.trim() },
+  //         timeout: 8000,
+  //       }
+  //     );
+  //     return response.data || [];
+  //   } catch (error: any) {
+  //     console.error('[ChannelService] searchUsers failed:', error);
+  //     const msg = error.response?.data?.error || 'Search failed';
+  //     throw new Error(msg);
+  //   }
+  // }
 
   async getCommunityMembers(communityId: number): Promise<CommunityMember[]> {
     if (!communityId) throw new Error('Community ID is required');

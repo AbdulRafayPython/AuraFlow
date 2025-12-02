@@ -5,11 +5,9 @@ import { useAuth } from "../../contexts/AuthContext";
 import { Users, Plus, Home, ChevronLeft, ChevronRight, LogOut, Moon, Sun, Settings, User, Bell, Shield, Palette, HelpCircle, MessageSquare, ChevronDown } from "lucide-react";
 import CreateCommunityModal from "../modals/CreateCommunityModal";
 import JoinCommunityModal from "../modals/JoinCommunityModal";
-import FriendProfileModal from "../modals/FriendProfileModal";
 import { channelService } from "../../services/channelService";
 import { socketService } from "../../services/socketService";
 import { useRealtime } from "@/hooks/useRealtime";
-import { useDirectMessages } from "@/contexts/DirectMessagesContext";
 import authService from "@/services/authService";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 
@@ -37,16 +35,15 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const { isDarkMode, toggleTheme } = useTheme();
   const { pendingRequests, friends = [] } = useFriends();
   const { logout } = useAuth();
-  const {
-    communities,
+  const { 
+    communities, 
     selectCommunity,
     reloadCommunities,
     selectFriend,
     currentFriend,
     userStatuses,
   } = useRealtime();
-  const { conversations } = useDirectMessages();
-
+  
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -54,8 +51,6 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const [showJoinCommunityModal, setShowJoinCommunityModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userStatus, setUserStatus] = useState<'online' | 'idle' | 'dnd' | 'offline'>('online');
-  const [showFriendProfileModal, setShowFriendProfileModal] = useState(false);
-  const [selectedFriendForModal, setSelectedFriendForModal] = useState<any>(null);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [expandedFriendsSection, setExpandedFriendsSection] = useState(true);
   const [showDetailPanel, setShowDetailPanel] = useState(false);
@@ -106,11 +101,11 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
       const newCommunity = await channelService.createCommunity(data);
       await reloadCommunities();
       await selectCommunity(newCommunity.id);
-
+      
       if (socketService.isConnected()) {
         socketService.broadcastCommunityCreated(newCommunity);
       }
-
+      
       onNavigate("dashboard", newCommunity.id.toString());
     } catch (error) {
       console.error("Failed to create community:", error);
@@ -163,9 +158,9 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
 
     if (currentUser.avatar_url) {
       return (
-        <img
-          src={currentUser.avatar_url}
-          alt={currentUser.display_name || currentUser.username}
+        <img 
+          src={currentUser.avatar_url} 
+          alt={currentUser.display_name || currentUser.username} 
           className="w-full h-full rounded-full object-cover"
         />
       );
@@ -190,20 +185,15 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         <div className="relative group">
           <button
             onClick={() => {
-              const newCollapsed = !isCollapsed;
-              setIsCollapsed(newCollapsed);
-              // Close detail panel when collapsing, open when expanding
-              if (newCollapsed) {
+              setIsCollapsed(!isCollapsed);
+              if (isCollapsed) {
                 setShowDetailPanel(false);
-              } else {
-                onNavigate("friends");
-                setShowDetailPanel(true);
               }
             }}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transform transition-transform duration-300 ${isCollapsed ? 'translate-x-0' : 'translate-x-2'} transition-all ${isDarkMode ? 'hover:bg-slate-700 text-slate-400 hover:text-white' : 'hover:bg-gray-200 text-gray-600 hover:text-gray-900'}`}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'hover:bg-slate-700 text-slate-400 hover:text-white' : 'hover:bg-gray-200 text-gray-600 hover:text-gray-900'}`}
             title={isCollapsed ? "Expand" : "Collapse"}
           >
-            {isCollapsed ? <ChevronRight className="w-5 h-5 transition-transform duration-300" /> : <ChevronLeft className="w-5 h-5 transition-transform duration-300" />}
+            {isCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
           </button>
           {isCollapsed && (
             <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
@@ -215,15 +205,15 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         <div className={`h-0.5 w-8 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`} />
 
         {/* Home Button */}
-        <div className="relative group w-full flex justify-center transition-all duration-300">
+        <div className="relative group w-full flex justify-center">
           {currentView === "dashboard" && !selectedCommunity && (
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-blue-500 rounded-r-full transition-all duration-300" />
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-blue-500 rounded-r-full" />
           )}
           <button
             onClick={() => onNavigate("dashboard")}
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center transform transition-transform duration-300 ${isCollapsed ? 'translate-x-0' : 'translate-x-2'} ${currentView === "dashboard" && !selectedCommunity ? "bg-blue-600 text-white" : isDarkMode ? "bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white" : "bg-gray-200 hover:bg-blue-600 text-gray-600 hover:text-white"}`}
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${currentView === "dashboard" && !selectedCommunity ? "bg-blue-600 text-white" : isDarkMode ? "bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white" : "bg-gray-200 hover:bg-blue-600 text-gray-600 hover:text-white"}`}
           >
-            <Home className="w-5 h-5 transition-all duration-300" />
+            <Home className="w-5 h-5" />
           </button>
           {isCollapsed && (
             <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
@@ -233,20 +223,20 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         </div>
 
         {/* Friends Button */}
-        <div className="relative group w-full flex justify-center transition-all duration-300">
+        <div className="relative group w-full flex justify-center">
           {currentView === "friends" && (
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-green-500 rounded-r-full transition-all duration-300" />
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-green-500 rounded-r-full" />
           )}
           <button
             onClick={() => {
               onNavigate("friends");
               setShowDetailPanel(true);
             }}
-            className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transform transition-transform duration-300 ${isCollapsed ? 'translate-x-0' : 'translate-x-2'} ${currentView === "friends" ? "bg-green-600 text-white" : isDarkMode ? "bg-slate-700 hover:bg-green-600 text-slate-400 hover:text-white" : "bg-gray-200 hover:bg-green-600 text-gray-600 hover:text-white"}`}
+            className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${currentView === "friends" ? "bg-green-600 text-white" : isDarkMode ? "bg-slate-700 hover:bg-green-600 text-slate-400 hover:text-white" : "bg-gray-200 hover:bg-green-600 text-gray-600 hover:text-white"}`}
           >
-            <Users className="w-5 h-5 transition-all duration-300" />
+            <Users className="w-5 h-5" />
             {pendingRequests.length > 0 && (
-              <div className={`absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 transition-all duration-300 ${isDarkMode ? 'border-slate-900' : 'border-gray-50'}`}>
+              <div className={`absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 ${isDarkMode ? 'border-slate-900' : 'border-gray-50'}`}>
                 {pendingRequests.length > 9 ? '9+' : pendingRequests.length}
               </div>
             )}
@@ -261,22 +251,22 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         <div className={`h-0.5 w-8 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`} />
 
         {/* Communities */}
-        <div className="w-full flex flex-col items-center gap-2 overflow-y-auto flex-1 transition-all duration-300">
+        <div className="w-full flex flex-col items-center gap-2 overflow-y-auto flex-1">
           {communities.map((community, index) => {
             const communityId = community.id.toString();
             const color = getCommunityColor(index);
             const initials = community.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
-              return (
-              <div key={community.id} className="relative group w-full flex justify-center transition-all duration-300">
+            return (
+              <div key={community.id} className="relative group w-full flex justify-center">
                 {selectedCommunity === communityId && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-white rounded-r-full transition-all duration-300" />
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-white rounded-r-full" />
                 )}
                 <button
                   onClick={() => handleCommunityClick(communityId)}
-                  className={`w-12 h-12 rounded-2xl flex items-center justify-center transform transition-transform duration-300 ${isCollapsed ? 'translate-x-0' : 'translate-x-2'} font-bold text-white text-sm transition-all ${selectedCommunity === communityId ? color : isDarkMode ? `bg-slate-700 hover:${color}` : `bg-gray-200 hover:${color}`}`}
+                  className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white text-sm transition-all ${selectedCommunity === communityId ? color : isDarkMode ? `bg-slate-700 hover:${color}` : `bg-gray-200 hover:${color}`}`}
                 >
-                  <span className="transition-all duration-300">{community.icon || initials}</span>
+                  {community.icon || initials}
                 </button>
                 {isCollapsed && (
                   <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
@@ -318,7 +308,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         {/* Profile */}
         <div className="flex flex-col items-center gap-2 pt-2 profile-menu-container">
           <div className="relative group w-full flex justify-center">
-            <button
+            <button 
               onClick={() => setShowProfileMenu(!showProfileMenu)}
               className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ring-2 ${showProfileMenu ? 'ring-blue-500 scale-105' : isDarkMode ? 'ring-slate-700 hover:ring-blue-500/50 hover:scale-105' : 'ring-gray-300 hover:ring-blue-500/50 hover:scale-105'}`}
             >
@@ -329,26 +319,27 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
             </button>
 
             {showProfileMenu && currentUser && (
-              <div className={`${isCollapsed ? 'absolute' : 'fixed'} w-72 rounded-xl shadow-2xl border overflow-hidden z-[100] ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`} style={isCollapsed ? { left: 'calc(100% + 8px)', top: '50%', transform: 'translateY(-50%)' } : { top: '50%', right: '1200px', transform: 'translateY(-50%)' }}>                <div className={`p-4 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-900/80 to-slate-800/80 border-slate-700' : 'bg-gradient-to-br from-blue-50/50 to-white border-gray-200'}`}>
-                <div className="flex items-center gap-3">
-                  <div className="relative w-14 h-14 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-blue-500 shadow-lg">
-                    {renderUserAvatar()}
-                    <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-3 ${isDarkMode ? 'border-slate-900' : 'border-blue-50'} ${statusColors[userStatus]}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className={`font-semibold text-base truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {currentUser.display_name || currentUser.username}
+              <div className={`absolute ${isCollapsed ? 'left-[calc(100%+8px)] top-1/2 -translate-y-1/2' : 'bottom-full right-0 mb-2'} w-72 rounded-xl shadow-2xl border overflow-hidden z-[100] ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
+                <div className={`p-4 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-900/80 to-slate-800/80 border-slate-700' : 'bg-gradient-to-br from-blue-50/50 to-white border-gray-200'}`}>
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-14 h-14 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-blue-500 shadow-lg">
+                      {renderUserAvatar()}
+                      <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-3 ${isDarkMode ? 'border-slate-900' : 'border-blue-50'} ${statusColors[userStatus]}`} />
                     </div>
-                    <div className={`text-sm truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      @{currentUser.username}
-                    </div>
-                    <div className={`flex items-center gap-1.5 mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                      <div className={`w-2 h-2 rounded-full ${statusColors[userStatus]}`} />
-                      <span className="capitalize">{userStatus}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-semibold text-base truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                        {currentUser.display_name || currentUser.username}
+                      </div>
+                      <div className={`text-sm truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        @{currentUser.username}
+                      </div>
+                      <div className={`flex items-center gap-1.5 mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                        <div className={`w-2 h-2 rounded-full ${statusColors[userStatus]}`} />
+                        <span className="capitalize">{userStatus}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
                 <div className={`p-3 border-b ${isDarkMode ? 'border-slate-700/50' : 'border-gray-200'}`}>
                   <div className={`text-xs font-semibold mb-2 tracking-wide ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>SET STATUS</div>
@@ -431,67 +422,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
           <div className="flex-1 overflow-y-auto">
             <div className="px-4 py-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className={`text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>Conversations</h3>
-              </div>
-
-              <div className="space-y-2">
-                {conversations.length === 0 ? (
-                  <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>No conversations yet</p>
-                ) : (
-                  // Sort conversations by most recent message first
-                  [...conversations]
-                    .sort((a, b) => {
-                      const aTime = new Date(a.last_message_time || 0).getTime();
-                      const bTime = new Date(b.last_message_time || 0).getTime();
-                      return bTime - aTime; // Most recent first
-                    })
-                    .map((conv) => {
-                      const status = userStatuses.get(conv.user.username) || 'offline';
-                      return (
-                        <button
-                          key={conv.user_id}
-                          onClick={() => {
-                            selectFriend(conv.user_id);
-                            onNavigate("direct-message", conv.user_id.toString());
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
-                            currentFriend?.id === conv.user_id
-                              ? (isDarkMode ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-900')
-                              : (isDarkMode ? 'text-slate-300 hover:bg-slate-700/50' : 'text-gray-700 hover:bg-gray-50')
-                          }`}
-                        >
-                          <div className="relative flex-shrink-0">
-                            {conv.user.avatar_url ? (
-                              <img src={conv.user.avatar_url} alt={conv.user.display_name} className="w-8 h-8 rounded-full object-cover" />
-                            ) : (
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${
-                                status === 'online' ? 'bg-green-600' : status === 'idle' ? 'bg-yellow-600' : status === 'dnd' ? 'bg-red-600' : 'bg-gray-600'
-                              }`}>
-                                {getAvatarInitials(conv.user.display_name || conv.user.username)}
-                              </div>
-                            )}
-                            <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-slate-800 ${getStatusColor(status)}`} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="truncate font-medium text-sm">{conv.user.display_name || conv.user.username}</div>
-                            {conv.last_message && (
-                              <div className={`text-xs truncate ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>
-                                {conv.last_message.sender_id === currentUser?.id ? 'You: ' : ''}{conv.last_message.content}
-                              </div>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })
-                )}
-              </div>
-            </div>
-
-            <div className={`h-px mx-4 ${isDarkMode ? 'bg-slate-700/50' : 'bg-gray-200'}`} />
-
-            <div className="px-4 py-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className={`text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>All Friends</h3>
+                <h3 className={`text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>Friends</h3>
                 <button onClick={() => setExpandedFriendsSection(!expandedFriendsSection)} className={`p-1 rounded transition-colors ${isDarkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-gray-100 text-gray-600'}`}>
                   {expandedFriendsSection ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                 </button>
@@ -505,14 +436,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                     friends.map((friend) => {
                       const status = userStatuses.get(friend.username) || friend.status;
                       return (
-                        <button
-                          key={friend.id}
-                          onClick={() => {
-                            setSelectedFriendForModal(friend);
-                            setShowFriendProfileModal(true);
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${isDarkMode ? 'text-slate-300 hover:bg-slate-700/50' : 'text-gray-700 hover:bg-gray-50'}`}
-                        >
+                        <button key={friend.id} onClick={() => handleFriendClick(friend.id)} className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${currentFriend?.id === friend.id ? (isDarkMode ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-900') : (isDarkMode ? 'text-slate-300 hover:bg-slate-700/50' : 'text-gray-700 hover:bg-gray-50')}`}>
                           <div className="relative flex-shrink-0">
                             {friend.avatar_url ? (
                               <img src={friend.avatar_url} alt={friend.display_name} className="w-8 h-8 rounded-full object-cover" />
@@ -563,19 +487,6 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
 
       <CreateCommunityModal isOpen={showCreateCommunityModal} onClose={() => setShowCreateCommunityModal(false)} onCreateCommunity={handleCreateCommunity} />
       <JoinCommunityModal isOpen={showJoinCommunityModal} onClose={() => setShowJoinCommunityModal(false)} onJoinCommunity={handleJoinCommunity} onDiscoverCommunities={channelService.discoverCommunities.bind(channelService)} />
-      <FriendProfileModal
-        isOpen={showFriendProfileModal}
-        onClose={() => {
-          setShowFriendProfileModal(false);
-          setSelectedFriendForModal(null);
-        }}
-        friend={selectedFriendForModal}
-        onMessage={(friendId) => {
-          selectFriend(friendId);
-          onNavigate("direct-message", friendId.toString());
-          setShowFriendProfileModal(false);
-        }}
-      />
       <ConfirmDialog isOpen={showLogoutDialog} title="Logout" description="Are you sure you want to logout? You will need to log in again to access your account." cancelText="Cancel" confirmText="Logout" isDangerous={true} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
     </div>
   );

@@ -187,11 +187,15 @@ def get_direct_messages(user_id):
             'created_at': m['created_at'].isoformat() if m['created_at'] else None,
             'is_read': bool(m['is_read']),
             'read_at': m['read_at'].isoformat() if m['read_at'] else None,
-            'author': m['username'],
-            'display_name': m['display_name'] or m['username'],
-            'avatar': _avatar_url(m['username'], m['avatar_url'])
+            'sender': {
+                'id': m['sender_id'],
+                'username': m['username'],
+                'display_name': m['display_name'] or m['username'],
+                'avatar_url': get_avatar_url(m['username'], m['avatar_url'])
+            }
         } for m in rows]
 
+        print("[DEBUG] GET DM Response:", result)
         return jsonify(result), 200
 
     except Exception as e:
@@ -245,6 +249,8 @@ def send_direct_message():
             msg = cur.fetchone()
 
         conn.commit()
+        avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
+        
         return jsonify({
             'id': msg['id'],
             'sender_id': msg['sender_id'],
@@ -253,9 +259,12 @@ def send_direct_message():
             'message_type': msg['message_type'],
             'created_at': msg['created_at'].isoformat(),
             'is_read': bool(msg['is_read']),
-            'author': msg['username'],
-            'display_name': msg['display_name'] or msg['username'],
-            'avatar': _avatar_url(msg['username'], msg['avatar_url'])
+            'sender': {
+                'id': msg['sender_id'],
+                'username': msg['username'],
+                'display_name': msg['display_name'] or msg['username'],
+                'avatar_url': avatar_url
+            }
         }), 201
 
     except Exception as e:

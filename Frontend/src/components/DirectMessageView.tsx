@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, MoreVertical, Trash2, Edit2, ArrowLeft } from 'lucide-react';
 import { useDirectMessages } from '@/contexts/DirectMessagesContext';
 import { useFriends } from '@/contexts/FriendsContext';
+import { useAuth } from '@/contexts/AuthContext';
 import type { DirectMessage } from '@/types';
 
 interface DirectMessageViewProps {
@@ -16,6 +17,7 @@ interface DirectMessageViewProps {
 export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, username, displayName, avatar, onClose }) => {
   const { conversations, messages, sendMessage, deleteMessage, editMessage, markAsRead } = useDirectMessages();
   const { friends } = useFriends();
+  const { user: currentUser } = useAuth();
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -24,22 +26,106 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const [menuOpen, setMenuOpen] = useState<number | null>(null);
   const isDarkMode = true;
 
+  // Get current user's actual ID
+  const currentUserId = currentUser?.id;
+
   const conversation = conversations.find(c => c.user_id === userId);
-  const displayMessages = messages;
+  // Sort messages chronologically with oldest first, newest last (bottom)
+  const displayMessages = [...messages].sort((a, b) => {
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
+  
+  // Enrich messages with sender and receiver data from friends or conversation user
+  const enrichedMessages = displayMessages.map(msg => {
+    console.log('[DirectMessageView] Processing message:', {
+      id: msg.id,
+      sender_id: msg.sender_id,
+      receiver_id: msg.receiver_id,
+      content: msg.content,
+      currentUserId: currentUserId,
+      otherUserId: userId
+    });
+
+    if (msg.sender && msg.sender.display_name) {
+      return msg;
+    }
+    
+    // If sender data is missing, try to populate from friends or conversation
+    let senderData = msg.sender;
+    let receiverData = msg.receiver;
+    
+    if (!senderData) {
+      if (msg.sender_id === currentUserId) {
+        senderData = {
+          id: currentUserId || 0,
+          username: currentUser?.username || '',
+          display_name: currentUser?.display_name || currentUser?.username || '',
+          avatar_url: currentUser?.avatar_url || currentUser?.avatar
+        };
+      } else {
+        // Try to find sender in friends
+        const senderFriend = friends.find(f => f.id === msg.sender_id);
+        senderData = senderFriend ? {
+          id: senderFriend.id,
+          username: senderFriend.username,
+          display_name: senderFriend.display_name,
+          avatar_url: senderFriend.avatar_url
+        } : {
+          id: msg.sender_id,
+          username: 'Unknown',
+          display_name: 'Unknown',
+          avatar_url: undefined
+        };
+      }
+    }
+    
+    if (!receiverData) {
+      if (msg.receiver_id === currentUserId) {
+        receiverData = {
+          id: currentUserId || 0,
+          username: currentUser?.username || '',
+          display_name: currentUser?.display_name || currentUser?.username || '',
+          avatar_url: currentUser?.avatar_url || currentUser?.avatar
+        };
+      } else {
+        const receiverFriend = friends.find(f => f.id === msg.receiver_id);
+        receiverData = receiverFriend ? {
+          id: receiverFriend.id,
+          username: receiverFriend.username,
+          display_name: receiverFriend.display_name,
+          avatar_url: receiverFriend.avatar_url
+        } : {
+          id: msg.receiver_id,
+          username: 'Unknown',
+          display_name: 'Unknown',
+          avatar_url: undefined
+        };
+      }
+    }
+    
+    const enrichedMsg = {
+      ...msg,
+      sender: senderData,
+      receiver: receiverData
+    };
+    return enrichedMsg;
+  });
+  
+  console.log('[DirectMessageView] All enriched messages:', enrichedMessages);
 
   useEffect(() => {
     // Mark unread messages as read
-    displayMessages.forEach(msg => {
-      if (!msg.is_read && msg.receiver_id === userId) {
+    enrichedMessages.forEach(msg => {
+      if (!msg.is_read && msg.receiver_id === currentUserId) {
         markAsRead(msg.id).catch(console.error);
       }
     });
-  }, [displayMessages, userId, markAsRead]);
+  }, [enrichedMessages, currentUserId, markAsRead]);
 
   useEffect(() => {
     // Auto-scroll to bottom
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [displayMessages]);
+  }, [enrichedMessages]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,7 +205,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
       {/* Messages - Compact */}
       <main className="flex-1 overflow-y-auto p-3 space-y-1">
-        {displayMessages.length === 0 ? (
+        {enrichedMessages.length === 0 ? (
           <div className="h-full flex items-center justify-center text-gray-400">
             <div className="text-center text-sm">
               <p>No messages yet</p>
@@ -127,8 +213,9 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             </div>
           </div>
         ) : (
-          displayMessages.map((msg, index) => {
-            const showDateDivider = shouldShowDateDivider(msg, displayMessages[index - 1]);
+          enrichedMessages.map((msg, index) => {
+            const showDateDivider = shouldShowDateDivider(msg, enrichedMessages[index - 1]);
+            const isSent = msg.sender_id === currentUserId; // Current user's message (sender on right)
 
             return (
               <div key={msg.id}>
@@ -142,61 +229,65 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                   </div>
                 )}
 
-                <div className="flex gap-2 group px-1 py-0.5 hover:bg-slate-800/20 rounded transition-all">
-                  <div className="flex-shrink-0 mt-0.5">
-                    <img
-                      src={msg.sender?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${msg.sender?.username || 'unknown'}`}
-                      alt={msg.sender?.username || 'Unknown'}
-                      className="w-7 h-7 rounded-full object-cover"
-                    />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className="font-medium text-xs text-gray-100">
-                        {msg.sender?.display_name || msg.sender?.username || 'Unknown'}
-                      </span>
-                      <span className="text-xs text-gray-500">{formatTime(msg.created_at)}</span>
-                      {msg.edited_at && (
-                        <span className="text-xs text-gray-600">(edited)</span>
-                      )}
+                {/* Receiver message (left) */}
+                {!isSent ? (
+                  <div className="flex gap-2 group px-1 py-0.5 hover:bg-slate-800/20 rounded transition-all justify-start">
+                    <div className="flex-shrink-0 mt-0.5">
+                      <img
+                        src={msg.sender?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${msg.sender?.username || 'unknown'}`}
+                        alt={msg.sender?.username || 'Unknown'}
+                        className="w-7 h-7 rounded-full object-cover"
+                      />
                     </div>
 
-                    {editingId === msg.id ? (
-                      <div className="flex gap-1.5 mb-1">
-                        <input
-                          type="text"
-                          value={editContent}
-                          onChange={(e) => setEditContent(e.target.value)}
-                          className="flex-1 px-2 py-1 bg-slate-700 text-white rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          autoFocus
-                        />
-                        <button
-                          onClick={() => handleEdit(msg.id)}
-                          className="px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => { setEditingId(null); setEditContent(''); }}
-                          className="px-1.5 py-0.5 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 transition"
-                        >
-                          Cancel
-                        </button>
+                    <div className="flex-1 min-w-0 max-w-xs">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="font-medium text-xs text-gray-100">
+                          {msg.sender?.display_name || msg.sender?.username || 'Unknown'}
+                        </span>
+                        <span className="text-xs text-gray-500">{formatTime(msg.created_at)}</span>
+                        {msg.edited_at && (
+                          <span className="text-xs text-gray-600">(edited)</span>
+                        )}
                       </div>
-                    ) : (
-                      <p className="text-sm leading-tight break-words text-gray-100 max-w-2xl">
-                        {msg.content}
-                      </p>
-                    )}
-                  </div>
 
-                  {/* Message Menu */}
-                  {msg.sender_id === userId && (
-                    <div className="opacity-0 group-hover:opacity-100 transition relative">
+                      {editingId === msg.id ? (
+                        <div className="flex gap-1.5 mb-1">
+                          <input
+                            type="text"
+                            value={editContent}
+                            onChange={(e) => setEditContent(e.target.value)}
+                            className="flex-1 px-2 py-1 bg-slate-700 text-white rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleEdit(msg.id)}
+                            className="px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => { setEditingId(null); setEditContent(''); }}
+                            className="px-1.5 py-0.5 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 transition"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-sm leading-tight break-words text-gray-100 bg-slate-700 rounded-lg px-3 py-2 w-fit">
+                          {msg.content}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* Sender message (right) */
+                  <div className="flex gap-2 group px-1 py-0.5 hover:bg-slate-800/20 rounded transition-all justify-end">
+                    {/* Message Menu */}
+                    <div className="opacity-0 group-hover:opacity-100 transition relative flex-shrink-0 flex items-start pt-0.5">
                       <button
                         onClick={() => setMenuOpen(menuOpen === msg.id ? null : msg.id)}
-                        className="p-0.5 hover:bg-slate-700 rounded transition text-gray-400 hover:text-white flex-shrink-0"
+                        className="p-0.5 hover:bg-slate-700 rounded transition text-gray-400 hover:text-white"
                       >
                         <MoreVertical className="w-4 h-4" />
                       </button>
@@ -220,8 +311,53 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
+
+                    <div className="flex-1 min-w-0 max-w-xs text-right">
+                      <div className="flex items-center gap-1.5 mb-0.5 justify-end">
+                        <span className="text-xs text-gray-500">{formatTime(msg.created_at)}</span>
+                        {msg.edited_at && (
+                          <span className="text-xs text-gray-600">(edited)</span>
+                        )}
+                      </div>
+
+                      {editingId === msg.id ? (
+                        <div className="flex gap-1.5 mb-1 justify-end">
+                          <button
+                            onClick={() => { setEditingId(null); setEditContent(''); }}
+                            className="px-1.5 py-0.5 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 transition"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => handleEdit(msg.id)}
+                            className="px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition"
+                          >
+                            Save
+                          </button>
+                          <input
+                            type="text"
+                            value={editContent}
+                            onChange={(e) => setEditContent(e.target.value)}
+                            className="flex-1 px-2 py-1 bg-slate-700 text-white rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            autoFocus
+                          />
+                        </div>
+                      ) : (
+                        <p className="text-sm leading-tight break-words text-white bg-blue-600 rounded-lg px-3 py-2 w-fit ml-auto">
+                          {msg.content}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex-shrink-0 mt-0.5">
+                      <img
+                        src={msg.sender?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${msg.sender?.username || 'unknown'}`}
+                        alt={msg.sender?.username || 'Unknown'}
+                        className="w-7 h-7 rounded-full object-cover"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })

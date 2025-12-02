@@ -1,5 +1,5 @@
 // contexts/DirectMessagesContext.tsx - Global DM state management
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import type { DirectMessage, User } from "@/types";
 import { directMessageService } from "@/services/directMessageService";
 import { socketService } from "@/services/socketService";
@@ -48,6 +48,12 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Use ref to store addMessage function for socket listener to access
+  const addMessageRef = useRef<(message: DirectMessage) => void>(() => {});
+  
+  // Global ref to track current conversation for the global listener
+  const currentConversationRef = useRef<Conversation | null>(null);
 
   // Fetch conversations
   const getConversations = useCallback(async () => {
@@ -70,6 +76,9 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     setLoading(true);
     setError(null);
     try {
+      console.log('[DirectMessagesContext] ===== SELECTING CONVERSATION =====');
+      console.log('[DirectMessagesContext] Other user ID:', userId);
+      
       // Set current conversation
       const conversation = conversations.find(c => c.user_id === userId);
       if (conversation) {
@@ -78,10 +87,13 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
 
       // Fetch messages
       const msgs = await directMessageService.getDirectMessages(userId);
+      console.log('[DirectMessagesContext] Fetched messages:', msgs.length);
       setMessages(msgs);
 
       // Join DM socket room
+      console.log('[DirectMessagesContext] 🚪 Joining DM socket room for user:', userId);
       socketService.joinDMConversation(userId);
+      console.log('[DirectMessagesContext] ✅ Joined DM socket room');
 
       // Mark all as read
       if (msgs.length > 0) {
@@ -90,6 +102,7 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
         }
       }
     } catch (err: any) {
+      console.error('[DirectMessagesContext] Error selecting conversation:', err);
       setError(err.response?.data?.message || "Failed to load conversation");
     } finally {
       setLoading(false);
@@ -117,13 +130,17 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
       setLoading(true);
       setError(null);
       try {
+        console.log('[DirectMessagesContext] Fetching messages for user:', userId);
         const msgs = await directMessageService.getDirectMessages(userId, limit, offset);
+        console.log('[DirectMessagesContext] Received messages from API:', msgs);
         if (offset === 0) {
           setMessages(msgs);
         } else {
           setMessages(prev => [...msgs, ...prev]);
         }
+        console.log('[DirectMessagesContext] Messages state updated:', msgs);
       } catch (err: any) {
+        console.error('[DirectMessagesContext] Error fetching messages:', err);
         setError(err.response?.data?.message || "Failed to fetch messages");
       } finally {
         setLoading(false);
@@ -137,11 +154,20 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     async (receiverId: number, content: string) => {
       setError(null);
       try {
+        console.log('[DirectMessagesContext] 📤📤📤 SEND MESSAGE START - receiverId:', receiverId, 'content:', content);
         const message = await directMessageService.sendDirectMessage(receiverId, content);
+        console.log('[DirectMessagesContext] 📤 API response received:', {
+          id: message.id,
+          sender_id: message.sender_id,
+          receiver_id: message.receiver_id,
+        });
+        
         // Add to local state immediately
+        console.log('[DirectMessagesContext] 📤 Adding message to local state');
         addMessage(message);
 
         // Broadcast via socket
+        console.log('[DirectMessagesContext] 📤 Broadcasting via socket...');
         socketService.broadcastDirectMessage({
           id: message.id,
           sender_id: message.sender_id,
@@ -151,7 +177,9 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
           created_at: message.created_at,
           is_read: message.is_read,
         });
+        console.log('[DirectMessagesContext] 📤 Socket broadcast complete');
       } catch (err: any) {
+        console.error('[DirectMessagesContext] Error sending message:', err);
         setError(err.response?.data?.message || "Failed to send message");
         throw err;
       }
@@ -209,10 +237,94 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
 
   // Local state updates
   const addMessage = useCallback((message: DirectMessage) => {
+    console.log('[DirectMessagesContext] Adding message to state:', message.id);
     setMessages(prev => {
-      if (prev.some(m => m.id === message.id)) return prev;
+      if (prev.some(m => m.id === message.id)) {
+        console.log('[DirectMessagesContext] Message already exists, skipping:', message.id);
+        return prev;
+      }
+      console.log('[DirectMessagesContext] ✅ Message added to messages array');
       return [...prev, message];
     });
+  }, []);
+
+  // Keep ref updated so socket listener can access latest addMessage
+  useEffect(() => {
+    addMessageRef.current = addMessage;
+  }, [addMessage]);
+
+  // Keep current conversation ref up to date
+  useEffect(() => {
+    currentConversationRef.current = currentConversation;
+  }, [currentConversation]);
+
+  // GLOBAL SOCKET LISTENER - Set up once to listen for all direct messages
+  useEffect(() => {
+    console.log('[DirectMessagesContext] 🌍🌍🌍 GLOBAL SOCKET LISTENER SETUP STARTING');
+    
+    const handleGlobalDirectMessage = (message: any) => {
+      console.log('[DirectMessagesContext] 🌍🌍🌍 SOCKET MESSAGE RECEIVED IN HANDLER');
+      console.log('[DirectMessagesContext] 🌍 Message:', {
+        id: message.id,
+        sender_id: message.sender_id,
+        receiver_id: message.receiver_id,
+        content: message.content?.substring(0, 30),
+      });
+      console.log('[DirectMessagesContext] 🌍 Active conversation user_id:', currentConversationRef.current?.user_id);
+      
+      // Check if this message is relevant to the current conversation
+      if (!currentConversationRef.current) {
+        console.log('[DirectMessagesContext] 🌍 ❌ No active conversation - IGNORING MESSAGE');
+        return;
+      }
+      
+      const isRelevant = 
+        (message.sender_id === currentConversationRef.current.user_id) || 
+        (message.receiver_id === currentConversationRef.current.user_id);
+      
+      console.log('[DirectMessagesContext] 🌍 Is relevant to conversation?', isRelevant);
+      
+      if (isRelevant) {
+        console.log('[DirectMessagesContext] 🌍 ✅ RELEVANT - Creating DirectMessage object');
+        const newMessage: DirectMessage = {
+          id: message.id,
+          sender_id: message.sender_id,
+          receiver_id: message.receiver_id,
+          content: message.content,
+          message_type: message.message_type || 'text',
+          created_at: message.created_at,
+          is_read: message.is_read || false,
+          sender: message.sender,
+          receiver: message.receiver,
+          edited_at: message.edited_at,
+        };
+        
+        console.log('[DirectMessagesContext] 🌍 ✅ Calling addMessageRef.current()');
+        addMessageRef.current(newMessage);
+        console.log('[DirectMessagesContext] 🌍 ✅ Message added successfully');
+      } else {
+        console.log('[DirectMessagesContext] 🌍 ❌ NOT RELEVANT - Ignoring message');
+      }
+    };
+    
+    // Register global listener
+    try {
+      console.log('[DirectMessagesContext] 🌍 Checking if socketService exists:', !!socketService);
+      console.log('[DirectMessagesContext] 🌍 Checking if onDirectMessage exists:', typeof (socketService as any).onDirectMessage);
+      
+      if (socketService && typeof (socketService as any).onDirectMessage === 'function') {
+        console.log('[DirectMessagesContext] 🌍 ✅ onDirectMessage is a function - calling it');
+        const unsubscribe = (socketService as any).onDirectMessage(handleGlobalDirectMessage);
+        console.log('[DirectMessagesContext] 🌍 ✅ GLOBAL listener registered successfully, got unsubscribe:', !!unsubscribe);
+        return unsubscribe;
+      } else {
+        console.error('[DirectMessagesContext] 🌍 ❌ onDirectMessage is NOT a function!');
+      }
+    } catch (err) {
+      console.error('[DirectMessagesContext] 🌍 ❌ Error registering listener:', err);
+    }
+    
+    return () => {};
   }, []);
 
   const removeMessage = useCallback((messageId: number) => {
@@ -233,36 +345,15 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     );
   }, []);
 
-  // Setup socket listeners
+  // Setup socket listeners for real-time direct messaging
   useEffect(() => {
-    if (!currentConversation) return;
-
-    // Listen for direct messages
-    const handleDirectMessage = (message: any) => {
-      if (currentConversation?.user_id === message.sender_id) {
-        addMessage({
-          id: message.id,
-          sender_id: message.sender_id,
-          receiver_id: message.receiver_id,
-          content: message.content,
-          created_at: message.created_at,
-          is_read: message.is_read,
-        } as DirectMessage);
-      }
-    };
-
-    // Register the handler if method exists
-    let unsubscribe: (() => void) | null = null;
-    if (socketService && typeof (socketService as any).onDirectMessage === 'function') {
-      unsubscribe = (socketService as any).onDirectMessage(handleDirectMessage);
+    if (!currentConversation) {
+      console.log('[DirectMessagesContext] Conversation selected:', currentConversation?.user_id);
+      return;
     }
 
-    return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
-    };
-  }, [currentConversation, addMessage]);
+    console.log('[DirectMessagesContext] ===== CONVERSATION CHANGED TO:', currentConversation.user_id);
+  }, [currentConversation?.user_id]);
 
   const value: DirectMessagesContextType = {
     conversations,

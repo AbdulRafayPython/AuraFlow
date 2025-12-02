@@ -21,6 +21,7 @@ class DirectMessageService {
     offset: number = 0
   ): Promise<DirectMessage[]> {
     try {
+      console.log('[directMessageService] Fetching DMs for user:', userId, { limit, offset });
       const response = await axios.get<DirectMessage[]>(
         `${API_BASE}/messages/direct/${userId}`,
         {
@@ -28,9 +29,10 @@ class DirectMessageService {
           ...this.getAuthHeaders(),
         }
       );
+      console.log('[directMessageService] API Response:', response.data);
       return response.data;
     } catch (error) {
-      console.error('Error fetching direct messages:', error);
+      console.error('[directMessageService] Error fetching direct messages:', error);
       throw error;
     }
   }
@@ -42,6 +44,7 @@ class DirectMessageService {
     messageType: 'text' | 'image' | 'file' = 'text'
   ): Promise<DirectMessage> {
     try {
+      console.log('[directMessageService] Sending DM to user:', receiverId, { content, messageType });
       const response = await axios.post<DirectMessage>(
         `${API_BASE}/messages/direct/send`,
         {
@@ -51,9 +54,10 @@ class DirectMessageService {
         },
         this.getAuthHeaders()
       );
+      console.log('[directMessageService] Send response:', response.data);
       return response.data;
     } catch (error: any) {
-      console.error('Error sending direct message:', error.response?.data?.message || error.message);
+      console.error('[directMessageService] Error sending direct message:', error.response?.data?.message || error.message);
       throw error;
     }
   }
@@ -93,14 +97,16 @@ class DirectMessageService {
   // Mark message as read
   async markAsRead(messageId: number): Promise<{ message: string }> {
     try {
+      console.log('[directMessageService] Marking message as read:', messageId);
       const response = await axios.post<{ message: string }>(
-        `${API_BASE}/messages/direct/${messageId}/read`,
-        {},
+        `${API_BASE}/messages/read`,
+        { message_ids: [messageId] },
         this.getAuthHeaders()
       );
+      console.log('[directMessageService] Mark as read response:', response.data);
       return response.data;
     } catch (error: any) {
-      console.error('Error marking message as read:', error.response?.data?.message || error.message);
+      console.error('[directMessageService] Error marking message as read:', error.response?.data?.message || error.message);
       throw error;
     }
   }
@@ -108,14 +114,26 @@ class DirectMessageService {
   // Mark all messages from user as read
   async markAllAsRead(userId: number): Promise<{ message: string }> {
     try {
+      console.log('[directMessageService] Marking all messages as read from user:', userId);
+      // Get all unread message IDs for this user first
+      const messages = await this.getDirectMessages(userId);
+      const unreadIds = messages
+        .filter(m => !m.is_read && m.receiver_id === (JSON.parse(localStorage.getItem('user') || '{}')?.id || 0))
+        .map(m => m.id);
+      
+      if (unreadIds.length === 0) {
+        return { message: 'No unread messages' };
+      }
+      
       const response = await axios.post<{ message: string }>(
-        `${API_BASE}/messages/direct/${userId}/read-all`,
-        {},
+        `${API_BASE}/messages/read`,
+        { message_ids: unreadIds },
         this.getAuthHeaders()
       );
+      console.log('[directMessageService] Mark all as read response:', response.data);
       return response.data;
     } catch (error: any) {
-      console.error('Error marking messages as read:', error.response?.data?.message || error.message);
+      console.error('[directMessageService] Error marking all messages as read:', error.response?.data?.message || error.message);
       throw error;
     }
   }

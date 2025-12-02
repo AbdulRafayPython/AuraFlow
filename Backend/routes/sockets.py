@@ -225,7 +225,123 @@ def register_socket_events(socketio):
             log.error(f"[SOCKET] new_message error: {e}")
 
     # ============================================================================
-    # COMMUNITY EVENTS
+    # DIRECT MESSAGE EVENTS
+    # ============================================================================
+
+    @socketio.on('join_dm')
+    def on_join_dm(data):
+        """Join a direct message conversation room."""
+        try:
+            log.info("[SOCKET] 🚪🚪🚪 join_dm event RECEIVED")
+            
+            username = get_user_from_socket()
+            if not username:
+                log.error("[SOCKET] join_dm: No user found")
+                return
+
+            user_id = data.get('user_id')
+            log.info(f"[SOCKET] 🚪 {username} joining DM with user_id: {user_id}")
+            
+            # Get current user's ID
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+                result = cur.fetchone()
+                current_user_id = result[0] if result else None
+            conn.close()
+            
+            if not current_user_id:
+                log.error(f"[SOCKET] Could not find user ID for {username}")
+                return
+            
+            # Create a consistent room name using IDs (smallest ID first)
+            room = f"dm_{min(current_user_id, user_id)}_{max(current_user_id, user_id)}"
+            join_room(room)
+            
+            log.info(f"[SOCKET] 🚪✅✅✅ {username} (ID: {current_user_id}) joined room: {room}")
+
+        except Exception as e:
+            log.error(f"[SOCKET] join_dm error: {e}", exc_info=True)
+
+    @socketio.on('leave_dm')
+    def on_leave_dm(data):
+        """Leave a direct message conversation room."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                log.error("[SOCKET] leave_dm: No user found")
+                return
+
+            user_id = data.get('user_id')
+            log.info(f"[SOCKET] {username} leaving DM with user_id: {user_id}")
+            
+            # Get current user's ID
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+                result = cur.fetchone()
+                current_user_id = result[0] if result else None
+            conn.close()
+            
+            if not current_user_id:
+                log.error(f"[SOCKET] Could not find user ID for {username}")
+                return
+            
+            # Create a consistent room name using IDs (smallest ID first)
+            room = f"dm_{min(current_user_id, user_id)}_{max(current_user_id, user_id)}"
+            leave_room(room)
+            
+            log.info(f"[SOCKET] {username} (ID: {current_user_id}) left room: {room}")
+
+        except Exception as e:
+            log.error(f"[SOCKET] leave_dm error: {e}")
+
+    @socketio.on('send_direct_message')
+    def on_send_direct_message(data):
+        """Handle incoming direct message and broadcast to recipient."""
+        try:
+            log.info("[SOCKET] 📤📤📤 send_direct_message event RECEIVED from frontend")
+            log.info(f"[SOCKET] Data received: {data}")
+            
+            username = get_user_from_socket()
+            if not username:
+                log.error("[SOCKET] send_direct_message: No user found")
+                return
+
+            sender_id = data.get('sender_id')
+            receiver_id = data.get('receiver_id')
+            content = data.get('content')
+            message_id = data.get('id')
+            created_at = data.get('created_at')
+            sender = data.get('sender')
+
+            log.info(f"[SOCKET] 📤 send_direct_message from {sender_id} to {receiver_id}: {str(content)[:50]}")
+
+            # Create consistent room identifier using IDs (smallest first)
+            room = f"dm_{min(sender_id, receiver_id)}_{max(sender_id, receiver_id)}"
+            
+            log.info(f"[SOCKET] 📤 Room name: {room}")
+
+            # Broadcast to both sender and receiver in the DM room
+            log.info(f"[SOCKET] 📤 Emitting receive_direct_message to room {room}")
+            emit('receive_direct_message', {
+                'id': message_id,
+                'sender_id': sender_id,
+                'receiver_id': receiver_id,
+                'content': content,
+                'message_type': data.get('message_type', 'text'),
+                'created_at': created_at,
+                'is_read': data.get('is_read', False),
+                'sender': sender,
+                'receiver': data.get('receiver'),
+                'edited_at': data.get('edited_at')
+            }, room=room)
+
+            log.info(f"[SOCKET] 📤✅✅✅ Broadcasted message to room: {room}")
+
+        except Exception as e:
+            log.error(f"[SOCKET] send_direct_message error: {e}", exc_info=True)
+
     # ============================================================================
 
     @socketio.on('community_created')

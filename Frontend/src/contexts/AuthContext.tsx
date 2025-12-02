@@ -2,11 +2,13 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import authService from '../services/authService';
 
 interface User {
+  id?: number;  // Add user ID
   username: string;
   email: string;
   display_name?: string;  
   bio?: string;
   avatar?: string;
+  avatar_url?: string;
   role?: string;
   statusMessage?: string;
   is_first_login: boolean;  

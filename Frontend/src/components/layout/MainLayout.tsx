@@ -59,6 +59,14 @@ export default function MainLayout({ children }: MainLayoutProps) {
       selectCommunity(parseInt(communityId));
     } else if (view === "dashboard" && !communityId) {
       // Navigate to dashboard without community
+    } else if (view === "direct-message" && communityId) {
+      // Handle direct message navigation with userId
+      const userId = parseInt(communityId);
+      const friend = friends.find(f => f.id === userId);
+      if (friend) {
+        handleOpenDM(userId);
+        return;
+      }
     }
     setMobileMenuOpen(false);
   };
