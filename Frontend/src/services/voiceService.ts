@@ -206,15 +206,34 @@ class VoiceService {
   async requestMicrophoneAccess(): Promise<MediaStream> {
     try {
       console.log("[VOICE SERVICE] Requesting microphone access");
+      
+      // IMPORTANT: For testing on the same device with different browsers,
+      // we DISABLE echo cancellation to allow audio to pass through.
+      // In production with real devices, you'd want echoCancellation: true
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
+          echoCancellation: false,  // ⚠️ Disabled for same-device testing
+          noiseSuppression: false,   // ⚠️ Disabled for same-device testing
           autoGainControl: true,
+          sampleRate: 48000,
+          channelCount: 1,
         },
         video: false,
       });
-      console.log("[VOICE SERVICE] Microphone access granted");
+      
+      console.log("[VOICE SERVICE] ✅ Microphone access granted");
+      console.log("[VOICE SERVICE] 🎤 Audio constraints applied:", {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: true,
+      });
+      
+      // Log actual track settings
+      stream.getAudioTracks().forEach((track) => {
+        const settings = track.getSettings();
+        console.log("[VOICE SERVICE] 🎤 Actual track settings:", settings);
+      });
+      
       return stream;
     } catch (error) {
       console.error("[VOICE SERVICE] Microphone access denied:", error);

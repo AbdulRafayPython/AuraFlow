@@ -241,30 +241,66 @@ class WebRTCService {
     const audioElement = new Audio();
     audioElement.srcObject = stream;
     audioElement.autoplay = true;
-    // audioElement.playsInline = true;
+    audioElement.playsInline = true; // Important for mobile browsers
+    audioElement.muted = false; // CRITICAL: Ensure not muted
     audioElement.style.display = "none";
     
-    // Set volume
+    // Set volume to max
     audioElement.volume = 1.0;
+    
+    // CRITICAL: Disable echo cancellation for testing on same device
+    stream.getAudioTracks().forEach((track) => {
+      console.log(`[WebRTC] 🎵 Audio track settings for ${username}:`, track.getSettings());
+      track.enabled = true; // Ensure track is enabled
+      
+      // Log more details
+      console.log(`[WebRTC] 🎵 Track details:`, {
+        id: track.id,
+        label: track.label,
+        enabled: track.enabled,
+        muted: track.muted,
+        readyState: track.readyState,
+      });
+    });
     
     console.log(`[WebRTC] 🔊 Audio element created for ${username}:`, {
       streamId: stream.id,
       audioTracksCount: stream.getAudioTracks().length,
       autoplay: audioElement.autoplay,
       volume: audioElement.volume,
+      muted: audioElement.muted,
     });
     
     // Add event listeners for debugging
     audioElement.onloadedmetadata = () => {
       console.log(`[WebRTC] ✅ Audio metadata loaded for ${username}`);
+      console.log(`[WebRTC] 🔊 Duration:`, audioElement.duration);
+    };
+    
+    audioElement.oncanplay = () => {
+      console.log(`[WebRTC] ✅ Audio can play for ${username}`);
     };
     
     audioElement.onplay = () => {
       console.log(`[WebRTC] ▶️ Audio playing for ${username}`);
+      console.log(`[WebRTC] 🔊 Current time:`, audioElement.currentTime);
+      console.log(`[WebRTC] 🔊 Paused:`, audioElement.paused);
+      console.log(`[WebRTC] 🔊 Volume:`, audioElement.volume);
+      console.log(`[WebRTC] 🔊 Muted:`, audioElement.muted);
+    };
+    
+    audioElement.onpause = () => {
+      console.log(`[WebRTC] ⏸️ Audio paused for ${username}`);
     };
     
     audioElement.onerror = (e) => {
       console.error(`[WebRTC] ❌ Audio error for ${username}:`, e);
+      console.error(`[WebRTC] ❌ Error code:`, audioElement.error?.code);
+      console.error(`[WebRTC] ❌ Error message:`, audioElement.error?.message);
+    };
+    
+    audioElement.onvolumechange = () => {
+      console.log(`[WebRTC] 🔊 Volume changed for ${username}:`, audioElement.volume);
     };
     
     // Add to document
@@ -274,33 +310,42 @@ class WebRTCService {
     // Store reference
     this.audioElements.set(username, audioElement);
 
-    // Attempt to play
-    audioElement.play()
-      .then(() => {
-        console.log(`[WebRTC] ✅ Audio playing successfully for ${username}`);
-      })
-      .catch((err) => {
-        console.warn(`[WebRTC] ⚠️ Autoplay failed for ${username}:`, err.message);
-        
-        // Try again on user interaction
-        const playOnClick = () => {
-          console.log(`[WebRTC] 🖱️ Attempting to play on user interaction for ${username}`);
-          audioElement.play()
-            .then(() => {
-              console.log(`[WebRTC] ✅ Audio playing after interaction for ${username}`);
-              document.removeEventListener("click", playOnClick);
-              document.removeEventListener("keydown", playOnClick);
-            })
-            .catch((interactionErr) => {
-              console.error(`[WebRTC] ❌ Play failed even after interaction for ${username}:`, interactionErr);
-            });
-        };
-        
-        document.addEventListener("click", playOnClick, { once: true });
-        document.addEventListener("keydown", playOnClick, { once: true });
-        
-        console.log(`[WebRTC] 👆 Waiting for user interaction to play audio for ${username}`);
-      });
+    // Force immediate playback attempt
+    const attemptPlay = () => {
+      console.log(`[WebRTC] 🎬 Attempting immediate playback for ${username}`);
+      
+      audioElement.play()
+        .then(() => {
+          console.log(`[WebRTC] ✅✅✅ Audio playing successfully for ${username}!`);
+          console.log(`[WebRTC] 🔊 Verify audio state - Paused: ${audioElement.paused}, Volume: ${audioElement.volume}, Muted: ${audioElement.muted}`);
+        })
+        .catch((err) => {
+          console.warn(`[WebRTC] ⚠️ Autoplay blocked for ${username}:`, err.message);
+          console.log(`[WebRTC] 👆 Click anywhere to enable audio for ${username}`);
+          
+          // Try again on ANY user interaction
+          const playOnInteraction = () => {
+            console.log(`[WebRTC] 🖱️ User interaction detected, playing audio for ${username}`);
+            audioElement.play()
+              .then(() => {
+                console.log(`[WebRTC] ✅ Audio playing after user interaction for ${username}`);
+                document.removeEventListener("click", playOnInteraction);
+                document.removeEventListener("keydown", playOnInteraction);
+                document.removeEventListener("touchstart", playOnInteraction);
+              })
+              .catch((interactionErr) => {
+                console.error(`[WebRTC] ❌ Play failed even after interaction for ${username}:`, interactionErr);
+              });
+          };
+          
+          document.addEventListener("click", playOnInteraction);
+          document.addEventListener("keydown", playOnInteraction);
+          document.addEventListener("touchstart", playOnInteraction);
+        });
+    };
+
+    // Small delay to ensure stream is ready
+    setTimeout(attemptPlay, 100);
   }
 
   /**
