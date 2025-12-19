@@ -1,8 +1,10 @@
 // pages/Dashboard.tsx - Professional Real-time Version
 import { useState, useRef, useEffect } from "react";
-import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus } from "lucide-react";
+import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus, Mic } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
+import { useVoice } from "@/contexts/VoiceContext";
+import VoiceChannelView from "@/components/VoiceChannelView";
 
 interface DashboardProps {
   toggleRightSidebar?: () => void;
@@ -13,16 +15,21 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
   const {
     isConnected,
     currentChannel,
+    channels,
     messages,
     sendMessage,
     sendTyping,
     typingUsers,
     isLoadingMessages,
     loadMoreMessages,
+    selectChannel,
   } = useRealtime();
+
+  const { isInVoiceChannel } = useVoice();
 
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [showVoiceChannel, setShowVoiceChannel] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
@@ -171,6 +178,23 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
 
   return (
     <div className={`flex flex-col h-full ${isDarkMode ? "bg-slate-900" : "bg-white"}`}>
+      {/* Voice Channel View */}
+      {currentChannel?.type === 'voice' && (
+        <div className="absolute inset-0 z-50">
+          <VoiceChannelView
+            channelId={currentChannel.id}
+            channelName={currentChannel.name}
+            onClose={() => {
+              // Find first text channel and switch to it
+              const textChannel = channels.find(ch => ch.type === 'text');
+              if (textChannel) {
+                selectChannel(textChannel.id);
+              }
+            }}
+          />
+        </div>
+      )}
+
       {/* Header */}
       <header
         className={`px-4 h-14 flex items-center justify-between border-b ${
@@ -179,10 +203,15 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
       >
         <div className="flex items-center gap-3">
           <div className={`p-1.5 rounded-md ${isDarkMode ? "bg-slate-700" : "bg-gray-100"}`}>
-            <Hash className={`w-5 h-5 ${isDarkMode ? "text-gray-300" : "text-gray-600"}`} />
+            {currentChannel?.type === 'voice' ? (
+              <Mic className={`w-5 h-5 ${isDarkMode ? "text-gray-300" : "text-gray-600"}`} />
+            ) : (
+              <Hash className={`w-5 h-5 ${isDarkMode ? "text-gray-300" : "text-gray-600"}`} />
+            )}
           </div>
           <div>
             <h2 className={`text-base font-semibold leading-none ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              {currentChannel?.type === 'voice' ? '🎤 ' : ''}
               {currentChannel?.name || "Select a channel"}
             </h2>
             {currentChannel?.description && (
@@ -421,6 +450,7 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
       </main>
 
       {/* Input */}
+      {currentChannel?.type !== 'voice' && (
       <footer className={`border-t ${
         isDarkMode ? "bg-slate-800/50 border-slate-700/50 backdrop-blur-sm" : "bg-white/80 border-gray-200 backdrop-blur-sm"
       }`}>
@@ -499,6 +529,7 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
           </div>
         </div>
       </footer>
+      )}
     </div>
   );
 }

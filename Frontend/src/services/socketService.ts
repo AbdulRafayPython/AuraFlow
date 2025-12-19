@@ -69,11 +69,17 @@ class SocketService {
 
   connect(token: string) {
     if (this.socket?.connected) {
-      console.log('[SOCKET] Already connected');
+      console.log('%c[✅ ALREADY CONNECTED]', 'color: #00ff00', {
+        timestamp: new Date().toLocaleTimeString(),
+      });
       return;
     }
 
     this.token = token;
+    
+    console.log('%c[🔌 SOCKET CONNECT START]', 'color: #00ff00; font-weight: bold', {
+      timestamp: new Date().toLocaleTimeString(),
+    });
     
     // FIXED: Pass token in query string for Socket.IO handshake
     this.socket = io('http://localhost:5000', {
@@ -193,18 +199,31 @@ class SocketService {
     });
 
     // Direct message events
-    console.log('[SOCKET] 🔌 SETTING UP PERMANENT receive_direct_message LISTENER IN SETUPEVENTLISTENERS');
+    console.log('%c[🔌 SETTING UP receive_direct_message LISTENER]', 'color: #00ff00; font-weight: bold');
     this.socket.on('receive_direct_message', (data: DirectMessageEvent) => {
-      console.log('[SOCKET] 📡📡📡 receive_direct_message EVENT FIRED IN SETUPEVENTLISTENERS');
-      console.log('[SOCKET] 💬 Direct message received:', {
-        id: data.id,
+      const timestamp = new Date().toLocaleTimeString();
+      console.log('%c[📡 SOCKET: receive_direct_message FIRED]', 'color: #ff00ff; font-weight: bold', {
+        timestamp,
+        event: 'receive_direct_message',
+        msg_id: data.id,
         sender_id: data.sender_id,
         receiver_id: data.receiver_id,
-        content: data.content?.substring(0, 30)
+        content_preview: data.content?.substring(0, 50),
+        full_data: data,
+        handlers_count: this.directMessageHandlers.length,
       });
-      console.log('[SOCKET] Calling all directMessageHandlers...');
-      this.directMessageHandlers.forEach(handler => handler(data));
-      console.log('[SOCKET] All handlers called');
+      
+      console.log(`%c[🔄 CALLING ${this.directMessageHandlers.length} HANDLER(S)]`, 'color: #0088ff', {
+        handler_count: this.directMessageHandlers.length,
+      });
+      
+      this.directMessageHandlers.forEach((handler, index) => {
+        console.log(`%c[📞 CALLING HANDLER ${index + 1}/${this.directMessageHandlers.length}]`, 'color: #0088ff');
+        handler(data);
+        console.log(`%c[✅ HANDLER ${index + 1} COMPLETED]`, 'color: #00ff00');
+      });
+      
+      console.log('%c[✅ ALL HANDLERS CALLED SUCCESSFULLY]', 'color: #00ff00; font-weight: bold');
     });
 
     this.socket.on('direct_message_read', (data: { message_id: number; read_by: number }) => {
@@ -262,14 +281,32 @@ class SocketService {
 
   // Join a direct message conversation
   joinDMConversation(userId: number) {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log('%c[🚪 JOIN DM ROOM START]', 'color: #0088ff; font-weight: bold', {
+      timestamp,
+      user_id: userId,
+      is_connected: this.socket?.connected,
+    });
+    
     if (!this.socket?.connected) {
-      console.warn('[SOCKET] Not connected, cannot join DM');
+      console.error('%c[❌ NOT CONNECTED - CANNOT JOIN]', 'color: #ff0000', {
+        timestamp,
+        user_id: userId,
+      });
       return;
     }
 
     this.currentDMUser = userId;
+    console.log('%c[📤 EMITTING join_dm]', 'color: #0088ff', {
+      user_id: userId,
+    });
+    
     this.socket.emit('join_dm', { user_id: userId });
-    console.log(`[SOCKET] 💬 Joined DM conversation with user ${userId}`);
+    
+    console.log('%c[✅ EMITTED join_dm]', 'color: #00ff00; font-weight: bold', {
+      user_id: userId,
+      timestamp,
+    });
   }
 
   // Leave DM conversation
@@ -304,23 +341,38 @@ class SocketService {
   }
 
   // Broadcast direct message
-  broadcastDirectMessage(message: DirectMessageEvent) {
-    console.log('[SOCKET] 📤📤📤 broadcastDirectMessage called');
-    console.log('[SOCKET] 📤 Socket connected?', this.socket?.connected);
+  broadcastDirectMessage(message: any) {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log('%c[🔊 BROADCAST MESSAGE START]', 'color: #ff00ff; font-weight: bold', {
+      timestamp,
+      msg_id: message.id,
+      from: message.sender_id,
+      to: message.receiver_id,
+      is_connected: this.socket?.connected,
+    });
     
     if (!this.socket?.connected) {
-      console.warn('[SOCKET] ❌ Not connected, cannot broadcast DM');
+      console.error('%c[❌ NOT CONNECTED]', 'color: #ff0000; font-weight: bold', {
+        connected: false,
+        timestamp,
+      });
       return;
     }
 
-    // Emit the message to the backend with proper event name
-    console.log('[SOCKET] 📤 Emitting send_direct_message event to backend');
-    this.socket.emit('send_direct_message', message);
-    console.log(`[SOCKET] 📤✅ Sent direct message to user ${message.receiver_id}:`, {
-      id: message.id,
-      sender_id: message.sender_id,
+    console.log('%c[📤 EMITTING send_direct_message]', 'color: #0088ff', {
+      msg_id: message.id,
       receiver_id: message.receiver_id,
-      content: message.content?.substring(0, 30)
+      has_sender: !!message.sender,
+      has_receiver: !!message.receiver,
+    });
+    
+    this.socket.emit('send_direct_message', message);
+    
+    console.log('%c[✅ EMITTED send_direct_message]', 'color: #00ff00; font-weight: bold', {
+      msg_id: message.id,
+      receiver_id: message.receiver_id,
+      content_preview: message.content?.substring(0, 30),
+      timestamp,
     });
   }
 
@@ -544,14 +596,26 @@ class SocketService {
   onDirectMessage(handler: DirectMessageHandler) {
     // SIMPLIFIED: Just add handler to the array
     // The listener is already registered in setupEventListeners
-    console.log('[SOCKET] 📡 onDirectMessage called - adding handler to directMessageHandlers');
+    console.log('%c[📞 onDirectMessage HANDLER REGISTRATION]', 'color: #0088ff; font-weight: bold', {
+      timestamp: new Date().toLocaleTimeString(),
+      handler_count_before: this.directMessageHandlers.length,
+    });
+    
     this.directMessageHandlers.push(handler);
-    console.log('[SOCKET] ✅ Handler added, total handlers:', this.directMessageHandlers.length);
+    
+    console.log('%c[✅ HANDLER REGISTERED]', 'color: #00ff00', {
+      handler_count_after: this.directMessageHandlers.length,
+      timestamp: new Date().toLocaleTimeString(),
+    });
     
     return () => {
-      console.log('[SOCKET] 🗑️ Removing handler from directMessageHandlers');
+      console.log('%c[🗑️ HANDLER UNSUBSCRIBE]', 'color: #ff8800', {
+        timestamp: new Date().toLocaleTimeString(),
+      });
       this.directMessageHandlers = this.directMessageHandlers.filter(h => h !== handler);
-      console.log('[SOCKET] ✅ Handler removed, remaining handlers:', this.directMessageHandlers.length);
+      console.log('%c[✅ HANDLER REMOVED]', 'color: #00ff00', {
+        handler_count_after: this.directMessageHandlers.length,
+      });
     };
   }
 

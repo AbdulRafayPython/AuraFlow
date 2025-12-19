@@ -1,8 +1,9 @@
 // services/friendService.ts - Comprehensive friend management service
 import axios from 'axios';
-import type { Friend, FriendRequest, User, BlockedUser } from '@/types';
+import type { Friend, FriendRequest, BlockedUser, User } from '@/types';
 
-const API_BASE = 'http://localhost:5000/api';
+const API_SERVER = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
+const API_BASE = `${API_SERVER}/api`;
 
 class FriendService {
   private getAuthHeaders() {

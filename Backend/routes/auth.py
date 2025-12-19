@@ -271,7 +271,7 @@ def reset_password():
             cur.execute("UPDATE users SET password=%s WHERE id=%s", (hashed_pw, user["id"]))
 
             logging.debug("Deleting OTP from otp_store for this email...")
-            cur.execute("DELETE FROM otp_store WHERE email=%s", (email,))
+            cur.execute("DELETE FROM otp_codes WHERE email=%s", (email,))
 
 
         conn.commit()

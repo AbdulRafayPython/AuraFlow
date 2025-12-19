@@ -1,39 +1,59 @@
-# routes/sockets.py - Real-time channel and message events
+# routes/sockets.py - Complete Socket.IO event handlers
 from flask_socketio import emit, join_room, leave_room
 from flask_jwt_extended import decode_token
 from flask import request
 from database import get_db_connection
 import logging
 from datetime import datetime
-from utils import get_avatar_url
 
 log = logging.getLogger(__name__)
 
+# Track socket sessions: username -> socket_id
+user_socket_sessions = {}
+
 def register_socket_events(socketio):
-    """Register all real-time Socket.IO events including channel operations."""
+    """Register all real-time Socket.IO events including voice channel operations."""
 
     def get_user_from_socket():
         """Extract and verify JWT from socket connection."""
         try:
-            auth = request.args.get('token') or request.headers.get('Authorization')
+            auth = None
+            
+            # Check request args first (most common)
+            if hasattr(request, 'args') and request.args.get('token'):
+                auth = request.args.get('token')
+            # Check headers
+            elif hasattr(request, 'headers') and request.headers.get('Authorization'):
+                auth = request.headers.get('Authorization')
 
             if not auth:
-                log.error("[SOCKET] No token in connection")
+                log.warning("[SOCKET] ⚠️  No token found in request")
                 return None
 
-            token = auth.replace('Bearer ', '') if auth.startswith('Bearer ') else auth
-            decoded = decode_token(token)
+            # Clean up the token
+            token = auth.replace('Bearer ', '') if isinstance(auth, str) and auth.startswith('Bearer ') else auth
+            
+            if not token:
+                log.error("[SOCKET] Token is empty")
+                return None
+
+            try:
+                decoded = decode_token(token)
+            except Exception as decode_err:
+                log.error(f"[SOCKET] Token decode failed: {decode_err}")
+                return None
+                
             username = decoded.get('sub')
 
             if not username:
                 log.error("[SOCKET] No username in token")
                 return None
 
-            log.info(f"[SOCKET] Token valid for user: {username}")
+            log.info(f"[SOCKET] ✅ Token valid for user: {username}")
             return username
 
         except Exception as e:
-            log.error(f"[SOCKET] Token validation failed: {e}")
+            log.error(f"[SOCKET] ❌ Unexpected error in get_user_from_socket: {e}")
             return None
 
     # ============================================================================
@@ -48,6 +68,10 @@ def register_socket_events(socketio):
             if not username:
                 log.error("[SOCKET] Connect rejected: Invalid token")
                 return False
+
+            # Store socket session ID for this user
+            user_socket_sessions[username] = request.sid
+            log.info(f"[SOCKET] Mapped {username} -> SID {request.sid}")
 
             conn = get_db_connection()
             with conn.cursor() as cur:
@@ -79,8 +103,50 @@ def register_socket_events(socketio):
             if not username:
                 return
 
+            # Remove socket session mapping
+            if username in user_socket_sessions:
+                del user_socket_sessions[username]
+                log.info(f"[SOCKET] Removed session mapping for {username}")
+
             conn = get_db_connection()
             with conn.cursor() as cur:
+                # Get user ID
+                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+                user_result = cur.fetchone()
+                
+                if user_result:
+                    user_id = user_result['id']
+                    
+                    # Get all active voice channels this user is in
+                    cur.execute("""
+                        SELECT DISTINCT vp.voice_channel_id, vc.channel_id
+                        FROM voice_participants vp
+                        JOIN voice_channels vc ON vp.voice_channel_id = vc.id
+                        WHERE vp.user_id = %s AND vp.left_at IS NULL
+                    """, (user_id,))
+                    active_voice_sessions = cur.fetchall()
+                    
+                    # Clear voice_participation entries for this user
+                    if active_voice_sessions:
+                        for session in active_voice_sessions:
+                            voice_channel_id = session['voice_channel_id']
+                            channel_id = session['channel_id']
+                            
+                            # Delete from voice_participants
+                            cur.execute("""
+                                DELETE FROM voice_participants
+                                WHERE user_id = %s AND voice_channel_id = %s
+                            """, (user_id, voice_channel_id))
+                            
+                            # Delete from voice_sessions
+                            cur.execute("""
+                                DELETE FROM voice_sessions
+                                WHERE user_id = %s AND channel_id = %s
+                            """, (user_id, channel_id))
+                            
+                            log.info(f"[VOICE] Cleaned up voice session for {username} from channel {channel_id}")
+                
+                # Update user status to offline
                 cur.execute("""
                     UPDATE users
                     SET status = 'offline', last_seen = NOW()
@@ -93,10 +159,10 @@ def register_socket_events(socketio):
                 'status': 'offline'
             }, broadcast=True)
 
-            log.info(f"[SOCKET] {username} disconnected - offline")
+            log.info(f"[SOCKET] {username} disconnected - offline and cleaned up voice sessions")
 
         except Exception as e:
-            log.error(f"[SOCKET] Disconnect error: {e}")
+            log.error(f"[SOCKET] Disconnect error: {e}", exc_info=True)
         finally:
             if conn:
                 conn.close()
@@ -231,8 +297,9 @@ def register_socket_events(socketio):
     @socketio.on('join_dm')
     def on_join_dm(data):
         """Join a direct message conversation room."""
+        conn = None
         try:
-            log.info("[SOCKET] 🚪🚪🚪 join_dm event RECEIVED")
+            log.info("[SOCKET] 🚪 join_dm event RECEIVED")
             
             username = get_user_from_socket()
             if not username:
@@ -247,8 +314,7 @@ def register_socket_events(socketio):
             with conn.cursor() as cur:
                 cur.execute("SELECT id FROM users WHERE username = %s", (username,))
                 result = cur.fetchone()
-                current_user_id = result[0] if result else None
-            conn.close()
+                current_user_id = result['id'] if result else None
             
             if not current_user_id:
                 log.error(f"[SOCKET] Could not find user ID for {username}")
@@ -258,14 +324,18 @@ def register_socket_events(socketio):
             room = f"dm_{min(current_user_id, user_id)}_{max(current_user_id, user_id)}"
             join_room(room)
             
-            log.info(f"[SOCKET] 🚪✅✅✅ {username} (ID: {current_user_id}) joined room: {room}")
+            log.info(f"[SOCKET] 🚪✅ {username} (ID: {current_user_id}) joined room: {room}")
 
         except Exception as e:
             log.error(f"[SOCKET] join_dm error: {e}", exc_info=True)
+        finally:
+            if conn:
+                conn.close()
 
     @socketio.on('leave_dm')
     def on_leave_dm(data):
         """Leave a direct message conversation room."""
+        conn = None
         try:
             username = get_user_from_socket()
             if not username:
@@ -280,8 +350,7 @@ def register_socket_events(socketio):
             with conn.cursor() as cur:
                 cur.execute("SELECT id FROM users WHERE username = %s", (username,))
                 result = cur.fetchone()
-                current_user_id = result[0] if result else None
-            conn.close()
+                current_user_id = result['id'] if result else None
             
             if not current_user_id:
                 log.error(f"[SOCKET] Could not find user ID for {username}")
@@ -295,10 +364,59 @@ def register_socket_events(socketio):
 
         except Exception as e:
             log.error(f"[SOCKET] leave_dm error: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+    @socketio.on('typing_dm')
+    def on_typing_dm(data):
+        """Handle typing indicator in direct messages."""
+        conn = None
+        try:
+            username = get_user_from_socket()
+            if not username:
+                log.error("[SOCKET] typing_dm: No user found")
+                return
+
+            user_id = data.get('user_id')
+            is_typing = data.get('is_typing', True)
+            
+            log.info(f"[SOCKET] 🔤 {username} typing_dm={is_typing} to user_id: {user_id}")
+            
+            # Get current user's ID
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+                result = cur.fetchone()
+                current_user_id = result['id'] if result else None
+            
+            if not current_user_id:
+                log.error(f"[SOCKET] Could not find user ID for {username}")
+                return
+            
+            # Create consistent room name
+            room = f"dm_{min(current_user_id, user_id)}_{max(current_user_id, user_id)}"
+            
+            # Emit typing indicator to all users in the room EXCEPT sender
+            log.info(f"[SOCKET] 🔤 Broadcasting typing indicator to room {room}")
+            emit('user_typing_dm', {
+                'user_id': current_user_id,
+                'username': username,
+                'is_typing': is_typing
+            }, room=room, include_self=False)
+            
+            log.debug(f"[SOCKET] 🔤 Typing indicator sent to room {room}")
+
+        except Exception as e:
+            log.error(f"[SOCKET] typing_dm error: {e}", exc_info=True)
+        finally:
+            if conn:
+                conn.close()
 
     @socketio.on('send_direct_message')
     def on_send_direct_message(data):
         """Handle incoming direct message and broadcast to recipient."""
+        conn = None
         try:
             log.info("[SOCKET] 📤📤📤 send_direct_message event RECEIVED from frontend")
             log.info(f"[SOCKET] Data received: {data}")
@@ -317,12 +435,23 @@ def register_socket_events(socketio):
 
             log.info(f"[SOCKET] 📤 send_direct_message from {sender_id} to {receiver_id}: {str(content)[:50]}")
 
+            # Get sender's username to verify
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT username FROM users WHERE id = %s", (sender_id,))
+                sender_result = cur.fetchone()
+                sender_username = sender_result['username'] if sender_result else None
+
+            if sender_username != username:
+                log.error(f"[SOCKET] Sender mismatch: {username} vs {sender_username}")
+                return
+
             # Create consistent room identifier using IDs (smallest first)
             room = f"dm_{min(sender_id, receiver_id)}_{max(sender_id, receiver_id)}"
             
             log.info(f"[SOCKET] 📤 Room name: {room}")
 
-            # Broadcast to both sender and receiver in the DM room
+            # Broadcast to the room (both sender and receiver are in this room)
             log.info(f"[SOCKET] 📤 Emitting receive_direct_message to room {room}")
             emit('receive_direct_message', {
                 'id': message_id,
@@ -335,13 +464,18 @@ def register_socket_events(socketio):
                 'sender': sender,
                 'receiver': data.get('receiver'),
                 'edited_at': data.get('edited_at')
-            }, room=room)
+            }, room=room, include_self=True)
 
             log.info(f"[SOCKET] 📤✅✅✅ Broadcasted message to room: {room}")
 
         except Exception as e:
             log.error(f"[SOCKET] send_direct_message error: {e}", exc_info=True)
+        finally:
+            if conn:
+                conn.close()
 
+    # ============================================================================
+    # COMMUNITY EVENTS
     # ============================================================================
 
     @socketio.on('community_created')
@@ -358,7 +492,7 @@ def register_socket_events(socketio):
             log.error(f"[SOCKET] community_created error: {e}")
 
     # ============================================================================
-    # CHANNEL OPERATIONS (NEW)
+    # CHANNEL OPERATIONS
     # ============================================================================
 
     @socketio.on('channel_created')
@@ -373,7 +507,6 @@ def register_socket_events(socketio):
             channel_id = data.get('id')
             channel_name = data.get('name')
 
-            # Broadcast to all users (they'll filter by community on frontend)
             emit('channel_created', {
                 'id': channel_id,
                 'community_id': community_id,
@@ -424,7 +557,6 @@ def register_socket_events(socketio):
             channel_id = data.get('id')
             community_id = data.get('community_id')
 
-            # Leave the room before broadcasting deletion
             room = f"channel_{channel_id}"
             emit('status', {
                 'msg': f"Channel has been deleted",
@@ -464,5 +596,450 @@ def register_socket_events(socketio):
 
         except Exception as e:
             log.error(f"[SOCKET] community_member_added error: {e}")
+
+    # ============================================================================
+    # VOICE CHANNEL EVENTS - FIXED SIGNALING
+    # ============================================================================
+
+    @socketio.on('join_voice_channel')
+    def on_join_voice_channel(data):
+        """User joins a voice channel."""
+        conn = None
+        try:
+            username = get_user_from_socket()
+            if not username:
+                log.error("[VOICE] No username from socket")
+                return
+
+            channel_id = data.get('channel_id')
+            log.info(f"[VOICE] {username} joining channel {channel_id}")
+
+            if not channel_id or not str(channel_id).isdigit():
+                log.error(f"[VOICE] Invalid channel_id: {channel_id}")
+                emit('voice_error', {'message': 'Invalid channel'})
+                return
+
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                # Verify channel is voice type and user is member
+                cur.execute("""
+                    SELECT ch.id, ch.name, ch.type, u.id as user_id, u.display_name, u.avatar_url
+                    FROM channels ch
+                    JOIN channel_members cm ON ch.id = cm.channel_id
+                    JOIN users u ON cm.user_id = u.id
+                    WHERE ch.id = %s AND u.username = %s AND ch.type = 'voice'
+                """, (channel_id, username))
+                channel_info = cur.fetchone()
+
+                if not channel_info:
+                    log.warning(f"[VOICE] {username} NOT member of voice channel {channel_id}")
+                    emit('voice_error', {'message': 'Not a member of this voice channel'})
+                    return
+
+                user_id = channel_info['user_id']
+                display_name = channel_info['display_name']
+                avatar_url = channel_info['avatar_url']
+                channel_name = channel_info['name']
+
+                # Create or get voice_channels entry
+                cur.execute("""
+                    SELECT id FROM voice_channels WHERE channel_id = %s
+                """, (channel_id,))
+                voice_channel = cur.fetchone()
+                
+                if not voice_channel:
+                    cur.execute("""
+                        INSERT INTO voice_channels (name, channel_id, is_active)
+                        VALUES (%s, %s, 1)
+                    """, (channel_name, channel_id))
+                    conn.commit()
+                    voice_channel_id = cur.lastrowid
+                    log.info(f"[VOICE] Created voice_channels entry {voice_channel_id} for channel {channel_id}")
+                else:
+                    voice_channel_id = voice_channel['id']
+
+                # Insert user into voice_participants
+                cur.execute("""
+                    INSERT INTO voice_participants (voice_channel_id, user_id, joined_at)
+                    VALUES (%s, %s, CURRENT_TIMESTAMP)
+                    ON DUPLICATE KEY UPDATE 
+                        joined_at = CURRENT_TIMESTAMP,
+                        left_at = NULL
+                """, (voice_channel_id, user_id))
+                conn.commit()
+                log.info(f"[VOICE] {username} inserted into voice_participants")
+
+                # Also insert into voice_sessions for state tracking
+                cur.execute("""
+                    INSERT INTO voice_sessions (channel_id, user_id, is_muted, is_deaf)
+                    VALUES (%s, %s, 0, 0)
+                    ON DUPLICATE KEY UPDATE 
+                        joined_at = CURRENT_TIMESTAMP,
+                        last_activity = CURRENT_TIMESTAMP,
+                        is_muted = 0,
+                        is_deaf = 0
+                """, (channel_id, user_id))
+                conn.commit()
+                log.info(f"[VOICE] {username} inserted into voice_sessions")
+
+                # Get all active participants (use GROUP BY to avoid duplicates)
+                cur.execute("""
+                    SELECT u.id, u.username, u.display_name, u.avatar_url,
+                           COALESCE(vs.is_muted, 0) as is_muted,
+                           COALESCE(vs.is_deaf, 0) as is_deaf,
+                           MIN(vp.joined_at) as joined_at
+                    FROM voice_participants vp
+                    JOIN users u ON vp.user_id = u.id
+                    LEFT JOIN voice_sessions vs ON vs.channel_id = %s AND vs.user_id = u.id
+                    WHERE vp.voice_channel_id = %s AND vp.left_at IS NULL
+                    GROUP BY u.id, u.username, u.display_name, u.avatar_url, vs.is_muted, vs.is_deaf
+                    ORDER BY MIN(vp.joined_at) ASC
+                """, (channel_id, voice_channel_id))
+                members = cur.fetchall()
+                log.info(f"[VOICE] Found {len(members) if members else 0} active members in channel")
+
+            voice_room = f"voice_{channel_id}"
+            join_room(voice_room)
+            log.info(f"[VOICE] {username} joined socket room: {voice_room}")
+
+            # Build members list safely
+            members_list = []
+            if members:
+                members_list = [{
+                    'id': m['id'],
+                    'username': m['username'],
+                    'display_name': m['display_name'],
+                    'avatar_url': m['avatar_url'],
+                    'is_muted': bool(m['is_muted']),
+                    'is_deaf': bool(m['is_deaf'])
+                } for m in members]
+
+            # Send members list to joining user
+            log.info(f"[VOICE] About to emit voice_members_update with {len(members_list)} members")
+            emit('voice_members_update', {
+                'channel_id': channel_id,
+                'members': members_list,
+                'total_members': len(members_list)
+            })
+            log.info(f"[VOICE] Sent members update to {username}: {len(members_list)} members")
+
+            # Notify others
+            emit('user_joined_voice', {
+                'username': username,
+                'user_id': user_id,
+                'display_name': display_name,
+                'avatar_url': avatar_url,
+                'channel_id': channel_id,
+                'timestamp': datetime.now().isoformat()
+            }, room=voice_room, include_self=False)
+
+            log.info(f"[VOICE] {username} successfully joined voice channel {channel_id}")
+
+        except Exception as e:
+            log.error(f"[VOICE] join_voice_channel error: {e}", exc_info=True)
+            emit('voice_error', {'message': f'Failed to join: {str(e)}'})
+        finally:
+            if conn:
+                conn.close()
+
+    @socketio.on('leave_voice_channel')
+    def on_leave_voice_channel(data):
+        """User leaves a voice channel."""
+        conn = None
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            channel_id = data.get('channel_id')
+            voice_room = f"voice_{channel_id}"
+            log.info(f"[VOICE] {username} leaving channel {channel_id}")
+
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                # Get user ID
+                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+                user_result = cur.fetchone()
+                
+                if user_result:
+                    user_id = user_result['id']
+                    
+                    # Delete from voice_participants completely
+                    cur.execute("""
+                        DELETE FROM voice_participants
+                        WHERE user_id = %s 
+                        AND voice_channel_id = (SELECT id FROM voice_channels WHERE channel_id = %s)
+                    """, (user_id, channel_id))
+                    conn.commit()
+                    log.info(f"[VOICE] Deleted {username} from voice_participants for channel {channel_id}")
+                    
+                    # Delete from voice_sessions
+                    cur.execute("""
+                        DELETE FROM voice_sessions 
+                        WHERE channel_id = %s AND user_id = %s
+                    """, (channel_id, user_id))
+                    conn.commit()
+                    log.info(f"[VOICE] Removed {username} from voice_sessions")
+                    
+                    # Get remaining active members
+                    cur.execute("""
+                        SELECT u.id, u.username, u.display_name, u.avatar_url,
+                               COALESCE(vs.is_muted, 0) as is_muted,
+                               COALESCE(vs.is_deaf, 0) as is_deaf,
+                               MIN(vp.joined_at) as joined_at
+                        FROM voice_participants vp
+                        JOIN users u ON vp.user_id = u.id
+                        LEFT JOIN voice_sessions vs ON vs.channel_id = %s AND vs.user_id = u.id
+                        WHERE vp.voice_channel_id = (SELECT id FROM voice_channels WHERE channel_id = %s)
+                        GROUP BY u.id, u.username, u.display_name, u.avatar_url, vs.is_muted, vs.is_deaf
+                        ORDER BY MIN(vp.joined_at) ASC
+                    """, (channel_id, channel_id))
+                    remaining_members = cur.fetchall()
+                    
+                    members_list = [{
+                        'id': m['id'],
+                        'username': m['username'],
+                        'display_name': m['display_name'],
+                        'avatar_url': m['avatar_url'],
+                        'is_muted': bool(m['is_muted']),
+                        'is_deaf': bool(m['is_deaf'])
+                    } for m in remaining_members]
+                else:
+                    members_list = []
+
+            leave_room(voice_room)
+            log.info(f"[VOICE] {username} left socket room: {voice_room}")
+
+            # Notify others
+            emit('user_left_voice', {
+                'username': username,
+                'channel_id': channel_id,
+                'timestamp': datetime.now().isoformat()
+            }, room=voice_room)
+
+            # Send updated members list
+            emit('voice_members_update', {
+                'channel_id': channel_id,
+                'members': members_list,
+                'total_members': len(members_list)
+            }, room=voice_room)
+
+            log.info(f"[VOICE] {username} successfully left channel {channel_id}")
+
+        except Exception as e:
+            log.error(f"[VOICE] leave_voice_channel error: {e}", exc_info=True)
+        finally:
+            if conn:
+                conn.close()
+
+    @socketio.on('send_offer')
+    def on_send_offer(data):
+        """Send WebRTC offer to peer - FIXED."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                log.error("[VOICE] send_offer: No username")
+                return
+
+            channel_id = data.get('channel_id')
+            target_user = data.get('target_user')  # This is a username
+            offer = data.get('offer')
+
+            log.info(f"[VOICE] 📤 Offer from {username} to {target_user}")
+            log.info(f"[VOICE] 📤 Current sessions: {list(user_socket_sessions.keys())}")
+
+            # Get target user's socket ID
+            target_sid = user_socket_sessions.get(target_user)
+            
+            if not target_sid:
+                log.error(f"[VOICE] ❌ No socket session for {target_user}")
+                log.error(f"[VOICE] ❌ Available sessions: {user_socket_sessions}")
+                emit('voice_error', {'message': f'User {target_user} not connected'})
+                return
+
+            # Send to specific socket ID
+            log.info(f"[VOICE] 📤 Sending offer to SID: {target_sid}")
+            
+            # Use room broadcast as fallback to ensure delivery
+            voice_room = f"voice_{channel_id}"
+            emit('receive_offer', {
+                'from': username,  # Sender's username
+                'offer': offer,
+                'channel_id': channel_id,
+                'target': target_user  # Add explicit target
+            }, room=voice_room)
+
+            log.info(f"[VOICE] ✅ Offer broadcasted from {username} to room {voice_room}")
+
+        except Exception as e:
+            log.error(f"[VOICE] send_offer error: {e}", exc_info=True)
+
+    @socketio.on('send_answer')
+    def on_send_answer(data):
+        """Send WebRTC answer to peer - FIXED."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                log.error("[VOICE] send_answer: No username")
+                return
+
+            channel_id = data.get('channel_id')
+            target_user = data.get('target_user')
+            answer = data.get('answer')
+
+            log.info(f"[VOICE] 📤 Answer from {username} to {target_user}")
+            log.info(f"[VOICE] 📤 Current sessions: {list(user_socket_sessions.keys())}")
+
+            target_sid = user_socket_sessions.get(target_user)
+            
+            if not target_sid:
+                log.error(f"[VOICE] ❌ No socket session for {target_user}")
+                log.error(f"[VOICE] ❌ Available sessions: {user_socket_sessions}")
+                return
+
+            log.info(f"[VOICE] 📤 Sending answer to SID: {target_sid}")
+            
+            # Use room broadcast to ensure delivery
+            voice_room = f"voice_{channel_id}"
+            emit('receive_answer', {
+                'from': username,
+                'answer': answer,
+                'channel_id': channel_id,
+                'target': target_user
+            }, room=voice_room)
+
+            log.info(f"[VOICE] ✅ Answer broadcasted from {username} to room {voice_room}")
+
+        except Exception as e:
+            log.error(f"[VOICE] send_answer error: {e}", exc_info=True)
+
+    @socketio.on('send_ice_candidate')
+    def on_send_ice_candidate(data):
+        """Send ICE candidate to peer - FIXED."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            channel_id = data.get('channel_id')
+            target_user = data.get('target_user')
+            candidate = data.get('candidate')
+
+            log.debug(f"[VOICE] 📤 ICE from {username} to {target_user}")
+
+            target_sid = user_socket_sessions.get(target_user)
+            
+            if not target_sid:
+                log.warning(f"[VOICE] ⚠️ No socket for {target_user} (ICE)")
+                return
+
+            # Use room broadcast for ICE candidates too
+            voice_room = f"voice_{channel_id}"
+            emit('receive_ice_candidate', {
+                'from': username,
+                'candidate': candidate,
+                'channel_id': channel_id,
+                'target': target_user
+            }, room=voice_room)
+
+        except Exception as e:
+            log.error(f"[VOICE] send_ice_candidate error: {e}")
+
+    @socketio.on('voice_state_changed')
+    def on_voice_state_changed(data):
+        """Broadcast voice state changes (mute/deaf)."""
+        conn = None
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            channel_id = data.get('channel_id')
+            is_muted = data.get('is_muted', False)
+            is_deaf = data.get('is_deaf', False)
+
+            # Update voice_sessions in database
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE voice_sessions 
+                    SET is_muted = %s, is_deaf = %s, last_activity = CURRENT_TIMESTAMP
+                    WHERE channel_id = %s AND user_id = (SELECT id FROM users WHERE username = %s)
+                """, (is_muted, is_deaf, channel_id, username))
+                conn.commit()
+                log.info(f"[VOICE] Updated voice_sessions for {username}: muted={is_muted}, deaf={is_deaf}")
+
+            voice_room = f"voice_{channel_id}"
+
+            emit('voice_state_update', {
+                'username': username,
+                'channel_id': channel_id,
+                'is_muted': is_muted,
+                'is_deaf': is_deaf,
+                'timestamp': datetime.now().isoformat()
+            }, room=voice_room)
+
+            log.info(f"[VOICE] {username} voice state updated - muted: {is_muted}, deaf: {is_deaf}")
+
+        except Exception as e:
+            log.error(f"[VOICE] voice_state_changed error: {e}", exc_info=True)
+        finally:
+            if conn:
+                conn.close()
+
+    @socketio.on('get_voice_channel_members')
+    def on_get_voice_channel_members(data):
+        """Get list of active users in voice channel."""
+        conn = None
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            channel_id = data.get('channel_id')
+            log.info(f"[VOICE] Getting members for channel {channel_id}")
+
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                # Fetch active participants from voice_participants table
+                cur.execute("""
+                    SELECT u.id, u.username, u.display_name, u.avatar_url,
+                           COALESCE(vs.is_muted, 0) as is_muted,
+                           COALESCE(vs.is_deaf, 0) as is_deaf,
+                           MIN(vp.joined_at) as joined_at
+                    FROM voice_participants vp
+                    JOIN users u ON vp.user_id = u.id
+                    LEFT JOIN voice_sessions vs ON vs.channel_id = %s AND vs.user_id = u.id
+                    WHERE vp.voice_channel_id = (SELECT id FROM voice_channels WHERE channel_id = %s)
+                    AND vp.left_at IS NULL
+                    GROUP BY u.id, u.username, u.display_name, u.avatar_url, vs.is_muted, vs.is_deaf
+                    ORDER BY MIN(vp.joined_at) ASC
+                """, (channel_id, channel_id))
+                members = cur.fetchall()
+                log.info(f"[VOICE] Found {len(members) if members else 0} active members")
+
+            members_list = [{
+                'id': m['id'],
+                'username': m['username'],
+                'display_name': m['display_name'],
+                'avatar_url': m['avatar_url'],
+                'is_muted': bool(m['is_muted']),
+                'is_deaf': bool(m['is_deaf'])
+            } for m in (members or [])]
+
+            emit('voice_channel_members', {
+                'channel_id': channel_id,
+                'members': members_list,
+                'total_members': len(members_list)
+            })
+
+            log.info(f"[VOICE] Sent members list: {len(members_list)} users")
+
+        except Exception as e:
+            log.error(f"[VOICE] get_voice_channel_members error: {e}", exc_info=True)
+            emit('voice_error', {'message': 'Failed to get channel members'})
+        finally:
+            if conn:
+                conn.close()
 
     log.info("[SOCKET] All socket events registered successfully")

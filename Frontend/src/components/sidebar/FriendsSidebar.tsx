@@ -185,7 +185,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   return (
     <div className={`flex-shrink-0 h-full flex transition-all duration-200 ${isDarkMode ? 'bg-slate-900' : 'bg-gray-50'}`}>
       {/* Icon Sidebar - Always visible */}
-      <div className={`flex flex-col items-center py-3 gap-2 flex-shrink-0 w-20 ${isDarkMode ? 'border-r border-slate-700' : 'border-r border-gray-200'} relative`}>
+      <div className={`flex flex-col items-center py-3 gap-2 flex-shrink-0 w-20 ${isDarkMode ? 'border-r border-slate-700' : 'border-r border-gray-200'} relative z-50`}>
         {/* Toggle Button */}
         <div className="relative group">
           <button
@@ -200,13 +200,13 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                 setShowDetailPanel(true);
               }
             }}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transform transition-transform duration-300 ${isCollapsed ? 'translate-x-0' : 'translate-x-2'} transition-all ${isDarkMode ? 'hover:bg-slate-700 text-slate-400 hover:text-white' : 'hover:bg-gray-200 text-gray-600 hover:text-gray-900'}`}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'hover:bg-slate-700 text-slate-400 hover:text-white' : 'hover:bg-gray-200 text-gray-600 hover:text-gray-900'}`}
             title={isCollapsed ? "Expand" : "Collapse"}
           >
             {isCollapsed ? <ChevronRight className="w-5 h-5 transition-transform duration-300" /> : <ChevronLeft className="w-5 h-5 transition-transform duration-300" />}
           </button>
           {isCollapsed && (
-            <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
+            <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-[100] ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
               {isCollapsed ? "Expand" : "Collapse"}
             </div>
           )}
@@ -221,12 +221,12 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
           )}
           <button
             onClick={() => onNavigate("dashboard")}
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center transform transition-transform duration-300 ${isCollapsed ? 'translate-x-0' : 'translate-x-2'} ${currentView === "dashboard" && !selectedCommunity ? "bg-blue-600 text-white" : isDarkMode ? "bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white" : "bg-gray-200 hover:bg-blue-600 text-gray-600 hover:text-white"}`}
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center ${currentView === "dashboard" && !selectedCommunity ? "bg-blue-600 text-white" : isDarkMode ? "bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white" : "bg-gray-200 hover:bg-blue-600 text-gray-600 hover:text-white"}`}
           >
             <Home className="w-5 h-5 transition-all duration-300" />
           </button>
           {isCollapsed && (
-            <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
+            <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-[100] ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
               Home
             </div>
           )}
@@ -240,9 +240,8 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
           <button
             onClick={() => {
               onNavigate("friends");
-              setShowDetailPanel(true);
             }}
-            className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transform transition-transform duration-300 ${isCollapsed ? 'translate-x-0' : 'translate-x-2'} ${currentView === "friends" ? "bg-green-600 text-white" : isDarkMode ? "bg-slate-700 hover:bg-green-600 text-slate-400 hover:text-white" : "bg-gray-200 hover:bg-green-600 text-gray-600 hover:text-white"}`}
+            className={`relative w-12 h-12 rounded-2xl flex items-center justify-center ${currentView === "friends" ? "bg-green-600 text-white" : isDarkMode ? "bg-slate-700 hover:bg-green-600 text-slate-400 hover:text-white" : "bg-gray-200 hover:bg-green-600 text-gray-600 hover:text-white"}`}
           >
             <Users className="w-5 h-5 transition-all duration-300" />
             {pendingRequests.length > 0 && (
@@ -251,8 +250,9 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
               </div>
             )}
           </button>
+          {/* FIXED: Increased z-index to z-[100] */}
           {isCollapsed && (
-            <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
+            <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-[100] ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
               Friends {pendingRequests.length > 0 && `(${pendingRequests.length})`}
             </div>
           )}
@@ -261,7 +261,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         <div className={`h-0.5 w-8 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`} />
 
         {/* Communities */}
-        <div className="w-full flex flex-col items-center gap-2 overflow-y-auto flex-1 transition-all duration-300">
+        <div className={`w-full flex flex-col items-center gap-2 transition-all duration-300`}>
           {communities.map((community, index) => {
             const communityId = community.id.toString();
             const color = getCommunityColor(index);
@@ -274,7 +274,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                 )}
                 <button
                   onClick={() => handleCommunityClick(communityId)}
-                  className={`w-12 h-12 rounded-2xl flex items-center justify-center transform transition-transform duration-300 ${isCollapsed ? 'translate-x-0' : 'translate-x-2'} font-bold text-white text-sm transition-all ${selectedCommunity === communityId ? color : isDarkMode ? `bg-slate-700 hover:${color}` : `bg-gray-200 hover:${color}`}`}
+                  className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white text-sm transition-all ${selectedCommunity === communityId ? color : isDarkMode ? `bg-slate-700 hover:${color}` : `bg-gray-200 hover:${color}`}`}
                 >
                   <span className="transition-all duration-300">{community.icon || initials}</span>
                 </button>
@@ -296,8 +296,9 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
           >
             <Plus className="w-5 h-5" />
           </button>
+          {/* FIXED: Increased z-index to z-[100] */}
           {isCollapsed ? (
-            <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 rounded-lg shadow-2xl overflow-hidden border opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto z-50 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
+            <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 rounded-lg shadow-2xl overflow-hidden border opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto z-[100] ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
               <button
                 onClick={() => { setShowCreateCommunityModal(true); }}
                 className={`px-3 py-2 text-xs font-semibold text-left transition-colors whitespace-nowrap ${isDarkMode ? 'text-green-400 hover:bg-slate-700' : 'text-green-600 hover:bg-gray-100'}`}
@@ -315,12 +316,12 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
           ) : null}
         </div>
 
-        {/* Profile */}
-        <div className="flex flex-col items-center gap-2 pt-2 profile-menu-container">
+        {/* Profile - FIXED: Increased z-index to z-[60] */}
+        <div className="flex flex-col items-center gap-2 mt-auto profile-menu-container relative z-[60]">
           <div className="relative group w-full flex justify-center">
             <button
               onClick={() => setShowProfileMenu(!showProfileMenu)}
-              className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ring-2 ${showProfileMenu ? 'ring-blue-500 scale-105' : isDarkMode ? 'ring-slate-700 hover:ring-blue-500/50 hover:scale-105' : 'ring-gray-300 hover:ring-blue-500/50 hover:scale-105'}`}
+              className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ring-2 relative z-[60] ${showProfileMenu ? 'ring-blue-500 scale-105' : isDarkMode ? 'ring-slate-700 hover:ring-blue-500/50 hover:scale-105' : 'ring-gray-300 hover:ring-blue-500/50 hover:scale-105'}`}
             >
               <div className="w-full h-full rounded-full overflow-hidden">
                 {renderUserAvatar()}
@@ -328,8 +329,9 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
               <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 ${isDarkMode ? 'border-slate-900' : 'border-gray-50'} ${statusColors[userStatus]}`} style={{ transform: 'translate(25%, 25%)' }} />
             </button>
 
+            {/* FIXED: Increased z-index to z-[100] for profile menu */}
             {showProfileMenu && currentUser && (
-              <div className={`${isCollapsed ? 'absolute' : 'fixed'} w-72 rounded-xl shadow-2xl border overflow-hidden z-[100] ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`} style={isCollapsed ? { left: 'calc(100% + 8px)', top: '50%', transform: 'translateY(-50%)' } : { top: '50%', right: '1200px', transform: 'translateY(-50%)' }}>                <div className={`p-4 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-900/80 to-slate-800/80 border-slate-700' : 'bg-gradient-to-br from-blue-50/50 to-white border-gray-200'}`}>
+              <div className={`${isCollapsed ? 'absolute' : 'fixed'} w-72 rounded-xl shadow-2xl border overflow-hidden z-[100] ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`} style={isCollapsed ? { left: 'calc(100% + 8px)', bottom: '1.5rem', transform: 'translateY(0)' } : { left: '100px', bottom: '1.5rem', transform: 'translateY(0)' }}>                <div className={`p-4 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-900/80 to-slate-800/80 border-slate-700' : 'bg-gradient-to-br from-blue-50/50 to-white border-gray-200'}`}>
                 <div className="flex items-center gap-3">
                   <div className="relative w-14 h-14 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-blue-500 shadow-lg">
                     {renderUserAvatar()}
@@ -366,7 +368,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                   </div>
                 </div>
 
-                <div className="p-2 max-h-80 overflow-y-auto scrollbar-thin">
+                <div className={`p-2 max-h-80 overflow-y-auto scrollbar ${isDarkMode ? 'scrollbar-thumb-slate-600 scrollbar-track-slate-800/30' : 'scrollbar-thumb-gray-400 scrollbar-track-gray-100'}`}>
                   <button onClick={() => { setShowProfileMenu(false); onNavigate("profile"); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
                     <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><User className="w-4 h-4" /></div>
                     <span>My Profile</span>
@@ -411,24 +413,25 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
               </div>
             )}
 
+            {/* FIXED: Increased z-index to z-[100] for profile tooltip */}
             {!showProfileMenu && hoveredItem === 'profile' && isCollapsed && (
-              <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none z-50 ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
+              <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none z-[100] ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
                 {currentUser?.display_name || currentUser?.username || 'Profile'}
               </div>
             )}
-            {!showProfileMenu && isCollapsed && <div onMouseEnter={() => setHoveredItem('profile')} onMouseLeave={() => setHoveredItem(null)} className="absolute inset-0" />}
+            {!showProfileMenu && isCollapsed && <div onMouseEnter={() => setHoveredItem('profile')} onMouseLeave={() => setHoveredItem(null)} className="absolute inset-0 z-[59]" />}
           </div>
         </div>
       </div>
 
-      {/* Detail Panel - Shows when Friends view is active and detail panel is open */}
-      {currentView === "friends" && showDetailPanel && (
+      {/* Detail Panel - Shows when expanded or during direct message, independent of view */}
+      {showDetailPanel && (
         <div className={`flex-1 flex flex-col h-full border-l w-64 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
           <div className={`px-4 py-3 border-b ${isDarkMode ? 'border-slate-700/50' : 'border-gray-200'}`}>
             <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Friends & Communities</h2>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className={`flex-1 overflow-y-auto scrollbar ${isDarkMode ? 'scrollbar-thumb-slate-600 scrollbar-track-slate-800/30' : 'scrollbar-thumb-gray-400 scrollbar-track-gray-100'}`}>
             <div className="px-4 py-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className={`text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>Conversations</h3>

@@ -4,6 +4,7 @@ import { Send, MoreVertical, Trash2, Edit2, ArrowLeft } from 'lucide-react';
 import { useDirectMessages } from '@/contexts/DirectMessagesContext';
 import { useFriends } from '@/contexts/FriendsContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import type { DirectMessage } from '@/types';
 
 interface DirectMessageViewProps {
@@ -18,13 +19,13 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const { conversations, messages, sendMessage, deleteMessage, editMessage, markAsRead } = useDirectMessages();
   const { friends } = useFriends();
   const { user: currentUser } = useAuth();
+  const { isDarkMode } = useTheme();
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState<number | null>(null);
-  const isDarkMode = true;
 
   // Get current user's actual ID
   const currentUserId = currentUser?.id;
@@ -180,31 +181,28 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
   return (
     <div className="flex-1 flex flex-col bg-slate-900 h-full">
-      {/* Header - Compact Professional */}
-      <header className="px-4 h-14 flex items-center justify-between border-b bg-slate-800/60 border-slate-700/30 flex-shrink-0">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-1 hover:bg-slate-700 rounded transition-colors text-gray-400 hover:text-white flex-shrink-0"
-              title="Back to friends"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          )}
+      {/* Header - Profile Icon Centered at Top */}
+      <header className="px-6 py-4 flex flex-col items-center justify-center border-b bg-slate-800/60 border-slate-700/30 flex-shrink-0">
+        <div className="relative flex-shrink-0 mb-3">
           <img
             src={avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`}
             alt={displayName || username}
-            className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+            className="w-16 h-16 rounded-full object-cover ring-2 ring-slate-700"
           />
-          <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-semibold text-white truncate">{displayName || username}</h2>
-          </div>
+        </div>
+        
+        <div className="text-center">
+          <h2 className="text-lg font-bold text-white">
+            {displayName || username}
+          </h2>
+          <p className="text-sm text-slate-400 mt-1">
+            Online
+          </p>
         </div>
       </header>
 
       {/* Messages - Compact */}
-      <main className="flex-1 overflow-y-auto p-3 space-y-1">
+      <main className={`flex-1 overflow-y-auto px-6 py-6 space-y-3 scrollbar ${isDarkMode ? 'scrollbar-thumb-slate-600 scrollbar-track-slate-800/30' : 'scrollbar-thumb-gray-400 scrollbar-track-gray-100'}`}>
         {enrichedMessages.length === 0 ? (
           <div className="h-full flex items-center justify-center text-gray-400">
             <div className="text-center text-sm">
@@ -365,17 +363,17 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
         <div ref={messagesEndRef} />
       </main>
 
-      {/* Input */}
-      <footer className="border-t bg-slate-800/80 border-slate-700/50 backdrop-blur-sm flex-shrink-0">
-        <form onSubmit={handleSend} className="px-3 py-2">
-          <div className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 border bg-slate-900/50 border-slate-700 focus-within:border-blue-500 transition-all">
+      {/* Input - Professional */}
+      <footer className="border-t bg-slate-900/95 backdrop-blur border-slate-700/50 flex-shrink-0">
+        <form onSubmit={handleSend} className="px-6 py-4">
+          <div className="flex items-center gap-3 rounded-2xl px-4 py-3 border border-slate-700 bg-slate-800 hover:border-slate-600 focus-within:border-blue-500 focus-within:bg-slate-800/90 focus-within:ring-1 focus-within:ring-blue-500/30 transition-all duration-200">
             <input
               type="text"
               placeholder={`Message ${displayName || username}...`}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               disabled={isSending}
-              className="flex-1 bg-transparent outline-none text-sm py-0 text-white placeholder-gray-500 disabled:opacity-50"
+              className="flex-1 bg-transparent outline-none text-sm text-white placeholder-slate-500 disabled:opacity-50"
               onKeyPress={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -386,10 +384,10 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             <button
               type="submit"
               disabled={!message.trim() || isSending}
-              className="p-1.5 text-blue-500 hover:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
-              title="Send message"
+              className="p-2 text-blue-500 hover:text-blue-400 hover:bg-slate-700 rounded-lg disabled:opacity-40 disabled:hover:text-blue-500 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all flex-shrink-0"
+              title="Send message (Enter)"
             >
-              <Send className="w-4 h-4" />
+              <Send className="w-5 h-5" />
             </button>
           </div>
         </form>

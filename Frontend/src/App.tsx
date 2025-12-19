@@ -5,6 +5,7 @@ import { WorkspaceProvider, useWorkspace } from './contexts/WorkspaceContext';
 import { FriendsProvider } from './contexts/FriendsContext';
 import { DirectMessagesProvider } from './contexts/DirectMessagesContext';
 import { RealtimeProvider } from './contexts/RealtimeContext';
+import { VoiceProvider } from './contexts/VoiceContext';
 import AuthPageWrapper from '@/pages/AuthPageWrapper';
 import Welcome from './components/onboarding/Welcome';
 import WorkspaceSetup from './components/onboarding/WorkspaceSetup';
@@ -105,15 +106,17 @@ export default function App() {
         <WorkspaceProvider>
           <FriendsProvider>
             <DirectMessagesProvider>
-              <BrowserRouter>
-                <Routes>
-                  <Route path="/*" element={<AppRouter />} />
-                  <Route path="/forgot-password" element={<ForgotPassword />} />
-                  <Route path="/otp-verification" element={<OtpVerification />} />
-                  <Route path="/reset-password" element={<ResetPassword />} />
-                </Routes>
-                <Toaster />
-              </BrowserRouter>
+              <VoiceProvider>
+                <BrowserRouter>
+                  <Routes>
+                    <Route path="/*" element={<AppRouter />} />
+                    <Route path="/forgot-password" element={<ForgotPassword />} />
+                    <Route path="/otp-verification" element={<OtpVerification />} />
+                    <Route path="/reset-password" element={<ResetPassword />} />
+                  </Routes>
+                  <Toaster />
+                </BrowserRouter>
+              </VoiceProvider>
             </DirectMessagesProvider>
           </FriendsProvider>
         </WorkspaceProvider>

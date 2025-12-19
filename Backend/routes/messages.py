@@ -251,6 +251,14 @@ def send_direct_message():
         conn.commit()
         avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
         
+        # Get receiver info too
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, username, display_name, avatar_url FROM users WHERE id = %s
+            """, (receiver_id,))
+            receiver_row = cur.fetchone()
+            receiver_avatar = get_avatar_url(receiver_row['username'], receiver_row['avatar_url']) if receiver_row else None
+        
         return jsonify({
             'id': msg['id'],
             'sender_id': msg['sender_id'],
@@ -259,12 +267,19 @@ def send_direct_message():
             'message_type': msg['message_type'],
             'created_at': msg['created_at'].isoformat(),
             'is_read': bool(msg['is_read']),
+            'edited_at': None,
             'sender': {
                 'id': msg['sender_id'],
                 'username': msg['username'],
                 'display_name': msg['display_name'] or msg['username'],
                 'avatar_url': avatar_url
-            }
+            },
+            'receiver': {
+                'id': receiver_row['id'],
+                'username': receiver_row['username'],
+                'display_name': receiver_row['display_name'] or receiver_row['username'],
+                'avatar_url': receiver_avatar
+            } if receiver_row else None
         }), 201
 
     except Exception as e:

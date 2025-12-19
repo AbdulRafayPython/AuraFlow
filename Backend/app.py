@@ -36,11 +36,11 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# CORS Configuration - Allow both ports for development
+# CORS Configuration - Allow localhost and local network
 CORS(app, 
      resources={
         r"/api/*": {
-            "origins": ["http://localhost:8080", "http://localhost:3000", "http://localhost:5173"],
+            "origins": ["http://localhost:8080", "https://localhost:8080", "http://localhost:8081", "https://localhost:8081", "http://localhost:3000", "http://localhost:5173", "http://192.168.1.9:8081", "https://192.168.1.9:8081"],
             "supports_credentials": True,
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -58,7 +58,7 @@ def handle_preflight():
             'statusCode': 200
         }
         origin = request.headers.get('Origin')
-        allowed_origins = ["http://localhost:8080", "http://localhost:3000", "http://localhost:5173"]
+        allowed_origins = ["http://localhost:8080", "http://localhost:3000", "http://localhost:5173", "http://localhost:8081"]
         
         if origin in allowed_origins:
             response_obj = {
@@ -82,7 +82,7 @@ jwt = JWTManager(app)
 # Initialize SocketIO with threading mode
 socketio = SocketIO(
     app, 
-    cors_allowed_origins=["http://localhost:8080", "http://localhost:3000"],
+    cors_allowed_origins=["http://localhost:8080", "https://localhost:8080", "http://localhost:8081", "https://localhost:8081", "http://localhost:3000", "http://192.168.1.9:8081", "https://192.168.1.9:8081"],
     async_mode="threading",
     logger=True,
     engineio_logger=True
@@ -193,13 +193,20 @@ def health_check():
 # ======================================================================
 if __name__ == "__main__":
     print("=" * 60)
-    print("AuraFlow Backend Server Starting...")
-    print(f"Server: http://localhost:5000")
-    print(f"WebSocket: ws://localhost:5000")
-    print(f"CORS Enabled for: localhost:8080, localhost:3000")
+    print("AuroFlow Backend Server Starting...")
+    print(f"Server: http://0.0.0.0:5000")
+    print(f"WebSocket: ws://0.0.0.0:5000")
+    print(f"CORS Enabled for: localhost:8080, localhost:3000, 192.168.1.9")
     print("=" * 60)
     
-    # Use socketio.run() instead of app.run() for WebSocket support
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    # Use socketio.run() without SSL
+    # Frontend uses HTTPS via @vitejs/plugin-basic-ssl
+    # API calls use HTTP (safe on local network)
+    socketio.run(
+        app, 
+        debug=True, 
+        host='0.0.0.0', 
+        port=5000
+    )
 
 

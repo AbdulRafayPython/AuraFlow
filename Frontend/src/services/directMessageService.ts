@@ -2,7 +2,8 @@
 import axios from 'axios';
 import type { DirectMessage } from '@/types';
 
-const API_BASE = 'http://localhost:5000/api';
+const API_SERVER = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
+const API_BASE = `${API_SERVER}/api`;
 
 class DirectMessageService {
   private getAuthHeaders() {
