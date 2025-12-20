@@ -297,16 +297,54 @@ def reset_password():
 
 @jwt_required()
 def update_profile():
-    """Update user profile (display_name, bio, avatar_url)"""
+    """Update user profile (display_name, bio, avatar_url) - supports both JSON and file upload"""
     current_user = get_jwt_identity()
-    data = request.get_json() or {}
     
-    display_name = data.get('display_name')
-    bio = data.get('bio')
-    avatar_url = data.get('avatar_url')
+    # Check if it's a file upload (multipart/form-data) or JSON
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        # Handle file upload
+        display_name = request.form.get('display_name')
+        bio = request.form.get('bio')
+        avatar_file = request.files.get('avatar')
+        remove_avatar = request.form.get('remove_avatar') == 'true'
+        
+        avatar_url = None
+        
+        if remove_avatar:
+            # Set avatar_url to None to revert to Dicebear
+            avatar_url = None
+        elif avatar_file:
+            # Handle file upload - save to uploads directory
+            import os
+            from werkzeug.utils import secure_filename
+            
+            # Create uploads directory if it doesn't exist
+            upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'avatars')
+            os.makedirs(upload_dir, exist_ok=True)
+            
+            # Generate unique filename
+            ext = os.path.splitext(avatar_file.filename)[1]
+            filename = f"{current_user}_{int(datetime.now().timestamp())}{ext}"
+            filepath = os.path.join(upload_dir, secure_filename(filename))
+            
+            # Save file
+            avatar_file.save(filepath)
+            
+            # Store relative URL path
+            avatar_url = f"/uploads/avatars/{secure_filename(filename)}"
+    else:
+        # Handle JSON request
+        data = request.get_json() or {}
+        display_name = data.get('display_name')
+        bio = data.get('bio')
+        avatar_url = data.get('avatar_url')
+        remove_avatar = data.get('remove_avatar', False)
+        
+        if remove_avatar:
+            avatar_url = None
     
     # At least one field must be provided
-    if not any([display_name, bio, avatar_url]):
+    if not any([display_name, bio, avatar_url is not None, remove_avatar]):
         return jsonify({'error': 'At least one field (display_name, bio, or avatar_url) is required'}), 400
     
     conn = get_db_connection()
@@ -324,7 +362,7 @@ def update_profile():
                 update_fields.append('bio = %s')
                 update_values.append(bio)
             
-            if avatar_url is not None:
+            if avatar_url is not None or remove_avatar:
                 update_fields.append('avatar_url = %s')
                 update_values.append(avatar_url)
             
@@ -340,4 +378,7 @@ def update_profile():
     finally:
         conn.close()
     
-    return jsonify({'message': 'Profile updated successfully'}), 200
+    return jsonify({
+        'message': 'Profile updated successfully',
+        'avatar_url': avatar_url
+    }), 200

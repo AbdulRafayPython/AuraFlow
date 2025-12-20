@@ -1,6 +1,7 @@
 // components/modals/AddFriendModal.tsx
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
+import { getAvatarUrl } from "@/lib/utils";
 import { X, Search, User, UserPlus, Loader, AlertCircle, CheckCircle } from "lucide-react";
 import { channelService } from "@/services/channelService";
 import type { User as UserType } from "@/types";
@@ -198,7 +199,7 @@ export default function AddFriendModal({
                     {/* Avatar */}
                     {user.avatar_url ? (
                       <img
-                        src={user.avatar_url}
+                        src={getAvatarUrl(user.avatar_url, user.username)}
                         alt={user.display_name}
                         className="w-12 h-12 rounded-full object-cover flex-shrink-0"
                       />

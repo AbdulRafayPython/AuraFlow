@@ -63,6 +63,7 @@ class SocketService {
   private currentChannel: number | null = null;
   private currentDMUser: number | null = null;
   private typingTimeout: NodeJS.Timeout | null = null;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
   
   // Global DM listener tracker
   private dmListenerRegistered: boolean = false;
@@ -81,8 +82,15 @@ class SocketService {
       timestamp: new Date().toLocaleTimeString(),
     });
     
+    // Determine the server URL based on current location
+    const serverUrl = window.location.hostname === 'localhost' 
+      ? 'http://localhost:5000'
+      : `http://${window.location.hostname}:5000`;
+    
+    console.log('[SOCKET] Connecting to:', serverUrl);
+    
     // FIXED: Pass token in query string for Socket.IO handshake
-    this.socket = io('http://localhost:5000', {
+    this.socket = io(serverUrl, {
       query: {
         token: `Bearer ${token}`,  // Pass token in query for connection handshake
       },
@@ -101,8 +109,14 @@ class SocketService {
 
     // Connection events
     this.socket.on('connect', () => {
-      console.log('[SOCKET] ✅ Connected successfully');
+      console.log('%c[SOCKET] ✅ Connected successfully', 'color: #00ff00; font-weight: bold', {
+        id: this.socket?.id,
+        timestamp: new Date().toLocaleTimeString()
+      });
       this.reconnectAttempts = 0;
+      
+      // Start heartbeat to track active status
+      this.startHeartbeat();
       
       // Rejoin current channel if reconnecting
       if (this.currentChannel) {
@@ -113,6 +127,10 @@ class SocketService {
 
     this.socket.on('disconnect', (reason) => {
       console.log('[SOCKET] ⚠️ Disconnected:', reason);
+      
+      // Stop heartbeat when disconnected
+      this.stopHeartbeat();
+      
       if (reason === 'io server disconnect') {
         // Server initiated disconnect, try to reconnect
         this.socket?.connect();
@@ -127,6 +145,11 @@ class SocketService {
         console.error('[SOCKET] Max reconnection attempts reached');
         this.disconnect();
       }
+    });
+
+    // Debug: Listen for ALL events to see what's coming through
+    this.socket.onAny((eventName, ...args) => {
+      console.log('%c[SOCKET] 📨 EVENT RECEIVED:', 'color: #ff9900; font-weight: bold', eventName, args);
     });
 
     // User status updates
@@ -244,8 +267,24 @@ class SocketService {
 
     // Friend request events
     this.socket.on('friend_request_received', (data: FriendRequestEvent) => {
-      console.log('[SOCKET] 👋 Friend request received:', data);
-      this.friendRequestHandlers.forEach(handler => handler(data));
+      console.log('%c[SOCKET] 👋 FRIEND REQUEST RECEIVED', 'color: #00ff00; font-weight: bold', {
+        data,
+        handlers: this.friendRequestHandlers.length,
+        timestamp: new Date().toLocaleTimeString()
+      });
+      
+      if (this.friendRequestHandlers.length === 0) {
+        console.warn('[SOCKET] ⚠️ No friend request handlers registered!');
+      }
+      
+      this.friendRequestHandlers.forEach(handler => {
+        try {
+          handler(data);
+          console.log('[SOCKET] ✅ Friend request handler executed successfully');
+        } catch (error) {
+          console.error('[SOCKET] ❌ Friend request handler error:', error);
+        }
+      });
     });
 
     this.socket.on('friend_request_accepted', (data: FriendRequestEvent) => {
@@ -639,11 +678,42 @@ class SocketService {
       this.typingTimeout = null;
     }
     
+    // Stop heartbeat
+    this.stopHeartbeat();
+    
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
       this.currentChannel = null;
       console.log('[SOCKET] 🔌 Disconnected manually');
+    }
+  }
+
+  private startHeartbeat() {
+    // Stop existing heartbeat if any
+    this.stopHeartbeat();
+    
+    // Send heartbeat every 30 seconds to track active users
+    this.heartbeatInterval = setInterval(() => {
+      if (this.socket?.connected) {
+        console.log('[HEARTBEAT] Sending heartbeat...');
+        this.socket.emit('heartbeat');
+      }
+    }, 30000); // 30 seconds
+    
+    // Send immediate heartbeat on start
+    if (this.socket?.connected) {
+      this.socket.emit('heartbeat');
+    }
+    
+    console.log('[HEARTBEAT] Started heartbeat monitoring');
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+      console.log('[HEARTBEAT] Stopped heartbeat monitoring');
     }
   }
 

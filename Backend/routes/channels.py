@@ -2,6 +2,48 @@
 from flask import jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
+from werkzeug.utils import secure_filename
+import os
+import uuid
+from PIL import Image
+import io
+
+# Configuration for uploads
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads', 'communities')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+LOGO_SIZE = (256, 256)
+BANNER_SIZE = (1200, 400)
+
+# Ensure upload directory exists
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+print(f"[INFO] Upload folder: {UPLOAD_FOLDER}")
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def process_image(file, max_size, maintain_aspect=True):
+    """Process and resize image while maintaining quality"""
+    try:
+        img = Image.open(file)
+        
+        # Convert to RGB if necessary (for PNG with transparency)
+        if img.mode in ('RGBA', 'P'):
+            img = img.convert('RGB')
+        
+        if maintain_aspect:
+            img.thumbnail(max_size, Image.Resampling.LANCZOS)
+        else:
+            img = img.resize(max_size, Image.Resampling.LANCZOS)
+        
+        # Save to bytes
+        output = io.BytesIO()
+        img.save(output, format='JPEG', quality=85, optimize=True)
+        output.seek(0)
+        return output
+    except Exception as e:
+        print(f"[ERROR] process_image: {e}")
+        return None
 
 
 # =====================================
@@ -23,7 +65,7 @@ def get_communities():
             cur.execute("""
                 SELECT 
                     c.id, c.name, c.description, c.icon, c.color, 
-                    c.banner_url, cm.role, c.created_at
+                    c.logo_url, c.banner_url, cm.role, c.created_at
                 FROM communities c
                 JOIN community_members cm ON c.id = cm.community_id
                 WHERE cm.user_id = %s
@@ -37,6 +79,7 @@ def get_communities():
             'description': c['description'],
             'icon': c['icon'],
             'color': c['color'],
+            'logo_url': c['logo_url'],
             'banner_url': c['banner_url'],
             'role': c['role'],
             'created_at': c['created_at'].isoformat() if c['created_at'] else None
@@ -447,6 +490,510 @@ def delete_channel(channel_id):
         if conn:
             conn.rollback()
         return jsonify({'error': 'Failed to delete channel'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# UPDATE COMMUNITY (Name, Description, etc.)
+# =====================================
+@jwt_required()
+def update_community(community_id):
+    conn = None
+    try:
+        username = get_jwt_identity()
+        data = request.get_json() or {}
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get user ID
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+            
+            # Check permissions (only owner/admin can update)
+            cur.execute("""
+                SELECT role FROM community_members 
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id))
+            member = cur.fetchone()
+            if not member or member['role'] not in ['admin', 'owner']:
+                return jsonify({'error': 'Permission denied'}), 403
+            
+            # Build update query dynamically
+            updates = []
+            values = []
+            
+            if 'name' in data and data['name']:
+                updates.append("name = %s")
+                values.append(data['name'])
+            if 'description' in data:
+                updates.append("description = %s")
+                values.append(data['description'])
+            if 'icon' in data:
+                updates.append("icon = %s")
+                values.append(data['icon'])
+            if 'color' in data:
+                updates.append("color = %s")
+                values.append(data['color'])
+            
+            if not updates:
+                return jsonify({'error': 'No fields to update'}), 400
+            
+            values.append(community_id)
+            cur.execute(f"""
+                UPDATE communities SET {', '.join(updates)}
+                WHERE id = %s
+            """, tuple(values))
+            
+            # Fetch updated community
+            cur.execute("""
+                SELECT c.id, c.name, c.description, c.icon, c.color, 
+                       c.logo_url, c.banner_url, c.created_at
+                FROM communities c
+                WHERE c.id = %s
+            """, (community_id,))
+            community = cur.fetchone()
+        
+        conn.commit()
+        
+        return jsonify({
+            'id': community['id'],
+            'name': community['name'],
+            'description': community['description'],
+            'icon': community['icon'],
+            'color': community['color'],
+            'logo_url': community['logo_url'],
+            'banner_url': community['banner_url'],
+            'created_at': community['created_at'].isoformat() if community['created_at'] else None
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] update_community: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to update community'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# GET SINGLE COMMUNITY DETAILS
+# =====================================
+@jwt_required()
+def get_community(community_id):
+    conn = None
+    try:
+        username = get_jwt_identity()
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get user ID
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+            
+            # Check membership
+            cur.execute("""
+                SELECT cm.role FROM community_members cm
+                WHERE cm.community_id = %s AND cm.user_id = %s
+            """, (community_id, user_id))
+            membership = cur.fetchone()
+            if not membership:
+                return jsonify({'error': 'Access denied'}), 403
+            
+            # Fetch community details
+            cur.execute("""
+                SELECT c.id, c.name, c.description, c.icon, c.color, 
+                       c.logo_url, c.banner_url, c.created_at, c.created_by,
+                       u.username as creator_username, u.display_name as creator_display_name
+                FROM communities c
+                LEFT JOIN users u ON c.created_by = u.id
+                WHERE c.id = %s
+            """, (community_id,))
+            community = cur.fetchone()
+            
+            if not community:
+                return jsonify({'error': 'Community not found'}), 404
+            
+            # Get member count
+            cur.execute("""
+                SELECT COUNT(*) as count FROM community_members 
+                WHERE community_id = %s
+            """, (community_id,))
+            member_count = cur.fetchone()['count']
+        
+        return jsonify({
+            'id': community['id'],
+            'name': community['name'],
+            'description': community['description'],
+            'icon': community['icon'],
+            'color': community['color'],
+            'logo_url': community['logo_url'],
+            'banner_url': community['banner_url'],
+            'created_at': community['created_at'].isoformat() if community['created_at'] else None,
+            'role': membership['role'],
+            'member_count': member_count,
+            'creator': {
+                'username': community['creator_username'],
+                'display_name': community['creator_display_name']
+            } if community['creator_username'] else None
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] get_community: {e}")
+        return jsonify({'error': 'Failed to fetch community'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# UPLOAD COMMUNITY LOGO
+# =====================================
+@jwt_required()
+def upload_community_logo(community_id):
+    conn = None
+    try:
+        username = get_jwt_identity()
+        
+        # Check if file is present
+        if 'logo' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['logo']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'Invalid file type. Allowed: png, jpg, jpeg, gif, webp'}), 400
+        
+        # Check file size
+        file.seek(0, 2)
+        size = file.tell()
+        file.seek(0)
+        if size > MAX_FILE_SIZE:
+            return jsonify({'error': 'File too large. Maximum 5MB allowed'}), 400
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get user ID
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+            
+            # Check permissions (only owner/admin can upload)
+            cur.execute("""
+                SELECT role FROM community_members 
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id))
+            member = cur.fetchone()
+            if not member or member['role'] not in ['admin', 'owner']:
+                return jsonify({'error': 'Permission denied'}), 403
+            
+            # Get existing logo to delete
+            cur.execute("SELECT logo_url FROM communities WHERE id = %s", (community_id,))
+            community = cur.fetchone()
+            if not community:
+                return jsonify({'error': 'Community not found'}), 404
+            
+            old_logo = community['logo_url']
+            
+            # Process and save image
+            processed = process_image(file, LOGO_SIZE)
+            if not processed:
+                return jsonify({'error': 'Failed to process image'}), 500
+            
+            # Generate unique filename
+            filename = f"logo_{community_id}_{uuid.uuid4().hex[:8]}.jpg"
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            
+            print(f"[DEBUG] Saving logo to: {filepath}")
+            
+            with open(filepath, 'wb') as f:
+                f.write(processed.read())
+            
+            print(f"[DEBUG] Logo file saved successfully")
+            
+            # Update database
+            logo_url = f"/uploads/communities/{filename}"
+            cur.execute("""
+                UPDATE communities SET logo_url = %s WHERE id = %s
+            """, (logo_url, community_id))
+            
+            print(f"[DEBUG] Database updated with logo_url: {logo_url}")
+            
+            # Delete old logo file if exists
+            if old_logo:
+                old_path = os.path.join(UPLOAD_FOLDER, os.path.basename(old_logo))
+                if os.path.exists(old_path):
+                    try:
+                        os.remove(old_path)
+                        print(f"[DEBUG] Deleted old logo: {old_path}")
+                    except Exception as e:
+                        print(f"[WARNING] Failed to delete old logo: {e}")
+        
+        conn.commit()
+        print(f"[SUCCESS] Logo uploaded for community {community_id}")
+        
+        return jsonify({
+            'message': 'Logo uploaded successfully',
+            'logo_url': logo_url
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] upload_community_logo: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to upload logo'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# UPLOAD COMMUNITY BANNER
+# =====================================
+@jwt_required()
+def upload_community_banner(community_id):
+    conn = None
+    try:
+        username = get_jwt_identity()
+        
+        # Check if file is present
+        if 'banner' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['banner']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'Invalid file type. Allowed: png, jpg, jpeg, gif, webp'}), 400
+        
+        # Check file size
+        file.seek(0, 2)
+        size = file.tell()
+        file.seek(0)
+        if size > MAX_FILE_SIZE:
+            return jsonify({'error': 'File too large. Maximum 5MB allowed'}), 400
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get user ID
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+            
+            # Check permissions (only owner/admin can upload)
+            cur.execute("""
+                SELECT role FROM community_members 
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id))
+            member = cur.fetchone()
+            if not member or member['role'] not in ['admin', 'owner']:
+                return jsonify({'error': 'Permission denied'}), 403
+            
+            # Get existing banner to delete
+            cur.execute("SELECT banner_url FROM communities WHERE id = %s", (community_id,))
+            community = cur.fetchone()
+            if not community:
+                return jsonify({'error': 'Community not found'}), 404
+            
+            old_banner = community['banner_url']
+            
+            # Process and save image
+            processed = process_image(file, BANNER_SIZE, maintain_aspect=False)
+            if not processed:
+                return jsonify({'error': 'Failed to process image'}), 500
+            
+            # Generate unique filename
+            filename = f"banner_{community_id}_{uuid.uuid4().hex[:8]}.jpg"
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            
+            print(f"[DEBUG] Saving banner to: {filepath}")
+            
+            with open(filepath, 'wb') as f:
+                f.write(processed.read())
+            
+            print(f"[DEBUG] Banner file saved successfully")
+            
+            # Update database
+            banner_url = f"/uploads/communities/{filename}"
+            cur.execute("""
+                UPDATE communities SET banner_url = %s WHERE id = %s
+            """, (banner_url, community_id))
+            
+            print(f"[DEBUG] Database updated with banner_url: {banner_url}")
+            
+            # Delete old banner file if exists
+            if old_banner:
+                old_path = os.path.join(UPLOAD_FOLDER, os.path.basename(old_banner))
+                if os.path.exists(old_path):
+                    try:
+                        os.remove(old_path)
+                        print(f"[DEBUG] Deleted old banner: {old_path}")
+                    except Exception as e:
+                        print(f"[WARNING] Failed to delete old banner: {e}")
+        
+        conn.commit()
+        print(f"[SUCCESS] Banner uploaded for community {community_id}")
+        
+        return jsonify({
+            'message': 'Banner uploaded successfully',
+            'banner_url': banner_url
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] upload_community_banner: {e}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to upload banner'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# REMOVE COMMUNITY LOGO
+# =====================================
+@jwt_required()
+def remove_community_logo(community_id):
+    conn = None
+    try:
+        username = get_jwt_identity()
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get user ID
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+            
+            # Check permissions (only owner/admin can remove)
+            cur.execute("""
+                SELECT role FROM community_members 
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id))
+            member = cur.fetchone()
+            if not member or member['role'] not in ['admin', 'owner']:
+                return jsonify({'error': 'Permission denied'}), 403
+            
+            # Get existing logo to delete
+            cur.execute("SELECT logo_url FROM communities WHERE id = %s", (community_id,))
+            community = cur.fetchone()
+            if not community:
+                return jsonify({'error': 'Community not found'}), 404
+            
+            old_logo = community['logo_url']
+            
+            # Update database
+            cur.execute("""
+                UPDATE communities SET logo_url = NULL WHERE id = %s
+            """, (community_id,))
+            
+            # Delete file if exists
+            if old_logo:
+                old_path = os.path.join(UPLOAD_FOLDER, os.path.basename(old_logo))
+                if os.path.exists(old_path):
+                    try:
+                        os.remove(old_path)
+                        print(f"[DEBUG] Deleted logo file: {old_path}")
+                    except Exception as e:
+                        print(f"[WARNING] Failed to delete logo file: {e}")
+        
+        conn.commit()
+        print(f"[SUCCESS] Logo removed for community {community_id}")
+        
+        return jsonify({'message': 'Logo removed successfully'}), 200
+        
+    except Exception as e:
+        print(f"[ERROR] remove_community_logo: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to remove logo'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# REMOVE COMMUNITY BANNER
+# =====================================
+@jwt_required()
+def remove_community_banner(community_id):
+    conn = None
+    try:
+        username = get_jwt_identity()
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get user ID
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+            
+            # Check permissions (only owner/admin can remove)
+            cur.execute("""
+                SELECT role FROM community_members 
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id))
+            member = cur.fetchone()
+            if not member or member['role'] not in ['admin', 'owner']:
+                return jsonify({'error': 'Permission denied'}), 403
+            
+            # Get existing banner to delete
+            cur.execute("SELECT banner_url FROM communities WHERE id = %s", (community_id,))
+            community = cur.fetchone()
+            if not community:
+                return jsonify({'error': 'Community not found'}), 404
+            
+            old_banner = community['banner_url']
+            
+            # Update database
+            cur.execute("""
+                UPDATE communities SET banner_url = NULL WHERE id = %s
+            """, (community_id,))
+            
+            # Delete file if exists
+            if old_banner:
+                old_path = os.path.join(UPLOAD_FOLDER, os.path.basename(old_banner))
+                if os.path.exists(old_path):
+                    try:
+                        os.remove(old_path)
+                        print(f"[DEBUG] Deleted banner file: {old_path}")
+                    except Exception as e:
+                        print(f"[WARNING] Failed to delete banner file: {e}")
+        
+        conn.commit()
+        print(f"[SUCCESS] Banner removed for community {community_id}")
+        
+        return jsonify({'message': 'Banner removed successfully'}), 200
+        
+    except Exception as e:
+        print(f"[ERROR] remove_community_banner: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to remove banner'}), 500
     finally:
         if conn:
             conn.close()
@@ -1019,7 +1566,7 @@ def discover_communities():
             query = f"""
                 SELECT 
                     c.id, c.name, c.description, c.icon, c.color, 
-                    c.banner_url, c.created_at,
+                    c.logo_url, c.banner_url, c.created_at,
                     COUNT(DISTINCT cm.user_id) as member_count,
                     u.username as creator_username,
                     u.display_name as creator_name,
@@ -1046,6 +1593,7 @@ def discover_communities():
             'description': c['description'],
             'icon': c['icon'],
             'color': c['color'],
+            'logo_url': c['logo_url'],
             'banner_url': c['banner_url'],
             'member_count': c['member_count'],
             'created_at': c['created_at'].isoformat() if c['created_at'] else None,

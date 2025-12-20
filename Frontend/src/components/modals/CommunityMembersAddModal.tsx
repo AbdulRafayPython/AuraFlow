@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { X, Search, UserPlus, Users, Loader2 } from "lucide-react";
 import { useTheme } from "../../contexts/ThemeContext";
+import { getAvatarUrl } from "@/lib/utils";
 import toast from "react-hot-toast";
 import { channelService } from "@/services/channelService";
 
@@ -203,7 +204,7 @@ export default function CommunityMembersAddModal({
                     <div className="relative">
                       {user.avatar_url ? (
                         <img
-                          src={user.avatar_url}
+                          src={getAvatarUrl(user.avatar_url, user.username)}
                           alt={user.username}
                           className={`w-12 h-12 rounded-full object-cover ring-2 ${
                             isDarkMode ? 'ring-slate-900' : 'ring-white'
@@ -270,7 +271,7 @@ export default function CommunityMembersAddModal({
                   <div className="flex items-center gap-4">
                     {member.avatar_url ? (
                       <img
-                        src={member.avatar_url}
+                        src={getAvatarUrl(member.avatar_url, member.username)}
                         alt={member.username}
                         className="w-11 h-11 rounded-full object-cover"
                       />

@@ -58,7 +58,9 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
   const [selectedChannelForManagement, setSelectedChannelForManagement] = useState<any>(null);
   const [isCommunityManagementOpen, setIsCommunityManagementOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; channelId?: number } | null>(null);
-  const [userRoleInCommunity, setUserRoleInCommunity] = useState<'owner' | 'admin' | 'member'>('member');
+  
+  // Use role directly from currentCommunity (comes from API)
+  const userRoleInCommunity = currentCommunity?.role || 'member';
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
@@ -82,12 +84,6 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
     try {
       const members = await channelService.getCommunityMembers(currentCommunity.id);
       setCommunityMembers(members);
-      
-      // Fetch current user's role in the community
-      if (currentUser?.id) {
-        const userRole = await channelService.getUserRoleInCommunity(currentCommunity.id, currentUser.id);
-        setUserRoleInCommunity(userRole);
-      }
     } catch (err: any) {
       console.error("Failed to load members:", err);
       // Silent fail - don't show error toast for members loading
@@ -506,10 +502,16 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
             description: currentCommunity.description,
             icon: currentCommunity.icon || "AF",
             color: currentCommunity.color || "#8B5CF6",
+            logo_url: currentCommunity.logo_url,
+            banner_url: currentCommunity.banner_url,
+            role: userRoleInCommunity,
           }}
           userRole={userRoleInCommunity}
           onCommunityDeleted={handleCommunityDeleted}
           onCommunityLeft={handleCommunityLeft}
+          onCommunityUpdated={async () => {
+            await reloadCommunities();
+          }}
         />
       )}
 

@@ -1,0 +1,98 @@
+{
+  "profanity": {
+    "english": [
+      "damn", "hell", "crap", "shit", "fuck", "ass", "bitch", 
+      "bastard", "asshole", "dick", "piss", "bullshit"
+    ],
+    "roman_urdu": [
+      "harami", "haramzada", "kutta", "kutti", "saala", "kamina",
+      "gandu", "chutiya", "bhenchod", "madarchod", "lund", "gaand",
+      "randi", "kanjri", "badtameez", "badmash"
+    ]
+  },
+  
+  "hate_speech": {
+    "english": [
+      "hate", "kill", "die", "death", "murder", "terrorist",
+      "radical", "extremist", "inferior", "scum", "trash"
+    ],
+    "roman_urdu": [
+      "nafrat", "maro", "mar jao", "qatal", "kafir", "be-iman"
+    ]
+  },
+  
+  "harassment": {
+    "english": [
+      "shut up", "get lost", "idiot", "moron", "stupid", "dumb",
+      "loser", "ugly", "fat", "disgusting", "worthless"
+    ],
+    "roman_urdu": [
+      "chup kar", "chup raho", "bewakoof", "pagal", "buddhu",
+      "khamosh", "bhag yahan se", "nikal", "door ho"
+    ]
+  },
+  
+  "spam_patterns": {
+    "repeated_characters": {
+      "pattern": "(.)\\1{4,}",
+      "description": "Same character repeated 5+ times"
+    },
+    "excessive_caps": {
+      "pattern": "[A-Z]{10,}",
+      "description": "10+ consecutive capital letters"
+    },
+    "excessive_emojis": {
+      "threshold": 10,
+      "description": "More than 10 emojis in a message"
+    },
+    "link_spam": {
+      "pattern": "(https?://|www\\.)[^\\s]{3,}",
+      "max_links": 3,
+      "description": "More than 3 links in a message"
+    }
+  },
+  
+  "personal_info_patterns": {
+    "phone": {
+      "pattern": "(\\+?\\d{1,3}[-.\\s]?)?\\(?\\d{3}\\)?[-.\\s]?\\d{3}[-.\\s]?\\d{4}",
+      "description": "Phone number"
+    },
+    "email": {
+      "pattern": "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}",
+      "description": "Email address"
+    },
+    "credit_card": {
+      "pattern": "\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b",
+      "description": "Credit card number"
+    }
+  },
+  
+  "acceptable_variations": {
+    "casual_expressions": [
+      "omg", "lol", "lmao", "wtf", "bruh", "yaar", "bhai",
+      "dude", "mate", "buddy", "arre", "oye", "yaar"
+    ],
+    "context_dependent": [
+      "kill it", "killing it", "dead serious", "die laughing",
+      "to die for", "killing time"
+    ]
+  },
+  
+  "severity_levels": {
+    "low": {
+      "score": 0.3,
+      "action": "warn",
+      "examples": ["casual profanity", "mild insults"]
+    },
+    "medium": {
+      "score": 0.6,
+      "action": "flag",
+      "examples": ["harassment", "targeted insults", "spam"]
+    },
+    "high": {
+      "score": 0.9,
+      "action": "block",
+      "examples": ["hate speech", "threats", "severe harassment", "doxxing"]
+    }
+  }
+}

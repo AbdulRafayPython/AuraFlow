@@ -1,5 +1,5 @@
 # routes/sockets.py - Complete Socket.IO event handlers
-from flask_socketio import emit, join_room, leave_room
+from flask_socketio import emit, join_room, leave_room, rooms
 from flask_jwt_extended import decode_token
 from flask import request
 from database import get_db_connection
@@ -10,6 +10,10 @@ log = logging.getLogger(__name__)
 
 # Track socket sessions: username -> socket_id
 user_socket_sessions = {}
+# Track last heartbeat: username -> timestamp
+user_heartbeats = {}
+# Track user rooms: username -> list of rooms
+user_rooms = {}
 
 def register_socket_events(socketio):
     """Register all real-time Socket.IO events including voice channel operations."""
@@ -75,6 +79,27 @@ def register_socket_events(socketio):
 
             conn = get_db_connection()
             with conn.cursor() as cur:
+                # Get user ID
+                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+                user_row = cur.fetchone()
+                if not user_row:
+                    log.error(f"[SOCKET] User not found: {username}")
+                    return False
+                
+                user_id = user_row['id']
+                
+                # Join personal notification room
+                personal_room = f"user_{user_id}"
+                join_room(personal_room)
+                
+                # Track user's rooms
+                user_rooms[username] = rooms()
+                
+                log.info(f"[SOCKET] ✅ {username} (ID: {user_id}) joined personal room: {personal_room}")
+                log.info(f"[SOCKET] 📍 SID: {request.sid} is now in room: {personal_room}")
+                log.info(f"[SOCKET] 🏠 All rooms for {username}: {user_rooms[username]}")
+                
+                # Update user status
                 cur.execute("""
                     UPDATE users
                     SET status = 'online', last_seen = NOW()
@@ -95,6 +120,24 @@ def register_socket_events(socketio):
             if conn:
                 conn.close()
 
+    @socketio.on('heartbeat')
+    def handle_heartbeat():
+        """Track user activity via heartbeat to determine if they're truly active"""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+            
+            # Update heartbeat timestamp
+            user_heartbeats[username] = datetime.now()
+            log.debug(f"[HEARTBEAT] Received from {username}")
+            
+            # Emit acknowledgment
+            emit('heartbeat_ack', {'timestamp': datetime.now().isoformat()})
+            
+        except Exception as e:
+            log.error(f"[HEARTBEAT] Error: {e}")
+
     @socketio.on('disconnect')
     def handle_disconnect():
         conn = None
@@ -107,6 +150,11 @@ def register_socket_events(socketio):
             if username in user_socket_sessions:
                 del user_socket_sessions[username]
                 log.info(f"[SOCKET] Removed session mapping for {username}")
+            
+            # Remove heartbeat tracking
+            if username in user_heartbeats:
+                del user_heartbeats[username]
+                log.info(f"[SOCKET] Removed heartbeat tracking for {username}")
 
             conn = get_db_connection()
             with conn.cursor() as cur:
@@ -166,6 +214,24 @@ def register_socket_events(socketio):
         finally:
             if conn:
                 conn.close()
+
+    @socketio.on('heartbeat')
+    def handle_heartbeat():
+        """Track user activity via heartbeat to determine if they're truly active"""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+            
+            # Update heartbeat timestamp
+            user_heartbeats[username] = datetime.now()
+            log.debug(f"[HEARTBEAT] Received from {username}")
+            
+            # Emit acknowledgment
+            emit('heartbeat_ack', {'timestamp': datetime.now().isoformat()})
+            
+        except Exception as e:
+            log.error(f"[HEARTBEAT] Error: {e}")
 
     # ============================================================================
     # CHANNEL ROOM MANAGEMENT
@@ -451,9 +517,7 @@ def register_socket_events(socketio):
             
             log.info(f"[SOCKET] 📤 Room name: {room}")
 
-            # Broadcast to the room (both sender and receiver are in this room)
-            log.info(f"[SOCKET] 📤 Emitting receive_direct_message to room {room}")
-            emit('receive_direct_message', {
+            message_data = {
                 'id': message_id,
                 'sender_id': sender_id,
                 'receiver_id': receiver_id,
@@ -464,9 +528,19 @@ def register_socket_events(socketio):
                 'sender': sender,
                 'receiver': data.get('receiver'),
                 'edited_at': data.get('edited_at')
-            }, room=room, include_self=True)
+            }
 
-            log.info(f"[SOCKET] 📤✅✅✅ Broadcasted message to room: {room}")
+            # Broadcast to the DM room (for users actively in the conversation)
+            log.info(f"[SOCKET] 📤 Emitting receive_direct_message to room {room}")
+            emit('receive_direct_message', message_data, room=room, include_self=True)
+            log.info(f"[SOCKET] 📤✅ Broadcasted message to DM room: {room}")
+
+            # ALSO emit to receiver's personal room for notifications
+            # This ensures they get the message even if they're not in the DM conversation
+            receiver_room = f"user_{receiver_id}"
+            log.info(f"[SOCKET] 🔔 Emitting receive_direct_message to receiver's personal room: {receiver_room}")
+            socketio.emit('receive_direct_message', message_data, to=receiver_room, namespace='/')
+            log.info(f"[SOCKET] 🔔✅ Notification sent to receiver room: {receiver_room}")
 
         except Exception as e:
             log.error(f"[SOCKET] send_direct_message error: {e}", exc_info=True)
@@ -1041,5 +1115,126 @@ def register_socket_events(socketio):
         finally:
             if conn:
                 conn.close()
+
+    # ============================================================================
+    # REACTION EVENTS
+    # ============================================================================
+
+    @socketio.on('message_reaction_added')
+    def handle_message_reaction_added(data):
+        """Handle real-time reaction addition to community messages"""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                emit('error', {'message': 'Unauthorized'})
+                return
+
+            message_id = data.get('message_id')
+            channel_id = data.get('channel_id')
+            emoji = data.get('emoji')
+            user_id = data.get('user_id')
+            
+            log.info(f"[REACTION] {username} reacted to message {message_id} with {emoji}")
+            
+            # Broadcast reaction to all users in the channel
+            emit('message_reaction_update', {
+                'message_id': message_id,
+                'channel_id': channel_id,
+                'emoji': emoji,
+                'user_id': user_id,
+                'username': username,
+                'action': 'added'
+            }, broadcast=True, include_self=True)
+            
+        except Exception as e:
+            log.error(f"[REACTION] Error handling message reaction: {e}")
+            emit('error', {'message': 'Failed to add reaction'})
+
+    @socketio.on('message_reaction_removed')
+    def handle_message_reaction_removed(data):
+        """Handle real-time reaction removal from community messages"""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                emit('error', {'message': 'Unauthorized'})
+                return
+
+            message_id = data.get('message_id')
+            channel_id = data.get('channel_id')
+            emoji = data.get('emoji')
+            user_id = data.get('user_id')
+            
+            log.info(f"[REACTION] {username} removed reaction from message {message_id}")
+            
+            # Broadcast reaction removal to all users in the channel
+            emit('message_reaction_update', {
+                'message_id': message_id,
+                'channel_id': channel_id,
+                'emoji': emoji,
+                'user_id': user_id,
+                'username': username,
+                'action': 'removed'
+            }, broadcast=True, include_self=True)
+            
+        except Exception as e:
+            log.error(f"[REACTION] Error handling message reaction removal: {e}")
+            emit('error', {'message': 'Failed to remove reaction'})
+
+    @socketio.on('dm_reaction_added')
+    def handle_dm_reaction_added(data):
+        """Handle real-time reaction addition to direct messages"""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                emit('error', {'message': 'Unauthorized'})
+                return
+
+            dm_id = data.get('dm_id')
+            emoji = data.get('emoji')
+            user_id = data.get('user_id')
+            other_user = data.get('other_user')  # The other person in the DM
+            
+            log.info(f"[DM_REACTION] {username} reacted to DM {dm_id} with {emoji}")
+            
+            # Send to both users in the DM
+            emit('dm_reaction_update', {
+                'dm_id': dm_id,
+                'emoji': emoji,
+                'user_id': user_id,
+                'username': username,
+                'action': 'added'
+            }, broadcast=True, include_self=True)
+            
+        except Exception as e:
+            log.error(f"[DM_REACTION] Error handling DM reaction: {e}")
+            emit('error', {'message': 'Failed to add reaction'})
+
+    @socketio.on('dm_reaction_removed')
+    def handle_dm_reaction_removed(data):
+        """Handle real-time reaction removal from direct messages"""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                emit('error', {'message': 'Unauthorized'})
+                return
+
+            dm_id = data.get('dm_id')
+            emoji = data.get('emoji')
+            user_id = data.get('user_id')
+            
+            log.info(f"[DM_REACTION] {username} removed reaction from DM {dm_id}")
+            
+            # Send to both users in the DM
+            emit('dm_reaction_update', {
+                'dm_id': dm_id,
+                'emoji': emoji,
+                'user_id': user_id,
+                'username': username,
+                'action': 'removed'
+            }, broadcast=True, include_self=True)
+            
+        except Exception as e:
+            log.error(f"[DM_REACTION] Error handling DM reaction removal: {e}")
+            emit('error', {'message': 'Failed to remove reaction'})
 
     log.info("[SOCKET] All socket events registered successfully")

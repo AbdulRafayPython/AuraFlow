@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useFriends } from "../../contexts/FriendsContext";
 import { useAuth } from "../../contexts/AuthContext";
+import { getAvatarUrl } from "@/lib/utils";
 import { Users, Plus, Home, ChevronLeft, ChevronRight, LogOut, Moon, Sun, Settings, User, Bell, Shield, Palette, HelpCircle, MessageSquare, ChevronDown } from "lucide-react";
 import CreateCommunityModal from "../modals/CreateCommunityModal";
 import JoinCommunityModal from "../modals/JoinCommunityModal";
@@ -164,7 +165,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     if (currentUser.avatar_url) {
       return (
         <img
-          src={currentUser.avatar_url}
+          src={getAvatarUrl(currentUser.avatar_url, currentUser.username)}
           alt={currentUser.display_name || currentUser.username}
           className="w-full h-full rounded-full object-cover"
         />
@@ -266,6 +267,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
             const communityId = community.id.toString();
             const color = getCommunityColor(index);
             const initials = community.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+            const logoUrl = community.logo_url ? `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.logo_url}` : null;
 
               return (
               <div key={community.id} className="relative group w-full flex justify-center transition-all duration-300">
@@ -274,9 +276,14 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                 )}
                 <button
                   onClick={() => handleCommunityClick(communityId)}
-                  className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white text-sm transition-all ${selectedCommunity === communityId ? color : isDarkMode ? `bg-slate-700 hover:${color}` : `bg-gray-200 hover:${color}`}`}
+                  className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white text-sm transition-all overflow-hidden ${selectedCommunity === communityId ? color : isDarkMode ? `bg-slate-700 hover:${color}` : `bg-gray-200 hover:${color}`}`}
+                  style={!logoUrl ? { backgroundColor: community.color || undefined } : undefined}
                 >
-                  <span className="transition-all duration-300">{community.icon || initials}</span>
+                  {logoUrl ? (
+                    <img src={logoUrl} alt={community.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="transition-all duration-300">{community.icon || initials}</span>
+                  )}
                 </button>
                 {isCollapsed && (
                   <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
@@ -438,11 +445,12 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
               </div>
 
               <div className="space-y-2">
-                {conversations.length === 0 ? (
+                {conversations.filter(conv => conv.last_message).length === 0 ? (
                   <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>No conversations yet</p>
                 ) : (
                   // Sort conversations by most recent message first
                   [...conversations]
+                    .filter(conv => conv.last_message) // Only show friends with messages
                     .sort((a, b) => {
                       const aTime = new Date(a.last_message_time || 0).getTime();
                       const bTime = new Date(b.last_message_time || 0).getTime();
@@ -465,7 +473,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                         >
                           <div className="relative flex-shrink-0">
                             {conv.user.avatar_url ? (
-                              <img src={conv.user.avatar_url} alt={conv.user.display_name} className="w-8 h-8 rounded-full object-cover" />
+                              <img src={getAvatarUrl(conv.user.avatar_url, conv.user.username)} alt={conv.user.display_name} className="w-8 h-8 rounded-full object-cover" />
                             ) : (
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${
                                 status === 'online' ? 'bg-green-600' : status === 'idle' ? 'bg-yellow-600' : status === 'dnd' ? 'bg-red-600' : 'bg-gray-600'
@@ -518,7 +526,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                         >
                           <div className="relative flex-shrink-0">
                             {friend.avatar_url ? (
-                              <img src={friend.avatar_url} alt={friend.display_name} className="w-8 h-8 rounded-full object-cover" />
+                              <img src={getAvatarUrl(friend.avatar_url, friend.username)} alt={friend.display_name} className="w-8 h-8 rounded-full object-cover" />
                             ) : (
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${status === 'online' ? 'bg-green-600' : status === 'idle' ? 'bg-yellow-600' : status === 'dnd' ? 'bg-red-600' : 'bg-gray-600'}`}>
                                 {getAvatarInitials(friend.display_name)}

@@ -376,6 +376,33 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
       
       return newArray;
     });
+    
+    // Update conversation with last message
+    setConversations(prev => {
+      const otherUserId = message.sender_id === currentUserIdRef.current 
+        ? message.receiver_id 
+        : message.sender_id;
+      
+      const existingConv = prev.find(c => c.user_id === otherUserId);
+      
+      if (existingConv) {
+        // Update existing conversation
+        return prev.map(conv => 
+          conv.user_id === otherUserId
+            ? {
+                ...conv,
+                last_message: message,
+                last_message_time: message.created_at,
+                unread_count: message.receiver_id === currentUserIdRef.current 
+                  ? conv.unread_count + 1 
+                  : conv.unread_count
+              }
+            : conv
+        );
+      }
+      
+      return prev;
+    });
   }, []);
 
   // GLOBAL SOCKET LISTENER - FIXED to use refs and simpler logic
@@ -445,6 +472,23 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
       console.log('%c[📨 ADDING MESSAGE TO STATE]', 'color: #0088ff', newMessage);
       addMessage(newMessage);
       console.log('%c[✅ MESSAGE PROCESSED SUCCESSFULLY]', 'color: #00ff00; font-weight: bold');
+      
+      // Emit notification event for new messages from others
+      if (message.sender_id !== currentUserId && typeof window !== 'undefined') {
+        const notificationEvent = new CustomEvent('newMessageReceived', {
+          detail: {
+            ...newMessage,
+            senderName: message.sender?.display_name || message.sender?.username || 'Unknown',
+            senderUsername: message.sender?.username,
+            senderAvatar: message.sender?.avatar_url,
+          }
+        });
+        window.dispatchEvent(notificationEvent);
+        console.log('%c[🔔 MESSAGE NOTIFICATION EMITTED]', 'color: #00ff00', {
+          from: message.sender?.display_name || message.sender?.username,
+          content_preview: message.content?.substring(0, 30),
+        });
+      }
     };
     
     // Register global listener

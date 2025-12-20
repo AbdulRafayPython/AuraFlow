@@ -1,10 +1,18 @@
 // pages/Dashboard.tsx - Professional Real-time Version
 import { useState, useRef, useEffect } from "react";
-import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus, Mic } from "lucide-react";
+import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus, Mic, SmilePlus } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
+import { getAvatarUrl } from "@/lib/utils";
 import VoiceChannelView from "@/components/VoiceChannelView";
+import EmojiPickerButton from "@/components/EmojiPickerButton";
+import ReactionPicker from "@/components/ReactionPicker";
+import MessageReactions from "@/components/MessageReactions";
+import NotificationButton from "@/components/NotificationButton";
+import { reactionService } from "@/services/reactionService";
+import { socket } from "@/socket";
+import { SocketDebugPanel } from "@/components/SocketDebugPanel";
 
 interface DashboardProps {
   toggleRightSidebar?: () => void;
@@ -30,6 +38,9 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [showVoiceChannel, setShowVoiceChannel] = useState(false);
+  const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
+  const [messageReactions, setMessageReactions] = useState<Record<number, any[]>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
@@ -48,6 +59,90 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
       inputRef.current.focus();
     }
   }, [currentChannel]);
+
+  // Load reactions for messages - only when message IDs change
+  useEffect(() => {
+    const loadReactions = async () => {
+      if (messages.length === 0) return;
+      
+      const reactions: Record<number, any[]> = {};
+      
+      // Only load reactions for new messages
+      for (const msg of messages) {
+        // Skip if we already have reactions for this message
+        if (messageReactions[msg.id]) {
+          reactions[msg.id] = messageReactions[msg.id];
+          continue;
+        }
+        
+        try {
+          const { reactions: msgReactions } = await reactionService.getMessageReactions(msg.id);
+          if (msgReactions && msgReactions.length > 0) {
+            reactions[msg.id] = msgReactions;
+          }
+        } catch (error) {
+          console.error(`Failed to load reactions for message ${msg.id}:`, error);
+        }
+      }
+      setMessageReactions(reactions);
+    };
+    
+    if (messages.length > 0) {
+      loadReactions();
+    }
+  }, [messages.length]); // Only depend on length, not full array
+
+  // Socket.IO reaction listeners
+  useEffect(() => {
+    const handleReactionAdded = (data: any) => {
+      setMessageReactions(prev => ({
+        ...prev,
+        [data.message_id]: data.reactions
+      }));
+    };
+
+    const handleReactionRemoved = (data: any) => {
+      setMessageReactions(prev => ({
+        ...prev,
+        [data.message_id]: data.reactions
+      }));
+    };
+
+    socket.on('message_reaction_added', handleReactionAdded);
+    socket.on('message_reaction_removed', handleReactionRemoved);
+
+    return () => {
+      socket.off('message_reaction_added', handleReactionAdded);
+      socket.off('message_reaction_removed', handleReactionRemoved);
+    };
+  }, []);
+
+  const handleEmojiSelect = (emoji: string) => {
+    setMessage(prev => prev + emoji);
+  };
+
+  const handleReactionToggle = async (messageId: number, emoji: string) => {
+    try {
+      await reactionService.toggleMessageReaction(messageId, emoji);
+      
+      // Immediately reload reactions for this message to ensure consistency
+      const { reactions: updatedReactions } = await reactionService.getMessageReactions(messageId);
+      
+      // Update state with fresh data from server (prevents duplicates)
+      setMessageReactions(prev => {
+        const newState = { ...prev };
+        if (updatedReactions && updatedReactions.length > 0) {
+          newState[messageId] = updatedReactions;
+        } else {
+          // Remove from state if no reactions left
+          delete newState[messageId];
+        }
+        return newState;
+      });
+    } catch (error) {
+      console.error('Failed to toggle reaction:', error);
+    }
+  };
 
   // Handle scroll to load more messages
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -255,6 +350,9 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
             <Search className={`absolute left-3 top-2.5 w-4 h-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`} />
           </div>
           
+          {/* Notifications */}
+          <NotificationButton />
+          
           <button
             onClick={toggleTheme}
             className={`p-2 rounded-lg transition-colors ${
@@ -373,15 +471,19 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                   )}
 
                   {/* Message - Discord Style */}
-                  <div className={`flex gap-3 group px-4 transition-all ${
-                    showAuthor ? 'pt-3 pb-1' : 'pt-0 pb-0'
-                  } ${nextMsgSameSender ? '' : 'pb-3'} hover:${isDarkMode ? 'bg-slate-800/40' : 'bg-gray-100/50'} rounded-lg`}>
+                  <div 
+                    className={`flex gap-3 group px-4 transition-all relative pb-8 ${
+                      showAuthor ? 'pt-3 pb-1' : 'pt-0 pb-0'
+                    } ${nextMsgSameSender ? '' : 'pb-3'} hover:${isDarkMode ? 'bg-slate-800/40' : 'bg-gray-100/50'} rounded-lg`}
+                    onMouseEnter={() => setHoveredMessageId(msg.id)}
+                    onMouseLeave={() => setHoveredMessageId(null)}
+                  >
                     {/* Avatar Column */}
                     <div className="flex-shrink-0">
                       {showAuthor ? (
                         msg.avatar_url ? (
                           <img
-                            src={msg.avatar_url}
+                            src={getAvatarUrl(msg.avatar_url, authorName)}
                             alt={authorName}
                             className="w-10 h-10 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
                           />
@@ -412,8 +514,49 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                       <div className={`text-sm leading-relaxed break-words ${
                         isDarkMode ? "text-gray-200" : "text-gray-800"
                       }`}>
-                        {msg.content}
+                        <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-normal' : ''}>
+                          {msg.content}
+                        </span>
                       </div>
+                      
+                      {/* Reactions Display */}
+                      <div className="flex flex-wrap items-center gap-2 mt-2 max-w-full">
+                        {messageReactions[msg.id] && messageReactions[msg.id].length > 0 && (
+                          <MessageReactions
+                            reactions={messageReactions[msg.id]}
+                            onReactionClick={(emoji) => handleReactionToggle(msg.id, emoji)}
+                          />
+                        )}
+                        
+                        {/* Add Reaction Button - Shows on Hover */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id);
+                          }}
+                          className={`opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 rounded text-xs flex items-center gap-1 ${
+                            isDarkMode 
+                              ? 'text-gray-400 hover:text-gray-200 hover:bg-slate-700' 
+                              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
+                          }`}
+                          title="Add reaction"
+                        >
+                          <SmilePlus className="w-3.5 h-3.5" />
+                          <span className="text-xs">Add Reaction</span>
+                        </button>
+                      </div>
+                      
+                      {/* Reaction Picker - Shown when button clicked */}
+                      {reactionPickerMessageId === msg.id && (
+                        <div className="absolute -top-7 left-14 z-30 shadow-xl">
+                          <ReactionPicker
+                            onReactionSelect={(emoji) => {
+                              handleReactionToggle(msg.id, emoji);
+                              setReactionPickerMessageId(null);
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -492,14 +635,11 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
-                <button
-                  className={`p-1.5 rounded-md transition-colors ${
-                    isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
-                  }`}
+                <EmojiPickerButton
+                  onEmojiSelect={handleEmojiSelect}
+                  pickerPosition="top"
                   disabled={!currentChannel || !isConnected}
-                >
-                  <Smile className="w-4 h-4" />
-                </button>
+                />
                 <button
                   onClick={handleSendMessage}
                   disabled={!currentChannel || !message.trim() || isSending || !isConnected}

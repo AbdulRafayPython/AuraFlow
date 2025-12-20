@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from datetime import timedelta
 import os
 from flask_socketio import SocketIO
-from flask import request, make_response
+from flask import request, make_response, send_from_directory
 
 # Import all route functions
 from routes.auth import signup, login, logout, update_first_login, get_me, reset_password, forgot_password, verify_otp_endpoint , update_profile
@@ -18,7 +18,11 @@ from routes.channels import (
     # NEW: Channel and community management
     update_channel, delete_community, leave_community,
     # NEW: Community discovery and joining
-    discover_communities, join_community
+    discover_communities, join_community,
+    # NEW: Community images
+    get_community, update_community,
+    upload_community_logo, upload_community_banner,
+    remove_community_logo, remove_community_banner
 )
 from routes.messages import (
     get_channel_messages, send_message,
@@ -30,7 +34,9 @@ from routes.friends import (
     accept_friend_request, reject_friend_request,
     cancel_friend_request, remove_friend
 )
+from routes.reactions import reactions_bp
 from routes.sockets import register_socket_events
+from routes.agents import agents_bp
 
 load_dotenv()
 
@@ -44,6 +50,13 @@ CORS(app,
             "supports_credentials": True,
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "max_age": 3600
+        },
+        r"/uploads/*": {
+            "origins": ["http://localhost:8080", "https://localhost:8080", "http://localhost:8081", "https://localhost:8081", "http://localhost:3000", "http://localhost:5173", "http://192.168.1.9:8081", "https://192.168.1.9:8081"],
+            "supports_credentials": False,
+            "allow_headers": ["Content-Type"],
+            "methods": ["GET", "OPTIONS"],
             "max_age": 3600
         }
     },
@@ -120,6 +133,16 @@ app.route("/api/channels/communities/<int:community_id>", methods=["DELETE"])(de
 app.route("/api/channels/communities/<int:community_id>/leave", methods=["POST"])(leave_community)
 
 # ======================================================================
+# COMMUNITY SETTINGS & IMAGE ROUTES (NEW)
+# ======================================================================
+app.route("/api/channels/communities/<int:community_id>", methods=["GET"])(get_community)
+app.route("/api/channels/communities/<int:community_id>", methods=["PUT"])(update_community)
+app.route("/api/channels/communities/<int:community_id>/logo", methods=["POST"])(upload_community_logo)
+app.route("/api/channels/communities/<int:community_id>/logo", methods=["DELETE"])(remove_community_logo)
+app.route("/api/channels/communities/<int:community_id>/banner", methods=["POST"])(upload_community_banner)
+app.route("/api/channels/communities/<int:community_id>/banner", methods=["DELETE"])(remove_community_banner)
+
+# ======================================================================
 # COMMUNITY MEMBER ROUTES (NEW)
 # ======================================================================
 app.route("/api/channels/users/search", methods=["GET"])(search_users)
@@ -136,6 +159,16 @@ app.route("/api/messages/direct/send", methods=["POST"])(send_direct_message)
 app.route("/api/messages/read", methods=["POST"])(mark_as_read)
 app.route("/api/messages/<int:message_id>", methods=["DELETE"])(delete_message)
 app.route("/api/messages/<int:message_id>", methods=["PUT"])(edit_message)
+
+# ======================================================================
+# REACTIONS ROUTES
+# ======================================================================
+app.register_blueprint(reactions_bp)
+
+# ======================================================================
+# AI AGENTS ROUTES
+# ======================================================================
+app.register_blueprint(agents_bp)
 
 # ======================================================================
 # FRIEND ROUTES
@@ -185,8 +218,138 @@ def internal_error(error):
 # HEALTH CHECK
 # ======================================================================
 @app.route("/api/health", methods=["GET"])
+def health():
+    return {"status": "ok"}, 200
+
+# ======================================================================
+# DEBUG: Socket Room Test
+# ======================================================================
+@app.route("/api/debug/socket-rooms", methods=["GET"])
+def debug_socket_rooms():
+    """Debug endpoint to check active socket rooms"""
+    from routes.sockets import user_socket_sessions, user_rooms
+    return {
+        "active_sessions": list(user_socket_sessions.keys()),
+        "session_count": len(user_socket_sessions),
+        "sessions": {username: sid for username, sid in user_socket_sessions.items()},
+        "user_rooms": {username: list(r) if r else [] for username, r in user_rooms.items()}
+    }, 200
+
+@app.route("/api/debug/test-friend-request/<int:user_id>", methods=["POST"])
+def test_friend_request_emission(user_id):
+    """Test endpoint to manually emit a friend request event"""
+    from datetime import datetime
+    
+    test_data = {
+        'id': 99999,
+        'sender_id': 1,
+        'receiver_id': user_id,
+        'status': 'pending',
+        'created_at': datetime.now().isoformat(),
+        'sender': {
+            'username': 'test_user',
+            'display_name': 'Test User',
+            'avatar_url': None
+        }
+    }
+    
+    room = f"user_{user_id}"
+    print(f"[DEBUG] Testing emission to room: {room}")
+    print(f"[DEBUG] Payload: {test_data}")
+    
+    # Emit to specific room
+    socketio.emit('friend_request_received', test_data, to=room, namespace='/')
+    
+    return {
+        "message": "Test event emitted",
+        "room": room,
+        "data": test_data
+    }, 200
 def health_check():
     return {"status": "ok", "message": "AuraFlow API is running"}, 200
+
+# ======================================================================
+# STATIC FILE SERVING - Avatar uploads
+# ======================================================================
+@app.route("/uploads/avatars/<filename>", methods=["GET"])
+def serve_avatar(filename):
+    """Serve uploaded avatar images"""
+    upload_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'avatars')
+    response = send_from_directory(upload_dir, filename)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Cache-Control'] = 'public, max-age=31536000'
+    return response
+
+# ======================================================================
+# STATIC FILE SERVING - Community uploads (Logo & Banner)
+# ======================================================================
+@app.route("/uploads/communities/<filename>", methods=["GET"])
+def serve_community_image(filename):
+    """Serve uploaded community logo and banner images"""
+    upload_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'communities')
+    response = send_from_directory(upload_dir, filename)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Cache-Control'] = 'public, max-age=31536000'
+    return response
+
+# ======================================================================
+# BACKGROUND TASKS - Monitor inactive users
+# ======================================================================
+import threading
+import time
+from datetime import datetime, timedelta
+from database import get_db_connection
+
+def monitor_inactive_users():
+    """Background task to mark users as offline if they haven't sent heartbeat in 2 minutes"""
+    from routes.sockets import user_heartbeats
+    
+    while True:
+        try:
+            time.sleep(60)  # Check every minute
+            
+            now = datetime.now()
+            inactive_threshold = timedelta(minutes=2)  # 2 minutes without heartbeat = offline
+            
+            inactive_users = []
+            for username, last_heartbeat in list(user_heartbeats.items()):
+                if now - last_heartbeat > inactive_threshold:
+                    inactive_users.append(username)
+            
+            if inactive_users:
+                conn = get_db_connection()
+                try:
+                    with conn.cursor() as cur:
+                        for username in inactive_users:
+                            # Mark as offline in database
+                            cur.execute("""
+                                UPDATE users
+                                SET status = 'offline', last_seen = NOW()
+                                WHERE username = %s
+                            """, (username,))
+                            
+                            # Remove from heartbeat tracking
+                            del user_heartbeats[username]
+                            
+                            # Emit status update
+                            socketio.emit('user_status', {
+                                'username': username,
+                                'status': 'offline'
+                            }, broadcast=True, namespace='/')
+                            
+                            print(f"[MONITOR] Marked {username} as offline due to inactivity")
+                    
+                    conn.commit()
+                finally:
+                    conn.close()
+                    
+        except Exception as e:
+            print(f"[MONITOR] Error in inactive user monitoring: {e}")
+
+# Start background monitoring thread
+monitor_thread = threading.Thread(target=monitor_inactive_users, daemon=True)
+monitor_thread.start()
+print("[MONITOR] Started inactive user monitoring thread")
 
 # ======================================================================
 # RUN APPLICATION

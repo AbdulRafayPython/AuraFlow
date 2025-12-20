@@ -1,6 +1,7 @@
 // components/modals/JoinCommunityModal.tsx
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
+import { getAvatarUrl } from "@/lib/utils";
 import { X, Search, Users, Plus, Loader, AlertCircle } from "lucide-react";
 import type { Community } from "@/types";
 
@@ -218,7 +219,12 @@ export default function JoinCommunityModal({
           {/* Communities Grid */}
           {communities.length > 0 ? (
             <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              {communities.map((community) => (
+              {communities.map((community) => {
+                const logoUrl = community.logo_url 
+                  ? `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.logo_url}` 
+                  : null;
+                
+                return (
                 <div
                   key={community.id}
                   className={`p-4 rounded-2xl border transition-all duration-200 group
@@ -230,12 +236,16 @@ export default function JoinCommunityModal({
                   {/* Community Icon & Header */}
                   <div className="flex items-start gap-3 mb-3">
                     <div
-                      className="w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white shadow-lg flex-shrink-0"
+                      className="w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white shadow-lg flex-shrink-0 overflow-hidden"
                       style={{
-                        backgroundColor: community.color || "#8B5CF6",
+                        backgroundColor: !logoUrl ? (community.color || "#8B5CF6") : undefined,
                       }}
                     >
-                      {community.icon || "AF"}
+                      {logoUrl ? (
+                        <img src={logoUrl} alt={community.name} className="w-full h-full object-cover" />
+                      ) : (
+                        community.icon || community.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3
@@ -278,7 +288,7 @@ export default function JoinCommunityModal({
                     >
                       {community.creator.avatar_url && (
                         <img
-                          src={community.creator.avatar_url}
+                          src={getAvatarUrl(community.creator.avatar_url, community.creator.username)}
                           alt={community.creator.display_name}
                           className="w-6 h-6 rounded-full"
                         />
@@ -306,7 +316,8 @@ export default function JoinCommunityModal({
                     )}
                   </button>
                 </div>
-              ))}
+              );
+              })}
             </div>
           ) : isLoading && communities.length === 0 ? (
             <div className="flex items-center justify-center py-12">

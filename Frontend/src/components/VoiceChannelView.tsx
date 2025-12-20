@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useVoice } from "@/contexts/VoiceContext";
+import { getAvatarUrl } from "@/lib/utils";
 import {
   Mic,
   MicOff,
@@ -201,7 +202,7 @@ export default function VoiceChannelView({
                       <div className="flex items-center gap-3">
                         {user.avatar_url ? (
                           <img
-                            src={user.avatar_url}
+                            src={getAvatarUrl(user.avatar_url, user.username)}
                             alt={user.display_name}
                             className="w-10 h-10 rounded-full object-cover"
                           />

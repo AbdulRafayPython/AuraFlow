@@ -6,3 +6,10 @@ PyMySQL
 bcrypt
 Werkzeug
 flask_socketio
+Pillow
+
+# AI Agent Dependencies
+nltk
+scikit-learn
+spacy
+textblob

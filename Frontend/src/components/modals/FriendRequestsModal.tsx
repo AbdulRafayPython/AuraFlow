@@ -1,6 +1,7 @@
 // components/modals/FriendRequestsModal.tsx
 import { useState, useEffect } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
+import { getAvatarUrl } from "@/lib/utils";
 import { X, Inbox, Check, XCircle, Loader, AlertCircle, Clock, ArrowRight } from "lucide-react";
 import type { FriendRequest } from "@/types";
 
@@ -232,7 +233,7 @@ export default function FriendRequestsModal({
                       {/* Avatar */}
                       {request.avatar_url ? (
                         <img
-                          src={request.avatar_url}
+                          src={getAvatarUrl(request.avatar_url, request.username)}
                           alt={request.display_name}
                           className="w-14 h-14 rounded-full object-cover flex-shrink-0"
                         />

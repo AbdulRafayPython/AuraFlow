@@ -1,23 +1,20 @@
 import { useState } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
-import { X, Settings, Trash2, LogOut, AlertCircle } from "lucide-react";
+import { X, Settings, Trash2, LogOut, AlertCircle, Image } from "lucide-react";
 import { channelService } from "@/services/channelService";
 import { useNotifications } from "@/hooks/useNotifications";
 import { ConfirmDialog } from "./ConfirmDialog";
+import CommunitySettingsModal from "./CommunitySettingsModal";
+import { Community } from "@/types";
 
 interface CommunityManagementModalProps {
   isOpen: boolean;
   onClose: () => void;
-  community: {
-    id: number;
-    name: string;
-    description?: string;
-    icon: string;
-    color: string;
-  } | null;
+  community: Community | null;
   userRole?: 'owner' | 'admin' | 'member';
   onCommunityDeleted?: () => void;
   onCommunityLeft?: () => void;
+  onCommunityUpdated?: (community: Community) => void;
 }
 
 export default function CommunityManagementModal({
@@ -27,12 +24,14 @@ export default function CommunityManagementModal({
   userRole,
   onCommunityDeleted,
   onCommunityLeft,
+  onCommunityUpdated,
 }: CommunityManagementModalProps) {
   const { isDarkMode } = useTheme();
   const { showSuccess, showError } = useNotifications();
   const [isLoading, setIsLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const isOwner = userRole === "owner";
   const isAdmin = userRole === "admin" || userRole === "owner";
@@ -88,10 +87,18 @@ export default function CommunityManagementModal({
         >
           <div className="flex justify-center mb-4">
             <div
-              className="w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-2xl text-white shadow-lg"
-              style={{ backgroundColor: community.color }}
+              className="w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-2xl text-white shadow-lg overflow-hidden"
+              style={{ backgroundColor: !community.logo_url ? community.color : undefined }}
             >
-              {community.icon}
+              {community.logo_url ? (
+                <img 
+                  src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.logo_url}`} 
+                  alt={community.name} 
+                  className="w-full h-full object-cover" 
+                />
+              ) : (
+                community.icon
+              )}
             </div>
           </div>
           <h2 className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
@@ -140,6 +147,23 @@ export default function CommunityManagementModal({
               </span>
             </div>
           </div>
+
+          {/* Admin Actions - Settings */}
+          {isAdmin && (
+            <div className="space-y-3">
+              <button
+                onClick={() => setShowSettings(true)}
+                className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-sm transition-all ${
+                  isDarkMode
+                    ? "bg-blue-600/10 hover:bg-blue-600/20 text-blue-400"
+                    : "bg-blue-50 hover:bg-blue-100 text-blue-700"
+                }`}
+              >
+                <Image className="w-4 h-4" />
+                Customize Logo & Banner
+              </button>
+            </div>
+          )}
 
           {/* Owner-only Actions */}
           {isOwner && (
@@ -233,6 +257,17 @@ export default function CommunityManagementModal({
         isLoading={isLoading}
         onConfirm={handleLeaveCommunity}
         onCancel={() => setShowLeaveConfirm(false)}
+      />
+
+      {/* Settings Modal */}
+      <CommunitySettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        community={community}
+        onCommunityUpdated={(updated) => {
+          onCommunityUpdated?.(updated);
+          setShowSettings(false);
+        }}
       />
     </div>
   );

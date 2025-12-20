@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import type { Friend, FriendRequest, BlockedUser } from "@/types";
 import { friendService } from "@/services/friendService";
 import { socketService } from "@/services/socketService";
+import { useAuth } from "./AuthContext";
 
 interface FriendsContextType {
   friends: Friend[];
@@ -36,6 +37,7 @@ interface FriendsContextType {
 const FriendsContext = createContext<FriendsContextType | undefined>(undefined);
 
 export function FriendsProvider({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated } = useAuth();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
   const [sentRequests, setSentRequests] = useState<FriendRequest[]>([]);
@@ -221,8 +223,13 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addPendingRequest = useCallback((request: FriendRequest) => {
+    console.log('[FriendsContext] addPendingRequest called with:', request);
     setPendingRequests(prev => {
-      if (prev.some(r => r.id === request.id)) return prev;
+      if (prev.some(r => r.id === request.id)) {
+        console.log('[FriendsContext] ⚠️ Request already exists, skipping:', request.id);
+        return prev;
+      }
+      console.log('[FriendsContext] ✅ Adding new request to state:', request.id);
       return [...prev, request];
     });
   }, []);
@@ -231,71 +238,154 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
     setPendingRequests(prev => prev.filter(r => r.id !== requestId));
   }, []);
 
-  // Setup socket listeners
+  // Load initial data when authenticated
   useEffect(() => {
-    // Load initial data
+    const token = localStorage.getItem('token');
+    if (!token || !isAuthenticated) {
+      console.warn('[FriendsContext] No token or not authenticated, skipping data load');
+      return;
+    }
+    
     const loadInitialData = async () => {
-      // Check if token exists before making requests
-      const token = localStorage.getItem('token');
-      if (!token) {
-        console.warn('[FriendsContext] No token found, skipping data load');
-        return;
-      }
-      
       try {
-        await getFriends();
-        await getPendingRequests();
-        await getSentRequests();
+        console.log('[FriendsContext] Loading initial data...');
+        await Promise.all([
+          getFriends(),
+          getPendingRequests(),
+          getSentRequests()
+        ]);
+        console.log('[FriendsContext] Initial data loaded successfully');
       } catch (error) {
         console.error('[FriendsContext] Error loading initial data:', error);
       }
     };
     
     loadInitialData();
+  }, [isAuthenticated, getFriends, getPendingRequests, getSentRequests]);
 
-    // Friend request received
-    const unsubscribeFriendRequest = socketService.onFriendRequest((request) => {
-      const friendRequest: FriendRequest = {
-        id: request.id,
-        sender_id: request.sender_id,
-        receiver_id: request.receiver_id,
-        status: request.status,
-        created_at: request.created_at,
-        username: request.sender?.username || '',
-        display_name: request.sender?.display_name || '',
-        avatar_url: request.sender?.avatar_url,
-        sender: request.sender,
-      };
-      addPendingRequest(friendRequest);
+  // Setup socket listeners (wait for connection)
+  useEffect(() => {
+    console.log('[FriendsContext] 🔧 Setting up socket listeners');
+    console.log('[FriendsContext] 🔌 Socket connected:', socketService.isConnected());
+    
+    // Function to setup listeners
+    const setupListeners = () => {
+      console.log('[FriendsContext] ✅ Socket is connected, registering event handlers');
+      
+      // Friend request received
+      const unsubscribeFriendRequest = socketService.onFriendRequest((request) => {
+        console.log('%c[FriendsContext] 📬 FRIEND REQUEST RECEIVED', 'color: #00ff00; font-weight: bold', request);
+        console.log('[FriendsContext] 🕐 Timestamp:', new Date().toLocaleTimeString());
+        
+        // Check for duplicates before adding
+        setPendingRequests(prev => {
+          console.log('[FriendsContext] 🔍 Current state has', prev.length, 'pending requests');
+          const isDuplicate = prev.some(r => r.id === request.id);
+        if (isDuplicate) {
+          console.log('[FriendsContext] ⚠️ Duplicate request detected, skipping:', request.id);
+          return prev;
+        }
+        
+        const friendRequest: FriendRequest = {
+          id: request.id,
+          sender_id: request.sender_id,
+          receiver_id: request.receiver_id,
+          status: request.status,
+          created_at: request.created_at,
+          username: request.sender?.username || '',
+          display_name: request.sender?.display_name || '',
+          avatar_url: request.sender?.avatar_url,
+          sender: request.sender,
+        };
+        
+        console.log('[FriendsContext] ✅ Adding new request to state:', friendRequest);
+        console.log('[FriendsContext] 📈 New count will be:', prev.length + 1);
+        
+        // Show notification
+        if (typeof window !== 'undefined') {
+          console.log('[FriendsContext] 🔔 Dispatching notification event');
+          const notificationEvent = new CustomEvent('friendRequestReceived', {
+            detail: friendRequest
+          });
+          window.dispatchEvent(notificationEvent);
+        }
+        
+        return [...prev, friendRequest];
+      });
     });
 
     // Friend status changed
     const unsubscribeFriendStatus = socketService.onFriendStatus((data) => {
+      console.log('[FriendsContext] Friend status changed:', data);
       if (data.status === "online" || data.status === "offline" || data.status === "idle" || data.status === "dnd") {
         // Update friend status
-        updateFriendStatus(data.friend_id, data.status);
+        setFriends(prev => prev.map(f => 
+          f.id === data.friend_id ? { ...f, status: data.status as any } : f
+        ));
       } else if (data.status === "removed") {
         // Remove friend from list
-        removeFriendLocal(data.friend_id);
+        setFriends(prev => prev.filter(f => f.id !== data.friend_id));
       } else if (data.status === "blocked") {
-        // Friend blocked - remove from friends and add to blocked
-        removeFriendLocal(data.friend_id);
+        // Friend blocked - remove from friends
+        setFriends(prev => prev.filter(f => f.id !== data.friend_id));
+        // Reload blocked users
         getBlockedUsers();
       } else if (data.status === "unblocked") {
         // Friend unblocked - reload blocked users
         getBlockedUsers();
+      } else if (data.status === "accepted") {
+        // Friend request accepted - reload friends list
+        console.log('[FriendsContext] Friend request accepted, reloading friends');
+        getFriends();
       }
     });
 
     // Join friend status room for live updates
     socketService.joinFriendStatusRoom();
+    
+    return { unsubscribeFriendRequest, unsubscribeFriendStatus };
+  };
+    
+    // If already connected, setup immediately
+    if (socketService.isConnected()) {
+      const cleanup = setupListeners();
+      return () => {
+        console.log('[FriendsContext] Cleaning up socket listeners');
+        cleanup?.unsubscribeFriendRequest();
+        cleanup?.unsubscribeFriendStatus();
+        socketService.leaveFriendStatusRoom();
+      };
+    }
+    
+    // Otherwise, wait for connection with polling
+    console.log('[FriendsContext] ⏳ Waiting for socket connection...');
+    let cleanup: ReturnType<typeof setupListeners> | null = null;
+    
+    const checkConnection = setInterval(() => {
+      if (socketService.isConnected()) {
+        console.log('[FriendsContext] 🔌 Socket now connected, setting up listeners');
+        clearInterval(checkConnection);
+        cleanup = setupListeners();
+      }
+    }, 100);
+    
+    // Also setup after a delay to catch late connections
+    const delayedSetup = setTimeout(() => {
+      if (!cleanup && socketService.isConnected()) {
+        console.log('[FriendsContext] 🔌 Delayed setup - socket connected');
+        cleanup = setupListeners();
+      }
+    }, 1000);
 
     return () => {
-      unsubscribeFriendRequest();
-      unsubscribeFriendStatus();
+      console.log('[FriendsContext] Cleaning up socket listeners');
+      clearInterval(checkConnection);
+      clearTimeout(delayedSetup);
+      cleanup?.unsubscribeFriendRequest();
+      cleanup?.unsubscribeFriendStatus();
       socketService.leaveFriendStatusRoom();
     };
-  }, [getFriends, addPendingRequest, updateFriendStatus, removeFriendLocal, getPendingRequests, getSentRequests, getBlockedUsers]);
+  }, []); // Empty dependency - only set up once
 
   const value: FriendsContextType = {
     friends,

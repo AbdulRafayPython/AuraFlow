@@ -1,0 +1,116 @@
+{
+  "positive": {
+    "general": [
+      "acha", "achha", "accha", "bahut acha", "bohat acha", "zabardast", "behtareen",
+      "kamaal", "shandar", "shानdar", "mast", "badhiya", "sahi", "perfect", "bilkul sahi",
+      "khushi", "kushi", "happy", "maze", "mazay", "maza", "mazaa", "khushaal", "خوش",
+      "dilchasp", "dil chasp", "interesting", "pyara", "pyaara", "cute", "meetha", "میٹھا",
+      "lajawab", "lajawaab", "amazing", "kaafi acha", "kafi achha", "بہت اچھا",
+      "dilchasp", "mazedaar", "mazaydaar", "مزےدار", "خوشی", "دلچسپ"
+    ],
+    "excitement": [
+      "wow", "واہ", "wah", "waah", "mashallah", "ماشاءاللہ", "subhanallah", "سبحان اللہ",
+      "alhamdulillah", "الحمدللہ", "yaay", "yay", "yaaay", "hooray", "huray",
+      "kya baat", "kia baat", "kamaal hai", "kamal hai", "amazing", "superb",
+      "outstanding", "brilliant", "fantastic", "fabulous", "wonderful"
+    ],
+    "love": [
+      "muhabbat", "محبت", "pyar", "پیار", "ishq", "عشق", "love", "dil", "دل",
+      "heart", "mohabbat", "محبت", "chahiye", "چاہیے", "pasand", "پسند",
+      "like", "darling", "jaan", "جان", "sweetheart", "baby", "bae"
+    ],
+    "agreement": [
+      "haan", "han", "ہاں", "bilkul", "بالکل", "yes", "theek", "ٹھیک", "sahi", "صحیح",
+      "absolutely", "definitely", "zaroor", "ضرور", "pakka", "پکا", "yaar", "یار",
+      "okay", "ok", "okey", "okk", "sure", "of course", "obviously"
+    ],
+    "gratitude": [
+      "shukriya", "شکریہ", "thanks", "thank you", "jazakallah", "جزاک اللہ",
+      "meherbani", "مہربانی", "grateful", "thankful", "appreciate", "appreciated",
+      "dhanyawaad", "دھنیہ واد", "bohat shukriya", "بہت شکریہ"
+    ],
+    "encouragement": [
+      "shabash", "شاباش", "bravo", "well done", "good job", "great work",
+      "keep it up", "bohot khoob", "بہت خوب", "mubarak", "مبارک", "congrats",
+      "congratulations", "badhaai", "بدھائی", "chalo", "چلو", "karo", "کرو"
+    ]
+  },
+  "negative": {
+    "general": [
+      "bura", "برا", "bad", "kharab", "خراب", "galat", "غلط", "wrong", "ganda", "گندا",
+      "dirty", "bekaar", "بیکار", "useless", "waste", "faltu", "فالتو", "nonsense",
+      "bekar", "worst", "terrible", "horrible", "awful", "pathetic", "disgusting"
+    ],
+    "sadness": [
+      "udaas", "اداس", "sad", "gham", "غم", "dukh", "دکھ", "pain", "dard", "درد",
+      "hurt", "cry", "rona", "رونا", "tears", "aansoo", "آنسو", "depressed",
+      "depression", "pareshan", "پریشان", "worried", "tension", "تناؤ", "upset"
+    ],
+    "anger": [
+      "gussa", "غصہ", "angry", "naraz", "ناراض", "mad", "furious", "rage",
+      "pagal", "پاگل", "crazy", "stupid", "bevakoof", "بیوقوف", "idiot", "fool",
+      "kameena", "کمینہ", "badtameez", "بدتمیز", "rude", "hateful", "hate", "nafrat", "نفرت"
+    ],
+    "disagreement": [
+      "nahi", "nai", "نہیں", "no", "never", "kabhi nahi", "کبھی نہیں", "bilkul nahi",
+      "بالکل نہیں", "galat", "غلط", "wrong", "disagree", "refuse", "deny",
+      "rejection", "reject", "منع", "mana", "منا"
+    ],
+    "disappointment": [
+      "mayoos", "مایوس", "disappointed", "afsos", "افسوس", "regret", "unfortunately",
+      "sadly", "sadly", "bad luck", "kharaab kismat", "خراب قسمت", "fail", "failure",
+      "nakaam", "ناکام", "haar", "ہار", "loss", "defeat"
+    ],
+    "fear": [
+      "dar", "ڈر", "darr", "fear", "scared", "afraid", "khauf", "خوف", "panic",
+      "ghabrahat", "گھبراہٹ", "nervous", "anxiety", "worried", "pareshan", "پریشان",
+      "scary", "frightening", "terrifying", "horror"
+    ],
+    "frustration": [
+      "pareshan", "پریشان", "frustrated", "tang", "تنگ", "irritated", "annoyed",
+      "thak gaya", "تھک گیا", "tired", "bore", "boring", "bored", "pagal", "پاگل",
+      "dimagh kharab", "دماغ خراب", "headache", "stress", "تناؤ"
+    ]
+  },
+  "neutral": {
+    "questions": [
+      "kya", "کیا", "what", "kahan", "کہاں", "where", "kab", "کب", "when",
+      "kyun", "کیوں", "kyoon", "why", "kaise", "کیسے", "how", "kaun", "کون", "who",
+      "kitna", "کتنا", "kitne", "how much", "how many", "کتنے"
+    ],
+    "greetings": [
+      "salam", "سلام", "assalamualaikum", "السلام علیکم", "walaikum assalam",
+      "وعلیکم السلام", "hello", "hi", "hey", "adab", "آداب", "namaste", "نمستے",
+      "good morning", "good evening", "good night", "shab bakhair", "شب بخیر",
+      "allah hafiz", "اللہ حافظ", "khuda hafiz", "خدا حافظ"
+    ],
+    "time_related": [
+      "aaj", "آج", "today", "kal", "کل", "yesterday", "tomorrow", "abhi", "ابھی",
+      "now", "baad mein", "بعد میں", "later", "pehle", "پہلے", "before",
+      "phir", "پھر", "then", "jaldi", "جلدی", "quickly", "soon"
+    ],
+    "common_words": [
+      "hai", "ہے", "is", "hain", "ہیں", "are", "tha", "تھا", "was", "the", "تھے",
+      "were", "ho", "ہو", "hoga", "ہوگا", "will be", "kar", "کر", "do", "karo", "کرو",
+      "doing", "lena", "لینا", "take", "dena", "دینا", "give", "jana", "جانا", "go",
+      "aana", "آنا", "come", "kehna", "کہنا", "say", "batana", "بتانا", "tell"
+    ]
+  },
+  "intensifiers": {
+    "positive": [
+      "bohat", "بہت", "bahut", "very", "zyada", "زیادہ", "too much", "kaafi", "کافی",
+      "quite", "itna", "اتنا", "so much", "bilkul", "بالکل", "totally",
+      "completely", "پوری طرح", "puri tarah", "ekdum", "ایکدم"
+    ],
+    "negative": [
+      "bohat", "بہت", "bahut", "very", "zyada", "زیادہ", "too", "bilkul", "بالکل",
+      "totally", "ekdum", "ایکدم", "completely", "sara", "سارا", "all",
+      "pure", "پورے", "poore", "full", "pura", "پورا"
+    ]
+  },
+  "emojis": {
+    "positive": ["😊", "😄", "😁", "🙂", "😃", "😀", "🤗", "🥰", "😍", "❤️", "💕", "💖", "👍", "👏", "🎉", "✨", "⭐", "🌟"],
+    "negative": ["😢", "😭", "😔", "😞", "☹️", "🙁", "😠", "😡", "😤", "💔", "😰", "😨", "😱", "👎", "💀"],
+    "neutral": ["🤔", "😐", "😑", "🙄", "😶", "🤷", "🤨"]
+  }
+}

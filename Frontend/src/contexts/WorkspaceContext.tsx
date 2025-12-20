@@ -104,15 +104,22 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   // Error handling
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize workspaces on mount
+  // Initialize workspaces on mount - with delay to ensure auth is ready
   useEffect(() => {
-    loadWorkspaces();
-    
-    // Only load friend requests if token is available
     const token = localStorage.getItem('token');
-    if (token) {
-      getPendingRequests();
+    if (!token) {
+      console.log('[WorkspaceContext] No token found, skipping initial load');
+      return;
     }
+
+    // Add a small delay to ensure AuthContext has initialized
+    const loadTimer = setTimeout(() => {
+      console.log('[WorkspaceContext] Loading workspaces and friend requests');
+      loadWorkspaces();
+      getPendingRequests();
+    }, 150);
+
+    return () => clearTimeout(loadTimer);
   }, []);
 
   const loadWorkspaces = useCallback(async () => {

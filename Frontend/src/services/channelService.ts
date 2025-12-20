@@ -311,6 +311,116 @@ class ChannelService {
       throw new Error(error.response?.data?.error || 'Failed to search users');
     }
   }
+
+  // =====================================
+  // COMMUNITY DETAILS & SETTINGS
+  // =====================================
+  
+  async getCommunity(communityId: number): Promise<Community> {
+    try {
+      const response = await axios.get<Community>(
+        `${API_URL}/communities/${communityId}`,
+        this.getAuthHeaders()
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Error fetching community:', error);
+      throw new Error(error.response?.data?.error || 'Failed to fetch community');
+    }
+  }
+
+  async updateCommunity(communityId: number, data: {
+    name?: string;
+    description?: string;
+    icon?: string;
+    color?: string;
+  }): Promise<Community> {
+    try {
+      const response = await axios.put<Community>(
+        `${API_URL}/communities/${communityId}`,
+        data,
+        this.getAuthHeaders()
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error('Error updating community:', error);
+      throw new Error(error.response?.data?.error || 'Failed to update community');
+    }
+  }
+
+  // =====================================
+  // COMMUNITY IMAGE UPLOADS
+  // =====================================
+
+  async uploadCommunityLogo(communityId: number, file: File): Promise<{ logo_url: string }> {
+    try {
+      const formData = new FormData();
+      formData.append('logo', file);
+      
+      const token = localStorage.getItem('token');
+      const response = await axios.post<{ message: string; logo_url: string }>(
+        `${API_URL}/communities/${communityId}/logo`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+      return { logo_url: response.data.logo_url };
+    } catch (error: any) {
+      console.error('Error uploading community logo:', error);
+      throw new Error(error.response?.data?.error || 'Failed to upload logo');
+    }
+  }
+
+  async removeCommunityLogo(communityId: number): Promise<void> {
+    try {
+      await axios.delete(
+        `${API_URL}/communities/${communityId}/logo`,
+        this.getAuthHeaders()
+      );
+    } catch (error: any) {
+      console.error('Error removing community logo:', error);
+      throw new Error(error.response?.data?.error || 'Failed to remove logo');
+    }
+  }
+
+  async uploadCommunityBanner(communityId: number, file: File): Promise<{ banner_url: string }> {
+    try {
+      const formData = new FormData();
+      formData.append('banner', file);
+      
+      const token = localStorage.getItem('token');
+      const response = await axios.post<{ message: string; banner_url: string }>(
+        `${API_URL}/communities/${communityId}/banner`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+      return { banner_url: response.data.banner_url };
+    } catch (error: any) {
+      console.error('Error uploading community banner:', error);
+      throw new Error(error.response?.data?.error || 'Failed to upload banner');
+    }
+  }
+
+  async removeCommunityBanner(communityId: number): Promise<void> {
+    try {
+      await axios.delete(
+        `${API_URL}/communities/${communityId}/banner`,
+        this.getAuthHeaders()
+      );
+    } catch (error: any) {
+      console.error('Error removing community banner:', error);
+      throw new Error(error.response?.data?.error || 'Failed to remove banner');
+    }
+  }
 }
 
 export const channelService = new ChannelService();

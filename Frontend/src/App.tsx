@@ -6,6 +6,7 @@ import { FriendsProvider } from './contexts/FriendsContext';
 import { DirectMessagesProvider } from './contexts/DirectMessagesContext';
 import { RealtimeProvider } from './contexts/RealtimeContext';
 import { VoiceProvider } from './contexts/VoiceContext';
+import { NotificationsProvider } from './contexts/NotificationsContext';
 import AuthPageWrapper from '@/pages/AuthPageWrapper';
 import Welcome from './components/onboarding/Welcome';
 import WorkspaceSetup from './components/onboarding/WorkspaceSetup';
@@ -90,11 +91,9 @@ function AppRouter() {
 
   // Returning user or onboarding complete - show main app with real-time support
   return (
-    <RealtimeProvider>
-      <MainLayout>
-        <Dashboard />
-      </MainLayout>
-    </RealtimeProvider>
+    <MainLayout>
+      <Dashboard />
+    </MainLayout>
   );
 }
 
@@ -104,21 +103,25 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <WorkspaceProvider>
-          <FriendsProvider>
-            <DirectMessagesProvider>
-              <VoiceProvider>
-                <BrowserRouter>
-                  <Routes>
-                    <Route path="/*" element={<AppRouter />} />
-                    <Route path="/forgot-password" element={<ForgotPassword />} />
-                    <Route path="/otp-verification" element={<OtpVerification />} />
-                    <Route path="/reset-password" element={<ResetPassword />} />
-                  </Routes>
-                  <Toaster />
-                </BrowserRouter>
-              </VoiceProvider>
-            </DirectMessagesProvider>
-          </FriendsProvider>
+          <RealtimeProvider>
+            <NotificationsProvider>
+              <FriendsProvider>
+                <DirectMessagesProvider>
+                  <VoiceProvider>
+                    <BrowserRouter>
+                      <Routes>
+                        <Route path="/*" element={<AppRouter />} />
+                        <Route path="/forgot-password" element={<ForgotPassword />} />
+                        <Route path="/otp-verification" element={<OtpVerification />} />
+                        <Route path="/reset-password" element={<ResetPassword />} />
+                      </Routes>
+                      <Toaster />
+                    </BrowserRouter>
+                  </VoiceProvider>
+                </DirectMessagesProvider>
+              </FriendsProvider>
+            </NotificationsProvider>
+          </RealtimeProvider>
         </WorkspaceProvider>
       </AuthProvider>
     </ThemeProvider>

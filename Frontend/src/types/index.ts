@@ -1,5 +1,18 @@
 // types/index.ts - Single source of truth for ALL types
 // types/index.ts
+
+export interface Reaction {
+  emoji: string;
+  count: number;
+  users: {
+    user_id: number;
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+  }[];
+  reacted_by_current_user: boolean;
+}
+
 export interface Message {
   id: number;
   channel_id: number;
@@ -11,6 +24,7 @@ export interface Message {
   avatar_url?: string;   // ← CHANGE THIS LINE
   edited_at?: string | null;
   reply_to?: number | null;
+  reactions?: Reaction[];
 }
 
 export interface DirectMessage {
@@ -22,6 +36,7 @@ export interface DirectMessage {
   created_at: string;
   is_read: boolean;
   edited_at?: string | null;
+  reactions?: Reaction[];
   sender?: {
     id: number;
     username: string;
@@ -59,6 +74,7 @@ export interface Community {
   name: string;
   icon?: string;
   color?: string;
+  logo_url?: string;
   banner_url?: string;
   description?: string;
   display_name?: string;

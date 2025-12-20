@@ -2,6 +2,7 @@
 from flask import jsonify, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
+from datetime import datetime
 
 
 # =====================================
@@ -78,28 +79,64 @@ def send_friend_request():
             """, (sender_id, receiver_id))
             request_id = cur.lastrowid
             
-            # Get sender display name for notification
-            cur.execute("SELECT display_name FROM users WHERE id = %s", (sender_id,))
-            sender_data = cur.fetchone()
-            sender_display_name = sender_data['display_name'] if sender_data else current_user
+            # Get full sender data for notification
+            cur.execute("""
+                SELECT id, username, display_name, avatar_url
+                FROM users 
+                WHERE id = %s
+            """, (sender_id,))
+            sender_info = cur.fetchone()
+            
+            # Get receiver's username for socket lookup
+            cur.execute("SELECT username FROM users WHERE id = %s", (receiver_id,))
+            receiver_user = cur.fetchone()
+            receiver_username = receiver_user['username'] if receiver_user else None
 
         conn.commit()
         
         # Emit socket event to notify receiver in real-time
         try:
-            # Lazy import to avoid circular dependency issues
-            import sys
-            if 'app' in sys.modules:
-                from app import socketio
-                socketio.emit('friend_request_received', {
-                    'request_id': request_id,
-                    'sender_id': sender_id,
-                    'receiver_id': receiver_id,
-                    'sender_username': current_user,
-                    'sender_display_name': sender_display_name
-                }, room=f"user_{receiver_id}", namespace='/')
+            from app import socketio
+            from routes.sockets import user_socket_sessions
+            
+            notification_data = {
+                'id': request_id,
+                'sender_id': sender_id,
+                'receiver_id': receiver_id,
+                'status': 'pending',
+                'created_at': datetime.now().isoformat(),
+                'sender': {
+                    'username': sender_info['username'],
+                    'display_name': sender_info['display_name'] or sender_info['username'],
+                    'avatar_url': sender_info['avatar_url']
+                } if sender_info else None
+            }
+            
+            receiver_room = f"user_{receiver_id}"
+            
+            print(f"[FRIEND_REQUEST] 📤 Sending to room: {receiver_room}")
+            print(f"[FRIEND_REQUEST] 📦 Payload: {notification_data}")
+            print(f"[FRIEND_REQUEST] 👥 Active sessions: {list(user_socket_sessions.keys())}")
+            
+            # Try room-based emit first
+            socketio.emit('friend_request_received', notification_data, 
+                         to=receiver_room, namespace='/')
+            print(f"[FRIEND_REQUEST] ✅ Event emitted to room {receiver_room}")
+            
+            # Also emit directly to the user's socket ID
+            if receiver_username and receiver_username in user_socket_sessions:
+                receiver_sid = user_socket_sessions[receiver_username]
+                print(f"[FRIEND_REQUEST] 🎯 Direct emit to {receiver_username} (SID: {receiver_sid})")
+                socketio.emit('friend_request_received', notification_data,
+                             to=receiver_sid, namespace='/')
+                print(f"[FRIEND_REQUEST] ✅ Direct emit completed")
+            else:
+                print(f"[FRIEND_REQUEST] ⚠️ Receiver {receiver_username} not in active sessions")
+            
         except Exception as socket_error:
-            print(f"[WARNING] Failed to emit friend_request_received event: {socket_error}")
+            print(f"[FRIEND_REQUEST] ❌ Failed to emit event: {socket_error}")
+            import traceback
+            traceback.print_exc()
         
         return jsonify({
             'message': 'Friend request sent',
@@ -264,8 +301,44 @@ def accept_friend_request(request_id):
                 VALUES (%s, %s), (%s, %s)
                 ON DUPLICATE KEY UPDATE user_id = user_id
             """, (user_id, req['sender_id'], req['sender_id'], user_id))
+            
+            # Get acceptor info for notification
+            cur.execute("""
+                SELECT username, display_name, avatar_url
+                FROM users
+                WHERE id = %s
+            """, (user_id,))
+            acceptor_info = cur.fetchone()
 
         conn.commit()
+        
+        # Emit socket event to notify sender that request was accepted
+        try:
+            from app import socketio
+            
+            notification_data = {
+                'request_id': request_id,
+                'sender_id': req['sender_id'],
+                'acceptor_id': user_id,
+                'username': acceptor_info['username'],
+                'display_name': acceptor_info['display_name'] or acceptor_info['username'],
+                'avatar_url': acceptor_info['avatar_url']
+            }
+            
+            # Notify the original sender
+            socketio.emit('friend_request_accepted', notification_data,
+                         room=f"user_{req['sender_id']}", namespace='/')
+            
+            # Also emit friend_status to both users
+            socketio.emit('friend_status', {'friend_id': user_id, 'status': 'accepted'},
+                         room=f"user_{req['sender_id']}", namespace='/')
+            socketio.emit('friend_status', {'friend_id': req['sender_id'], 'status': 'accepted'},
+                         room=f"user_{user_id}", namespace='/')
+            
+            print(f"[SOCKET] Emitted friend_request_accepted to user_{req['sender_id']}")
+        except Exception as socket_error:
+            print(f"[WARNING] Failed to emit friend_request_accepted event: {socket_error}")
+        
         return jsonify({'message': 'Friend request accepted'}), 200
 
     except Exception as e:

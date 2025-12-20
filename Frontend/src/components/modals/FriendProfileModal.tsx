@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
+import { getAvatarUrl } from "@/lib/utils";
 import type { Friend } from "@/types";
 import { X, MessageCircle, Phone, Video, Ban, UserMinus } from "lucide-react";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
@@ -84,7 +85,7 @@ export default function FriendProfileModal({
           <div className="flex justify-center -mt-16 mb-4">
             <div className="relative">
               <img
-                src={friend.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friend.username}`}
+                src={getAvatarUrl(friend.avatar_url, friend.username)}
                 alt={friend.display_name}
                 className="w-28 h-28 rounded-full border-4 shadow-lg object-cover"
                 style={{

@@ -96,7 +96,34 @@ export async function updateFirstLogin() {
   return await api.post(`${AUTH_PREFIX}/user/update-first-login`);
 }
 
-export async function updateProfile(data: { display_name?: string; bio?: string; avatar_url?: string }) {
+export async function updateProfile(data: { display_name?: string; bio?: string; avatar_url?: string; avatar?: File; remove_avatar?: boolean }) {
+  // If avatar file is provided, use FormData
+  if (data.avatar || data.remove_avatar) {
+    const formData = new FormData();
+    
+    if (data.display_name) formData.append('display_name', data.display_name);
+    if (data.bio) formData.append('bio', data.bio);
+    if (data.avatar) formData.append('avatar', data.avatar);
+    if (data.remove_avatar) formData.append('remove_avatar', 'true');
+    
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:5000'}${AUTH_PREFIX}/user/profile`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update profile');
+    }
+    
+    return await response.json();
+  }
+  
+  // Otherwise use JSON
   return await api.put(`${AUTH_PREFIX}/user/profile`, data);
 }
 

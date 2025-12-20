@@ -150,17 +150,31 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Socket connection setup
+  // Socket connection setup - wait for auth to be ready
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
-      console.error('[REALTIME] No token found');
+      console.log('[REALTIME] No token found, skipping socket connection');
       return;
     }
 
     console.log('[REALTIME] Initializing socket connection');
     socketService.connect(token);
-    setIsConnected(socketService.isConnected());
+    
+    // Wait for connection to be established
+    const checkConnection = setInterval(() => {
+      const connected = socketService.isConnected();
+      setIsConnected(connected);
+      
+      if (connected) {
+        console.log('[REALTIME] Socket connected, ready to load data');
+        clearInterval(checkConnection);
+      }
+    }, 100);
+
+    return () => {
+      clearInterval(checkConnection);
+    };
 
     const unsubscribeMessage = socketService.onMessage((incomingMessage: Message) => {
       console.log('[REALTIME] Received new message:', incomingMessage);
@@ -323,12 +337,19 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Load initial data
+  // Load initial data - only when socket is connected
   useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || !isConnected) {
+      console.log('[REALTIME] Skipping data load - no token or not connected');
+      return;
+    }
+
+    console.log('[REALTIME] Loading initial data (user, communities, friends)');
     loadCurrentUser();
     loadCommunities();
     loadFriends();
-  }, [loadCommunities, loadFriends]);
+  }, [isConnected, loadCurrentUser, loadCommunities, loadFriends]);
 
   // Load channels when community changes
   useEffect(() => {

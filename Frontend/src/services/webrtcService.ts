@@ -241,7 +241,7 @@ class WebRTCService {
     const audioElement = new Audio();
     audioElement.srcObject = stream;
     audioElement.autoplay = true;
-    audioElement.playsInline = true; // Important for mobile browsers
+    // audioElement.playsInline = true; // Important for mobile browsers
     audioElement.muted = false; // CRITICAL: Ensure not muted
     audioElement.style.display = "none";
     

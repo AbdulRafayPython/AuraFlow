@@ -20,7 +20,7 @@ interface AuthContextType {
   login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => void;
-  updateProfile: (data: { display_name?: string; bio?: string; avatar_url?: string }) => Promise<void>;
+  updateProfile: (data: { display_name?: string; bio?: string; avatar_url?: string; avatar?: File; remove_avatar?: boolean }) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   setUser: (user: User | null) => void; 
   setIsAuthenticated: (auth: boolean) => void;
@@ -82,10 +82,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateProfile = async (data: { display_name?: string; bio?: string; avatar_url?: string }) => {
+  const updateProfile = async (data: { display_name?: string; bio?: string; avatar_url?: string; avatar?: File; remove_avatar?: boolean }) => {
     try {
-      await authService.updateProfile(data);
-      updateUser(data);
+      const result = await authService.updateProfile(data);
+      
+      // Update user with new data
+      const updates: Partial<User> = {};
+      if (data.display_name !== undefined) updates.display_name = data.display_name;
+      if (data.bio !== undefined) updates.bio = data.bio;
+      
+      // Always update avatar_url based on the result, even if null
+      if ('avatar_url' in result) {
+        updates.avatar_url = result.avatar_url || undefined;
+        updates.avatar = result.avatar_url || undefined; // Also update avatar field
+      }
+      
+      updateUser(updates);
+      
+      return result;
     } catch (error) {
       console.error('Failed to update profile:', error);
       throw error;

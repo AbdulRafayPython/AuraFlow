@@ -3,6 +3,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useFriends } from "@/contexts/FriendsContext";
 import type { Friend, FriendRequest } from "@/types";
 import { useDirectMessages } from "@/contexts/DirectMessagesContext";
+import { getAvatarUrl } from "@/lib/utils";
 import AddFriendModal from "@/components/modals/AddFriendModal";
 import FriendProfileModal from "@/components/modals/FriendProfileModal";
 import {
@@ -153,7 +154,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
         {/* Avatar with Status */}
         <div className="relative flex-shrink-0">
           <img
-            src={friend.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friend.username}`}
+            src={getAvatarUrl(friend.avatar_url, friend.username)}
             alt={friend.display_name}
             className="w-12 h-12 rounded-full object-cover"
           />
@@ -280,7 +281,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
     >
       <div className="flex items-center gap-4 flex-1">
         <img
-          src={request.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${request.username}`}
+          src={getAvatarUrl(request.avatar_url, request.username)}
           alt={request.display_name || request.username}
           className="w-12 h-12 rounded-full object-cover"
         />
@@ -326,7 +327,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
     >
       <div className="flex items-center gap-4 flex-1">
         <img
-          src={request.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${request.username}`}
+          src={getAvatarUrl(request.avatar_url, request.username)}
           alt={request.display_name || request.username}
           className="w-12 h-12 rounded-full object-cover"
         />

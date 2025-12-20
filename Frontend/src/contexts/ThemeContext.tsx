@@ -10,11 +10,20 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem("theme");
-    return saved ? saved === "dark" : false;
+    return saved ? saved === "dark" : true; // Default to dark mode
   });
 
   useEffect(() => {
+    // Update localStorage
     localStorage.setItem("theme", isDarkMode ? "dark" : "light");
+    
+    // Apply theme class to document root
+    const root = document.documentElement;
+    if (isDarkMode) {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
   }, [isDarkMode]);
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
