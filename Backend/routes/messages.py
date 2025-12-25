@@ -3,6 +3,15 @@ from flask import jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
 from utils import get_avatar_url
+import sys
+import os
+
+# Import moderation agent
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from agents.moderation import ModerationAgent
+
+# Initialize moderation agent
+moderation_agent = ModerationAgent()
 
 
 # Helper: format user avatar fallback
@@ -96,44 +105,260 @@ def send_message():
                 return jsonify({'error': 'User not found'}), 404
             user_id = user['id']
 
+            cur.execute("SELECT id, community_id FROM channels WHERE id = %s", (channel_id,))
+            channel_row = cur.fetchone()
+            if not channel_row:
+                return jsonify({'error': 'Channel not found'}), 404
+            community_id = channel_row['community_id']
+
             cur.execute("SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
                         (channel_id, user_id))
             if not cur.fetchone():
                 return jsonify({'error': 'Access denied'}), 403
 
-            cur.execute("""
-                INSERT INTO messages (channel_id, sender_id, content, message_type, reply_to)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (channel_id, user_id, content, message_type, reply_to or None))
-            message_id = cur.lastrowid
+            # Check block list first
+            cur.execute(
+                "SELECT id FROM blocked_users WHERE community_id = %s AND user_id = %s",
+                (community_id, user_id)
+            )
+            if cur.fetchone():
+                return jsonify({
+                    'moderation': {
+                        'action': 'block_user',
+                        'severity': 'high',
+                        'reasons': ['blocked_user'],
+                        'message': 'You are blocked from this community.'
+                    }
+                }), 403
 
-            cur.execute("""
-                SELECT m.*, u.username, u.display_name, u.avatar_url
-                FROM messages m
-                JOIN users u ON m.sender_id = u.id
-                WHERE m.id = %s
-            """, (message_id,))
-            msg = cur.fetchone()
+            cur.execute(
+                "SELECT violation_count FROM community_members WHERE community_id = %s AND user_id = %s",
+                (community_id, user_id)
+            )
+            membership_row = cur.fetchone()
+            if not membership_row:
+                return jsonify({'error': 'Access denied'}), 403
+            violation_count = membership_row.get('violation_count') or 0
 
-        conn.commit()
+            # Get user role in community
+            cur.execute(
+                "SELECT role FROM community_members WHERE community_id = %s AND user_id = %s",
+                (community_id, user_id)
+            )
+            role_row = cur.fetchone()
+            user_role = role_row['role'] if role_row else 'member'
 
-        # ← CRITICAL: Use get_avatar_url() here too!
-        avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
+            # OWNER IMMUNITY: Skip all moderation for community owners
+            if user_role == 'owner':
+                cur.execute("""
+                    INSERT INTO messages (channel_id, sender_id, content, message_type, reply_to)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (channel_id, user_id, content, message_type, reply_to or None))
+                message_id = cur.lastrowid
 
-        response = {
-            'id': msg['id'],
-            'channel_id': msg['channel_id'],
-            'sender_id': user_id,
-            'content': msg['content'],
-            'message_type': msg['message_type'],
-            'reply_to': msg['reply_to'],
-            'created_at': msg['created_at'].isoformat(),
-            'author': msg['username'],
-            'display_name': msg['display_name'] or msg['username'],
-            'avatar_url': avatar_url  # ← Now correct!
-        }
+                cur.execute("""
+                    SELECT m.*, u.username, u.display_name, u.avatar_url
+                    FROM messages m
+                    JOIN users u ON m.sender_id = u.id
+                    WHERE m.id = %s
+                """, (message_id,))
+                msg = cur.fetchone()
 
-        return jsonify(response), 201
+                conn.commit()
+
+                avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
+                return jsonify({
+                    'message': {
+                        'id': msg['id'],
+                        'channel_id': msg['channel_id'],
+                        'sender_id': user_id,
+                        'content': msg['content'],
+                        'message_type': msg['message_type'],
+                        'reply_to': msg['reply_to'],
+                        'created_at': msg['created_at'].isoformat(),
+                        'author': msg['username'],
+                        'display_name': msg['display_name'] or msg['username'],
+                        'avatar_url': avatar_url
+                    }
+                }), 201
+
+            moderation_result = moderation_agent.moderate_message(content, user_id, channel_id, log=False)
+
+            # Escalation ladder
+            final_action = 'allow'
+            user_message = None
+            if moderation_result['action'] != 'allow':
+                violation_count += 1
+                cur.execute(
+                    "UPDATE community_members SET violation_count = %s WHERE community_id = %s AND user_id = %s",
+                    (violation_count, community_id, user_id)
+                )
+
+                if violation_count == 1:
+                    final_action = 'warn'
+                    user_message = 'Warning issued. Continued violations will lead to removal.'
+                elif violation_count == 2:
+                    final_action = 'remove_message'
+                    user_message = 'Message removed due to repeated violations.'
+                elif violation_count == 3:
+                    final_action = 'remove_user'
+                    user_message = 'You were removed from this community for repeated violations.'
+                else:
+                    final_action = 'block_user'
+                    user_message = 'You were blocked from this community for repeated violations.'
+            else:
+                final_action = 'allow'
+
+            # Actions that still allow the message to go through
+            if final_action in ['allow', 'warn']:
+                cur.execute("""
+                    INSERT INTO messages (channel_id, sender_id, content, message_type, reply_to)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (channel_id, user_id, content, message_type, reply_to or None))
+                message_id = cur.lastrowid
+
+                cur.execute("""
+                    SELECT m.*, u.username, u.display_name, u.avatar_url
+                    FROM messages m
+                    JOIN users u ON m.sender_id = u.id
+                    WHERE m.id = %s
+                """, (message_id,))
+                msg = cur.fetchone()
+
+                conn.commit()
+
+                if final_action != 'allow':
+                    moderation_agent.log_moderation_action(
+                        user_id, channel_id, content, final_action,
+                        moderation_result['severity'], moderation_result.get('reasons', []),
+                        moderation_result.get('confidence', 0), message_id
+                    )
+
+                avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
+                return jsonify({
+                    'message': {
+                        'id': msg['id'],
+                        'channel_id': msg['channel_id'],
+                        'sender_id': user_id,
+                        'content': msg['content'],
+                        'message_type': msg['message_type'],
+                        'reply_to': msg['reply_to'],
+                        'created_at': msg['created_at'].isoformat(),
+                        'author': msg['username'],
+                        'display_name': msg['display_name'] or msg['username'],
+                        'avatar_url': avatar_url,
+                        'moderation': {
+                            'action': final_action,
+                            'severity': moderation_result['severity'],
+                            'flagged': final_action == 'warn',
+                            'reasons': moderation_result.get('reasons', []),
+                            'violation_count': violation_count
+                        }
+                    },
+                    'moderation': {
+                        'action': final_action,
+                        'severity': moderation_result['severity'],
+                        'reasons': moderation_result.get('reasons', []),
+                        'message': user_message,
+                        'violation_count': violation_count
+                    }
+                }), 201
+
+            # Remove message (no insert)
+            if final_action == 'remove_message':
+                conn.commit()
+                moderation_agent.log_moderation_action(
+                    user_id, channel_id, content, 'remove_message',
+                    moderation_result['severity'], moderation_result.get('reasons', []),
+                    moderation_result.get('confidence', 0), None
+                )
+                return jsonify({
+                    'moderation': {
+                        'action': 'remove_message',
+                        'severity': moderation_result['severity'],
+                        'reasons': moderation_result.get('reasons', []),
+                        'message': user_message,
+                        'violation_count': violation_count
+                    }
+                }), 200
+
+            # Remove user from community and all its channels
+            if final_action == 'remove_user':
+                cur.execute(
+                    "DELETE FROM channel_members WHERE user_id = %s AND channel_id IN (SELECT id FROM channels WHERE community_id = %s)",
+                    (user_id, community_id)
+                )
+                cur.execute(
+                    "DELETE FROM community_members WHERE community_id = %s AND user_id = %s",
+                    (community_id, user_id)
+                )
+                conn.commit()
+                
+                # Emit socket event to disconnect user from community
+                from flask_socketio import emit
+                emit('community:removed', {
+                    'community_id': community_id,
+                    'user_id': user_id,
+                    'reason': 'moderation',
+                    'message': user_message
+                }, to=f"user_{user_id}", namespace='/')
+                
+                moderation_agent.log_moderation_action(
+                    user_id, channel_id, content, 'remove_user',
+                    'high', moderation_result.get('reasons', []),
+                    moderation_result.get('confidence', 0), None
+                )
+                return jsonify({
+                    'moderation': {
+                        'action': 'remove_user',
+                        'severity': 'high',
+                        'reasons': moderation_result.get('reasons', []),
+                        'message': user_message,
+                        'violation_count': violation_count,
+                        'removed_from_community': True
+                    }
+                }), 403
+
+            # Block user (default case once count >= 4)
+            cur.execute(
+                "INSERT IGNORE INTO blocked_users (community_id, user_id) VALUES (%s, %s)",
+                (community_id, user_id)
+            )
+            cur.execute(
+                "DELETE FROM channel_members WHERE user_id = %s AND channel_id IN (SELECT id FROM channels WHERE community_id = %s)",
+                (user_id, community_id)
+            )
+            cur.execute(
+                "DELETE FROM community_members WHERE community_id = %s AND user_id = %s",
+                (community_id, user_id)
+            )
+            conn.commit()
+            
+            # Emit socket event to disconnect user from community
+            from flask_socketio import emit
+            emit('community:removed', {
+                'community_id': community_id,
+                'user_id': user_id,
+                'reason': 'blocked',
+                'message': user_message,
+                'blocked': True
+            }, to=f"user_{user_id}", namespace='/')
+            
+            moderation_agent.log_moderation_action(
+                user_id, channel_id, content, 'block_user',
+                'high', moderation_result.get('reasons', []),
+                moderation_result.get('confidence', 0), None
+            )
+            return jsonify({
+                'moderation': {
+                    'action': 'block_user',
+                    'severity': 'high',
+                    'reasons': moderation_result.get('reasons', []),
+                    'message': user_message,
+                    'violation_count': violation_count,
+                    'blocked': True
+                }
+            }), 403
 
     except Exception as e:
         print(f"[ERROR] send_message: {e}")

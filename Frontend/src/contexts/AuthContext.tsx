@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import authService from '../services/authService';
+import { connectSocket, disconnectSocket } from '../socket';
 
 interface User {
   id?: number;  // Add user ID
@@ -39,11 +40,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .then((data: any) => {
           setUser(data);
           setIsAuthenticated(true);
+          
+          // Connect socket after restoring session
+          connectSocket();
         })
         .catch(() => {
           localStorage.removeItem('token');
           setIsAuthenticated(false);
           setUser(null);
+          
+          // Disconnect socket on auth failure
+          disconnectSocket();
         });
     }
   }, []);
@@ -54,6 +61,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('token', data.token);
       setUser(data.user);
       setIsAuthenticated(true);
+      
+      // Connect socket after successful login
+      connectSocket();
     } else {
       throw new Error('Login failed');
     }
@@ -61,6 +71,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
+      // Disconnect socket first
+      disconnectSocket();
+      
       // Call logout API to clear token on backend
       await authService.logout();
     } catch (error) {

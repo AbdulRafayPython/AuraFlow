@@ -1121,7 +1121,7 @@ def get_community_members():
             cur.execute("""
                 SELECT 
                     u.id, u.username, u.email, u.display_name, u.avatar_url, 
-                    cm.role, cm.joined_at
+                    cm.role, cm.joined_at, cm.violation_count
                 FROM community_members cm
                 JOIN users u ON cm.user_id = u.id
                 WHERE cm.community_id = %s
@@ -1143,7 +1143,8 @@ def get_community_members():
             'display_name': m['display_name'] or m['username'],
             'avatar_url': m['avatar_url'] or f"https://api.dicebear.com/7.x/avataaars/svg?seed={m['username']}",
             'role': m['role'],
-            'joined_at': m['joined_at'].isoformat() if m['joined_at'] else None
+            'joined_at': m['joined_at'].isoformat() if m['joined_at'] else None,
+            'violation_count': m['violation_count'] if membership['role'] == 'owner' else None
         } for m in members]
 
         print(f"[INFO] get_community_members: Found {len(result)} members for community {community_id}")
@@ -1212,6 +1213,14 @@ def add_community_member():
             target_user = cur.fetchone()
             if not target_user:
                 return jsonify({'error': 'User not found'}), 404
+
+            # Respect community blocks
+            cur.execute(
+                "SELECT 1 FROM blocked_users WHERE community_id = %s AND user_id = %s",
+                (community_id, user_id_to_add)
+            )
+            if cur.fetchone():
+                return jsonify({'error': 'User is blocked from this community'}), 403
 
             # Check if user is already a member
             cur.execute("""
@@ -1433,7 +1442,19 @@ def delete_community(community_id):
             cur.execute("DELETE FROM communities WHERE id = %s", (community_id,))
 
         conn.commit()
-        print(f"[SUCCESS] Community {community_id} deleted")
+        print(f"[SUCCESS] Community {community_id} deleted by {username}")
+
+        # Broadcast deletion to all members via socket
+        from app import socketio
+        if socketio:
+            from datetime import datetime
+            socketio.emit('community_deleted', {
+                'community_id': community_id,
+                'deleted_by': username,
+                'timestamp': datetime.now().isoformat()
+            }, namespace='/')
+            print(f"[SOCKET] Broadcasted community_deleted for community {community_id}")
+
         return jsonify({'message': 'Community deleted successfully'}), 200
 
     except Exception as e:
@@ -1501,7 +1522,20 @@ def leave_community(community_id):
             """, (community_id, user_id))
 
         conn.commit()
-        print(f"[SUCCESS] User {user_id} left community {community_id}")
+        print(f"[SUCCESS] User {user_id} ({username}) left community {community_id}")
+
+        # Broadcast leave event via socket to notify remaining members
+        from app import socketio
+        if socketio:
+            from datetime import datetime
+            socketio.emit('community_left', {
+                'community_id': community_id,
+                'user_id': user_id,
+                'username': username,
+                'timestamp': datetime.now().isoformat()
+            }, namespace='/')
+            print(f"[SOCKET] Broadcasted community_left for user {username} from community {community_id}")
+
         return jsonify({'message': 'You have left the community'}), 200
 
     except Exception as e:
@@ -1645,6 +1679,14 @@ def join_community(community_id):
             community = cur.fetchone()
             if not community:
                 return jsonify({'error': 'Community not found'}), 404
+
+            # Check if user is blocked from this community
+            cur.execute(
+                "SELECT 1 FROM blocked_users WHERE community_id = %s AND user_id = %s",
+                (community_id, user_id)
+            )
+            if cur.fetchone():
+                return jsonify({'error': 'You are blocked from this community'}), 403
 
             # Check if already a member
             cur.execute("""

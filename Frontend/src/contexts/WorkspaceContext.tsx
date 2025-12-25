@@ -10,7 +10,8 @@ import type {
   Message,
   User,
   CommunityMember,
-  CreateCommunityPayload 
+  CreateCommunityPayload,
+  SendMessageResponse
 } from "@/types";
 
 interface WorkspaceContextType {
@@ -45,7 +46,7 @@ interface WorkspaceContextType {
   // Message management
   messages: Message[];
   currentMessages: Message[];
-  sendMessage: (channelId: number, content: string, messageType?: 'text' | 'image' | 'file') => Promise<Message>;
+  sendMessage: (channelId: number, content: string, messageType?: 'text' | 'image' | 'file') => Promise<SendMessageResponse>;
   loadChannelMessages: (channelId: number, limit?: number, offset?: number) => Promise<void>;
   loadMoreMessages: (channelId: number, limit?: number, offset?: number) => Promise<void>;
   sendDirectMessage: (receiverId: number, content: string, messageType?: 'text') => Promise<void>;
@@ -287,14 +288,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const sendMessage = useCallback(async (channelId: number, content: string, messageType: 'text' | 'image' | 'file' = 'text') => {
     try {
-      const message = await messageService.sendChannelMessage({
+      const response = await messageService.sendChannelMessage({
         channel_id: channelId,
         content,
         message_type: messageType,
       });
-      setCurrentMessages(prev => [...prev, message]);
+
+      if (response.message) {
+        setCurrentMessages(prev => [...prev, response.message as Message]);
+      }
       setError(null);
-      return message;
+      return response;
     } catch (err: any) {
       const errorMsg = err.message || 'Failed to send message';
       setError(errorMsg);

@@ -404,17 +404,17 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                         <img
                           src={getAvatarUrl(msg.sender?.avatar_url, msg.sender?.username || 'unknown')}
                           alt={msg.sender?.username || 'Unknown'}
-                          className="w-8 h-8 rounded-full object-cover"
+                          className="w-7 h-7 rounded-full object-cover"
                         />
                       ) : (
-                        <div className="w-8 h-8" />
+                        <div className="w-7 h-7" />
                       )}
                     </div>
 
                     <div className="flex-1 min-w-0 max-w-lg">
                       {showAvatar && (
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`font-semibold text-sm ${
+                        <div className="flex items-baseline gap-2 mb-0.5">
+                          <span className={`font-medium text-sm ${
                             isDarkMode ? 'text-gray-100' : 'text-gray-900'
                           }`}>
                             {msg.sender?.display_name || msg.sender?.username || 'Unknown'}
@@ -474,7 +474,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                           </div>
                           
                           {/* Reactions Display */}
-                          <div className="flex flex-wrap items-center gap-1.5 mt-1 ml-1">
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1 ml-0.5">
                             {dmReactions[msg.id] && dmReactions[msg.id].length > 0 && (
                               <MessageReactions
                                 reactions={dmReactions[msg.id]}
@@ -488,14 +488,14 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                                 e.stopPropagation();
                                 setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id);
                               }}
-                              className={`opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 rounded-lg text-xs flex items-center gap-1 ${
+                              className={`opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-xs flex items-center gap-1 ${
                                 isDarkMode 
                                   ? 'text-gray-400 hover:text-gray-200 hover:bg-slate-600' 
                                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-300'
                               }`}
                               title="Add reaction"
                             >
-                              <SmilePlus className="w-3.5 h-3.5" />
+                              <SmilePlus className="w-3 h-3" />
                             </button>
                           </div>
                         </>
@@ -517,7 +517,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                 ) : (
                   /* Sender message (right) */
                   <div 
-                    className={`flex gap-2 group px-2 py-0.5 rounded-lg transition-all justify-end relative ${
+                    className={`flex gap-2.5 group px-2 py-1 rounded-md transition-all justify-end relative ${
                       isDarkMode ? 'hover:bg-slate-800/40' : 'hover:bg-gray-50'
                     }`}
                     onMouseEnter={() => setHoveredMessageId(msg.id)}
@@ -570,11 +570,11 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
                     <div className="flex-1 min-w-0 max-w-lg text-right">
                       {showAvatar && (
-                        <div className="flex items-center gap-2 mb-1 justify-end">
+                        <div className="flex items-baseline gap-2 mb-0.5 justify-end">
                           <span className={`text-xs ${
                             isDarkMode ? 'text-gray-500' : 'text-gray-400'
                           }`}>{formatTime(msg.created_at)}</span>
-                          <span className={`font-semibold text-sm ${
+                          <span className={`font-medium text-sm ${
                             isDarkMode ? 'text-gray-100' : 'text-gray-900'
                           }`}>
                             You

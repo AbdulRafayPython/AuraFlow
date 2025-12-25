@@ -42,6 +42,13 @@ export default function CommunityManagementModal({
     setIsLoading(true);
     try {
       await channelService.deleteCommunity(community.id);
+      
+      // Broadcast deletion event via socket
+      const { socketService } = await import('@/services/socketService');
+      if (socketService.isConnected()) {
+        socketService.broadcastCommunityDeleted(community.id);
+      }
+      
       showSuccess({ title: "Community deleted successfully" });
       onCommunityDeleted?.();
       onClose();
@@ -58,6 +65,10 @@ export default function CommunityManagementModal({
     setIsLoading(true);
     try {
       await channelService.leaveCommunity(community.id);
+      
+      // Socket broadcast will be handled by backend, which triggers RealtimeContext listener
+      // The listener will remove the community and navigate to Home
+      
       showSuccess({ title: "You have left the community" });
       onCommunityLeft?.();
       onClose();

@@ -142,17 +142,24 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
     setSelectedChannelForManagement(null);
   };
 
-  const handleCommunityDeleted = () => {
+  const handleCommunityDeleted = async () => {
     setIsCommunityManagementOpen(false);
-    // Navigate away from deleted community
-    onNavigate?.("dashboard");
+    
+    // Reload communities to update the list
+    await reloadCommunities();
+    
+    // Navigate to home (empty communities = Home page)
+    onNavigate?.("home");
   };
 
   const handleCommunityLeft = async () => {
     setIsCommunityManagementOpen(false);
-    // Reload communities to refresh the list after leaving
+    
+    // Reload communities to update the list
     await reloadCommunities();
-    onNavigate?.("dashboard");
+    
+    // Navigate to home (socket listener will handle state cleanup)
+    onNavigate?.("home");
   };
 
   const getStatusColor = (status: string) => {

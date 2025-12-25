@@ -5,10 +5,12 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
 import { getAvatarUrl } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 import VoiceChannelView from "@/components/VoiceChannelView";
 import EmojiPickerButton from "@/components/EmojiPickerButton";
 import ReactionPicker from "@/components/ReactionPicker";
 import MessageReactions from "@/components/MessageReactions";
+import { ModerationBadge } from "@/components/ModerationBadge";
 import NotificationButton from "@/components/NotificationButton";
 import { reactionService } from "@/services/reactionService";
 import { socket } from "@/socket";
@@ -34,6 +36,8 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
   } = useRealtime();
 
   const { isInVoiceChannel } = useVoice();
+  const { toast } = useToast();
+  const [showAIPanel, setShowAIPanel] = useState(true);
 
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -165,7 +169,24 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
     setIsSending(true);
 
     try {
-      await sendMessage(messageToSend);
+      const response = await sendMessage(messageToSend);
+      const moderation = response?.moderation;
+
+      if (moderation && moderation.action && !response?.message) {
+        const isBlock = moderation.action === 'block_user' || moderation.action === 'remove_user';
+        toast({
+          title: isBlock ? 'Access restricted' : 'Message moderated',
+          description: moderation.message || 'Your message was moderated.',
+          variant: isBlock ? 'destructive' : 'default',
+          duration: 6000,
+        });
+      } else if (moderation && moderation.action === 'warn') {
+        toast({
+          title: 'Warning issued',
+          description: moderation.message || 'Please follow the community guidelines.',
+          duration: 5000,
+        });
+      }
     } catch (error) {
       console.error("Failed to send message:", error);
       setMessage(messageToSend);
@@ -439,11 +460,11 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
             </div>
           </div>
         ) : (
-          <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="max-w-4xl mx-auto px-3 py-2">
             {/* Loading more indicator */}
             {isLoadingMessages && messages.length > 0 && (
-              <div className="flex justify-center py-4">
-                <div className={`animate-spin rounded-full h-6 w-6 border-2 border-t-transparent ${
+              <div className="flex justify-center py-2">
+                <div className={`animate-spin rounded-full h-5 w-5 border-2 border-t-transparent ${
                   isDarkMode ? "border-blue-400" : "border-blue-600"
                 }`}></div>
               </div>
@@ -459,9 +480,9 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                 <div key={`${msg.id}-${index}`}>
                   {/* Date Divider */}
                   {showDateDivider && (
-                    <div className="flex items-center gap-3 my-4">
+                    <div className="flex items-center gap-3 my-3">
                       <div className={`flex-1 h-px ${isDarkMode ? "bg-slate-700" : "bg-gray-200"}`} />
-                      <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                      <span className={`text-xs font-medium px-3 py-1 rounded-full ${
                         isDarkMode ? "bg-slate-800 text-gray-300" : "bg-gray-100 text-gray-700"
                       }`}>
                         {formatDateDivider(msg.created_at)}
@@ -472,43 +493,53 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
 
                   {/* Message - Discord Style */}
                   <div 
-                    className={`flex gap-3 group px-4 transition-all relative pb-8 ${
-                      showAuthor ? 'pt-3 pb-1' : 'pt-0 pb-0'
-                    } ${nextMsgSameSender ? '' : 'pb-3'} hover:${isDarkMode ? 'bg-slate-800/40' : 'bg-gray-100/50'} rounded-lg`}
+                    className={`flex gap-2.5 group px-3 py-1.5 transition-all relative ${
+                      showAuthor ? 'pt-2' : 'pt-0.5'
+                    } hover:${isDarkMode ? 'bg-slate-800/40' : 'bg-gray-50/80'} rounded-md`}
                     onMouseEnter={() => setHoveredMessageId(msg.id)}
                     onMouseLeave={() => setHoveredMessageId(null)}
                   >
                     {/* Avatar Column */}
-                    <div className="flex-shrink-0">
+                    <div className="flex-shrink-0 w-9">
                       {showAuthor ? (
                         msg.avatar_url ? (
                           <img
                             src={getAvatarUrl(msg.avatar_url, authorName)}
                             alt={authorName}
-                            className="w-10 h-10 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                            className="w-9 h-9 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
                           />
                         ) : (
-                          <div className={`w-10 h-10 rounded-full ${getAvatarColor(authorName)} flex items-center justify-center text-white font-semibold text-sm shadow-sm cursor-pointer hover:opacity-80 transition-opacity`}>
+                          <div className={`w-9 h-9 rounded-full ${getAvatarColor(authorName)} flex items-center justify-center text-white font-medium text-sm shadow-sm cursor-pointer hover:opacity-80 transition-opacity`}>
                             {getAvatarInitials(authorName)}
                           </div>
                         )
                       ) : (
-                        <div className="w-10"></div>
+                        <div className="w-9"></div>
                       )}
                     </div>
 
                     {/* Content Column */}
                     <div className="flex-1 min-w-0">
                       {showAuthor && (
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`font-semibold text-sm ${
+                        <div className="flex items-baseline gap-2 mb-0.5">
+                          <span className={`font-medium text-sm leading-tight ${
                             isDarkMode ? "text-white" : "text-gray-900"
                           }`}>
                             {authorName}
                           </span>
-                          <span className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}>
+                          <span className={`text-xs leading-none ${
+                            isDarkMode ? "text-gray-500" : "text-gray-500"
+                          }`}>
                             {formatMessageTime(msg.created_at)}
                           </span>
+                          {/* Moderation Badge */}
+                          {msg.moderation && (
+                            <ModerationBadge
+                              action={msg.moderation.action}
+                              severity={msg.moderation.severity}
+                              reasons={msg.moderation.reasons}
+                            />
+                          )}
                         </div>
                       )}
                       <div className={`text-sm leading-relaxed break-words ${
@@ -520,7 +551,7 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                       </div>
                       
                       {/* Reactions Display */}
-                      <div className="flex flex-wrap items-center gap-2 mt-2 max-w-full">
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
                         {messageReactions[msg.id] && messageReactions[msg.id].length > 0 && (
                           <MessageReactions
                             reactions={messageReactions[msg.id]}
@@ -534,21 +565,21 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                             e.stopPropagation();
                             setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id);
                           }}
-                          className={`opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 rounded text-xs flex items-center gap-1 ${
+                          className={`opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-xs flex items-center gap-1 ${
                             isDarkMode 
                               ? 'text-gray-400 hover:text-gray-200 hover:bg-slate-700' 
                               : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
                           }`}
                           title="Add reaction"
                         >
-                          <SmilePlus className="w-3.5 h-3.5" />
-                          <span className="text-xs">Add Reaction</span>
+                          <SmilePlus className="w-3 h-3" />
+                          <span className="text-xs">React</span>
                         </button>
                       </div>
                       
                       {/* Reaction Picker - Shown when button clicked */}
                       {reactionPickerMessageId === msg.id && (
-                        <div className="absolute -top-7 left-14 z-30 shadow-xl">
+                        <div className="absolute -top-7 left-12 z-30 shadow-xl">
                           <ReactionPicker
                             onReactionSelect={(emoji) => {
                               handleReactionToggle(msg.id, emoji);
@@ -565,23 +596,23 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
 
             {/* Typing Indicators */}
             {typingUsers.length > 0 && (
-              <div className="flex gap-3 group px-4 pt-2 pb-3 hover:bg-slate-800/40 rounded-lg">
-                <div className={`w-10 h-10 rounded-full ${getAvatarColor(typingUsers[0]?.username)} flex items-center justify-center text-white font-semibold text-sm shadow-sm`}>
+              <div className="flex gap-2.5 group px-3 py-1.5 hover:bg-slate-800/40 rounded-md">
+                <div className={`w-9 h-9 rounded-full ${getAvatarColor(typingUsers[0]?.username)} flex items-center justify-center text-white font-medium text-sm shadow-sm`}>
                   {getAvatarInitials(typingUsers[0]?.username || "")}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-1">
-                    <span className={`text-sm font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                    <span className={`text-sm font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
                       {typingUsers.map((u) => u.username).join(", ")}
                     </span>
                     <span className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}>
                       typing...
                     </span>
                   </div>
-                  <div className="flex gap-1 mt-1">
-                    <div className={`w-2 h-2 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-500"}`} style={{ animationDelay: "0ms" }}></div>
-                    <div className={`w-2 h-2 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-500"}`} style={{ animationDelay: "150ms" }}></div>
-                    <div className={`w-2 h-2 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-500"}`} style={{ animationDelay: "300ms" }}></div>
+                  <div className="flex gap-1 mt-0.5">
+                    <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-500"}`} style={{ animationDelay: "0ms" }}></div>
+                    <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-500"}`} style={{ animationDelay: "150ms" }}></div>
+                    <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-500"}`} style={{ animationDelay: "300ms" }}></div>
                   </div>
                 </div>
               </div>

@@ -380,5 +380,5 @@ def update_profile():
     
     return jsonify({
         'message': 'Profile updated successfully',
-        'avatar_url': avatar_url
+        'avatar_url': get_avatar_url(current_user, avatar_url) if avatar_url else None
     }), 200

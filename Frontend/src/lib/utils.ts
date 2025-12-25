@@ -22,7 +22,7 @@ export function getAvatarUrl(avatarUrl: string | null | undefined, username: str
   }
   
   // Otherwise, prepend the API base URL
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://192.168.1.9:5000';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   
   // If the path starts with /, use it as is, otherwise add /
   const path = avatarUrl.startsWith('/') ? avatarUrl : `/${avatarUrl}`;

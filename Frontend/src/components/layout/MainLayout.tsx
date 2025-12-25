@@ -196,7 +196,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
             
             {/* Right Sidebar - Desktop & Tablet */}
             <div className={`hidden lg:flex flex-shrink-0 transition-all duration-200 ${
-              isRightSidebarCollapsed ? 'w-0 overflow-hidden' : 'w-64'
+              isRightSidebarCollapsed ? 'w-0 overflow-hidden' : 'w-80'
             }`}>
               <RightSidebar isCollapsed={isRightSidebarCollapsed} />
             </div>

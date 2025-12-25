@@ -45,18 +45,11 @@ app = Flask(__name__)
 # CORS Configuration - Allow localhost and local network
 CORS(app, 
      resources={
-        r"/api/*": {
-            "origins": ["http://localhost:8080", "https://localhost:8080", "http://localhost:8081", "https://localhost:8081", "http://localhost:3000", "http://localhost:5173", "http://192.168.1.9:8081", "https://192.168.1.9:8081"],
+        r"/*": {
+            "origins": ["http://localhost:8080", "https://localhost:8080", "http://localhost:8081", "https://localhost:8081", "http://localhost:3000", "http://localhost:5173"],
             "supports_credentials": True,
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "max_age": 3600
-        },
-        r"/uploads/*": {
-            "origins": ["http://localhost:8080", "https://localhost:8080", "http://localhost:8081", "https://localhost:8081", "http://localhost:3000", "http://localhost:5173", "http://192.168.1.9:8081", "https://192.168.1.9:8081"],
-            "supports_credentials": False,
-            "allow_headers": ["Content-Type"],
-            "methods": ["GET", "OPTIONS"],
             "max_age": 3600
         }
     },
@@ -95,7 +88,7 @@ jwt = JWTManager(app)
 # Initialize SocketIO with threading mode
 socketio = SocketIO(
     app, 
-    cors_allowed_origins=["http://localhost:8080", "https://localhost:8080", "http://localhost:8081", "https://localhost:8081", "http://localhost:3000", "http://192.168.1.9:8081", "https://192.168.1.9:8081"],
+    cors_allowed_origins=["http://localhost:8080", "https://localhost:8080", "http://localhost:8081", "https://localhost:8081", "http://localhost:3000"],
     async_mode="threading",
     logger=True,
     engineio_logger=True
@@ -359,7 +352,7 @@ if __name__ == "__main__":
     print("AuroFlow Backend Server Starting...")
     print(f"Server: http://0.0.0.0:5000")
     print(f"WebSocket: ws://0.0.0.0:5000")
-    print(f"CORS Enabled for: localhost:8080, localhost:3000, 192.168.1.9")
+    print(f"CORS Enabled for: localhost:8080, localhost:3000")
     print("=" * 60)
     
     # Use socketio.run() without SSL

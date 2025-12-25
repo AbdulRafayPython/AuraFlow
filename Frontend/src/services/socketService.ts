@@ -41,10 +41,12 @@ type StatusHandler = (status: UserStatus) => void;
 type TypingHandler = (data: TypingIndicator) => void;
 type ErrorHandler = (error: { msg: string }) => void;
 type CommunityHandler = (data: any) => void;
+type CommunityRemovedHandler = (data: { community_id: number; user_id: number; reason: string }) => void;
 type ChannelHandler = (data: any) => void;
 type DirectMessageHandler = (message: DirectMessageEvent) => void;
 type FriendRequestHandler = (request: FriendRequestEvent) => void;
 type FriendStatusHandler = (data: { friend_id: number; status: string }) => void;
+type ModerationActionHandler = (data: { community_id: number; channel_id: number; action: string; severity: string; timestamp: string }) => void;
 
 class SocketService {
   private socket: Socket | null = null;
@@ -56,10 +58,14 @@ class SocketService {
   private typingHandlers: TypingHandler[] = [];
   private errorHandlers: ErrorHandler[] = [];
   private communityHandlers: CommunityHandler[] = [];
+  private communityRemovedHandlers: CommunityRemovedHandler[] = [];
+  private communityDeletedHandlers: CommunityHandler[] = [];
+  private communityLeftHandlers: CommunityHandler[] = [];
   private channelHandlers: ChannelHandler[] = [];
   private directMessageHandlers: DirectMessageHandler[] = [];
   private friendRequestHandlers: FriendRequestHandler[] = [];
   private friendStatusHandlers: FriendStatusHandler[] = [];
+  private moderationActionHandlers: ModerationActionHandler[] = [];
   private currentChannel: number | null = null;
   private currentDMUser: number | null = null;
   private typingTimeout: NodeJS.Timeout | null = null;
@@ -200,6 +206,24 @@ class SocketService {
       this.communityHandlers.forEach(handler => handler(data));
     });
 
+    // Community deleted event
+    this.socket.on('community_deleted', (data: any) => {
+      console.log('[SOCKET] 🗑️ Community deleted:', data);
+      this.communityDeletedHandlers.forEach(handler => handler(data));
+    });
+
+    // Community left event (user left the community)
+    this.socket.on('community_left', (data: any) => {
+      console.log('[SOCKET] 👋 User left community:', data);
+      this.communityLeftHandlers.forEach(handler => handler(data));
+    });
+
+    // Moderation action logged event (for owners to refresh logs)
+    this.socket.on('moderation_action_logged', (data: { community_id: number; channel_id: number; action: string; severity: string; timestamp: string }) => {
+      console.log('[SOCKET] 🛡️ Moderation action logged:', data);
+      this.moderationActionHandlers.forEach(handler => handler(data));
+    });
+
     // Channel operation events
     this.socket.on('channel_created', (data: any) => {
       console.log('[SOCKET] ✨ Channel created:', data);
@@ -219,6 +243,12 @@ class SocketService {
     this.socket.on('community_member_added', (data: any) => {
       console.log('[SOCKET] 👥 Member added to community:', data);
       this.channelHandlers.forEach(handler => handler({ type: 'member_added', data }));
+    });
+
+    // Community removed event - user removed/blocked from community
+    this.socket.on('community:removed', (data: { community_id: number; user_id: number; reason: string }) => {
+      console.log('[SOCKET] 🚫 Removed from community:', data);
+      this.communityRemovedHandlers.forEach(handler => handler(data));
     });
 
     // Direct message events
@@ -482,6 +512,19 @@ class SocketService {
     this.currentChannel = null;
   }
 
+  // Leave all rooms for a community (called when removed/blocked)
+  leaveCommunity(communityId: number) {
+    if (!this.socket?.connected) return;
+
+    this.socket.emit('leave_community', { community_id: communityId });
+    console.log(`[SOCKET] 🚪 Left community ${communityId}`);
+    
+    // Clear current channel if it belongs to this community
+    if (this.currentChannel) {
+      this.currentChannel = null;
+    }
+  }
+
   // Send typing indicator - Auto-stop typing after 3 seconds
   sendTyping(channelId: number, isTyping: boolean = true) {
     if (!this.socket?.connected) return;
@@ -539,6 +582,17 @@ class SocketService {
 
     this.socket.emit('community_created', community);
     console.log(`[SOCKET] 🏘️ Broadcasting new community ${community.id} - ${community.name}`);
+  }
+
+  // Broadcast community deletion
+  broadcastCommunityDeleted(communityId: number) {
+    if (!this.socket?.connected) {
+      console.warn('[SOCKET] Not connected, cannot broadcast community deletion');
+      return;
+    }
+
+    this.socket.emit('community_deleted', { community_id: communityId });
+    console.log(`[SOCKET] 🗑️ Broadcasting community deletion ${communityId}`);
   }
 
   // Broadcast channel creation
@@ -625,6 +679,27 @@ class SocketService {
     };
   }
 
+  onCommunityRemoved(handler: CommunityRemovedHandler) {
+    this.communityRemovedHandlers.push(handler);
+    return () => {
+      this.communityRemovedHandlers = this.communityRemovedHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onCommunityDeleted(handler: CommunityHandler) {
+    this.communityDeletedHandlers.push(handler);
+    return () => {
+      this.communityDeletedHandlers = this.communityDeletedHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onCommunityLeft(handler: CommunityHandler) {
+    this.communityLeftHandlers.push(handler);
+    return () => {
+      this.communityLeftHandlers = this.communityLeftHandlers.filter(h => h !== handler);
+    };
+  }
+
   onChannel(handler: ChannelHandler) {
     this.channelHandlers.push(handler);
     return () => {
@@ -669,6 +744,13 @@ class SocketService {
     this.friendStatusHandlers.push(handler);
     return () => {
       this.friendStatusHandlers = this.friendStatusHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onModerationAction(handler: ModerationActionHandler) {
+    this.moderationActionHandlers.push(handler);
+    return () => {
+      this.moderationActionHandlers = this.moderationActionHandlers.filter(h => h !== handler);
     };
   }
 

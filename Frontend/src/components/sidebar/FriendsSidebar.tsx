@@ -105,14 +105,8 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const handleCreateCommunity = async (data: CommunityFormData) => {
     try {
       const newCommunity = await channelService.createCommunity(data);
-      await reloadCommunities();
-      await selectCommunity(newCommunity.id);
-
-      if (socketService.isConnected()) {
-        socketService.broadcastCommunityCreated(newCommunity);
-      }
-
-      onNavigate("dashboard", newCommunity.id.toString());
+      // Defer reload/select/navigation until modal completes branding/uploads
+      return newCommunity;
     } catch (error) {
       console.error("Failed to create community:", error);
       throw error;

@@ -21,48 +21,7 @@ interface ApiResponse {
   error?: string;
 }
 
-export const authService = {
-  // Request OTP for password reset
-  async requestPasswordReset(email: string): Promise<ApiResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/forgot-password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to send OTP');
-    return data;
-  },
-
-  // Verify OTP
-  async verifyOtp(email: string, otp: string): Promise<ApiResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/verify-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, otp }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Invalid or expired OTP');
-    return data;
-  },
-
-  // Reset password
-  async resetPassword(email: string, otp: string, new_password: string): Promise<ApiResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/reset-password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, otp, new_password }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to reset password');
-    return data;
-  },
-};
-
-// ---------- AUTH FUNCTIONS OUTSIDE OBJECT -----------
+// ---------- AUTH FUNCTIONS -----------
 
 export async function signup(payload: SignupPayload) {
   return await api.post(`${AUTH_PREFIX}/signup`, payload, { noAuth: true });
@@ -96,6 +55,45 @@ export async function updateFirstLogin() {
   return await api.post(`${AUTH_PREFIX}/user/update-first-login`);
 }
 
+// Request OTP for password reset
+export async function requestPasswordReset(email: string): Promise<ApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Failed to send OTP');
+  return data;
+}
+
+// Verify OTP
+export async function verifyOtp(email: string, otp: string): Promise<ApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/verify-otp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, otp }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Invalid or expired OTP');
+  return data;
+}
+
+// Reset password
+export async function resetPassword(email: string, otp: string, new_password: string): Promise<ApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, otp, new_password }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Failed to reset password');
+  return data;
+}
+
 export async function updateProfile(data: { display_name?: string; bio?: string; avatar_url?: string; avatar?: File; remove_avatar?: boolean }) {
   // If avatar file is provided, use FormData
   if (data.avatar || data.remove_avatar) {
@@ -127,4 +125,17 @@ export async function updateProfile(data: { display_name?: string; bio?: string;
   return await api.put(`${AUTH_PREFIX}/user/profile`, data);
 }
 
-export default { signup, login, logout, getProtected, getMe, updateFirstLogin, updateProfile };
+export const authService = {
+  signup,
+  login,
+  logout,
+  getProtected,
+  getMe,
+  updateFirstLogin,
+  updateProfile,
+  requestPasswordReset,
+  verifyOtp,
+  resetPassword,
+};
+
+export default authService;

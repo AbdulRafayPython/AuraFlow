@@ -1,10 +1,16 @@
 # routes/sockets.py - Complete Socket.IO event handlers
-from flask_socketio import emit, join_room, leave_room, rooms
+from flask_socketio import emit, join_room, leave_room, rooms, disconnect
 from flask_jwt_extended import decode_token
 from flask import request
 from database import get_db_connection
 import logging
 from datetime import datetime
+import sys
+import os
+
+# Add agents directory to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from agents.moderation import ModerationAgent
 
 log = logging.getLogger(__name__)
 
@@ -17,6 +23,10 @@ user_rooms = {}
 
 def register_socket_events(socketio):
     """Register all real-time Socket.IO events including voice channel operations."""
+    
+    # Initialize moderation agent
+    moderation_agent = ModerationAgent()
+    log.info("[MODERATION] Smart Moderation Agent initialized")
 
     def get_user_from_socket():
         """Extract and verify JWT from socket connection."""
@@ -44,7 +54,11 @@ def register_socket_events(socketio):
             try:
                 decoded = decode_token(token)
             except Exception as decode_err:
-                log.error(f"[SOCKET] Token decode failed: {decode_err}")
+                error_msg = str(decode_err)
+                if 'expired' in error_msg.lower():
+                    log.warning(f"[SOCKET] Token expired - client should refresh")
+                else:
+                    log.error(f"[SOCKET] Token decode failed: {decode_err}")
                 return None
                 
             username = decoded.get('sub')
@@ -71,6 +85,7 @@ def register_socket_events(socketio):
             username = get_user_from_socket()
             if not username:
                 log.error("[SOCKET] Connect rejected: Invalid token")
+                # Return False to reject the connection cleanly
                 return False
 
             # Store socket session ID for this user
@@ -84,7 +99,8 @@ def register_socket_events(socketio):
                 user_row = cur.fetchone()
                 if not user_row:
                     log.error(f"[SOCKET] User not found: {username}")
-                    return False
+                    disconnect()
+                    return
                 
                 user_id = user_row['id']
                 
@@ -139,11 +155,28 @@ def register_socket_events(socketio):
             log.error(f"[HEARTBEAT] Error: {e}")
 
     @socketio.on('disconnect')
-    def handle_disconnect():
+    def handle_disconnect(reason=None):
         conn = None
         try:
-            username = get_user_from_socket()
+            if reason:
+                log.info(f"[SOCKET] Disconnect reason: {reason}")
+            
+            # Try to get username from session first, then from token
+            username = None
+            sid = request.sid
+            
+            # Find username by session ID
+            for user, session_id in user_socket_sessions.items():
+                if session_id == sid:
+                    username = user
+                    break
+            
+            # If not found in sessions, try to get from token
             if not username:
+                username = get_user_from_socket()
+            
+            if not username:
+                log.warning(f"[SOCKET] Disconnect called but no username found for SID {sid}")
                 return
 
             # Remove socket session mapping
@@ -215,23 +248,9 @@ def register_socket_events(socketio):
             if conn:
                 conn.close()
 
-    @socketio.on('heartbeat')
-    def handle_heartbeat():
-        """Track user activity via heartbeat to determine if they're truly active"""
-        try:
-            username = get_user_from_socket()
-            if not username:
-                return
-            
-            # Update heartbeat timestamp
-            user_heartbeats[username] = datetime.now()
-            log.debug(f"[HEARTBEAT] Received from {username}")
-            
-            # Emit acknowledgment
-            emit('heartbeat_ack', {'timestamp': datetime.now().isoformat()})
-            
-        except Exception as e:
-            log.error(f"[HEARTBEAT] Error: {e}")
+    # ============================================================================
+    # MESSAGING EVENTS
+    # ============================================================================
 
     # ============================================================================
     # CHANNEL ROOM MANAGEMENT
@@ -337,6 +356,7 @@ def register_socket_events(socketio):
 
     @socketio.on('new_message')
     def on_new_message(data):
+        conn = None
         try:
             username = get_user_from_socket()
             if not username:
@@ -344,17 +364,148 @@ def register_socket_events(socketio):
 
             channel_id = data.get('channel_id')
             message = data.get('message')
+            content = message.get('content', '')
+            message_id = message.get('id')
+
+            # Get user ID and community ID for moderation
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+                user_row = cur.fetchone()
+                if not user_row:
+                    log.error(f"[SOCKET] User not found: {username}")
+                    return
+                user_id = user_row['id']
+                
+                # Get community_id from channel
+                cur.execute("""
+                    SELECT community_id FROM channels WHERE id = %s
+                """, (channel_id,))
+                channel_row = cur.fetchone()
+                community_id = channel_row['community_id'] if channel_row else None
+
+            # 🛡️ SMART MODERATION CHECK
+            moderation_result = moderation_agent.moderate_message(
+                text=content,
+                user_id=user_id,
+                channel_id=channel_id
+            )
+            
+            log.info(f"[MODERATION] Message {message_id} checked: {moderation_result['action']} (confidence: {moderation_result['confidence']})")
+            
+            # Add moderation data to message
+            message['moderation'] = {
+                'action': moderation_result['action'],
+                'severity': moderation_result['severity'],
+                'confidence': moderation_result['confidence'],
+                'reasons': moderation_result.get('reasons', [])
+            }
 
             room = f"channel_{channel_id}"
-            emit('message_received', {
-                **message,
-                'author': username
-            }, room=room)
+            
+            # Handle different moderation actions
+            if moderation_result['action'] == 'block':
+                # 🚫 BLOCK: Don't broadcast, notify sender only
+                log.warning(f"[MODERATION] ⚠️ Message BLOCKED from {username}: {moderation_result['reasons']}")
+                emit('message_blocked', {
+                    'message_id': message_id,
+                    'reason': 'Your message was blocked due to: ' + ', '.join(moderation_result['reasons']),
+                    'severity': moderation_result['severity'],
+                    'appeal_available': True
+                })
+                
+                # Notify moderators
+                emit('moderation_alert', {
+                    'message_id': message_id,
+                    'user_id': user_id,
+                    'username': username,
+                    'channel_id': channel_id,
+                    'content': content[:100] + '...' if len(content) > 100 else content,
+                    'action': 'blocked',
+                    'reasons': moderation_result['reasons'],
+                    'severity': moderation_result['severity'],
+                    'timestamp': datetime.now().isoformat()
+                }, room='moderators', broadcast=True)
+                
+                # Notify community owners about moderation action
+                if community_id:
+                    socketio.emit('moderation_action_logged', {
+                        'community_id': community_id,
+                        'channel_id': channel_id,
+                        'action': 'block',
+                        'severity': moderation_result['severity'],
+                        'timestamp': datetime.now().isoformat()
+                    }, room=f"community_{community_id}", namespace='/')
+                
+            elif moderation_result['action'] == 'flag':
+                # ⚠️ FLAG: Allow but notify moderators
+                log.warning(f"[MODERATION] ⚠️ Message FLAGGED from {username}: {moderation_result['reasons']}")
+                emit('message_received', {
+                    **message,
+                    'author': username
+                }, room=room)
+                
+                # Notify moderators for review
+                emit('moderation_alert', {
+                    'message_id': message_id,
+                    'user_id': user_id,
+                    'username': username,
+                    'channel_id': channel_id,
+                    'content': content[:100] + '...' if len(content) > 100 else content,
+                    'action': 'flagged',
+                    'reasons': moderation_result['reasons'],
+                    'severity': moderation_result['severity'],
+                    'timestamp': datetime.now().isoformat()
+                }, room='moderators', broadcast=True)
+                
+                # Notify community owners about moderation action
+                if community_id:
+                    socketio.emit('moderation_action_logged', {
+                        'community_id': community_id,
+                        'channel_id': channel_id,
+                        'action': 'flag',
+                        'severity': moderation_result['severity'],
+                        'timestamp': datetime.now().isoformat()
+                    }, room=f"community_{community_id}", namespace='/')
+                
+            elif moderation_result['action'] == 'warn':
+                # ⚠️ WARN: Allow but send warning to user
+                log.info(f"[MODERATION] ⚠️ Message WARNING for {username}")
+                emit('message_received', {
+                    **message,
+                    'author': username
+                }, room=room)
+                
+                emit('moderation_warning', {
+                    'message_id': message_id,
+                    'warning': 'Your message contains content that may violate community guidelines.',
+                    'reasons': moderation_result['reasons']
+                })
+                
+                # Notify community owners about moderation action
+                if community_id:
+                    socketio.emit('moderation_action_logged', {
+                        'community_id': community_id,
+                        'channel_id': channel_id,
+                        'action': 'warn',
+                        'severity': moderation_result['severity'],
+                        'timestamp': datetime.now().isoformat()
+                    }, room=f"community_{community_id}", namespace='/')
+                
+            else:
+                # ✅ CLEAN: Normal broadcast
+                emit('message_received', {
+                    **message,
+                    'author': username
+                }, room=room)
 
-            log.info(f"[SOCKET] Message from {username} to channel {channel_id}")
+            log.info(f"[SOCKET] Message from {username} to channel {channel_id} - Action: {moderation_result['action']}")
 
         except Exception as e:
-            log.error(f"[SOCKET] new_message error: {e}")
+            log.error(f"[SOCKET] new_message error: {e}", exc_info=True)
+        finally:
+            if conn:
+                conn.close()
 
     # ============================================================================
     # DIRECT MESSAGE EVENTS
@@ -1236,5 +1387,17 @@ def register_socket_events(socketio):
         except Exception as e:
             log.error(f"[DM_REACTION] Error handling DM reaction removal: {e}")
             emit('error', {'message': 'Failed to remove reaction'})
+    
+    # ============================================================================
+    # ERROR HANDLERS
+    # ============================================================================
+    
+    @socketio.on_error_default
+    def default_error_handler(e):
+        """Handle all socket errors gracefully"""
+        log.error(f"[SOCKET] Error: {e}")
+        # Don't emit error if connection isn't established
+        if request.sid in user_socket_sessions.values():
+            emit('error', {'message': 'An error occurred'})
 
     log.info("[SOCKET] All socket events registered successfully")

@@ -25,6 +25,17 @@ export interface Message {
   edited_at?: string | null;
   reply_to?: number | null;
   reactions?: Reaction[];
+  moderation?: {
+    action: 'allow' | 'warn' | 'flag' | 'block' | 'remove_message' | 'remove_user' | 'block_user';
+    severity: 'none' | 'low' | 'medium' | 'high';
+    confidence?: number;
+    reasons?: string[];
+    violation_count?: number;
+    message?: string;
+    flagged?: boolean;
+    removed_from_community?: boolean;
+    blocked?: boolean;
+  };
 }
 
 export interface DirectMessage {
@@ -56,6 +67,11 @@ export interface SendMessageData {
   content: string;
   message_type?: 'text' | 'image' | 'file';
   reply_to?: number;
+}
+
+export interface SendMessageResponse {
+  message?: Message;
+  moderation?: Message['moderation'];
 }
 
 export interface UserStatus {

@@ -38,7 +38,8 @@ class ModerationAgent:
             self.lexicon = {}
     
     def moderate_message(self, text: str, user_id: int, 
-                        channel_id: int) -> Dict[str, any]:
+                        channel_id: int, message_id: Optional[int] = None,
+                        log: bool = True) -> Dict[str, any]:
         """
         Moderate a message for inappropriate content
         
@@ -115,11 +116,11 @@ class ModerationAgent:
             'personal_info_types': personal_info['types']
         }
         
-        # Log the moderation action
-        if action != 'allow':
+        # Log the moderation action (optional, and only when action is not allow)
+        if log and action != 'allow':
             self._log_moderation_action(
                 user_id, channel_id, text, action, 
-                severity, reason, max_score
+                severity, reason, max_score, message_id
             )
         
         return result
@@ -268,8 +269,8 @@ class ModerationAgent:
                     WHERE user_id = %s 
                     AND action_type = 'moderation'
                     AND created_at >= %s
-                    AND (output_text LIKE '%block%' OR output_text LIKE '%flag%')
-                """, (user_id, time_threshold))
+                    AND (output_text LIKE %s OR output_text LIKE %s)
+                """, (user_id, time_threshold, '%block%', '%flag%'))
                 
                 result = cur.fetchone()
                 return result['count'] if result else 0
@@ -283,12 +284,32 @@ class ModerationAgent:
     
     def _log_moderation_action(self, user_id: int, channel_id: int,
                               message: str, action: str, severity: str,
-                              reasons: List[str], confidence: float):
+                              reasons: List[str], confidence: float,
+                              message_id: Optional[int] = None):
         """Log moderation action to database"""
         conn = None
         try:
             conn = get_db_connection()
             with conn.cursor() as cur:
+                # Get or create moderation agent ID
+                cur.execute("""
+                    SELECT id FROM ai_agents 
+                    WHERE type = 'moderator' 
+                    LIMIT 1
+                """)
+                agent_row = cur.fetchone()
+                
+                if not agent_row:
+                    # Create moderator agent if it doesn't exist
+                    cur.execute("""
+                        INSERT INTO ai_agents (name, type, description, is_active)
+                        VALUES ('Smart Moderation', 'moderator', 
+                                'AI-powered content moderation with multi-language support', TRUE)
+                    """)
+                    agent_id = cur.lastrowid
+                else:
+                    agent_id = agent_row['id']
+                
                 output_data = {
                     'action': action,
                     'severity': severity,
@@ -296,13 +317,23 @@ class ModerationAgent:
                     'confidence': confidence
                 }
                 
+                # Handle invalid channel_id (0 or None) - set to NULL for FK constraint
+                db_channel_id = None if not channel_id or channel_id == 0 else channel_id
+                
+                # Verify channel exists if not None
+                if db_channel_id is not None:
+                    cur.execute("SELECT id FROM channels WHERE id = %s", (db_channel_id,))
+                    if not cur.fetchone():
+                        print(f"[MODERATION] Warning: Invalid channel_id {db_channel_id}, setting to NULL")
+                        db_channel_id = None
+                
                 cur.execute("""
                     INSERT INTO ai_agent_logs 
-                    (user_id, channel_id, action_type, 
+                    (agent_id, user_id, channel_id, message_id, action_type, 
                      input_text, output_text, confidence_score)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
-                    user_id, channel_id, 'moderation',
+                    agent_id, user_id, db_channel_id, message_id, 'moderation',
                     message[:500],  # Truncate long messages
                     json.dumps(output_data),
                     confidence
@@ -314,6 +345,15 @@ class ModerationAgent:
         finally:
             if conn:
                 conn.close()
+
+    def log_moderation_action(self, user_id: int, channel_id: int,
+                              message: str, action: str, severity: str,
+                              reasons: List[str], confidence: float,
+                              message_id: Optional[int] = None):
+        """Public helper to log moderation actions with an optional message_id"""
+        self._log_moderation_action(
+            user_id, channel_id, message, action, severity, reasons, confidence, message_id
+        )
     
     def get_user_moderation_history(self, user_id: int, 
                                     limit: int = 10) -> List[Dict]:

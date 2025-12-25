@@ -19,7 +19,7 @@ export default function MessageReactions({
   if (!reactions || reactions.length === 0) return null;
 
   return (
-    <div className={`flex flex-wrap gap-1.5 mt-1 ${className}`}>
+    <div className={`flex flex-wrap gap-1 ${className}`}>
       {reactions.map((reaction) => (
         <div
           key={reaction.emoji}
@@ -30,7 +30,7 @@ export default function MessageReactions({
           <button
             onClick={() => onReactionClick(reaction.emoji)}
             className={`
-              inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm
+              inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-sm
               transition-all duration-150 hover:scale-105
               ${reaction.reacted_by_current_user
                 ? isDarkMode
@@ -43,7 +43,7 @@ export default function MessageReactions({
             `}
             title={`${reaction.users.map(u => u.display_name || u.username).join(', ')} reacted with ${reaction.emoji}`}
           >
-            <span className="text-base leading-none">{reaction.emoji}</span>
+            <span className="text-sm leading-none">{reaction.emoji}</span>
             <span className="text-xs font-medium">{reaction.count}</span>
           </button>
 

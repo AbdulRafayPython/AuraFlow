@@ -1,4 +1,5 @@
 # utils.py - Helper functions for AuraFlow backend
+from flask import request
 
 def get_avatar_url(username, custom_url=None):
     """
@@ -11,8 +12,22 @@ def get_avatar_url(username, custom_url=None):
     Returns:
         Valid avatar URL string
     """
-    # If custom URL exists and is valid, use it
+    # If custom URL exists and is valid, convert relative to absolute
     if custom_url and custom_url.strip() and custom_url != 'https://api.dicebear.com/7.x/avataaars/svg?seed=%s':
+        # If it's a relative path (starts with /uploads), make it absolute
+        if custom_url.startswith('/uploads/'):
+            # Get the base URL from the request or use localhost as fallback
+            try:
+                base_url = request.host_url.rstrip('/')
+            except:
+                base_url = 'http://localhost:5000'
+            return f"{base_url}{custom_url}"
+        
+        # If it contains old hardcoded IP, replace with localhost
+        if '192.168.1.9:5000' in custom_url:
+            return custom_url.replace('192.168.1.9:5000', 'localhost:5000')
+        
+        # If it's already absolute, return as is
         return custom_url
     
     # Otherwise generate default avatar based on username

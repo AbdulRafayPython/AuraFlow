@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import authService from '../services/authService';
-import { authService as passwordResetService } from '../services/authService';
 import { Loader2, X } from 'lucide-react';
 import logo from '../assets/logo.png';
 
@@ -33,7 +32,7 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     setError('');
     
     try {
-      await passwordResetService.requestPasswordReset(email);
+      await authService.requestPasswordReset(email);
       setSuccess('OTP sent to your email!');
       setTimeout(() => {
         setSuccess('');
@@ -56,7 +55,7 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     setError('');
     
     try {
-      await passwordResetService.verifyOtp(email, otp);
+      await authService.verifyOtp(email, otp);
       setSuccess('OTP verified!');
       setTimeout(() => {
         setSuccess('');
@@ -89,7 +88,7 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     setError('');
     
     try {
-      await passwordResetService.resetPassword(email, otp, newPassword);
+      await authService.resetPassword(email, otp, newPassword);
       setSuccess('Password reset successful!');
       setTimeout(() => {
         onClose();

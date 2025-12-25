@@ -29,12 +29,18 @@ async function request(path: string, opts: { method?: string; body?: any; noAuth
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  console.log(`[API] ${opts.method || (body ? 'POST' : 'GET')} ${url}`, { 
+    headers, 
+    body,
+    tokenPresent: !!token,
+    tokenPreview: token ? `${token.substring(0, 20)}...` : 'none'
+  });
+
   const res = await fetch(url, {
     method: opts.method || (body ? 'POST' : 'GET'),
     headers,
     body,
-    // credentials may be needed if backend uses cookies; token-based auth does not require this
-    // credentials: 'include',
+    credentials: 'include',
   });
 
   const contentType = res.headers.get('content-type') || '';
@@ -60,6 +66,7 @@ async function request(path: string, opts: { method?: string; body?: any; noAuth
     const err: any = new Error((data && (data as any).error) || (data && (data as any).message) || res.statusText || 'Request failed');
     err.status = res.status;
     err.data = data;
+    console.error(`[API ERROR] ${res.status} ${url}`, { token: token ? 'present' : 'missing', data });
     throw err;
   }
 
