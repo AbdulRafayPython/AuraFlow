@@ -68,9 +68,10 @@ def get_communities():
                     c.logo_url, c.banner_url, cm.role, c.created_at
                 FROM communities c
                 JOIN community_members cm ON c.id = cm.community_id
-                WHERE cm.user_id = %s
+                LEFT JOIN blocked_users bu ON c.id = bu.community_id AND bu.user_id = %s
+                WHERE cm.user_id = %s AND bu.user_id IS NULL
                 ORDER BY c.created_at ASC
-            """, (user_id,))
+            """, (user_id, user_id))
             communities = cur.fetchall()
 
         result = [{
@@ -1121,9 +1122,11 @@ def get_community_members():
             cur.execute("""
                 SELECT 
                     u.id, u.username, u.email, u.display_name, u.avatar_url, 
-                    cm.role, cm.joined_at, cm.violation_count
+                    cm.role, cm.joined_at, cm.violation_count,
+                    CASE WHEN bu.user_id IS NOT NULL THEN 1 ELSE 0 END as is_blocked
                 FROM community_members cm
                 JOIN users u ON cm.user_id = u.id
+                LEFT JOIN blocked_users bu ON cm.community_id = bu.community_id AND cm.user_id = bu.user_id
                 WHERE cm.community_id = %s
                 ORDER BY 
                     CASE cm.role 
@@ -1144,7 +1147,8 @@ def get_community_members():
             'avatar_url': m['avatar_url'] or f"https://api.dicebear.com/7.x/avataaars/svg?seed={m['username']}",
             'role': m['role'],
             'joined_at': m['joined_at'].isoformat() if m['joined_at'] else None,
-            'violation_count': m['violation_count'] if membership['role'] == 'owner' else None
+            'violation_count': m['violation_count'] if membership['role'] == 'owner' else None,
+            'is_blocked': bool(m['is_blocked'])
         } for m in members]
 
         print(f"[INFO] get_community_members: Found {len(result)} members for community {community_id}")
@@ -1589,12 +1593,12 @@ def discover_communities():
 
             # Build search query
             search_condition = ""
-            params = [user_id]
+            search_params = []
             
             if search:
                 search_condition = "AND (c.name LIKE %s OR c.description LIKE %s)"
                 search_term = f"%{search}%"
-                params.extend([search_term, search_term])
+                search_params = [search_term, search_term]
             
             # Get communities NOT joined by user with member count
             query = f"""
@@ -1608,16 +1612,18 @@ def discover_communities():
                 FROM communities c
                 LEFT JOIN community_members cm ON c.id = cm.community_id
                 LEFT JOIN users u ON c.created_by = u.id
+                LEFT JOIN blocked_users bu ON c.id = bu.community_id AND bu.user_id = %s
                 WHERE c.id NOT IN (
                     SELECT community_id FROM community_members WHERE user_id = %s
                 )
+                AND bu.user_id IS NULL
                 {search_condition}
                 GROUP BY c.id
                 ORDER BY c.created_at DESC
                 LIMIT %s OFFSET %s
             """
             
-            params.extend([limit, offset])
+            params = [user_id, user_id] + search_params + [limit, offset]
             cur.execute(query, params)
             communities = cur.fetchall()
 

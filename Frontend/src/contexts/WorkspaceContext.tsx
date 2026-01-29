@@ -259,13 +259,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const loadChannelMessages = useCallback(async (channelId: number, limit = 50, offset = 0) => {
     setIsLoadingMessages(true);
     try {
-      const data = await messageService.getChannelMessages(channelId, limit, offset);
+      // Load from end (high offset) to get latest messages first
+      const loadOffset = offset === 0 ? 999999 : offset;
+      const data = await messageService.getChannelMessages(channelId, limit, loadOffset);
+      
+      // Sort in ascending order so oldest at top, newest at bottom
+      const sortedData = data.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      
       if (offset === 0) {
-        setCurrentMessages(data);
+        setCurrentMessages(sortedData);
       } else {
-        setCurrentMessages(prev => [...prev, ...data]);
+        setCurrentMessages(prev => [...sortedData, ...prev]);
       }
-      setMessages(data);
+      setMessages(sortedData);
       setError(null);
     } catch (err: any) {
       console.error('[WorkspaceContext] Failed to load messages:', err);

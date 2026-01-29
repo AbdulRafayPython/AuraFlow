@@ -69,6 +69,9 @@ export function NotificationButton({ onNavigate }: NotificationButtonProps) {
         return <MessageSquare className="w-4 h-4 text-green-500" />;
       case 'friend_accepted':
         return <Users className="w-4 h-4 text-purple-500" />;
+      case 'system':
+      case 'community_removal':
+        return <Bell className="w-4 h-4 text-red-500" />;
       default:
         return <Bell className="w-4 h-4 text-gray-500" />;
     }
@@ -120,14 +123,14 @@ export function NotificationButton({ onNavigate }: NotificationButtonProps) {
         <>
           {/* Backdrop for mobile */}
           <div
-            className="fixed inset-0 z-40 md:hidden bg-black/20"
+            className="fixed inset-0 z-[9998] md:hidden bg-black/20"
             onClick={() => setIsOpen(false)}
           />
 
           {/* Dropdown Panel */}
           <div
             ref={dropdownRef}
-            className={`absolute right-0 mt-2 w-80 sm:w-96 max-h-[480px] overflow-hidden rounded-xl shadow-2xl z-50 border transform origin-top-right transition-all duration-200 ${
+            className={`absolute right-0 mt-2 w-80 sm:w-96 max-h-[480px] overflow-hidden rounded-xl shadow-2xl z-[9999] border transform origin-top-right transition-all duration-200 ${
               isDarkMode
                 ? 'bg-slate-800 border-slate-700'
                 : 'bg-white border-gray-200'
@@ -235,7 +238,34 @@ export function NotificationButton({ onNavigate }: NotificationButtonProps) {
                       <div className="flex gap-3">
                         {/* Avatar or Icon */}
                         <div className="flex-shrink-0 relative">
-                          {notification.from?.avatar_url ? (
+                          {notification.type === 'system' && notification.data?.community_logo ? (
+                            // Show community logo for removal notifications
+                            <div className="w-10 h-10 rounded-full overflow-hidden ring-2 ring-red-500">
+                              <img
+                                src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${notification.data.community_logo}`}
+                                alt={notification.data.community_name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  // Fallback to community icon if image fails
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const parent = target.parentElement;
+                                  if (parent) {
+                                    parent.style.backgroundColor = notification.data.community_color || '#8B5CF6';
+                                    parent.innerHTML = `<div class="w-full h-full flex items-center justify-center text-white font-bold text-sm">${notification.data.community_icon || 'AF'}</div>`;
+                                  }
+                                }}
+                              />
+                            </div>
+                          ) : notification.type === 'system' && notification.data?.community_icon ? (
+                            // Show community icon for removal without logo
+                            <div 
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ring-2 ring-red-500"
+                              style={{ backgroundColor: notification.data.community_color || '#8B5CF6' }}
+                            >
+                              {notification.data.community_icon}
+                            </div>
+                          ) : notification.from?.avatar_url ? (
                             <img
                               src={getAvatarUrl(notification.from.avatar_url, notification.from.username)}
                               alt={notification.from.display_name || notification.from.username}

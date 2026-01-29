@@ -57,6 +57,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const typingTimeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const previousChannelRef = useRef<number | null>(null);
   const messageIdsRef = useRef<Set<string>>(new Set());
+  const currentUserRef = useRef<User | null>(null);
+  const currentCommunityRef = useRef<Community | null>(null);
+  const currentChannelRef = useRef<Channel | null>(null);
 
   const loadCurrentUser = useCallback(async () => {
     const token = localStorage.getItem('token');
@@ -69,10 +72,12 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     try {
       const user = await authService.getMe();           // calls /api/me
       setCurrentUser(user);
+      currentUserRef.current = user;
       console.log('[REALTIME] Current user loaded:', user);
     } catch (error) {
       console.error('[REALTIME] Failed to load current user:', error);
       setCurrentUser(null);
+      currentUserRef.current = null;
     } finally {
       setIsLoadingCurrentUser(false);
     }
@@ -134,6 +139,18 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     try {
       const data = await messageService.getChannelMessages(channelId, 50, offset);
       console.log('[REALTIME] Loaded messages:', data.length);
+      
+      // Debug: Check for blocked users
+      const blockedMessages = data.filter(m => m.is_blocked);
+      if (blockedMessages.length > 0) {
+        console.log('[REALTIME] Messages from blocked users:', blockedMessages.map(m => ({
+          id: m.id,
+          author: m.author,
+          is_blocked: m.is_blocked
+        })));
+      } else {
+        console.log('[REALTIME] No blocked users found in messages');
+      }
 
       if (offset === 0) {
         messageIdsRef.current.clear();
@@ -185,7 +202,18 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
     // Setup event listeners
     const unsubscribeMessage = socketService.onMessage((incomingMessage: Message) => {
-      console.log('[REALTIME] Received new message:', incomingMessage);
+      console.log('[REALTIME] Received new message:', {
+        id: incomingMessage.id,
+        channel_id: incomingMessage.channel_id,
+        currentChannel: currentChannelRef.current?.id,
+        author: incomingMessage.author,
+      });
+
+      // Only add message if it's for the current channel
+      if (currentChannelRef.current && incomingMessage.channel_id !== currentChannelRef.current.id) {
+        console.log('[REALTIME] Message for different channel, ignoring');
+        return;
+      }
 
       const messageId = String(incomingMessage.id);
 
@@ -220,8 +248,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
       // Use functional update to get current channel
       setTypingUsers((prev) => {
-        // Access current channel through a ref would be better, but this works
-        const currentChannelId = socketService.getCurrentChannel();
+        // Check if typing is for the current channel
+        const currentChannelId = currentChannelRef.current?.id;
 
         if (!currentChannelId || data.channel_id !== currentChannelId) {
           return prev;
@@ -305,14 +333,14 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       console.log('[REALTIME] User left community:', data);
       
       // Only process if it's the current user who left
-      if (currentUser && data.user_id === currentUser.id) {
+      if (currentUserRef.current && data.user_id === currentUserRef.current.id) {
         const leftCommunityId = data.community_id;
         
         // Remove community from list
         setCommunities((prev) => prev.filter(c => c.id !== leftCommunityId));
         
         // If this was the current community, navigate to Home
-        if (currentCommunity?.id === leftCommunityId) {
+        if (currentCommunityRef.current?.id === leftCommunityId) {
           console.log('[REALTIME] Left current community, navigating to Home');
           setCurrentCommunity(null);
           setCurrentChannel(null);
@@ -333,36 +361,43 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const unsubscribeCommunityRemoved = socketService.onCommunityRemoved((data) => {
       console.log('[REALTIME] Removed from community:', data);
       
+      // Create notification for removal
+      if (data.notification) {
+        // Create notification object
+        const notificationPayload = {
+          type: 'system' as const,
+          title: 'Removed from Community',
+          message: data.reason === 'blocked' 
+            ? `You were blocked from ${data.notification.community_name} for repeated violations`
+            : `You were removed from ${data.notification.community_name} due to a violation`,
+          data: {
+            community_id: data.community_id,
+            community_name: data.notification.community_name,
+            community_logo: data.notification.community_logo,
+            community_color: data.notification.community_color,
+            community_icon: data.notification.community_icon,
+            reason: data.reason
+          }
+        };
+        
+        // Dispatch custom event for notification bell
+        const event = new CustomEvent('community-removal-notification', { detail: notificationPayload });
+        window.dispatchEvent(event);
+      }
+      
       // Remove community from list
       setCommunities((prev) => prev.filter(c => c.id !== data.community_id));
       
-      // If this was the current community, switch to another one or clear
-      if (currentCommunity?.id === data.community_id) {
-        setCommunities((prev) => {
-          // Find next available community
-          const nextCommunity = prev.find(c => c.id !== data.community_id);
-          
-          if (nextCommunity) {
-            // Switch to next community
-            setCurrentCommunity(nextCommunity);
-            setCurrentChannel(null);
-            setChannels([]);
-            setMessages([]);
-            messageIdsRef.current.clear();
-          } else {
-            // No communities left - redirect to home
-            setCurrentCommunity(null);
-            setCurrentChannel(null);
-            setChannels([]);
-            setMessages([]);
-            messageIdsRef.current.clear();
-            
-            // Navigate to home page
-            window.location.href = '/home';
-          }
-          
-          return prev;
-        });
+      // ALWAYS navigate to home if current community was removed, regardless of other communities
+      if (currentCommunityRef.current?.id === data.community_id) {
+        setCurrentCommunity(null);
+        setCurrentChannel(null);
+        setChannels([]);
+        setMessages([]);
+        messageIdsRef.current.clear();
+        
+        // Navigate to home page
+        window.location.href = '/';
       }
       
       // Leave all rooms for this community
@@ -376,7 +411,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
       if (type === 'created') {
         // Check if this is for the current community
-        if (currentCommunity && data.community_id === currentCommunity.id) {
+        if (currentCommunityRef.current && data.community_id === currentCommunityRef.current.id) {
           setChannels((prev) => {
             const exists = prev.some(ch => ch.id === data.id);
             if (exists) return prev;
@@ -415,6 +450,31 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    // Listen for user blocking events to update message UI
+    const unsubscribeUserBlocked = socketService.onUserBlocked((data) => {
+      console.log('[REALTIME] User blocked from community:', data);
+      
+      // Update all messages from this user to show is_blocked: true
+      setMessages((prevMessages) => 
+        prevMessages.map((msg) => 
+          msg.sender_id === data.user_id 
+            ? { ...msg, is_blocked: true }
+            : msg
+        )
+      );
+    });
+
+    // Listen for AI command results (e.g., /summarize)
+    const unsubscribeCommandResult = socketService.onCommandResult((data) => {
+      console.log('[REALTIME] ✅ AI Command result received from socket:', data);
+      console.log('[REALTIME] ✅ Dispatching custom event ai_command_result');
+      
+      // Dispatch custom event for UI components to handle
+      const event = new CustomEvent('ai_command_result', { detail: data });
+      window.dispatchEvent(event);
+      console.log('[REALTIME] ✅ Custom event dispatched');
+    });
+
     return () => {
       console.log('[REALTIME] Cleaning up socket connection');
       clearInterval(checkConnection);
@@ -427,6 +487,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       unsubscribeCommunityLeft();
       unsubscribeCommunityRemoved();
       unsubscribeChannel();
+      unsubscribeUserBlocked();
+      unsubscribeCommandResult();
 
       typingTimeoutRefs.current.forEach(timeout => clearTimeout(timeout));
       typingTimeoutRefs.current.clear();
@@ -480,16 +542,21 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   // Load channels when community changes
   useEffect(() => {
     if (currentCommunity) {
+      currentCommunityRef.current = currentCommunity;
       loadChannels(currentCommunity.id);
     } else {
+      currentCommunityRef.current = null;
       setChannels([]);
       setCurrentChannel(null);
+      currentChannelRef.current = null;
     }
   }, [currentCommunity, loadChannels]);
 
   // Handle channel changes
   useEffect(() => {
     if (currentChannel) {
+      currentChannelRef.current = currentChannel;
+      
       if (previousChannelRef.current && previousChannelRef.current !== currentChannel.id) {
         console.log(`[REALTIME] Leaving previous channel ${previousChannelRef.current}`);
         socketService.leaveChannel();
@@ -528,7 +595,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     if (community) {
       console.log('[REALTIME] Selected community:', community.name);
       setCurrentCommunity(community);
+      currentCommunityRef.current = community;
       setCurrentChannel(null);
+      currentChannelRef.current = null;
       setMessages([]);
       setMessageOffset(0);
       messageIdsRef.current.clear();
@@ -540,6 +609,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     if (channel) {
       console.log('[REALTIME] Selected channel:', channel.name);
       setCurrentChannel(channel);
+      currentChannelRef.current = channel;
       setCurrentFriend(null);
       setMessages([]);
       setMessageOffset(0);
@@ -583,11 +653,20 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         const messageId = String(response.message.id);
         if (!messageIdsRef.current.has(messageId)) {
           messageIdsRef.current.add(messageId);
-          setMessages((prev) => [...prev, response.message as Message]);
+          
+          // Attach moderation data if it exists (for warning tags)
+          const messageToAdd = {
+            ...response.message,
+            moderation: response.moderation || undefined
+          } as Message;
+          
+          setMessages((prev) => [...prev, messageToAdd]);
         }
-
-        socketService.broadcastMessage(currentChannel.id, response.message);
-        console.log('[REALTIME] Message sent successfully:', response.message.id);
+        // Server now broadcasts message_received; no client rebroadcast needed
+        console.log('[REALTIME] Message sent successfully (server will broadcast):', response.message.id);
+        if (response.moderation) {
+          console.log('[REALTIME] Message has moderation data:', response.moderation);
+        }
       } else if (response?.moderation) {
         console.warn('[REALTIME] Message moderated:', response.moderation);
       }

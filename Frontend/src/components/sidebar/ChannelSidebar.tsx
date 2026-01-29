@@ -34,7 +34,7 @@ interface CommunityMember {
 }
 
 export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
-  const { isDarkMode } = useTheme();
+  const { isDarkMode, currentTheme } = useTheme();
   const {
     currentCommunity,
     channels,
@@ -218,24 +218,50 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
         {/* Main Content */}
         {!isCollapsed && (
           <div
-            className={`flex flex-col h-full w-60 ${
-              isDarkMode ? "bg-slate-800 text-white" : "bg-gray-100 text-gray-900"
-            }`}
+            className="flex flex-col h-full w-60 text-[hsl(var(--theme-text-primary))] transition-colors duration-300 relative"
+            style={{ background: 'var(--theme-sidebar-gradient)' }}
           >
+            {/* Gradient overlay for depth and blending - hidden for basic/onyx themes */}
+            {currentTheme !== 'basic' && currentTheme !== 'onyx' && (
+              <div 
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  background: 'radial-gradient(ellipse at 20% 30%, hsl(var(--theme-accent-primary) / 0.04) 0%, transparent 60%), radial-gradient(ellipse at 80% 70%, hsl(var(--theme-accent-secondary) / 0.03) 0%, transparent 50%)',
+                }}
+              />
+            )}
+            
+            {/* Right edge gradient that blends with Dashboard - hidden for basic/onyx themes */}
+            {currentTheme !== 'basic' && currentTheme !== 'onyx' && (
+              <div 
+                className="absolute right-0 top-0 w-12 h-full pointer-events-none z-10"
+                style={{
+                  background: 'linear-gradient(90deg, transparent 0%, hsl(var(--theme-bg-primary) / 0.3) 50%, hsl(var(--theme-bg-primary) / 0.5) 100%)'
+                }}
+              />
+            )}
+            {/* Top accent line - hidden for basic/onyx themes */}
+            {currentTheme !== 'basic' && currentTheme !== 'onyx' && (
+              <div 
+                className="absolute top-0 left-0 right-0 h-px z-20"
+                style={{
+                  background: 'var(--theme-accent-gradient)',
+                  opacity: 0.6
+                }}
+              />
+            )}
+            
             {/* Community Header */}
             <div
-              className={`px-4 h-12 flex items-center justify-between border-b shadow-sm ${
-                isDarkMode ? "border-slate-700/50" : "border-gray-200"
-              }`}
+              className="px-4 h-12 flex items-center justify-between border-b shadow-sm backdrop-blur-sm border-[hsl(var(--theme-border-default)/0.3)] relative z-10"
+              style={{ background: 'hsl(var(--theme-sidebar-bg) / 0.5)' }}
             >
               <h1 className="text-base font-bold truncate">
                 {isLoadingCommunities ? "Loading..." : currentCommunity?.name || "Select Community"}
               </h1>
               <button
                 onClick={handleCommunityManagementClick}
-                className={`p-1 rounded transition-colors ${
-                  isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-200 text-gray-600"
-                }`}
+                className="p-1 rounded transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))]"
                 title="Community Settings"
               >
                 <SettingsIcon className="w-4 h-4" />
@@ -243,13 +269,11 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
             </div>
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto px-2 py-3 scrollbar-thin scrollbar-thumb-slate-600">
+            <div className="flex-1 overflow-y-auto px-2 py-3 scrollbar-thin scrollbar-thumb-slate-600 relative z-[5]">
               {/* Loading State */}
               {isLoadingCommunities && (
                 <div className="flex justify-center py-8">
-                  <div className={`animate-spin rounded-full h-6 w-6 border-b-2 ${
-                    isDarkMode ? "border-blue-400" : "border-blue-600"
-                  }`}></div>
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[hsl(var(--theme-accent-primary))]"></div>
                 </div>
               )}
 
@@ -259,11 +283,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                   <div className="flex items-center justify-between w-full px-2 py-1 text-xs font-semibold uppercase tracking-wide rounded transition-colors">
                     <button
                       onClick={() => toggleSection("text")}
-                      className={`flex items-center gap-1 flex-1 ${
-                        isDarkMode
-                          ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700/30"
-                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-200"
-                      }`}
+                      className="flex items-center gap-1 flex-1 text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover)/0.3)]"
                     >
                       {expandedSections.text ? (
                         <ChevronDown className="w-3 h-3" />
@@ -273,7 +293,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                       Text Channels
                     </button>
                     <div
-                      className={`p-0.5 rounded hover:bg-slate-700/50 cursor-pointer`}
+                      className="p-0.5 rounded hover:bg-[hsl(var(--theme-bg-hover))] cursor-pointer text-[hsl(var(--theme-text-muted))]"
                       title="Create Channel"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -292,12 +312,8 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                           onContextMenu={(e) => handleChannelContextMenu(e, channel.id)}
                           className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 transition-colors group ${
                             currentChannel?.id === channel.id
-                              ? isDarkMode
-                                ? "bg-slate-700/70 text-white"
-                                : "bg-gray-200 text-gray-900"
-                              : isDarkMode
-                              ? "text-slate-400 hover:bg-slate-700/50 hover:text-slate-200"
-                              : "text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+                              ? "bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]"
+                              : "text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]"
                           }`}
                         >
                           <Hash className="w-4 h-4 flex-shrink-0" />
@@ -320,11 +336,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                   <div className="flex items-center justify-between w-full px-2 py-1 text-xs font-semibold uppercase tracking-wide rounded transition-colors">
                     <button
                       onClick={() => toggleSection("voice")}
-                      className={`flex items-center gap-1 flex-1 ${
-                        isDarkMode
-                          ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700/30"
-                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-200"
-                      }`}
+                      className="flex items-center gap-1 flex-1 text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover)/0.3)]"
                     >
                       {expandedSections.voice ? (
                         <ChevronDown className="w-3 h-3" />
@@ -353,12 +365,8 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                           onContextMenu={(e) => handleChannelContextMenu(e, channel.id)}
                           className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 transition-colors ${
                             currentChannel?.id === channel.id
-                              ? isDarkMode
-                                ? "bg-slate-700/70 text-white"
-                                : "bg-gray-200 text-gray-900"
-                              : isDarkMode
-                              ? "text-slate-400 hover:bg-slate-700/50 hover:text-slate-200"
-                              : "text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+                              ? "bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]"
+                              : "text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]"
                           }`}
                         >
                           <Volume2 className="w-4 h-4 flex-shrink-0" />
@@ -376,15 +384,11 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                voiceChannels.length === 0 && 
                friends.length === 0 && (
                 <div className="text-center py-12 px-4">
-                  <div className={`text-4xl mb-3`}>📭</div>
-                  <p className={`text-sm font-medium mb-1 ${
-                    isDarkMode ? "text-gray-300" : "text-gray-700"
-                  }`}>
+                  <div className="text-4xl mb-3">📭</div>
+                  <p className="text-sm font-medium mb-1 text-[hsl(var(--theme-text-secondary))]">
                     No channels yet
                   </p>
-                  <p className={`text-xs ${
-                    isDarkMode ? "text-gray-500" : "text-gray-600"
-                  }`}>
+                  <p className="text-xs text-[hsl(var(--theme-text-muted))]">
                     Create a channel to get started
                   </p>
                 </div>
@@ -394,17 +398,11 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
             {/* Bottom Section - Members Button with Count */}
             {currentCommunity && (
               <div
-                className={`px-4 py-3 border-t ${
-                  isDarkMode ? "border-slate-700/50 bg-slate-800/50" : "border-gray-200 bg-gray-50"
-                }`}
+                className="px-4 py-3 border-t border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)]"
               >
                 <button
                   onClick={() => setIsMembersModalOpen(true)}
-                  className={`w-full flex items-center gap-2 px-2 py-2 rounded text-sm transition-colors ${
-                    isDarkMode
-                      ? "text-slate-400 hover:bg-slate-700/50 hover:text-slate-200"
-                      : "text-gray-600 hover:bg-gray-200 hover:text-gray-900"
-                  }`}
+                  className="w-full flex items-center gap-2 px-2 py-2 rounded text-sm transition-colors text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]"
                 >
                   <Users className="w-4 h-4 flex-shrink-0" />
                   <span className="truncate">Members</span>
@@ -413,9 +411,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
                       <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${
-                          isDarkMode ? "bg-slate-700 text-slate-300" : "bg-gray-200 text-gray-700"
-                        }`}
+                        className="text-xs px-2 py-0.5 rounded-full bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-secondary))]"
                       >
                         {communityMembers.length}
                       </span>
@@ -431,11 +427,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
         {isCollapsed && (
           <button
             onClick={() => setIsCollapsed(false)}
-            className={`absolute left-0 top-3 w-6 h-6 rounded-r-lg flex items-center justify-center transition-colors shadow-lg z-10 ${
-              isDarkMode
-                ? "bg-slate-800 hover:bg-slate-700 text-slate-400 border border-l-0 border-slate-700"
-                : "bg-gray-100 hover:bg-gray-200 text-gray-600 border border-l-0 border-gray-300"
-            }`}
+            className="absolute left-0 top-3 w-6 h-6 rounded-r-lg flex items-center justify-center transition-colors shadow-lg z-10 bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] border border-l-0 border-[hsl(var(--theme-border-default))]"
             title="Expand sidebar"
           >
             <ChevronRight className="w-4 h-4" />
@@ -525,9 +517,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
       {/* Context Menu for Channels */}
       {contextMenu && (
         <div
-          className={`fixed bg-white rounded-lg shadow-lg z-50 border ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "border-gray-200"
-          }`}
+          className="fixed rounded-lg shadow-lg z-50 border bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]"
           style={{
             top: `${contextMenu.y}px`,
             left: `${contextMenu.x}px`,
@@ -539,11 +529,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
               const channel = channels.find(c => c.id === contextMenu.channelId);
               if (channel) handleChannelSettingsClick(channel);
             }}
-            className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${
-              isDarkMode
-                ? "hover:bg-slate-700 text-gray-200"
-                : "hover:bg-gray-100 text-gray-900"
-            }`}
+            className="w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))]"
           >
             <SettingsIcon className="w-4 h-4" />
             Channel Settings

@@ -188,13 +188,7 @@ export default function CommunitySettingsModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
-      <div
-        className={`w-full max-w-2xl rounded-2xl shadow-2xl border overflow-hidden ${
-          isDarkMode
-            ? "bg-slate-900/95 border-slate-700/50 backdrop-blur-xl"
-            : "bg-white/95 border-gray-200/70 backdrop-blur-xl"
-        }`}
-      >
+      <div className="w-full max-w-2xl rounded-2xl shadow-2xl border overflow-hidden bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl">
         {/* Banner Section */}
         <div className="relative h-40 overflow-hidden">
           {bannerPreview ? (
@@ -275,9 +269,7 @@ export default function CommunitySettingsModal({
           <div className="absolute -top-12 left-6">
             <div className="relative group">
               <div 
-                className={`w-24 h-24 rounded-2xl border-4 overflow-hidden flex items-center justify-center ${
-                  isDarkMode ? "border-slate-900 bg-slate-800" : "border-white bg-gray-100"
-                }`}
+                className="w-24 h-24 rounded-2xl border-4 overflow-hidden flex items-center justify-center border-[hsl(var(--theme-bg-elevated))] bg-[hsl(var(--theme-bg-secondary))]"
                 style={{ backgroundColor: !logoPreview ? color : undefined }}
               >
                 {logoPreview ? (
@@ -348,16 +340,14 @@ export default function CommunitySettingsModal({
 
         {/* Content */}
         <div className="pt-16 px-6 pb-6 max-h-[60vh] overflow-y-auto">
-          <h2 className={`text-xl font-bold mb-6 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+          <h2 className="text-xl font-bold mb-6 text-[hsl(var(--theme-text-primary))]">
             Community Settings
           </h2>
 
           {!isOwnerOrAdmin && (
-            <div className={`flex items-start gap-3 p-4 rounded-xl mb-6 ${
-              isDarkMode ? "bg-amber-500/10 border border-amber-500/20" : "bg-amber-50 border border-amber-200"
-            }`}>
-              <AlertCircle className={`w-5 h-5 flex-shrink-0 ${isDarkMode ? "text-amber-400" : "text-amber-600"}`} />
-              <p className={`text-sm ${isDarkMode ? "text-amber-200" : "text-amber-800"}`}>
+            <div className="flex items-start gap-3 p-4 rounded-xl mb-6 bg-amber-500/10 border border-amber-500/20">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-400" />
+              <p className="text-sm text-amber-200">
                 Only owners and admins can modify community settings.
               </p>
             </div>
@@ -366,7 +356,7 @@ export default function CommunitySettingsModal({
           <div className="space-y-5">
             {/* Name */}
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+              <label className="block text-sm font-medium mb-2 text-[hsl(var(--theme-text-secondary))]">
                 Community Name
               </label>
               <input
@@ -374,18 +364,14 @@ export default function CommunitySettingsModal({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 disabled={!isOwnerOrAdmin}
-                className={`w-full px-4 py-3 rounded-xl border transition-all focus:ring-2 focus:ring-blue-500 ${
-                  isDarkMode
-                    ? "bg-slate-800 border-slate-700 text-white placeholder-gray-500 disabled:opacity-50"
-                    : "bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 disabled:opacity-50"
-                }`}
+                className="w-full px-4 py-3 rounded-xl border transition-all focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))] disabled:opacity-50"
                 placeholder="Enter community name"
               />
             </div>
 
             {/* Description */}
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+              <label className="block text-sm font-medium mb-2 text-[hsl(var(--theme-text-secondary))]">
                 Description
               </label>
               <textarea
@@ -393,18 +379,14 @@ export default function CommunitySettingsModal({
                 onChange={(e) => setDescription(e.target.value)}
                 disabled={!isOwnerOrAdmin}
                 rows={3}
-                className={`w-full px-4 py-3 rounded-xl border transition-all focus:ring-2 focus:ring-blue-500 resize-none ${
-                  isDarkMode
-                    ? "bg-slate-800 border-slate-700 text-white placeholder-gray-500 disabled:opacity-50"
-                    : "bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 disabled:opacity-50"
-                }`}
+                className="w-full px-4 py-3 rounded-xl border transition-all focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] resize-none bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))] disabled:opacity-50"
                 placeholder="What's this community about?"
               />
             </div>
 
             {/* Icon */}
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+              <label className="block text-sm font-medium mb-2 text-[hsl(var(--theme-text-secondary))]">
                 Icon (2 characters max)
               </label>
               <input
@@ -413,18 +395,14 @@ export default function CommunitySettingsModal({
                 onChange={(e) => setIcon(e.target.value.slice(0, 2))}
                 disabled={!isOwnerOrAdmin}
                 maxLength={2}
-                className={`w-24 px-4 py-3 rounded-xl border text-center font-bold transition-all focus:ring-2 focus:ring-blue-500 ${
-                  isDarkMode
-                    ? "bg-slate-800 border-slate-700 text-white disabled:opacity-50"
-                    : "bg-gray-50 border-gray-200 text-gray-900 disabled:opacity-50"
-                }`}
+                className="w-24 px-4 py-3 rounded-xl border text-center font-bold transition-all focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] disabled:opacity-50"
                 placeholder="AF"
               />
             </div>
 
             {/* Color */}
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+              <label className="block text-sm font-medium mb-2 text-[hsl(var(--theme-text-secondary))]">
                 Theme Color
               </label>
               <div className="flex flex-wrap gap-2">
@@ -434,7 +412,7 @@ export default function CommunitySettingsModal({
                     onClick={() => isOwnerOrAdmin && setColor(c)}
                     disabled={!isOwnerOrAdmin}
                     className={`w-8 h-8 rounded-full transition-all ${
-                      color === c ? "ring-2 ring-offset-2 ring-blue-500 scale-110" : "hover:scale-105"
+                      color === c ? "ring-2 ring-offset-2 ring-[hsl(var(--theme-accent-primary))] scale-110" : "hover:scale-105"
                     } ${!isOwnerOrAdmin ? "opacity-50 cursor-not-allowed" : ""}`}
                     style={{ backgroundColor: c }}
                   />
@@ -445,21 +423,17 @@ export default function CommunitySettingsModal({
 
           {/* Actions */}
           {isOwnerOrAdmin && (
-            <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-slate-700/50">
+            <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-[hsl(var(--theme-border-default))]">
               <button
                 onClick={onClose}
-                className={`px-6 py-2.5 rounded-xl font-medium transition-colors ${
-                  isDarkMode
-                    ? "bg-slate-800 hover:bg-slate-700 text-gray-300"
-                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                }`}
+                className="px-6 py-2.5 rounded-xl font-medium transition-colors bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveSettings}
                 disabled={isLoading || !name.trim()}
-                className="px-6 py-2.5 rounded-xl font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-6 py-2.5 rounded-xl font-medium bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                 Save Changes

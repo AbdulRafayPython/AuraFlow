@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import authService from '../services/authService';
 import { Loader2, X } from 'lucide-react';
-import logo from '../assets/logo.png';
 
 type Mode = 'login' | 'signup';
 
@@ -10,6 +9,126 @@ interface AuthCardProps {
   onModeChange: (mode: Mode) => void;
   onAuth: () => void;
 }
+
+// Loading overlay with static logo and surrounding spinner
+const LoadingOverlay: React.FC<{ isVisible: boolean }> = ({ isVisible }) => {
+  if (!isVisible) return null;
+  
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md transition-all duration-300">
+      <div className="relative flex flex-col items-center gap-6">
+        {/* Pulsing glow behind logo */}
+        <div className="absolute w-44 h-44 bg-purple-500/20 rounded-full filter blur-3xl animate-pulse" />
+        
+        {/* Spinner container */}
+        <div className="relative w-32 h-32 flex items-center justify-center">
+          {/* Outer spinning ring */}
+          <div className="absolute inset-0 rounded-full animate-spin-ring">
+            <svg className="w-full h-full" viewBox="0 0 100 100">
+              <defs>
+                <linearGradient id="spinnerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#8B5CF6" stopOpacity="1" />
+                  <stop offset="50%" stopColor="#A855F7" stopOpacity="0.5" />
+                  <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <circle
+                cx="50"
+                cy="50"
+                r="45"
+                fill="none"
+                stroke="url(#spinnerGradient)"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
+          
+          {/* Secondary spinning ring (opposite direction) */}
+          <div className="absolute inset-2 rounded-full animate-spin-ring-reverse">
+            <svg className="w-full h-full" viewBox="0 0 100 100">
+              <defs>
+                <linearGradient id="spinnerGradient2" x1="100%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#6366F1" stopOpacity="0.8" />
+                  <stop offset="50%" stopColor="#818CF8" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="#6366F1" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <circle
+                cx="50"
+                cy="50"
+                r="45"
+                fill="none"
+                stroke="url(#spinnerGradient2)"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeDasharray="70 200"
+              />
+            </svg>
+          </div>
+          
+          {/* Glowing dots on the ring */}
+          <div className="absolute inset-0 animate-spin-ring">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-purple-400 rounded-full shadow-[0_0_10px_4px_rgba(168,85,247,0.6)]" />
+          </div>
+          
+          {/* Static Logo in center */}
+          <div className="relative z-10 animate-pulse-subtle">
+            <img 
+              src="/AuraflowLogo.png" 
+              alt="AuraFlow" 
+              className="w-16 h-16 drop-shadow-[0_0_20px_rgba(139,92,246,0.6)]"
+            />
+          </div>
+        </div>
+        
+        {/* Loading text with shimmer effect */}
+        <div className="relative overflow-hidden">
+          <p className="text-gray-300 text-sm font-medium tracking-wider">
+            Signing you in
+            <span className="inline-flex ml-1">
+              <span className="animate-bounce-dot" style={{ animationDelay: '0ms' }}>.</span>
+              <span className="animate-bounce-dot" style={{ animationDelay: '150ms' }}>.</span>
+              <span className="animate-bounce-dot" style={{ animationDelay: '300ms' }}>.</span>
+            </span>
+          </p>
+        </div>
+      </div>
+      
+      <style>{`
+        @keyframes spin-ring {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes spin-ring-reverse {
+          from { transform: rotate(360deg); }
+          to { transform: rotate(0deg); }
+        }
+        @keyframes pulse-subtle {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.05); opacity: 0.9; }
+        }
+        @keyframes bounce-dot {
+          0%, 60%, 100% { transform: translateY(0); }
+          30% { transform: translateY(-4px); }
+        }
+        .animate-spin-ring {
+          animation: spin-ring 1.5s linear infinite;
+        }
+        .animate-spin-ring-reverse {
+          animation: spin-ring-reverse 2s linear infinite;
+        }
+        .animate-pulse-subtle {
+          animation: pulse-subtle 2s ease-in-out infinite;
+        }
+        .animate-bounce-dot {
+          animation: bounce-dot 1.2s ease-in-out infinite;
+          display: inline-block;
+        }
+      `}</style>
+    </div>
+  );
+};
 
 // Forgot Password Modal Component
 const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
@@ -251,7 +370,8 @@ const Login: React.FC<{
   darkMode?: boolean; 
   onAuth: () => void;
   onForgotPassword: () => void;
-}> = ({ onSwitchToSignup, darkMode, onAuth, onForgotPassword }) => {
+  onLoadingChange: (loading: boolean) => void;
+}> = ({ onSwitchToSignup, darkMode, onAuth, onForgotPassword, onLoadingChange }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -271,14 +391,16 @@ const Login: React.FC<{
     }
 
     setLoading(true);
+    onLoadingChange(true);
     authService
       .login({ username: email, password })
       .then(() => {
-        setLoading(false);
+        // Keep loading true during transition to app
         onAuth();
       })
       .catch((err: any) => {
         setLoading(false);
+        onLoadingChange(false);
         const message = err?.data?.error || err?.message || 'Login failed';
         setErrors({ general: String(message) });
       });
@@ -292,12 +414,12 @@ const Login: React.FC<{
 
   return (
     <div className="w-full animate-fade-in">
-      <div className="text-center mb-6">
-        <h1 className="text-2xl font-semibold text-white mb-2">Welcome back!</h1>
+      <div className="text-center mb-4">
+        <h1 className="text-2xl font-semibold text-white mb-1">Welcome back!</h1>
         <p className="text-gray-400 text-sm">We're so excited to see you again!</p>
       </div>
 
-      <div className="space-y-5" onKeyDown={handleKeyPress}>
+      <div className="space-y-4" onKeyDown={handleKeyPress}>
         <div className="space-y-2">
           <label className="block text-xs font-semibold text-gray-300 uppercase">Email or Username <span className="text-red-400">*</span></label>
           <input
@@ -497,66 +619,307 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
   );
 };
 
-// Branding Section Component
-const BrandingSection: React.FC = () => (
-  <div className="hidden lg:flex lg:flex-col items-center justify-center w-[360px] border-l border-slate-700/50 p-8 bg-gradient-to-br from-purple-900/30 via-indigo-900/20 to-slate-900/40 relative overflow-hidden">
-    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full filter blur-3xl"></div>
-    <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-500/10 rounded-full filter blur-3xl"></div>
+// Animation timeline types
+type AnimationStep = 'entering' | 'user-typing' | 'user-message' | 'analyzing' | 'insights-ready' | 'agent-responding' | 'tips-appearing' | 'loop-reset';
 
-    <div className="text-center space-y-6 relative z-10">
-      <div className="flex justify-center">
-        <div className="relative group">
-          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full blur-2xl opacity-30 group-hover:opacity-50 transition-opacity"></div>
-          <div className="relative w-24 h-24 flex items-center justify-center transform transition-transform group-hover:scale-110">
-            <img
-              src={logo}
-              alt="AuraFlow Logo"
-              className="w-full h-full object-contain drop-shadow-2xl"
-            />
+// Premium Desktop Mockup Branding Animation Component - Half screen appearing from right
+const BrandingAnimation: React.FC = () => {
+  const [step, setStep] = useState<AnimationStep>('entering');
+  const [showTyping, setShowTyping] = useState(false);
+  const [userMessage, setUserMessage] = useState<{ visible: boolean; status: 'sending' | 'sent' | 'delivered' }>({ visible: false, status: 'sending' });
+  const [agentMessage, setAgentMessage] = useState(false);
+  const [showTips, setShowTips] = useState(false);
+
+  const userText = "Can someone summarize what we discussed?";
+  const agentText = "📋 Summary: The team agreed on the new feature timeline and assigned tasks for next sprint.";
+
+  React.useEffect(() => {
+    const timeouts: NodeJS.Timeout[] = [];
+    
+    const runTimeline = () => {
+      setStep('entering');
+      setShowTyping(false);
+      setUserMessage({ visible: false, status: 'sending' });
+      setAgentMessage(false);
+      setShowTips(false);
+
+      timeouts.push(setTimeout(() => setStep('user-typing'), 600));
+      timeouts.push(setTimeout(() => setShowTyping(true), 600));
+      timeouts.push(setTimeout(() => {
+        setShowTyping(false);
+        setStep('user-message');
+        setUserMessage({ visible: true, status: 'sending' });
+      }, 1200));
+      timeouts.push(setTimeout(() => setUserMessage(prev => ({ ...prev, status: 'sent' })), 1500));
+      timeouts.push(setTimeout(() => setUserMessage(prev => ({ ...prev, status: 'delivered' })), 1800));
+      timeouts.push(setTimeout(() => setStep('analyzing'), 2000));
+      timeouts.push(setTimeout(() => setStep('insights-ready'), 3500));
+      timeouts.push(setTimeout(() => {
+        setStep('agent-responding');
+        setAgentMessage(true);
+      }, 3800));
+      timeouts.push(setTimeout(() => {
+        setStep('tips-appearing');
+        setShowTips(true);
+      }, 5000));
+      timeouts.push(setTimeout(() => setStep('loop-reset'), 8000));
+      timeouts.push(setTimeout(runTimeline, 8500));
+    };
+
+    runTimeline();
+    return () => timeouts.forEach(clearTimeout);
+  }, []);
+
+  const isAnalyzing = step === 'analyzing';
+  const isReady = ['insights-ready', 'agent-responding', 'tips-appearing'].includes(step);
+
+  return (
+    <div 
+      className={`absolute -right-8 top-1/2 -translate-y-1/2 w-[340px] transition-all duration-700 ease-out ${
+        step === 'entering' ? 'opacity-0 translate-x-20' : 'opacity-100 translate-x-0'
+      }`}
+    >
+      {/* Glow effect */}
+      <div className="absolute -inset-3 bg-gradient-to-l from-purple-500/20 via-indigo-500/15 to-transparent rounded-2xl blur-xl" />
+      
+      {/* Desktop Window */}
+      <div className="relative bg-slate-900/95 backdrop-blur-xl rounded-l-2xl border-l border-t border-b border-slate-700/60 shadow-2xl shadow-purple-900/40 overflow-hidden">
+        {/* Window Title Bar */}
+        <div className="flex items-center justify-between px-3 py-2 bg-slate-800/90 border-b border-slate-700/50">
+          <div className="flex gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-red-500/80" />
+            <div className="w-2 h-2 rounded-full bg-yellow-500/80" />
+            <div className="w-2 h-2 rounded-full bg-green-500/80" />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-4 h-4 rounded bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
+              <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M21 6h-2v9H6v2c0 .55.45 1 1 1h11l4 4V7c0-.55-.45-1-1-1zm-4 6V3c0-.55-.45-1-1-1H3c-.55 0-1 .45-1 1v14l4-4h10c.55 0 1-.45 1-1z"/>
+              </svg>
+            </div>
+            <span className="text-[10px] text-gray-300 font-medium">AuraFlow</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[8px] text-gray-500">Online</span>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="flex h-[260px]">
+          {/* Mini Sidebar */}
+          <div className="w-11 bg-slate-800/60 border-r border-slate-700/30 flex flex-col items-center py-2 gap-1.5">
+            {[
+              { gradient: 'from-indigo-500 to-purple-600', icon: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z', active: true },
+              { gradient: 'from-emerald-500 to-teal-600', icon: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5z', active: false },
+              { gradient: 'from-orange-500 to-red-500', icon: 'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z', active: false },
+            ].map((item, i) => (
+              <div
+                key={i}
+                className={`w-8 h-8 rounded-xl bg-gradient-to-br ${item.gradient} flex items-center justify-center transition-all ${
+                  item.active ? 'ring-2 ring-white/30 shadow-lg' : 'opacity-50 hover:opacity-70'
+                }`}
+              >
+                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d={item.icon}/>
+                </svg>
+              </div>
+            ))}
+            <div className="w-6 h-px bg-slate-700 my-1" />
+            <div className="w-8 h-8 rounded-xl bg-slate-700/50 flex items-center justify-center border border-dashed border-slate-600 opacity-60">
+              <span className="text-gray-400 text-sm">+</span>
+            </div>
+          </div>
+
+          {/* Channel List */}
+          <div className="w-[90px] bg-slate-800/40 border-r border-slate-700/30 flex flex-col text-[8px]">
+            <div className="px-2 py-2 border-b border-slate-700/30">
+              <span className="font-semibold text-white flex items-center gap-1 text-[9px]">
+                <svg className="w-3 h-3 text-indigo-400" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+                </svg>
+                Dev Team
+              </span>
+            </div>
+            <div className="flex-1 p-1.5 space-y-0.5 overflow-hidden">
+              <div className="px-1 py-0.5 text-gray-500 uppercase" style={{ fontSize: '6px' }}>Channels</div>
+              {['general', 'standup', 'random'].map((ch, i) => (
+                <div key={ch} className={`px-1.5 py-1 rounded flex items-center gap-1 ${i === 1 ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400'}`}>
+                  <span className="opacity-50">#</span>
+                  <span className="truncate">{ch}</span>
+                </div>
+              ))}
+              <div className="px-1 py-0.5 text-gray-500 uppercase mt-1.5" style={{ fontSize: '6px' }}>AI Agents</div>
+              {[
+                { name: 'Summarizer', color: 'text-blue-400', bg: 'bg-blue-500/10', active: true },
+                { name: 'Mood', color: 'text-pink-400', bg: 'bg-pink-500/10', active: false },
+                { name: 'Moderator', color: 'text-orange-400', bg: 'bg-orange-500/10', active: false },
+              ].map((agent) => (
+                <div key={agent.name} className={`px-1.5 py-1 rounded flex items-center gap-1 ${agent.active ? `${agent.bg} ${agent.color} border border-current/20` : 'text-gray-500'}`}>
+                  <svg className="w-2 h-2" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+                  </svg>
+                  <span className="truncate">{agent.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Chat Area */}
+          <div className="flex-1 flex flex-col bg-slate-900/70 min-w-0">
+            {/* Chat Header */}
+            <div className="px-2 py-1.5 border-b border-slate-700/30 flex items-center gap-2">
+              <span className="text-gray-500 text-[9px]">#</span>
+              <span className="text-[9px] font-medium text-white">standup</span>
+              <div className="ml-auto px-1.5 py-0.5 bg-blue-500/10 rounded text-[7px] text-blue-400 border border-blue-500/20">
+                AI Active
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 p-2 flex flex-col gap-1.5 overflow-hidden">
+              <div className="flex-1" />
+              
+              {/* Typing */}
+              <div className={`flex justify-end transition-all duration-200 ${showTyping ? 'opacity-100' : 'opacity-0 h-0'}`}>
+                <div className="flex gap-0.5 px-2 py-1.5 bg-slate-700/50 rounded-lg rounded-br-sm">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="w-1 h-1 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 80}ms` }} />
+                  ))}
+                </div>
+              </div>
+
+              {/* User Message */}
+              <div className={`flex justify-end transition-all duration-400 ${userMessage.visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
+                <div className="max-w-[90%]">
+                  <div className="px-2.5 py-1.5 rounded-xl rounded-br-sm bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-purple-500/20">
+                    <p className="text-[8px] leading-relaxed">{userText}</p>
+                  </div>
+                  <div className="flex items-center justify-end gap-0.5 mt-0.5 pr-0.5">
+                    <span className="text-[6px] text-gray-500">2:34 PM</span>
+                    <svg className={`w-2 h-2 transition-colors ${userMessage.status === 'delivered' ? 'text-blue-400' : 'text-gray-500'}`} fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* Analysis */}
+              <div className={`transition-all duration-300 ${isAnalyzing || isReady ? 'opacity-100' : 'opacity-0 h-0'}`}>
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/70 rounded-lg border border-slate-700/40">
+                  <div className={isAnalyzing ? 'animate-pulse' : ''}>
+                    <svg className={`w-3 h-3 ${isReady ? 'text-emerald-400' : 'text-blue-400'}`} fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/>
+                    </svg>
+                  </div>
+                  <span className={`text-[7px] ${isReady ? 'text-emerald-400' : 'text-gray-400'}`}>
+                    {isAnalyzing ? 'Summarizer analyzing...' : '✓ Summary ready'}
+                  </span>
+                  {isAnalyzing && (
+                    <div className="flex-1 h-0.5 bg-slate-700 rounded-full overflow-hidden ml-1">
+                      <div className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-500 rounded-full animate-shimmer" style={{ width: '100%', backgroundSize: '200% 100%' }} />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Agent Response */}
+              <div className={`transition-all duration-400 ${agentMessage ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
+                <div className="flex items-start gap-1.5">
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/30">
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <span className="text-[8px] font-medium text-blue-400">Summarizer</span>
+                      <span className="text-[6px] text-gray-500">AI</span>
+                    </div>
+                    <div className="px-2 py-1.5 rounded-xl rounded-tl-sm bg-slate-700/80 border border-slate-600/30">
+                      <p className="text-[8px] text-gray-200 leading-relaxed">{agentText}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tips */}
+              <div className={`flex gap-1 ml-6 transition-all duration-400 ${showTips ? 'opacity-100' : 'opacity-0'}`}>
+                {['View full', 'Share'].map((tip, i) => (
+                  <div key={tip} className="flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-700/50 rounded-full border border-slate-600/20 text-[7px] text-gray-400">
+                    <svg className="w-2 h-2 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+                      <path d={i === 0 ? "M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" : "M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"}/>
+                    </svg>
+                    {tip}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
+    </div>
+  );
+};
 
-      <div className="space-y-2">
-        <h3 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-          AuraFlow
-        </h3>
-        <p className="text-sm text-gray-300 leading-relaxed px-2">
-          AI-powered communication for modern teams
-        </p>
+// Branding Section - Half screen mockup appearing from right edge
+const BrandingSection: React.FC = () => (
+  <div className="hidden lg:block w-[360px] border-l border-slate-700/50 bg-gradient-to-br from-purple-900/20 via-indigo-900/15 to-slate-900/30 relative overflow-hidden">
+    {/* Background effects */}
+    <div className="absolute inset-0 pointer-events-none">
+      <div className="absolute top-10 right-0 w-32 h-32 bg-purple-500/20 rounded-full filter blur-3xl" />
+      <div className="absolute bottom-10 left-0 w-24 h-24 bg-indigo-500/15 rounded-full filter blur-3xl" />
+      <div className="absolute top-1/2 -translate-y-1/2 right-0 w-20 h-40 bg-blue-500/10 rounded-full filter blur-3xl" />
+      {/* Grid pattern */}
+      <div 
+        className="absolute inset-0 opacity-[0.02]"
+        style={{
+          backgroundImage: `linear-gradient(rgba(139, 92, 246, 0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(139, 92, 246, 0.5) 1px, transparent 1px)`,
+          backgroundSize: '24px 24px'
+        }}
+      />
+    </div>
+
+    <div className="relative z-10 h-full flex flex-col p-5">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 mb-3">
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/30 via-purple-500/20 to-transparent rounded-full blur-lg" />
+          <img src="/AuraflowLogo.png" alt="AuraFlow" className="w-14 h-14 drop-shadow-lg relative" />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-white">AuraFlow</h3>
+          <p className="text-[10px] text-gray-400">AI-Powered Communication</p>
+        </div>
       </div>
 
-      <div className="space-y-3 text-left w-full">
+      {/* Desktop mockup container - positioned to overflow right */}
+      <div className="flex-1 relative min-h-0">
+        <BrandingAnimation />
+      </div>
+
+      {/* Feature badges */}
+      <div className="flex flex-wrap gap-1.5 mt-3">
         {[
-          {
-            icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>,
-            text: 'Real-time AI assistance',
-            color: 'from-blue-400 to-cyan-400'
-          },
-          {
-            icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>,
-            text: 'Smart insights & analytics',
-            color: 'from-purple-400 to-pink-400'
-          },
-          {
-            icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>,
-            text: 'Enterprise-grade security',
-            color: 'from-green-400 to-emerald-400'
-          },
-          {
-            icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>,
-            text: 'Lightning-fast performance',
-            color: 'from-yellow-400 to-orange-400'
-          }
-        ].map((feature, i) => (
-          <div key={i} className="flex items-center gap-3 px-2 group cursor-default">
-            <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${feature.color} flex items-center justify-center text-white shadow-lg transform transition-all group-hover:scale-110`}>
-              {feature.icon}
-            </div>
-            <span className="text-sm text-gray-200 group-hover:text-white transition-colors">{feature.text}</span>
+          { icon: '📝', label: 'Summarize' },
+          { icon: '😊', label: 'Mood' },
+          { icon: '🛡️', label: 'Moderate' },
+          { icon: '💚', label: 'Wellness' },
+        ].map((f) => (
+          <div 
+            key={f.label}
+            className="flex items-center gap-1 px-2 py-1 bg-slate-800/60 backdrop-blur-sm rounded-full border border-slate-700/40"
+          >
+            <span className="text-[10px]">{f.icon}</span>
+            <span className="text-[9px] text-gray-400">{f.label}</span>
           </div>
         ))}
       </div>
+
+      {/* Tagline */}
+      <p className="text-[9px] text-gray-500 mt-2 text-center">
+        Smart communication with intelligent AI agents
+      </p>
     </div>
   </div>
 );
@@ -565,18 +928,23 @@ const BrandingSection: React.FC = () => (
 const AuthCard: React.FC<AuthCardProps> = ({ mode, onModeChange, onAuth }) => {
   const [darkMode, setDarkMode] = useState(true);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   return (
     <div className={darkMode ? 'dark' : ''}>
-      <div className="w-full max-w-4xl">
-        <div className="flex backdrop-blur-xl bg-slate-800/95 dark:bg-slate-800/95 rounded-lg shadow-2xl overflow-hidden">
-          <div className="w-full lg:w-[480px] p-8">
+      {/* Full-page loading overlay */}
+      <LoadingOverlay isVisible={isLoggingIn} />
+      
+      <div className="w-full max-w-5xl">
+        <div className="flex backdrop-blur-xl bg-slate-800/95 dark:bg-slate-800/95 rounded-lg shadow-2xl overflow-hidden min-h-[420px]">
+          <div className="w-full lg:w-[520px] p-6">
             {mode === 'login' ? (
               <Login 
                 onSwitchToSignup={() => onModeChange('signup')} 
                 darkMode={darkMode} 
                 onAuth={onAuth}
                 onForgotPassword={() => setShowForgotPassword(true)}
+                onLoadingChange={setIsLoggingIn}
               />
             ) : (
               <Signup onSwitchToLogin={() => onModeChange('login')} darkMode={darkMode} onAuth={onAuth} />
@@ -598,6 +966,32 @@ const AuthCard: React.FC<AuthCardProps> = ({ mode, onModeChange, onAuth }) => {
           to { opacity: 1; transform: translateY(0); }
         }
         .animate-fade-in { animation: fade-in 0.3s ease-out; }
+        
+        @keyframes float {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          50% { transform: translateY(-20px) rotate(5deg); }
+        }
+        .animate-float { animation: float 6s ease-in-out infinite; }
+        .animate-float-delayed { animation: float 8s ease-in-out infinite reverse; }
+        
+        @keyframes pulse-slow {
+          0%, 100% { opacity: 0.4; transform: scale(1); }
+          50% { opacity: 0.7; transform: scale(1.05); }
+        }
+        .animate-pulse-slow { animation: pulse-slow 4s ease-in-out infinite; }
+        
+        @keyframes wave {
+          0%, 100% { height: 4px; }
+          50% { height: 14px; }
+        }
+        
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        .animate-shimmer {
+          animation: shimmer 2s linear infinite;
+        }
         
         .custom-scrollbar {
           scrollbar-width: thin;

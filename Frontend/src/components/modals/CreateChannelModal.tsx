@@ -103,33 +103,21 @@ export default function CreateChannelModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
-      <div
-        className={`w-full max-w-md rounded-2xl shadow-2xl border ${
-          isDarkMode
-            ? "bg-slate-900/95 border-slate-700/50 backdrop-blur-xl"
-            : "bg-white/95 border-gray-200/70 backdrop-blur-xl"
-        }`}
-      >
+      <div className="w-full max-w-md rounded-2xl shadow-2xl border bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl">
         {/* Header */}
-        <div
-          className={`flex items-center justify-between p-5 border-b ${
-            isDarkMode ? "border-slate-700/70" : "border-gray-200/70"
-          }`}
-        >
+        <div className="flex items-center justify-between p-5 border-b border-[hsl(var(--theme-border-default))]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
+            <div className="w-10 h-10 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] rounded-lg flex items-center justify-center">
               <Plus className="w-5 h-5 text-white" />
             </div>
-            <h2 className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))]">
               Create Channel
             </h2>
           </div>
           <button
             onClick={onClose}
             disabled={isLoading}
-            className={`p-2 rounded-lg transition-all ${
-              isDarkMode ? "hover:bg-slate-800" : "hover:bg-gray-100"
-            } disabled:opacity-50`}
+            className="p-2 rounded-lg transition-all hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] disabled:opacity-50"
           >
             <X className="w-5 h-5" />
           </button>
@@ -139,7 +127,7 @@ export default function CreateChannelModal({
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Channel Type Selection */}
           <div className="space-y-3">
-            <label className={`block text-sm font-semibold ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>
+            <label className="block text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
               Channel Type
             </label>
             <div className="grid grid-cols-2 gap-3">
@@ -148,16 +136,12 @@ export default function CreateChannelModal({
                 onClick={() => setFormData({ ...formData, type: "text" })}
                 className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${
                   formData.type === "text"
-                    ? isDarkMode
-                      ? "border-blue-500 bg-blue-500/10"
-                      : "border-blue-500 bg-blue-50"
-                    : isDarkMode
-                    ? "border-slate-600 bg-slate-800/50 hover:border-slate-500"
-                    : "border-gray-200 bg-gray-50 hover:border-gray-300"
+                    ? "border-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-accent-primary))]/10"
+                    : "border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] hover:border-[hsl(var(--theme-border-subtle))]"
                 }`}
               >
-                <Hash className={`w-6 h-6 ${formData.type === "text" ? "text-blue-500" : isDarkMode ? "text-gray-400" : "text-gray-600"}`} />
-                <span className={`text-sm font-semibold ${formData.type === "text" ? (isDarkMode ? "text-blue-300" : "text-blue-700") : isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                <Hash className={`w-6 h-6 ${formData.type === "text" ? "text-[hsl(var(--theme-accent-primary))]" : "text-[hsl(var(--theme-text-muted))]"}`} />
+                <span className={`text-sm font-semibold ${formData.type === "text" ? "text-[hsl(var(--theme-accent-primary))]" : "text-[hsl(var(--theme-text-secondary))]"}`}>
                   Text
                 </span>
               </button>
@@ -167,16 +151,12 @@ export default function CreateChannelModal({
                 onClick={() => setFormData({ ...formData, type: "voice" })}
                 className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${
                   formData.type === "voice"
-                    ? isDarkMode
-                      ? "border-purple-500 bg-purple-500/10"
-                      : "border-purple-500 bg-purple-50"
-                    : isDarkMode
-                    ? "border-slate-600 bg-slate-800/50 hover:border-slate-500"
-                    : "border-gray-200 bg-gray-50 hover:border-gray-300"
+                    ? "border-[hsl(var(--theme-accent-secondary))] bg-[hsl(var(--theme-accent-secondary))]/10"
+                    : "border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] hover:border-[hsl(var(--theme-border-subtle))]"
                 }`}
               >
-                <Volume2 className={`w-6 h-6 ${formData.type === "voice" ? "text-purple-500" : isDarkMode ? "text-gray-400" : "text-gray-600"}`} />
-                <span className={`text-sm font-semibold ${formData.type === "voice" ? (isDarkMode ? "text-purple-300" : "text-purple-700") : isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                <Volume2 className={`w-6 h-6 ${formData.type === "voice" ? "text-[hsl(var(--theme-accent-secondary))]" : "text-[hsl(var(--theme-text-muted))]"}`} />
+                <span className={`text-sm font-semibold ${formData.type === "voice" ? "text-[hsl(var(--theme-accent-secondary))]" : "text-[hsl(var(--theme-text-secondary))]"}`}>
                   Voice
                 </span>
               </button>
@@ -185,7 +165,7 @@ export default function CreateChannelModal({
 
           {/* Channel Name */}
           <div>
-            <label className={`block text-sm font-semibold mb-2 ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>
+            <label className="block text-sm font-semibold mb-2 text-[hsl(var(--theme-text-primary))]">
               Channel Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -195,24 +175,20 @@ export default function CreateChannelModal({
               placeholder={formData.type === "voice" ? "e.g., General Voice" : "e.g., general"}
               maxLength={50}
               disabled={isLoading}
-              className={`w-full px-4 py-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                isDarkMode
-                  ? "bg-slate-800 border-slate-600 text-white placeholder-gray-500"
-                  : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-              } disabled:opacity-50 ${errors.name ? (isDarkMode ? "border-red-500/50" : "border-red-400") : ""}`}
+              className={`w-full px-4 py-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))] disabled:opacity-50 ${errors.name ? "border-red-500/50" : ""}`}
             />
             {errors.name && (
               <p className="text-xs text-red-500 mt-1">{errors.name}</p>
             )}
-            <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-500" : "text-gray-600"}`}>
+            <p className="text-xs mt-1 text-[hsl(var(--theme-text-muted))]">
               {formData.name.length}/50
             </p>
           </div>
 
           {/* Description */}
           <div>
-            <label className={`block text-sm font-semibold mb-2 ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>
-              Description <span className={`font-normal ${isDarkMode ? "text-gray-500" : "text-gray-600"}`}>(Optional)</span>
+            <label className="block text-sm font-semibold mb-2 text-[hsl(var(--theme-text-primary))]">
+              Description <span className="font-normal text-[hsl(var(--theme-text-muted))]">(Optional)</span>
             </label>
             <textarea
               value={formData.description}
@@ -221,16 +197,12 @@ export default function CreateChannelModal({
               maxLength={200}
               rows={3}
               disabled={isLoading}
-              className={`w-full px-4 py-3 rounded-lg border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                isDarkMode
-                  ? "bg-slate-800 border-slate-600 text-white placeholder-gray-500"
-                  : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-              } disabled:opacity-50 ${errors.description ? (isDarkMode ? "border-red-500/50" : "border-red-400") : ""}`}
+              className={`w-full px-4 py-3 rounded-lg border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))] disabled:opacity-50 ${errors.description ? "border-red-500/50" : ""}`}
             />
             {errors.description && (
               <p className="text-xs text-red-500 mt-1">{errors.description}</p>
             )}
-            <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-500" : "text-gray-600"}`}>
+            <p className="text-xs mt-1 text-[hsl(var(--theme-text-muted))]">
               {formData.description.length}/200
             </p>
           </div>
@@ -241,18 +213,14 @@ export default function CreateChannelModal({
               type="button"
               onClick={onClose}
               disabled={isLoading}
-              className={`flex-1 py-3 rounded-lg font-semibold transition-all ${
-                isDarkMode
-                  ? "bg-slate-800 hover:bg-slate-700 text-gray-200"
-                  : "bg-gray-200 hover:bg-gray-300 text-gray-800"
-              } disabled:opacity-50`}
+              className="flex-1 py-3 rounded-lg font-semibold transition-all bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))] disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isLoading || !formData.name.trim()}
-              className="flex-1 py-3 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 py-3 rounded-lg font-semibold text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? "Creating..." : "Create Channel"}
             </button>

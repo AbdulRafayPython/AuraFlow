@@ -13,3 +13,5 @@ nltk
 scikit-learn
 spacy
 textblob
+google-generativeai
+googletrans==4.0.0-rc1

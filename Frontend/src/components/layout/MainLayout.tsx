@@ -1,6 +1,7 @@
 // components/layout/MainLayout.tsx
 import React, { useState, useEffect } from "react";
 import { Menu, X, Home, Users, Settings } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import FriendsSidebar from "../sidebar/FriendsSidebar";
 import ChannelSidebar from "../sidebar/ChannelSidebar";
 import RightSidebar from "../sidebar/RightSidebar";
@@ -21,11 +22,16 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const { currentCommunity, selectCommunity, currentChannel } = useRealtime();
   const { selectConversation } = useDirectMessages();
   const { friends } = useFriends();
+  const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentView, setCurrentView] = useState<"dashboard" | "friends" | "settings" | "direct-message">("dashboard");
   const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [selectedDMUser, setSelectedDMUser] = useState<{ id: number; username: string; display_name: string; avatar_url?: string } | null>(null);
+
+  // Check if we're on an agent page or discover page
+  const isAgentPage = location.pathname.startsWith('/agent/');
+  const isDiscoverPage = location.pathname === '/discover';
 
   // Detect mobile screen size
   useEffect(() => {
@@ -102,9 +108,12 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const hasCommunitySelected = currentCommunity !== null;
 
   return (
-    <div className={`flex h-screen overflow-hidden ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+    <div 
+      className="flex h-screen overflow-hidden transition-colors duration-300"
+      style={{ background: 'var(--theme-bg-gradient)' }}
+    >
       {/* Desktop: Friends Sidebar - Always Visible */}
-      <div className="hidden md:flex flex-shrink-0">
+      <div className="hidden md:flex flex-shrink-0 relative z-[200]">
         <FriendsSidebar 
           onNavigate={handleNavigation} 
           currentView={currentView} 
@@ -112,9 +121,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
         />
       </div>
 
-      {/* Desktop: Channel Sidebar - Show when community is selected */}
-      {currentView === "dashboard" && hasCommunitySelected && (
-        <div className="hidden md:flex flex-shrink-0">
+      {/* Desktop: Channel Sidebar - Show when community is selected and not on agent/discover page */}
+      {currentView === "dashboard" && hasCommunitySelected && !isAgentPage && !isDiscoverPage && (
+        <div className="hidden md:flex flex-shrink-0 relative z-[50]">
           <ChannelSidebar 
             onNavigate={handleNavigation}
           />
@@ -127,9 +136,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
         className={`md:hidden fixed top-4 left-4 z-[60] p-3 rounded-xl transition-all shadow-lg ${
           mobileMenuOpen 
             ? 'bg-red-500 hover:bg-red-600 text-white' 
-            : isDarkMode 
-              ? 'bg-slate-800 text-white hover:bg-slate-700' 
-              : 'bg-white text-gray-900 hover:bg-gray-100'
+            : 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
         }`}
       >
         {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -155,8 +162,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
               />
             </div>
             
-            {/* Channel Sidebar - Show when community is selected */}
-            {currentView === "dashboard" && hasCommunitySelected && (
+            {/* Channel Sidebar - Show when community is selected and not on agent/discover page */}
+            {currentView === "dashboard" && hasCommunitySelected && !isAgentPage && !isDiscoverPage && (
               <div className="flex-shrink-0 h-full overflow-y-auto">
                 <ChannelSidebar 
                   onNavigate={handleNavigation}
@@ -168,8 +175,15 @@ export default function MainLayout({ children }: MainLayoutProps) {
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {currentView === "friends" ? (
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative z-[10]">
+        {isAgentPage || isDiscoverPage ? (
+          // Agent/Discover pages take full width without right sidebar
+          <div className="flex-1 overflow-hidden">
+            <div className="h-full overflow-hidden">
+              {children}
+            </div>
+          </div>
+        ) : currentView === "friends" ? (
           <div className="flex-1 overflow-hidden">
             <Friends onOpenDM={handleOpenDM} />
           </div>
@@ -190,7 +204,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
         ) : hasCommunitySelected ? (
           // Show main content (Dashboard) when a community is selected
           <div className="flex-1 flex overflow-hidden">
-            <div className={`flex-1 overflow-hidden ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+            <div className="flex-1 overflow-hidden bg-[hsl(var(--theme-bg-primary))]">
               {React.cloneElement(children as React.ReactElement, { toggleRightSidebar })}
             </div>
             
@@ -203,47 +217,39 @@ export default function MainLayout({ children }: MainLayoutProps) {
           </div>
         ) : (
           // Welcome screen when no community is selected
-          <div className={`flex items-center justify-center h-full overflow-y-auto ${
-            isDarkMode ? 'bg-slate-900' : 'bg-gray-50'
-          }`}>
-            <div className={`text-center max-w-2xl px-4 sm:px-6 py-8 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+          <div className="flex items-center justify-center h-full overflow-y-auto bg-[hsl(var(--theme-bg-primary))]">
+            <div className="text-center max-w-2xl px-4 sm:px-6 py-8 text-[hsl(var(--theme-text-primary))]">
               <div className="mb-8 sm:mb-12">
                 <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-3 sm:mb-4">
                   Welcome to AuroFlow
                 </h1>
-                <p className={`text-base sm:text-lg ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                <p className="text-base sm:text-lg text-[hsl(var(--theme-text-secondary))]">
                   Select a community from the sidebar to access channels and start collaborating.
                 </p>
               </div>
               
               {/* Feature Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-8 sm:mt-12">
-                <div className={`p-5 sm:p-6 rounded-xl sm:rounded-2xl transition-all hover:scale-105 ${
-                  isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200 shadow-sm'
-                }`}>
+                <div className="p-5 sm:p-6 rounded-xl sm:rounded-2xl transition-all hover:scale-105 bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))]">
                   <div className="text-3xl sm:text-4xl mb-3 sm:mb-4">💬</div>
                   <h3 className="font-semibold text-base sm:text-lg mb-2">Real-time Chat</h3>
-                  <p className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                  <p className="text-xs sm:text-sm text-[hsl(var(--theme-text-secondary))]">
                     Instant messaging with WebSocket connections
                   </p>
                 </div>
                 
-                <div className={`p-5 sm:p-6 rounded-xl sm:rounded-2xl transition-all hover:scale-105 ${
-                  isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200 shadow-sm'
-                }`}>
+                <div className="p-5 sm:p-6 rounded-xl sm:rounded-2xl transition-all hover:scale-105 bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))]">
                   <div className="text-3xl sm:text-4xl mb-3 sm:mb-4">🤖</div>
                   <h3 className="font-semibold text-base sm:text-lg mb-2">AI Agents</h3>
-                  <p className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                  <p className="text-xs sm:text-sm text-[hsl(var(--theme-text-secondary))]">
                     Smart assistants to help with tasks and analysis
                   </p>
                 </div>
                 
-                <div className={`p-5 sm:p-6 rounded-xl sm:rounded-2xl transition-all hover:scale-105 sm:col-span-2 lg:col-span-1 ${
-                  isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200 shadow-sm'
-                }`}>
+                <div className="p-5 sm:p-6 rounded-xl sm:rounded-2xl transition-all hover:scale-105 sm:col-span-2 lg:col-span-1 bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))]">
                   <div className="text-3xl sm:text-4xl mb-3 sm:mb-4">👥</div>
                   <h3 className="font-semibold text-base sm:text-lg mb-2">Collaborate</h3>
-                  <p className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                  <p className="text-xs sm:text-sm text-[hsl(var(--theme-text-secondary))]">
                     Work together with your team in real-time
                   </p>
                 </div>
@@ -251,12 +257,10 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
               {/* Tip Section */}
               <div className="mt-8 sm:mt-12">
-                <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${
-                  isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-blue-50 border border-blue-200'
-                }`}>
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[hsl(var(--theme-accent-primary)/0.1)] border border-[hsl(var(--theme-accent-primary)/0.3)]">
                   <span className="text-lg">💡</span>
-                  <p className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>
-                    <strong className={isDarkMode ? 'text-white' : 'text-gray-900'}>Tip:</strong> Use the friends button to manage your connections
+                  <p className="text-xs sm:text-sm text-[hsl(var(--theme-text-secondary))]">
+                    <strong className="text-[hsl(var(--theme-text-primary))]">Tip:</strong> Use the friends button to manage your connections
                   </p>
                 </div>
               </div>

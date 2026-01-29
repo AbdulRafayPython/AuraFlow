@@ -122,19 +122,10 @@ export default function JoinCommunityModal({
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
       {/* Premium Modal Container */}
       <div
-        className={`
-          w-full max-w-2xl rounded-3xl shadow-2xl border
-          max-h-[85vh] overflow-y-auto flex flex-col
-          ${isDarkMode
-            ? "bg-slate-900/95 border-slate-700/50 backdrop-blur-xl"
-            : "bg-white/95 border-gray-200/70 backdrop-blur-xl"
-          }
-        `}
+        className="w-full max-w-2xl rounded-3xl shadow-2xl border max-h-[85vh] overflow-y-auto flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl"
         style={{
           scrollbarWidth: "thin",
-          scrollbarColor: isDarkMode
-            ? "#64748b transparent"
-            : "#94a3b8 transparent",
+          scrollbarColor: "hsl(var(--theme-text-muted)) transparent",
         }}
       >
         {/* Webkit-specific scrollbar styling */}
@@ -147,43 +138,31 @@ export default function JoinCommunityModal({
             border-radius: 12px;
           }
           .join-modal-container::-webkit-scrollbar-thumb {
-            background-color: ${isDarkMode ? "#64748b" : "#94a3b8"};
+            background-color: hsl(var(--theme-text-muted));
             border-radius: 12px;
-            border: 3px solid ${isDarkMode ? "#1e293b" : "white"};
+            border: 3px solid hsl(var(--theme-bg-elevated));
             background-clip: padding-box;
           }
           .join-modal-container:hover::-webkit-scrollbar-thumb {
-            background-color: ${isDarkMode ? "#94a3b8" : "#64748b"};
+            background-color: hsl(var(--theme-text-secondary));
           }
         `}</style>
 
         {/* Sticky Header */}
-        <div
-          className={`sticky top-0 z-10 p-5 border-b backdrop-blur-xl
-            ${isDarkMode ? "bg-slate-900/80 border-slate-700/70" : "bg-white/80 border-gray-200/70"}
-          `}
-        >
+        <div className="sticky top-0 z-10 p-5 border-b backdrop-blur-xl bg-[hsl(var(--theme-bg-elevated))]/80 border-[hsl(var(--theme-border-default))]">
           {/* Header Title */}
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 via-cyan-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <div className="w-10 h-10 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] rounded-2xl flex items-center justify-center shadow-lg">
                 <Users className="w-5 h-5 text-white drop-shadow-sm" />
               </div>
-              <h2
-                className={`text-xl font-bold tracking-tight ${
-                  isDarkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
+              <h2 className="text-xl font-bold tracking-tight text-[hsl(var(--theme-text-primary))]">
                 Discover Communities
               </h2>
             </div>
             <button
               onClick={onClose}
-              className={`p-2.5 rounded-xl transition-all duration-200 ${
-                isDarkMode
-                  ? "hover:bg-slate-800/80 text-gray-400"
-                  : "hover:bg-gray-100 text-gray-600"
-              } active:scale-95`}
+              className="p-2.5 rounded-xl transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] active:scale-95"
             >
               <X className="w-5 h-5" />
             </button>
@@ -191,17 +170,13 @@ export default function JoinCommunityModal({
 
           {/* Search Bar */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[hsl(var(--theme-text-muted))]" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => handleSearch(e.target.value)}
               placeholder="Search communities..."
-              className={`w-full pl-10 pr-4 py-3 rounded-2xl border text-sm transition-all duration-200
-                ${isDarkMode
-                  ? "bg-slate-800/70 border-slate-600 text-white placeholder-gray-500 focus:border-cyan-500"
-                  : "bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-600 focus:border-cyan-500"
-                } focus:outline-none focus:ring-4 focus:ring-cyan-500/20`}
+              className="w-full pl-10 pr-4 py-3 rounded-2xl border text-sm transition-all duration-200 bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))] focus:border-[hsl(var(--theme-accent-primary))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--theme-accent-primary))]/20"
             />
           </div>
         </div>
@@ -227,11 +202,7 @@ export default function JoinCommunityModal({
                 return (
                 <div
                   key={community.id}
-                  className={`p-4 rounded-2xl border transition-all duration-200 group
-                    ${isDarkMode
-                      ? "bg-slate-800/50 border-slate-700/50 hover:bg-slate-800/70 hover:border-slate-600"
-                      : "bg-gray-50/50 border-gray-200/50 hover:bg-gray-100/70 hover:border-gray-300"
-                    }`}
+                  className="p-4 rounded-2xl border transition-all duration-200 group bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] hover:bg-[hsl(var(--theme-bg-hover))] hover:border-[hsl(var(--theme-border-subtle))]"
                 >
                   {/* Community Icon & Header */}
                   <div className="flex items-start gap-3 mb-3">
@@ -248,18 +219,10 @@ export default function JoinCommunityModal({
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3
-                        className={`font-bold text-base truncate ${
-                          isDarkMode ? "text-white" : "text-gray-900"
-                        }`}
-                      >
+                      <h3 className="font-bold text-base truncate text-[hsl(var(--theme-text-primary))]">
                         {community.name}
                       </h3>
-                      <p
-                        className={`text-xs flex items-center gap-1 mt-1 ${
-                          isDarkMode ? "text-gray-400" : "text-gray-600"
-                        }`}
-                      >
+                      <p className="text-xs flex items-center gap-1 mt-1 text-[hsl(var(--theme-text-muted))]">
                         <Users className="w-3.5 h-3.5" />
                         {community.member_count || 0} members
                       </p>
@@ -268,24 +231,14 @@ export default function JoinCommunityModal({
 
                   {/* Description */}
                   {community.description && (
-                    <p
-                      className={`text-sm mb-3 line-clamp-2 ${
-                        isDarkMode ? "text-gray-400" : "text-gray-600"
-                      }`}
-                    >
+                    <p className="text-sm mb-3 line-clamp-2 text-[hsl(var(--theme-text-secondary))]">
                       {community.description}
                     </p>
                   )}
 
                   {/* Creator Info */}
                   {community.creator && (
-                    <div
-                      className={`text-xs mb-3 py-2 px-2 rounded-lg flex items-center gap-2 ${
-                        isDarkMode
-                          ? "bg-slate-700/30 text-gray-300"
-                          : "bg-gray-100 text-gray-700"
-                      }`}
-                    >
+                    <div className="text-xs mb-3 py-2 px-2 rounded-lg flex items-center gap-2 bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-secondary))]">
                       {community.creator.avatar_url && (
                         <img
                           src={getAvatarUrl(community.creator.avatar_url, community.creator.username)}
@@ -301,7 +254,7 @@ export default function JoinCommunityModal({
                   <button
                     onClick={() => handleJoinCommunity(community.id)}
                     disabled={joiningId === community.id}
-                    className="w-full py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-600 hover:to-teal-700 shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-60 active:scale-98 flex items-center justify-center gap-2"
+                    className="w-full py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-60 active:scale-98 flex items-center justify-center gap-2"
                   >
                     {joiningId === community.id ? (
                       <>
@@ -321,16 +274,12 @@ export default function JoinCommunityModal({
             </div>
           ) : isLoading && communities.length === 0 ? (
             <div className="flex items-center justify-center py-12">
-              <Loader className="w-8 h-8 animate-spin text-cyan-500" />
+              <Loader className="w-8 h-8 animate-spin text-[hsl(var(--theme-accent-primary))]" />
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-12 px-4">
-              <Users className={`w-12 h-12 mb-3 ${isDarkMode ? "text-gray-600" : "text-gray-400"}`} />
-              <p
-                className={`text-center ${
-                  isDarkMode ? "text-gray-400" : "text-gray-600"
-                }`}
-              >
+              <Users className="w-12 h-12 mb-3 text-[hsl(var(--theme-text-muted))]" />
+              <p className="text-center text-[hsl(var(--theme-text-secondary))]">
                 {searchTerm ? "No communities found" : "No communities available"}
               </p>
             </div>
@@ -339,7 +288,7 @@ export default function JoinCommunityModal({
           {/* Load more observer */}
           {hasMore && communities.length > 0 && (
             <div ref={observerTarget} className="py-4 flex justify-center">
-              {isLoading && <Loader className="w-6 h-6 animate-spin text-cyan-500" />}
+              {isLoading && <Loader className="w-6 h-6 animate-spin text-[hsl(var(--theme-accent-primary))]" />}
             </div>
           )}
         </div>

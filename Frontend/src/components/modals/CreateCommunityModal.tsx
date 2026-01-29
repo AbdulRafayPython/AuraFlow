@@ -195,67 +195,50 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
       <div
-        className={`
-          w-full max-w-2xl rounded-3xl shadow-2xl border
-          max-h-[80vh] overflow-hidden flex flex-col
-          ${isDarkMode 
-            ? 'bg-slate-900/95 border-slate-700/50 backdrop-blur-xl' 
-            : 'bg-white/95 border-gray-200/70 backdrop-blur-xl'
-          }
-        `}
+        className="w-full max-w-2xl rounded-3xl shadow-2xl border max-h-[80vh] overflow-hidden flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl"
       >
         {/* Header */}
-        <div
-          className={`flex items-center justify-between px-6 py-4 border-b ${
-            isDarkMode ? 'border-slate-700/70' : 'border-gray-200/70'
-          }`}
-        >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[hsl(var(--theme-border-default))]">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 bg-gradient-to-br from-violet-500 via-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
+            <div className="w-11 h-11 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] rounded-2xl flex items-center justify-center shadow-lg">
               <Sparkles className="w-5 h-5 text-white drop-shadow-sm" />
             </div>
             <div>
-              <h2 className={`text-lg font-semibold tracking-tight ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+              <h2 className="text-lg font-semibold tracking-tight text-[hsl(var(--theme-text-primary))]">
                 Create Community
               </h2>
-              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              <p className="text-xs text-[hsl(var(--theme-text-muted))]">
                 2-step setup: details → branding
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className={`p-2.5 rounded-xl transition-all duration-200 ${
-              isDarkMode 
-                ? 'hover:bg-slate-800/80 text-gray-400' 
-                : 'hover:bg-gray-100 text-gray-600'
-            } active:scale-95`}
+            className="p-2.5 rounded-xl transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] active:scale-95"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Stepper */}
-        <div className={`px-6 py-3 border-b ${isDarkMode ? 'border-slate-800' : 'border-gray-200'}`}>
+        <div className="px-6 py-3 border-b border-[hsl(var(--theme-border-default))]">
           <div className="flex items-center gap-3">
             {[1, 2].map((s) => (
               <div key={s} className="flex items-center gap-2">
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
                     step === s
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg'
-                      : isDarkMode
-                        ? 'bg-slate-800 text-gray-300 border border-slate-700'
-                        : 'bg-gray-100 text-gray-600 border border-gray-200'
+                      ? 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg'
+                      : 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-secondary))] border border-[hsl(var(--theme-border-default))]'
                   }`}
                 >
                   {s}
                 </div>
-                <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                <span className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
                   {s === 1 ? 'Details' : 'Branding'}
                 </span>
                 {s === 1 && (
-                  <div className={`h-px w-10 ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`} />
+                  <div className="h-px w-10 bg-[hsl(var(--theme-border-default))]" />
                 )}
               </div>
             ))}
@@ -292,10 +275,10 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                     {generateIcon}
                   </div>
                   <div>
-                    <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    <p className="text-sm text-[hsl(var(--theme-text-secondary))]">
                       Icon auto-generated from the name.
                     </p>
-                    <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                    <p className="text-xs text-[hsl(var(--theme-text-muted))]">
                       You can adjust the color in the next step.
                     </p>
                   </div>
@@ -303,8 +286,8 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
 
                 {/* Name */}
                 <div className="space-y-2">
-                  <label className={`block text-sm font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                    Community Name <span className="text-purple-500">*</span>
+                  <label className="block text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
+                    Community Name <span className="text-[hsl(var(--theme-accent-primary))]">*</span>
                   </label>
                   <input
                     type="text"
@@ -313,22 +296,18 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                     onKeyDown={handleStep1Enter}
                     placeholder="e.g., Product Builders"
                     maxLength={50}
-                    className={`w-full px-4 py-3 rounded-2xl border text-base font-medium transition-all duration-200
-                      ${isDarkMode
-                        ? 'bg-slate-800/70 border-slate-700 text-white placeholder-gray-500 focus:border-purple-500'
-                        : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
-                      } focus:outline-none focus:ring-4 focus:ring-purple-500/20`}
+                    className="w-full px-4 py-3 rounded-2xl border text-base font-medium transition-all duration-200 bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))] focus:border-[hsl(var(--theme-accent-primary))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--theme-accent-primary))]/20"
                     disabled={isBusy}
                   />
-                  <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-600'} text-right`}>
+                  <p className="text-xs text-[hsl(var(--theme-text-muted))] text-right">
                     {formData.name.length}/50
                   </p>
                 </div>
 
                 {/* Description */}
                 <div className="space-y-2">
-                  <label className={`block text-sm font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                    Description <span className="text-gray-500 font-normal">(Optional)</span>
+                  <label className="block text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
+                    Description <span className="text-[hsl(var(--theme-text-muted))] font-normal">(Optional)</span>
                   </label>
                   <textarea
                     value={formData.description}
@@ -337,14 +316,10 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                     placeholder="What's your community about?"
                     rows={3}
                     maxLength={200}
-                    className={`w-full px-4 py-3 rounded-2xl border resize-none transition-all duration-200
-                      ${isDarkMode
-                        ? 'bg-slate-800/70 border-slate-700 text-white placeholder-gray-500 focus:border-purple-500'
-                        : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500 focus:border-purple-500'
-                      } focus:outline-none focus:ring-4 focus:ring-purple-500/20`}
+                    className="w-full px-4 py-3 rounded-2xl border resize-none transition-all duration-200 bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))] focus:border-[hsl(var(--theme-accent-primary))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--theme-accent-primary))]/20"
                     disabled={isBusy}
                   />
-                  <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-600'} text-right`}>
+                  <p className="text-xs text-[hsl(var(--theme-text-muted))] text-right">
                     {formData.description.length}/200
                   </p>
                 </div>
@@ -356,7 +331,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
               <div className="space-y-6">
                 {/* Color Picker */}
                 <div className="space-y-3">
-                  <label className={`block text-sm font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                  <label className="block text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
                     Community Color
                   </label>
                   <div className="grid grid-cols-8 gap-3">
@@ -367,7 +342,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                         onClick={() => setFormData({ ...formData, color })}
                         className={`w-11 h-11 rounded-2xl transition-all duration-200 shadow-md
                           ${formData.color === color 
-                            ? 'ring-4 ring-purple-500/50 scale-110 shadow-xl' 
+                            ? 'ring-4 ring-[hsl(var(--theme-accent-primary))]/50 scale-110 shadow-xl' 
                             : 'hover:scale-105 hover:shadow-lg'
                           }`}
                         style={{ backgroundColor: color }}
@@ -375,14 +350,14 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                       />
                     ))}
                   </div>
-                  <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-600'}`}>
+                  <p className="text-xs text-[hsl(var(--theme-text-muted))]">
                     Used for the badge and avatar background.
                   </p>
                 </div>
 
                 {/* Auto Icon Preview */}
                 <div className="space-y-2">
-                  <label className={`block text-sm font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                  <label className="block text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
                     Auto Icon
                   </label>
                   <div className="flex items-center gap-3">
@@ -392,26 +367,24 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                     >
                       {generateIcon}
                     </div>
-                    <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    <p className="text-sm text-[hsl(var(--theme-text-secondary))]">
                       Generated from the community name.
                     </p>
                   </div>
                 </div>
                 {/* Uploads */}
                 <div className="grid md:grid-cols-2 gap-4">
-                  <div className={`rounded-2xl border-2 border-dashed p-4 space-y-3 transition-all ${
-                    isDarkMode ? 'border-slate-700 bg-slate-900/60' : 'border-gray-200 bg-gray-50'
-                  }`}>
+                  <div className="rounded-2xl border-2 border-dashed p-4 space-y-3 transition-all border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))]">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className={`text-sm font-semibold ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>Logo (optional)</p>
-                        <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-600'}`}>Up to 5MB, square works best.</p>
+                        <p className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">Logo (optional)</p>
+                        <p className="text-xs text-[hsl(var(--theme-text-muted))]">Up to 5MB, square works best.</p>
                       </div>
                       {logoFile && (
                         <button
                           type="button"
                           onClick={() => { setLogoFile(null); setLogoPreview(null); }}
-                          className={`text-xs font-medium ${isDarkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}
+                          className="text-xs font-medium text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))]"
                           disabled={isBusy}
                         >
                           Clear
@@ -420,16 +393,14 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                     </div>
                     <label
                       htmlFor="community-logo-upload"
-                      className={`flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-5 cursor-pointer transition-all ${
-                        isDarkMode ? 'border-slate-700 hover:border-purple-500/70 bg-slate-800/60' : 'border-gray-300 hover:border-purple-400 bg-white'
-                      } ${isLoading || uploadingAssets ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      className={`flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-5 cursor-pointer transition-all border-[hsl(var(--theme-border-default))] hover:border-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-bg-tertiary))] ${isLoading || uploadingAssets ? 'opacity-60 cursor-not-allowed' : ''}`}
                     >
                       {logoPreview ? (
                         <img src={logoPreview} alt="Logo preview" className="w-16 h-16 rounded-lg object-cover" />
                       ) : (
-                        <UploadCloud className={`w-6 h-6 ${isDarkMode ? 'text-gray-300' : 'text-gray-500'}`} />
+                        <UploadCloud className="w-6 h-6 text-[hsl(var(--theme-text-muted))]" />
                       )}
-                      <span className={`text-xs font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                      <span className="text-xs font-medium text-[hsl(var(--theme-text-primary))]">
                         {logoFile ? logoFile.name : 'Upload logo image'}
                       </span>
                     </label>
@@ -443,19 +414,17 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                     />
                   </div>
 
-                  <div className={`rounded-2xl border-2 border-dashed p-4 space-y-3 transition-all ${
-                    isDarkMode ? 'border-slate-700 bg-slate-900/60' : 'border-gray-200 bg-gray-50'
-                  }`}>
+                  <div className="rounded-2xl border-2 border-dashed p-4 space-y-3 transition-all border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))]">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className={`text-sm font-semibold ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>Banner (optional)</p>
-                        <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-600'}`}>Up to 5MB. Wide images recommended.</p>
+                        <p className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">Banner (optional)</p>
+                        <p className="text-xs text-[hsl(var(--theme-text-muted))]">Up to 5MB. Wide images recommended.</p>
                       </div>
                       {bannerFile && (
                         <button
                           type="button"
                           onClick={() => { setBannerFile(null); setBannerPreview(null); }}
-                          className={`text-xs font-medium ${isDarkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}
+                          className="text-xs font-medium text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))]"
                           disabled={isBusy}
                         >
                           Clear
@@ -464,16 +433,14 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                     </div>
                     <label
                       htmlFor="community-banner-upload"
-                      className={`flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-5 cursor-pointer transition-all ${
-                        isDarkMode ? 'border-slate-700 hover:border-purple-500/70 bg-slate-800/60' : 'border-gray-300 hover:border-purple-400 bg-white'
-                      } ${isLoading || uploadingAssets ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      className={`flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-5 cursor-pointer transition-all border-[hsl(var(--theme-border-default))] hover:border-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-bg-tertiary))] ${isLoading || uploadingAssets ? 'opacity-60 cursor-not-allowed' : ''}`}
                     >
                       {bannerPreview ? (
                         <img src={bannerPreview} alt="Banner preview" className="w-full h-16 rounded-lg object-cover" />
                       ) : (
-                        <UploadCloud className={`w-6 h-6 ${isDarkMode ? 'text-gray-300' : 'text-gray-500'}`} />
+                        <UploadCloud className="w-6 h-6 text-[hsl(var(--theme-text-muted))]" />
                       )}
-                      <span className={`text-xs font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                      <span className="text-xs font-medium text-[hsl(var(--theme-text-primary))]">
                         {bannerFile ? bannerFile.name : 'Upload banner image'}
                       </span>
                     </label>
@@ -496,11 +463,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                 type="button"
                 onClick={step === 1 ? onClose : () => setStep(1)}
                 disabled={isBusy}
-                className={`flex-1 py-3 rounded-2xl font-semibold transition-all duration-200
-                  ${isDarkMode
-                    ? 'bg-slate-800 hover:bg-slate-700/80 text-gray-300 border border-slate-700'
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200'
-                  } active:scale-98`}
+                className="flex-1 py-3 rounded-2xl font-semibold transition-all duration-200 bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))] border border-[hsl(var(--theme-border-default))] active:scale-98"
               >
                 {step === 1 ? 'Cancel' : (
                   <span className="flex items-center justify-center gap-2">
@@ -514,7 +477,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                   type="button"
                   onClick={() => setStep(2)}
                   disabled={isBusy || !formData.name.trim()}
-                  className="flex-1 py-3 rounded-2xl font-semibold text-white bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-60 active:scale-98"
+                  className="flex-1 py-3 rounded-2xl font-semibold text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-60 active:scale-98"
                 >
                   <span className="flex items-center justify-center gap-2">
                     Next <ArrowRight className="w-4 h-4" />
@@ -525,7 +488,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                   type="button"
                   onClick={(e) => handleSubmit(e)}
                   disabled={isBusy || !formData.name.trim()}
-                  className="flex-1 py-3 rounded-2xl font-semibold text-white bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-60 active:scale-98"
+                  className="flex-1 py-3 rounded-2xl font-semibold text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-60 active:scale-98"
                 >
                   {isLoading ? 'Creating...' : 'Create Community'}
                 </button>

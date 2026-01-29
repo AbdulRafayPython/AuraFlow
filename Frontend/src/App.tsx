@@ -16,6 +16,7 @@ import ProfileSetup from './components/onboarding/ProfileSetup';
 import MainLayout from './components/layout/MainLayout';
 import Dashboard from '@/pages/Dashboard';
 import AgentDetails from '@/pages/AgentDetails';
+import DiscoverCommunities from '@/pages/DiscoverCommunities';
 import Home from '@/pages/Home';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import ForgotPassword from './pages/ForgotPassword';
@@ -85,11 +86,24 @@ function AppRouter() {
   }
 
   // Returning user or onboarding complete - show main app with real-time support
-  // Show Home page if no communities, otherwise show Dashboard
   return (
-    <MainLayout>
-      {communities.length === 0 ? <Home /> : <Dashboard />}
-    </MainLayout>
+    <Routes>
+      <Route path="/discover" element={
+        <MainLayout>
+          <DiscoverCommunities />
+        </MainLayout>
+      } />
+      <Route path="/agent/:agentId" element={
+        <MainLayout>
+          <AgentDetails />
+        </MainLayout>
+      } />
+      <Route path="/*" element={
+        <MainLayout>
+          {communities.length === 0 ? <Home /> : <Dashboard />}
+        </MainLayout>
+      } />
+    </Routes>
   );
 }
 
@@ -108,12 +122,10 @@ export default function App() {
                       <BrowserRouter>
                         <ModerationToastListener />
                         <Routes>
-                          <Route path="/*" element={<AppRouter />} />
-                          <Route path="/home" element={<Home />} />
                           <Route path="/forgot-password" element={<ForgotPassword />} />
                           <Route path="/otp-verification" element={<OtpVerification />} />
                           <Route path="/reset-password" element={<ResetPassword />} />
-                          <Route path="/agent/:agentId" element={<AgentDetails />} />
+                          <Route path="/*" element={<AppRouter />} />
                         </Routes>
                         <Toaster />
                       </BrowserRouter>

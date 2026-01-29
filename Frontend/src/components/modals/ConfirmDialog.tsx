@@ -49,16 +49,14 @@ export function ConfirmDialog({
   return (
     <AlertDialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
       <AlertDialogContent
-        className={`${
-          isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
-        }`}
+        className="bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]"
       >
         <AlertDialogHeader>
-          <AlertDialogTitle className={isDarkMode ? 'text-white' : 'text-gray-900'}>
+          <AlertDialogTitle className="text-[hsl(var(--theme-text-primary))]">
             {title}
           </AlertDialogTitle>
           <AlertDialogDescription
-            className={isDarkMode ? 'text-gray-400' : 'text-gray-600'}
+            className="text-[hsl(var(--theme-text-muted))]"
           >
             {description}
           </AlertDialogDescription>
@@ -67,11 +65,7 @@ export function ConfirmDialog({
           <AlertDialogCancel
             onClick={onCancel}
             disabled={isProcessing}
-            className={`${
-              isDarkMode
-                ? 'bg-slate-700 hover:bg-slate-600 text-white'
-                : 'bg-gray-200 hover:bg-gray-300 text-gray-900'
-            } disabled:opacity-50`}
+            className="bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] border-[hsl(var(--theme-border-default))] disabled:opacity-50"
           >
             {cancelText}
           </AlertDialogCancel>
@@ -80,8 +74,8 @@ export function ConfirmDialog({
             disabled={isProcessing}
             className={`${
               isDangerous
-                ? `${isDarkMode ? 'bg-red-600 hover:bg-red-700' : 'bg-red-500 hover:bg-red-600'} text-white`
-                : `${isDarkMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-500 hover:bg-blue-600'} text-white`
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] text-white'
             } disabled:opacity-50`}
           >
             {isProcessing ? 'Processing...' : confirmText}

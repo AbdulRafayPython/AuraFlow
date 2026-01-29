@@ -1,11 +1,15 @@
 import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useFriends } from "../../contexts/FriendsContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { getAvatarUrl } from "@/lib/utils";
-import { Users, Plus, Home, ChevronLeft, ChevronRight, LogOut, Moon, Sun, Settings, User, Bell, Shield, Palette, HelpCircle, MessageSquare, ChevronDown } from "lucide-react";
+import { 
+  Users, Plus, Home, ChevronLeft, ChevronRight, LogOut, Moon, Sun, Settings, 
+  User, Bell, Shield, Palette, HelpCircle, MessageSquare, ChevronDown, 
+  Search, Sparkles, Hash, Volume2, Compass
+} from "lucide-react";
 import CreateCommunityModal from "../modals/CreateCommunityModal";
-import JoinCommunityModal from "../modals/JoinCommunityModal";
 import FriendProfileModal from "../modals/FriendProfileModal";
 import { channelService } from "../../services/channelService";
 import { socketService } from "../../services/socketService";
@@ -28,13 +32,23 @@ interface FriendsSidebarProps {
 }
 
 const statusColors = {
-  online: "bg-green-500",
-  idle: "bg-yellow-500",
-  dnd: "bg-red-500",
-  offline: "bg-gray-500",
+  online: "bg-emerald-500",
+  idle: "bg-amber-500",
+  dnd: "bg-rose-500",
+  offline: "bg-slate-500",
+};
+
+const statusGlow = {
+  online: "shadow-[0_0_8px_rgba(16,185,129,0.6)]",
+  idle: "shadow-[0_0_8px_rgba(245,158,11,0.6)]",
+  dnd: "shadow-[0_0_8px_rgba(244,63,94,0.6)]",
+  offline: "",
 };
 
 export default function FriendsSidebar({ onNavigate, currentView, selectedCommunity }: FriendsSidebarProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isDiscoverPage = location.pathname === '/discover';
   const { isDarkMode, toggleTheme } = useTheme();
   const { pendingRequests, friends = [] } = useFriends();
   const { logout } = useAuth();
@@ -52,14 +66,18 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
-  const [showJoinCommunityModal, setShowJoinCommunityModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userStatus, setUserStatus] = useState<'online' | 'idle' | 'dnd' | 'offline'>('online');
   const [showFriendProfileModal, setShowFriendProfileModal] = useState(false);
   const [selectedFriendForModal, setSelectedFriendForModal] = useState<any>(null);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
-  const [expandedFriendsSection, setExpandedFriendsSection] = useState(true);
+  const [expandedSections, setExpandedSections] = useState({
+    conversations: true,
+    friends: true,
+    communities: true,
+  });
   const [showDetailPanel, setShowDetailPanel] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const loadUserData = async () => {
@@ -98,6 +116,9 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     const community = communities.find(c => c.id.toString() === communityId);
     if (community) {
       selectCommunity(community.id);
+      if (isDiscoverPage) {
+        navigate('/');
+      }
       onNavigate("dashboard", communityId);
     }
   };
@@ -105,7 +126,6 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const handleCreateCommunity = async (data: CommunityFormData) => {
     try {
       const newCommunity = await channelService.createCommunity(data);
-      // Defer reload/select/navigation until modal completes branding/uploads
       return newCommunity;
     } catch (error) {
       console.error("Failed to create community:", error);
@@ -130,18 +150,25 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
   };
 
-  const getCommunityColor = (index: number) => {
-    const colors = ["bg-blue-600", "bg-purple-600", "bg-green-600", "bg-red-600", "bg-yellow-600", "bg-pink-600"];
-    return colors[index % colors.length];
+  const getCommunityGradient = (index: number) => {
+    const gradients = [
+      "from-blue-500 to-cyan-500",
+      "from-purple-500 to-pink-500",
+      "from-emerald-500 to-teal-500",
+      "from-orange-500 to-red-500",
+      "from-indigo-500 to-purple-500",
+      "from-rose-500 to-pink-500",
+    ];
+    return gradients[index % gradients.length];
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'online': return 'bg-green-500';
-      case 'idle': return 'bg-yellow-500';
-      case 'dnd': return 'bg-red-500';
-      case 'offline': return 'bg-gray-500';
-      default: return 'bg-gray-500';
+      case 'online': return 'bg-emerald-500';
+      case 'idle': return 'bg-amber-500';
+      case 'dnd': return 'bg-rose-500';
+      case 'offline': return 'bg-slate-500';
+      default: return 'bg-slate-500';
     }
   };
 
@@ -167,7 +194,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     }
 
     return (
-      <div className="w-full h-full rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center font-bold text-white text-lg">
+      <div className="w-full h-full rounded-full bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] flex items-center justify-center font-bold text-white text-lg">
         {getAvatarInitials(currentUser.display_name || currentUser.username)}
       </div>
     );
@@ -177,17 +204,62 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     setUserStatus(status);
   };
 
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  // Filter friends and communities based on search
+  const filteredFriends = friends.filter(f => 
+    f.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    f.username?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  
+  const filteredCommunities = communities.filter(c =>
+    c.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredConversations = conversations.filter(conv => 
+    conv.user?.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    conv.user?.username?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Get community logo URL
+  const getCommunityLogoUrl = (community: any) => {
+    if (!community.logo_url) return null;
+    return `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.logo_url}`;
+  };
+
   return (
-    <div className={`flex-shrink-0 h-full flex transition-all duration-200 ${isDarkMode ? 'bg-slate-900' : 'bg-gray-50'}`}>
+    <div 
+      className="flex-shrink-0 h-full flex transition-all duration-300 relative" 
+      style={{ 
+        overflow: 'visible',
+        background: 'var(--theme-sidebar-gradient)'
+      }}
+    >
+      {/* Gradient overlay for depth */}
+      <div 
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: 'radial-gradient(ellipse at 30% 20%, hsl(var(--theme-accent-primary) / 0.03) 0%, transparent 60%)',
+        }}
+      />
+      {/* Top accent gradient line */}
+      <div 
+        className="absolute top-0 left-0 right-0 h-px z-50"
+        style={{
+          background: 'var(--theme-accent-gradient)',
+          opacity: 0.6
+        }}
+      />
       {/* Icon Sidebar - Always visible */}
-      <div className={`flex flex-col items-center py-3 gap-2 flex-shrink-0 w-20 ${isDarkMode ? 'border-r border-slate-700' : 'border-r border-gray-200'} relative z-50`}>
+      <div className="flex flex-col items-center py-3 gap-2 flex-shrink-0 w-[72px] border-r border-[hsl(var(--theme-border-default)/0.3)] relative" style={{ overflow: 'visible' }}>
         {/* Toggle Button */}
         <div className="relative group">
           <button
             onClick={() => {
               const newCollapsed = !isCollapsed;
               setIsCollapsed(newCollapsed);
-              // Close detail panel when collapsing, open when expanding
               if (newCollapsed) {
                 setShowDetailPanel(false);
               } else {
@@ -195,33 +267,47 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                 setShowDetailPanel(true);
               }
             }}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'hover:bg-slate-700 text-slate-400 hover:text-white' : 'hover:bg-gray-200 text-gray-600 hover:text-gray-900'}`}
-            title={isCollapsed ? "Expand" : "Collapse"}
+            className="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:scale-105"
           >
-            {isCollapsed ? <ChevronRight className="w-5 h-5 transition-transform duration-300" /> : <ChevronLeft className="w-5 h-5 transition-transform duration-300" />}
+            {isCollapsed ? (
+              <ChevronRight className="w-5 h-5 transition-transform duration-300" />
+            ) : (
+              <ChevronLeft className="w-5 h-5 transition-transform duration-300" />
+            )}
           </button>
           {isCollapsed && (
-            <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-[100] ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
-              {isCollapsed ? "Expand" : "Collapse"}
+            <div className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-xl whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 z-[9999] bg-[hsl(var(--theme-bg-elevated))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))] shadow-xl backdrop-blur-xl">
+              Expand
             </div>
           )}
         </div>
 
-        <div className={`h-0.5 w-8 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`} />
+        <div className="h-0.5 w-8 rounded-full bg-gradient-to-r from-transparent via-[hsl(var(--theme-border-default))] to-transparent" />
 
         {/* Home Button */}
         <div className="relative group w-full flex justify-center transition-all duration-300">
           {currentView === "dashboard" && !selectedCommunity && (
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-blue-500 rounded-r-full transition-all duration-300" />
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] rounded-r-full transition-all duration-300" />
           )}
           <button
-            onClick={() => onNavigate("dashboard")}
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center ${currentView === "dashboard" && !selectedCommunity ? "bg-blue-600 text-white" : isDarkMode ? "bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white" : "bg-gray-200 hover:bg-blue-600 text-gray-600 hover:text-white"}`}
+            onClick={() => {
+              if (isDiscoverPage) {
+                navigate('/');
+              }
+              onNavigate("dashboard");
+            }}
+            onMouseEnter={() => setHoveredItem('home')}
+            onMouseLeave={() => setHoveredItem(null)}
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 ${
+              currentView === "dashboard" && !selectedCommunity && !isDiscoverPage
+                ? "bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.4)] scale-105" 
+                : "bg-[hsl(var(--theme-bg-secondary))] hover:bg-gradient-to-br hover:from-[hsl(var(--theme-accent-primary))] hover:to-[hsl(var(--theme-accent-secondary))] text-[hsl(var(--theme-text-muted))] hover:text-white hover:scale-105 hover:shadow-lg"
+            }`}
           >
-            <Home className="w-5 h-5 transition-all duration-300" />
+            <Home className={`w-5 h-5 transition-all duration-300 ${hoveredItem === 'home' ? 'scale-110' : ''}`} />
           </button>
           {isCollapsed && (
-            <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-[100] ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
+            <div className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-xl whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 z-[9999] bg-[hsl(var(--theme-bg-elevated))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))] shadow-xl backdrop-blur-xl">
               Home
             </div>
           )}
@@ -230,57 +316,96 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         {/* Friends Button */}
         <div className="relative group w-full flex justify-center transition-all duration-300">
           {currentView === "friends" && (
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-green-500 rounded-r-full transition-all duration-300" />
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-emerald-400 to-emerald-600 rounded-r-full transition-all duration-300" />
           )}
           <button
-            onClick={() => {
-              onNavigate("friends");
-            }}
-            className={`relative w-12 h-12 rounded-2xl flex items-center justify-center ${currentView === "friends" ? "bg-green-600 text-white" : isDarkMode ? "bg-slate-700 hover:bg-green-600 text-slate-400 hover:text-white" : "bg-gray-200 hover:bg-green-600 text-gray-600 hover:text-white"}`}
+            onClick={() => onNavigate("friends")}
+            onMouseEnter={() => setHoveredItem('friends')}
+            onMouseLeave={() => setHoveredItem(null)}
+            className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 ${
+              currentView === "friends" 
+                ? "bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/40 scale-105" 
+                : "bg-[hsl(var(--theme-bg-secondary))] hover:bg-gradient-to-br hover:from-emerald-500 hover:to-teal-600 text-[hsl(var(--theme-text-muted))] hover:text-white hover:scale-105 hover:shadow-lg"
+            }`}
           >
-            <Users className="w-5 h-5 transition-all duration-300" />
+            <Users className={`w-5 h-5 transition-all duration-300 ${hoveredItem === 'friends' ? 'scale-110' : ''}`} />
             {pendingRequests.length > 0 && (
-              <div className={`absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 transition-all duration-300 ${isDarkMode ? 'border-slate-900' : 'border-gray-50'}`}>
+              <div className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 rounded-full flex items-center justify-center text-white text-[10px] font-bold border-2 border-[hsl(var(--theme-sidebar-bg))] animate-pulse">
                 {pendingRequests.length > 9 ? '9+' : pendingRequests.length}
               </div>
             )}
           </button>
-          {/* FIXED: Increased z-index to z-[100] */}
           {isCollapsed && (
-            <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-[100] ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
+            <div className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-xl whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 z-[9999] bg-[hsl(var(--theme-bg-elevated))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))] shadow-xl backdrop-blur-xl">
               Friends {pendingRequests.length > 0 && `(${pendingRequests.length})`}
             </div>
           )}
         </div>
 
-        <div className={`h-0.5 w-8 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`} />
+        {/* Discover Communities */}
+        <div className="relative group w-full flex justify-center">
+          <button
+            onClick={() => navigate('/discover')}
+            onMouseEnter={() => setHoveredItem('discover')}
+            onMouseLeave={() => setHoveredItem(null)}
+            className="relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 bg-[hsl(var(--theme-bg-secondary))] hover:bg-gradient-to-br hover:from-indigo-500 hover:to-purple-600 text-[hsl(var(--theme-text-muted))] hover:text-white hover:scale-105 hover:shadow-lg"
+          >
+            <Compass className={`w-5 h-5 transition-all duration-300 ${hoveredItem === 'discover' ? 'scale-110' : ''}`} />
+          </button>
+          {isCollapsed && (
+            <div className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-xl whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 z-[9999] bg-[hsl(var(--theme-bg-elevated))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))] shadow-xl backdrop-blur-xl">
+              Discover Communities
+            </div>
+          )}
+        </div>
+
+        <div className="h-0.5 w-8 rounded-full bg-gradient-to-r from-transparent via-[hsl(var(--theme-border-default))] to-transparent" />
 
         {/* Communities */}
-        <div className={`w-full flex flex-col items-center gap-2 transition-all duration-300`}>
+        <div className="w-full flex flex-col items-center gap-2 flex-1 overflow-y-auto scrollbar-none py-1">
           {communities.map((community, index) => {
             const communityId = community.id.toString();
-            const color = getCommunityColor(index);
+            const isSelected = selectedCommunity === communityId;
+            const logoUrl = getCommunityLogoUrl(community);
             const initials = community.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-            const logoUrl = community.logo_url ? `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.logo_url}` : null;
 
-              return (
+            return (
               <div key={community.id} className="relative group w-full flex justify-center transition-all duration-300">
-                {selectedCommunity === communityId && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 bg-white rounded-r-full transition-all duration-300" />
+                {isSelected && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded-r-full transition-all duration-300" />
                 )}
                 <button
                   onClick={() => handleCommunityClick(communityId)}
-                  className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white text-sm transition-all overflow-hidden ${selectedCommunity === communityId ? color : isDarkMode ? `bg-slate-700 hover:${color}` : `bg-gray-200 hover:${color}`}`}
-                  style={!logoUrl ? { backgroundColor: community.color || undefined } : undefined}
+                  onMouseEnter={() => setHoveredItem(`community-${community.id}`)}
+                  onMouseLeave={() => setHoveredItem(null)}
+                  className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white text-sm transition-all duration-300 overflow-hidden ${
+                    isSelected 
+                      ? "shadow-lg scale-105 ring-2 ring-white/30" 
+                      : "hover:scale-105 hover:shadow-lg hover:ring-2 hover:ring-white/20"
+                  }`}
+                  style={{ 
+                    backgroundColor: !logoUrl ? (community.color || undefined) : undefined,
+                    background: !logoUrl && !community.color ? `linear-gradient(135deg, var(--tw-gradient-stops))` : undefined
+                  }}
                 >
                   {logoUrl ? (
-                    <img src={logoUrl} alt={community.name} className="w-full h-full object-cover" />
+                    <img 
+                      src={logoUrl} 
+                      alt={community.name} 
+                      className={`w-full h-full object-cover transition-all duration-300 ${
+                        hoveredItem === `community-${community.id}` ? 'scale-110' : ''
+                      }`} 
+                    />
                   ) : (
-                    <span className="transition-all duration-300">{community.icon || initials}</span>
+                    <div className={`w-full h-full rounded-2xl bg-gradient-to-br ${getCommunityGradient(index)} flex items-center justify-center`}>
+                      <span className={`transition-all duration-300 ${hoveredItem === `community-${community.id}` ? 'scale-110' : ''}`}>
+                        {community.icon || initials}
+                      </span>
+                    </div>
                   )}
                 </button>
                 {isCollapsed && (
-                  <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
+                  <div className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-xl whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 z-[9999] bg-[hsl(var(--theme-bg-elevated))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))] shadow-xl backdrop-blur-xl">
                     {community.name}
                   </div>
                 )}
@@ -290,224 +415,299 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         </div>
 
         {/* Add Community */}
-        <div className="relative group w-full flex justify-center">
+        <div className="relative group w-full flex justify-center mt-auto">
           <button
             onClick={() => setShowCreateCommunityModal(true)}
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-700 hover:bg-green-600 text-green-500 hover:text-white' : 'bg-gray-200 hover:bg-green-600 text-green-600 hover:text-white'}`}
+            onMouseEnter={() => setHoveredItem('add')}
+            onMouseLeave={() => setHoveredItem(null)}
+            className="w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 bg-[hsl(var(--theme-bg-secondary))] hover:bg-gradient-to-br hover:from-emerald-500 hover:to-teal-600 text-emerald-500 hover:text-white hover:scale-105 hover:shadow-lg hover:shadow-emerald-500/30 border-2 border-dashed border-[hsl(var(--theme-border-default))] hover:border-transparent"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className={`w-5 h-5 transition-all duration-300 ${hoveredItem === 'add' ? 'rotate-90 scale-110' : ''}`} />
           </button>
-          {/* FIXED: Increased z-index to z-[100] */}
           {isCollapsed ? (
-            <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 rounded-lg shadow-2xl overflow-hidden border opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto z-[100] ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
+            <div className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 rounded-xl shadow-2xl overflow-hidden border opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none group-hover:pointer-events-auto z-[9999] bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl">
               <button
-                onClick={() => { setShowCreateCommunityModal(true); }}
-                className={`px-3 py-2 text-xs font-semibold text-left transition-colors whitespace-nowrap ${isDarkMode ? 'text-green-400 hover:bg-slate-700' : 'text-green-600 hover:bg-gray-100'}`}
+                onClick={() => setShowCreateCommunityModal(true)}
+                className="w-full px-4 py-2.5 text-xs font-semibold text-left transition-all whitespace-nowrap text-emerald-400 hover:bg-[hsl(var(--theme-bg-hover))] flex items-center gap-2"
               >
+                <Sparkles className="w-3.5 h-3.5" />
                 Create
               </button>
-              <div className={`h-px ${isDarkMode ? 'bg-slate-700' : 'bg-gray-200'}`} />
+              <div className="h-px bg-[hsl(var(--theme-border-default))]" />
               <button
-                onClick={() => setShowJoinCommunityModal(true)}
-                className={`px-3 py-2 text-xs font-semibold text-left transition-colors whitespace-nowrap ${isDarkMode ? 'text-cyan-400 hover:bg-slate-700' : 'text-cyan-600 hover:bg-gray-100'}`}
+                onClick={() => navigate('/discover')}
+                className="w-full px-4 py-2.5 text-xs font-semibold text-left transition-all whitespace-nowrap text-cyan-400 hover:bg-[hsl(var(--theme-bg-hover))] flex items-center gap-2"
               >
-                Join
+                <Compass className="w-3.5 h-3.5" />
+                Discover
               </button>
             </div>
           ) : null}
         </div>
 
-        {/* Profile - FIXED: Increased z-index to z-[60] */}
-        <div className="flex flex-col items-center gap-2 mt-auto profile-menu-container relative z-[60]">
+        {/* Profile */}
+        <div className="flex flex-col items-center gap-2 mt-2 profile-menu-container relative z-[60]">
           <div className="relative group w-full flex justify-center">
             <button
               onClick={() => setShowProfileMenu(!showProfileMenu)}
-              className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ring-2 relative z-[60] ${showProfileMenu ? 'ring-blue-500 scale-105' : isDarkMode ? 'ring-slate-700 hover:ring-blue-500/50 hover:scale-105' : 'ring-gray-300 hover:ring-blue-500/50 hover:scale-105'}`}
+              className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 ring-2 relative ${
+                showProfileMenu 
+                  ? 'ring-[hsl(var(--theme-accent-primary))] scale-110 shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.3)]' 
+                  : 'ring-[hsl(var(--theme-border-default))] hover:ring-[hsl(var(--theme-accent-primary))] hover:scale-105'
+              }`}
             >
               <div className="w-full h-full rounded-full overflow-hidden">
                 {renderUserAvatar()}
               </div>
-              <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 ${isDarkMode ? 'border-slate-900' : 'border-gray-50'} ${statusColors[userStatus]}`} style={{ transform: 'translate(25%, 25%)' }} />
+              <div 
+                className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[hsl(var(--theme-sidebar-bg))] ${statusColors[userStatus]} ${statusGlow[userStatus]}`} 
+              />
             </button>
 
-            {/* FIXED: Increased z-index to z-[100] for profile menu */}
+            {/* Profile Menu */}
             {showProfileMenu && currentUser && (
-              <div className={`${isCollapsed ? 'absolute' : 'fixed'} w-72 rounded-xl shadow-2xl border overflow-hidden z-[100] ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`} style={isCollapsed ? { left: 'calc(100% + 8px)', bottom: '1.5rem', transform: 'translateY(0)' } : { left: '100px', bottom: '1.5rem', transform: 'translateY(0)' }}>                <div className={`p-4 border-b ${isDarkMode ? 'bg-gradient-to-br from-slate-900/80 to-slate-800/80 border-slate-700' : 'bg-gradient-to-br from-blue-50/50 to-white border-gray-200'}`}>
-                <div className="flex items-center gap-3">
-                  <div className="relative w-14 h-14 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-blue-500 shadow-lg">
-                    {renderUserAvatar()}
-                    <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-3 ${isDarkMode ? 'border-slate-900' : 'border-blue-50'} ${statusColors[userStatus]}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className={`font-semibold text-base truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {currentUser.display_name || currentUser.username}
+              <div 
+                className={`${isCollapsed ? 'absolute' : 'fixed'} w-80 rounded-2xl shadow-2xl border overflow-hidden z-[9999] bg-[hsl(var(--theme-bg-elevated))/0.95] border-[hsl(var(--theme-border-default))] backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 duration-200`}
+                style={isCollapsed 
+                  ? { left: 'calc(100% + 12px)', bottom: '0', transform: 'translateY(0)' } 
+                  : { left: '84px', bottom: '1rem', transform: 'translateY(0)' }
+                }
+              >
+                {/* Profile Header */}
+                <div className="p-5 border-b bg-gradient-to-br from-[hsl(var(--theme-accent-primary)/0.15)] to-[hsl(var(--theme-accent-secondary)/0.1)] border-[hsl(var(--theme-border-default))]">
+                  <div className="flex items-center gap-4">
+                    <div className="relative w-16 h-16">
+                      {renderUserAvatar()}
+                      {/* <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[hsl(var(--theme-bg-elevated))] ${statusColors[userStatus]} ${statusGlow[userStatus]}`} /> */}
                     </div>
-                    <div className={`text-sm truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      @{currentUser.username}
-                    </div>
-                    <div className={`flex items-center gap-1.5 mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                      <div className={`w-2 h-2 rounded-full ${statusColors[userStatus]}`} />
-                      <span className="capitalize">{userStatus}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-lg truncate text-[hsl(var(--theme-text-primary))]">
+                        {currentUser.display_name || currentUser.username}
+                      </div>
+                      <div className="text-sm truncate text-[hsl(var(--theme-text-muted))]">
+                        @{currentUser.username}
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <div className={`w-2 h-2 rounded-full ${statusColors[userStatus]} ${statusGlow[userStatus]}`} />
+                        <span className="text-xs font-medium capitalize text-[hsl(var(--theme-text-secondary))]">{userStatus}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-                <div className={`p-3 border-b ${isDarkMode ? 'border-slate-700/50' : 'border-gray-200'}`}>
-                  <div className={`text-xs font-semibold mb-2 tracking-wide ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>SET STATUS</div>
+                {/* Status Selection */}
+                <div className="p-3 border-b border-[hsl(var(--theme-border-default))]">
+                  <div className="text-[10px] font-bold mb-2 uppercase tracking-widest text-[hsl(var(--theme-text-muted))]">Set Status</div>
                   <div className="grid grid-cols-2 gap-2">
                     {(['online', 'idle', 'dnd', 'offline'] as const).map((status) => (
                       <button
                         key={status}
                         onClick={() => handleStatusChange(status)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${userStatus === status ? (isDarkMode ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-blue-500 text-white shadow-lg shadow-blue-500/30') : (isDarkMode ? 'bg-slate-700/50 hover:bg-slate-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700')}`}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-300 ${
+                          userStatus === status 
+                            ? 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-md' 
+                            : 'bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]'
+                        }`}
                       >
                         <div className={`w-2.5 h-2.5 rounded-full ${userStatus === status ? 'bg-white' : statusColors[status]}`} />
-                        <span className="capitalize">{status === 'dnd' ? 'DND' : status}</span>
+                        <span className="capitalize">{status === 'dnd' ? 'Do Not Disturb' : status}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div className={`p-2 max-h-80 overflow-y-auto scrollbar ${isDarkMode ? 'scrollbar-thumb-slate-600 scrollbar-track-slate-800/30' : 'scrollbar-thumb-gray-400 scrollbar-track-gray-100'}`}>
-                  <button onClick={() => { setShowProfileMenu(false); onNavigate("profile"); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
-                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><User className="w-4 h-4" /></div>
+                {/* Menu Items */}
+                <div className="p-2 max-h-72 overflow-y-auto scrollbar scrollbar-thumb-[hsl(var(--theme-border-default))] scrollbar-track-transparent">
+                  <button 
+                    onClick={() => { setShowProfileMenu(false); onNavigate("profile"); }} 
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] group"
+                  >
+                    <div className="p-2 rounded-lg bg-[hsl(var(--theme-bg-secondary))] group-hover:bg-[hsl(var(--theme-accent-primary)/0.2)] transition-colors">
+                      <User className="w-4 h-4" />
+                    </div>
                     <span>My Profile</span>
                   </button>
-                  <button onClick={() => { setShowProfileMenu(false); onNavigate("settings"); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
-                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><Settings className="w-4 h-4" /></div>
+                  <button 
+                    onClick={() => { setShowProfileMenu(false); onNavigate("settings"); }} 
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] group"
+                  >
+                    <div className="p-2 rounded-lg bg-[hsl(var(--theme-bg-secondary))] group-hover:bg-[hsl(var(--theme-accent-primary)/0.2)] transition-colors">
+                      <Settings className="w-4 h-4" />
+                    </div>
                     <span>Settings</span>
                   </button>
-                  <button className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
-                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><Bell className="w-4 h-4" /></div>
-                    <span>Notifications</span>
-                  </button>
-                  <button className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
-                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><Shield className="w-4 h-4" /></div>
-                    <span>Privacy & Safety</span>
-                  </button>
-                  <div className={`my-2 h-px ${isDarkMode ? 'bg-slate-700/50' : 'bg-gray-200'}`} />
-                  <button onClick={toggleTheme} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
+                  
+                  <div className="my-2 h-px bg-[hsl(var(--theme-border-default))]" />
+                  
+                  <button 
+                    onClick={toggleTheme} 
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] group"
+                  >
                     <div className="flex items-center gap-3">
-                      <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><Palette className="w-4 h-4" /></div>
-                      <span>Appearance</span>
+                      <div className="p-2 rounded-lg bg-[hsl(var(--theme-bg-secondary))] group-hover:bg-[hsl(var(--theme-accent-primary)/0.2)] transition-colors">
+                        <Palette className="w-4 h-4" />
+                      </div>
+                      <span>Theme</span>
                     </div>
-                    <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold ${isDarkMode ? 'bg-slate-900 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>
-                      {isDarkMode ? <Moon className="w-3 h-3" /> : <Sun className="w-3 h-3" />}
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-accent-primary))]">
+                      {isDarkMode ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
                       <span>{isDarkMode ? 'Dark' : 'Light'}</span>
                     </div>
                   </button>
-                  <button className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
-                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><MessageSquare className="w-4 h-4" /></div>
-                    <span>Feedback</span>
-                  </button>
-                  <button className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
-                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><HelpCircle className="w-4 h-4" /></div>
-                    <span>Help & Support</span>
-                  </button>
-                  <div className={`my-2 h-px ${isDarkMode ? 'bg-slate-700/50' : 'bg-gray-200'}`} />
-                  <button onClick={handleLogout} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${isDarkMode ? 'hover:bg-red-900/30 text-red-400' : 'hover:bg-red-50 text-red-600'}`}>
-                    <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-red-900/20' : 'bg-red-100'}`}><LogOut className="w-4 h-4" /></div>
-                    <span>Logout</span>
+                  
+                  <div className="my-2 h-px bg-[hsl(var(--theme-border-default))]" />
+                  
+                  <button 
+                    onClick={handleLogout} 
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 hover:bg-rose-500/10 text-rose-500 group"
+                  >
+                    <div className="p-2 rounded-lg bg-rose-500/10 group-hover:bg-rose-500/20 transition-colors">
+                      <LogOut className="w-4 h-4" />
+                    </div>
+                    <span>Log Out</span>
                   </button>
                 </div>
               </div>
             )}
-
-            {/* FIXED: Increased z-index to z-[100] for profile tooltip */}
-            {!showProfileMenu && hoveredItem === 'profile' && isCollapsed && (
-              <div className={`absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none z-[100] ${isDarkMode ? 'bg-slate-800 text-white border border-slate-700' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'}`}>
-                {currentUser?.display_name || currentUser?.username || 'Profile'}
-              </div>
-            )}
-            {!showProfileMenu && isCollapsed && <div onMouseEnter={() => setHoveredItem('profile')} onMouseLeave={() => setHoveredItem(null)} className="absolute inset-0 z-[59]" />}
           </div>
         </div>
       </div>
 
-      {/* Detail Panel - Shows when expanded or during direct message, independent of view */}
+      {/* Detail Panel */}
       {showDetailPanel && (
-        <div className={`flex-1 flex flex-col h-full border-l w-64 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
-          <div className={`px-4 py-3 border-b ${isDarkMode ? 'border-slate-700/50' : 'border-gray-200'}`}>
-            <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Friends & Communities</h2>
+        <div 
+          className="flex-1 flex flex-col h-full border-l w-72 border-[hsl(var(--theme-border-default)/0.3)] backdrop-blur-sm animate-in slide-in-from-left-2 duration-300 relative"
+          style={{ background: 'hsl(var(--theme-bg-secondary) / 0.3)' }}
+        >
+          {/* Right edge gradient that blends with next panel */}
+          <div 
+            className="absolute right-0 top-0 w-8 h-full pointer-events-none z-10"
+            style={{
+              background: 'linear-gradient(90deg, transparent 0%, hsl(var(--theme-sidebar-bg) / 0.3) 100%)'
+            }}
+          />
+          
+          {/* Header */}
+          <div className="px-4 py-4 border-b border-[hsl(var(--theme-border-default)/0.3)] relative z-[5]">
+            <h2 className="text-lg font-bold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
+              Quick Access
+            </h2>
+            
+            {/* Search */}
+            <div className="relative mt-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--theme-text-muted))]" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search..."
+                className="w-full pl-9 pr-4 py-2 rounded-xl text-sm bg-[hsl(var(--theme-bg-tertiary)/0.5)] border border-[hsl(var(--theme-border-default)/0.5)] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] focus:border-transparent transition-all duration-200"
+              />
+            </div>
           </div>
 
-          <div className={`flex-1 overflow-y-auto scrollbar ${isDarkMode ? 'scrollbar-thumb-slate-600 scrollbar-track-slate-800/30' : 'scrollbar-thumb-gray-400 scrollbar-track-gray-100'}`}>
-            <div className="px-4 py-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className={`text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>Conversations</h3>
-              </div>
+          <div className="flex-1 overflow-y-auto scrollbar scrollbar-thumb-[hsl(var(--theme-border-default))] scrollbar-track-transparent">
+            {/* Conversations Section */}
+            <div className="px-3 py-3">
+              <button 
+                onClick={() => toggleSection('conversations')}
+                className="w-full flex items-center justify-between mb-2 px-2 py-1 rounded-lg hover:bg-[hsl(var(--theme-bg-hover))] transition-colors"
+              >
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-[hsl(var(--theme-text-muted))]">
+                  Recent Messages
+                </h3>
+                <ChevronDown className={`w-4 h-4 text-[hsl(var(--theme-text-muted))] transition-transform duration-200 ${expandedSections.conversations ? '' : '-rotate-90'}`} />
+              </button>
 
-              <div className="space-y-2">
-                {conversations.filter(conv => conv.last_message).length === 0 ? (
-                  <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>No conversations yet</p>
-                ) : (
-                  // Sort conversations by most recent message first
-                  [...conversations]
-                    .filter(conv => conv.last_message) // Only show friends with messages
-                    .sort((a, b) => {
-                      const aTime = new Date(a.last_message_time || 0).getTime();
-                      const bTime = new Date(b.last_message_time || 0).getTime();
-                      return bTime - aTime; // Most recent first
-                    })
-                    .map((conv) => {
-                      const status = userStatuses.get(conv.user.username) || 'offline';
-                      return (
-                        <button
-                          key={conv.user_id}
-                          onClick={() => {
-                            selectFriend(conv.user_id);
-                            onNavigate("direct-message", conv.user_id.toString());
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
-                            currentFriend?.id === conv.user_id
-                              ? (isDarkMode ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-900')
-                              : (isDarkMode ? 'text-slate-300 hover:bg-slate-700/50' : 'text-gray-700 hover:bg-gray-50')
-                          }`}
-                        >
-                          <div className="relative flex-shrink-0">
-                            {conv.user.avatar_url ? (
-                              <img src={getAvatarUrl(conv.user.avatar_url, conv.user.username)} alt={conv.user.display_name} className="w-8 h-8 rounded-full object-cover" />
-                            ) : (
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${
-                                status === 'online' ? 'bg-green-600' : status === 'idle' ? 'bg-yellow-600' : status === 'dnd' ? 'bg-red-600' : 'bg-gray-600'
-                              }`}>
-                                {getAvatarInitials(conv.user.display_name || conv.user.username)}
+              {expandedSections.conversations && (
+                <div className="space-y-1">
+                  {filteredConversations.filter(conv => conv.last_message).length === 0 ? (
+                    <p className="text-xs text-[hsl(var(--theme-text-muted))] px-2 py-3 text-center">No conversations yet</p>
+                  ) : (
+                    [...filteredConversations]
+                      .filter(conv => conv.last_message)
+                      .sort((a, b) => {
+                        const aTime = new Date(a.last_message_time || 0).getTime();
+                        const bTime = new Date(b.last_message_time || 0).getTime();
+                        return bTime - aTime;
+                      })
+                      .slice(0, 5)
+                      .map((conv) => {
+                        const status = userStatuses.get(conv.user.username) || 'offline';
+                        const isActive = currentFriend?.id === conv.user_id;
+                        return (
+                          <button
+                            key={conv.user_id}
+                            onClick={() => {
+                              selectFriend(conv.user_id);
+                              onNavigate("direct-message", conv.user_id.toString());
+                            }}
+                            className={`w-full text-left px-3 py-2.5 rounded-xl text-sm flex items-center gap-3 transition-all duration-200 group ${
+                              isActive
+                                ? 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary)/0.2)] to-[hsl(var(--theme-accent-secondary)/0.1)] shadow-sm'
+                                : 'hover:bg-[hsl(var(--theme-bg-hover))]'
+                            }`}
+                          >
+                            <div className="relative flex-shrink-0">
+                              {conv.user.avatar_url ? (
+                                <img 
+                                  src={getAvatarUrl(conv.user.avatar_url, conv.user.username)} 
+                                  alt={conv.user.display_name} 
+                                  className="w-10 h-10 rounded-xl object-cover ring-2 ring-[hsl(var(--theme-border-default)/0.5)] group-hover:ring-[hsl(var(--theme-accent-primary)/0.5)] transition-all" 
+                                />
+                              ) : (
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-xs font-bold bg-gradient-to-br ${
+                                  status === 'online' ? 'from-emerald-500 to-teal-600' : 
+                                  status === 'idle' ? 'from-amber-500 to-orange-600' : 
+                                  status === 'dnd' ? 'from-rose-500 to-pink-600' : 
+                                  'from-slate-500 to-slate-600'
+                                }`}>
+                                  {getAvatarInitials(conv.user.display_name || conv.user.username)}
+                                </div>
+                              )}
+                              <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[hsl(var(--theme-bg-secondary))] ${getStatusColor(status)} ${statusGlow[status as keyof typeof statusGlow] || ''}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="truncate font-semibold text-sm text-[hsl(var(--theme-text-primary))]">
+                                {conv.user.display_name || conv.user.username}
                               </div>
-                            )}
-                            <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-slate-800 ${getStatusColor(status)}`} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="truncate font-medium text-sm">{conv.user.display_name || conv.user.username}</div>
-                            {conv.last_message && (
-                              <div className={`text-xs truncate ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>
-                                {conv.last_message.sender_id === currentUser?.id ? 'You: ' : ''}{conv.last_message.content}
-                              </div>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })
-                )}
-              </div>
+                              {conv.last_message && (
+                                <div className="text-xs truncate text-[hsl(var(--theme-text-muted))]">
+                                  {conv.last_message.sender_id === currentUser?.id ? 'You: ' : ''}{conv.last_message.content}
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className={`h-px mx-4 ${isDarkMode ? 'bg-slate-700/50' : 'bg-gray-200'}`} />
+            <div className="h-px mx-4 bg-gradient-to-r from-transparent via-[hsl(var(--theme-border-default))] to-transparent" />
 
-            <div className="px-4 py-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className={`text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>All Friends</h3>
-                <button onClick={() => setExpandedFriendsSection(!expandedFriendsSection)} className={`p-1 rounded transition-colors ${isDarkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-gray-100 text-gray-600'}`}>
-                  {expandedFriendsSection ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                </button>
-              </div>
+            {/* Friends Section */}
+            <div className="px-3 py-3">
+              <button 
+                onClick={() => toggleSection('friends')}
+                className="w-full flex items-center justify-between mb-2 px-2 py-1 rounded-lg hover:bg-[hsl(var(--theme-bg-hover))] transition-colors"
+              >
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-[hsl(var(--theme-text-muted))]">
+                  Friends ({filteredFriends.length})
+                </h3>
+                <ChevronDown className={`w-4 h-4 text-[hsl(var(--theme-text-muted))] transition-transform duration-200 ${expandedSections.friends ? '' : '-rotate-90'}`} />
+              </button>
 
-              {expandedFriendsSection && (
-                <div className="space-y-2">
-                  {friends.length === 0 ? (
-                    <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>No friends yet</p>
+              {expandedSections.friends && (
+                <div className="space-y-1">
+                  {filteredFriends.length === 0 ? (
+                    <p className="text-xs text-[hsl(var(--theme-text-muted))] px-2 py-3 text-center">
+                      {searchQuery ? 'No friends found' : 'No friends yet'}
+                    </p>
                   ) : (
-                    friends.map((friend) => {
+                    filteredFriends.map((friend) => {
                       const status = userStatuses.get(friend.username) || friend.status;
                       return (
                         <button
@@ -516,21 +716,32 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                             setSelectedFriendForModal(friend);
                             setShowFriendProfileModal(true);
                           }}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${isDarkMode ? 'text-slate-300 hover:bg-slate-700/50' : 'text-gray-700 hover:bg-gray-50'}`}
+                          className="w-full text-left px-3 py-2.5 rounded-xl text-sm flex items-center gap-3 transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] group"
                         >
                           <div className="relative flex-shrink-0">
                             {friend.avatar_url ? (
-                              <img src={getAvatarUrl(friend.avatar_url, friend.username)} alt={friend.display_name} className="w-8 h-8 rounded-full object-cover" />
+                              <img 
+                                src={getAvatarUrl(friend.avatar_url, friend.username)} 
+                                alt={friend.display_name} 
+                                className="w-10 h-10 rounded-xl object-cover ring-2 ring-[hsl(var(--theme-border-default)/0.5)] group-hover:ring-[hsl(var(--theme-accent-primary)/0.5)] transition-all" 
+                              />
                             ) : (
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${status === 'online' ? 'bg-green-600' : status === 'idle' ? 'bg-yellow-600' : status === 'dnd' ? 'bg-red-600' : 'bg-gray-600'}`}>
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-xs font-bold bg-gradient-to-br ${
+                                status === 'online' ? 'from-emerald-500 to-teal-600' : 
+                                status === 'idle' ? 'from-amber-500 to-orange-600' : 
+                                status === 'dnd' ? 'from-rose-500 to-pink-600' : 
+                                'from-slate-500 to-slate-600'
+                              }`}>
                                 {getAvatarInitials(friend.display_name)}
                               </div>
                             )}
-                            <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-slate-800 ${getStatusColor(status)}`} />
+                            <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[hsl(var(--theme-bg-secondary))] ${getStatusColor(status)} ${statusGlow[status as keyof typeof statusGlow] || ''}`} />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="truncate font-medium text-sm">{friend.display_name}</div>
-                            {friend.custom_status && <div className={`text-xs truncate ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>{friend.custom_status}</div>}
+                            <div className="truncate font-semibold text-sm text-[hsl(var(--theme-text-primary))]">{friend.display_name}</div>
+                            {friend.custom_status && (
+                              <div className="text-xs truncate text-[hsl(var(--theme-text-muted))]">{friend.custom_status}</div>
+                            )}
                           </div>
                         </button>
                       );
@@ -540,34 +751,91 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
               )}
             </div>
 
-            <div className={`h-px mx-4 ${isDarkMode ? 'bg-slate-700/50' : 'bg-gray-200'}`} />
+            <div className="h-px mx-4 bg-gradient-to-r from-transparent via-[hsl(var(--theme-border-default))] to-transparent" />
 
-            <div className="px-4 py-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className={`text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>Communities</h3>
-                <button onClick={() => setShowJoinCommunityModal(true)} className={`p-1 rounded transition-colors ${isDarkMode ? 'hover:bg-slate-700 text-slate-400 hover:text-green-400' : 'hover:bg-gray-100 text-gray-600 hover:text-green-600'}`}><Plus className="w-4 h-4" /></button>
-              </div>
-              <div className="space-y-2">
-                {communities.length === 0 ? (
-                  <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-gray-500'}`}>No communities yet</p>
-                ) : (
-                  communities.map((community) => (
-                    <button key={community.id} onClick={() => handleCommunityClick(community.id.toString())} className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${selectedCommunity === community.id.toString() ? (isDarkMode ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-900') : (isDarkMode ? 'text-slate-300 hover:bg-slate-700/50' : 'text-gray-700 hover:bg-gray-50')}`}>
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-semibold text-white text-xs flex-shrink-0 ${getCommunityColor(communities.indexOf(community))}`}>
-                        {community.icon || community.name.substring(0, 2).toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0"><div className="truncate font-medium text-sm">{community.name}</div></div>
-                    </button>
-                  ))
-                )}
-              </div>
+            {/* Communities Section */}
+            <div className="px-3 py-3">
+              <button 
+                onClick={() => toggleSection('communities')}
+                className="w-full flex items-center justify-between mb-2 px-2 py-1 rounded-lg hover:bg-[hsl(var(--theme-bg-hover))] transition-colors"
+              >
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-[hsl(var(--theme-text-muted))]">
+                  Communities ({filteredCommunities.length})
+                </h3>
+                <div className="flex items-center gap-1">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); navigate('/discover'); }} 
+                    className="p-1 rounded-lg transition-colors hover:bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))]"
+                    title="Discover Communities"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                  <ChevronDown className={`w-4 h-4 text-[hsl(var(--theme-text-muted))] transition-transform duration-200 ${expandedSections.communities ? '' : '-rotate-90'}`} />
+                </div>
+              </button>
+
+              {expandedSections.communities && (
+                <div className="space-y-1">
+                  {filteredCommunities.length === 0 ? (
+                    <p className="text-xs text-[hsl(var(--theme-text-muted))] px-2 py-3 text-center">
+                      {searchQuery ? 'No communities found' : 'No communities yet'}
+                    </p>
+                  ) : (
+                    filteredCommunities.map((community, index) => {
+                      const isSelected = selectedCommunity === community.id.toString();
+                      const logoUrl = getCommunityLogoUrl(community);
+                      return (
+                        <button 
+                          key={community.id} 
+                          onClick={() => handleCommunityClick(community.id.toString())} 
+                          className={`w-full text-left px-3 py-2.5 rounded-xl text-sm flex items-center gap-3 transition-all duration-200 group ${
+                            isSelected 
+                              ? 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary)/0.2)] to-[hsl(var(--theme-accent-secondary)/0.1)] shadow-sm' 
+                              : 'hover:bg-[hsl(var(--theme-bg-hover))]'
+                          }`}
+                        >
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-xs flex-shrink-0 overflow-hidden ring-2 ring-[hsl(var(--theme-border-default)/0.5)] group-hover:ring-[hsl(var(--theme-accent-primary)/0.5)] transition-all">
+                            {logoUrl ? (
+                              <img 
+                                src={logoUrl} 
+                                alt={community.name} 
+                                className="w-full h-full object-cover" 
+                              />
+                            ) : (
+                              <div 
+                                className={`w-full h-full bg-gradient-to-br ${getCommunityGradient(index)} flex items-center justify-center`}
+                                style={community.color ? { background: community.color } : undefined}
+                              >
+                                {community.icon || community.name.substring(0, 2).toUpperCase()}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="truncate font-semibold text-sm text-[hsl(var(--theme-text-primary))]">{community.name}</div>
+                            {community.member_count && (
+                              <div className="text-xs text-[hsl(var(--theme-text-muted))] flex items-center gap-1">
+                                <Users className="w-3 h-3" />
+                                {community.member_count} members
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      <CreateCommunityModal isOpen={showCreateCommunityModal} onClose={() => setShowCreateCommunityModal(false)} onCreateCommunity={handleCreateCommunity} />
-      <JoinCommunityModal isOpen={showJoinCommunityModal} onClose={() => setShowJoinCommunityModal(false)} onJoinCommunity={handleJoinCommunity} onDiscoverCommunities={channelService.discoverCommunities.bind(channelService)} />
+      {/* Modals */}
+      <CreateCommunityModal 
+        isOpen={showCreateCommunityModal} 
+        onClose={() => setShowCreateCommunityModal(false)} 
+        onCreateCommunity={handleCreateCommunity} 
+      />
       <FriendProfileModal
         isOpen={showFriendProfileModal}
         onClose={() => {
@@ -581,7 +849,16 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
           setShowFriendProfileModal(false);
         }}
       />
-      <ConfirmDialog isOpen={showLogoutDialog} title="Logout" description="Are you sure you want to logout? You will need to log in again to access your account." cancelText="Cancel" confirmText="Logout" isDangerous={true} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
+      <ConfirmDialog 
+        isOpen={showLogoutDialog} 
+        title="Log Out" 
+        description="Are you sure you want to log out? You'll need to sign in again to access your account." 
+        cancelText="Cancel" 
+        confirmText="Log Out" 
+        isDangerous={true} 
+        onConfirm={confirmLogout} 
+        onCancel={() => setShowLogoutDialog(false)} 
+      />
     </div>
   );
 }

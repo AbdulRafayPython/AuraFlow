@@ -140,12 +140,6 @@ Additional Features by Jury Members:
 
 For Proposal Defense Purpose 
 
-PROPOSED ADVISORY COMMITTEE
-S#	Faculty Name	Signature
-1		
-2		
-3		
-4		
 
 
 

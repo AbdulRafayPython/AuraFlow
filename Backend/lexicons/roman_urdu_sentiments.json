@@ -70,6 +70,16 @@
       "pareshan", "پریشان", "frustrated", "tang", "تنگ", "irritated", "annoyed",
       "thak gaya", "تھک گیا", "tired", "bore", "boring", "bored", "pagal", "پاگل",
       "dimagh kharab", "دماغ خراب", "headache", "stress", "تناؤ"
+    ],
+    "loss_damage": [
+      "nuqsan", "نقصان", "nuksaan", "damage", "tabahi", "تباہی", "destruction",
+      "barbadi", "بربادی", "ruin", "khatam", "ختم", "khatam hogaya",
+      "chori", "چوری", "theft", "loot", "لوٹ", "kho gaya", "کھو گیا", "lost"
+    ],
+    "hardship": [
+      "mushkil", "مشکل", "difficult", "takleef", "تکلیف", "trouble", "problem",
+      "masla", "مسئلہ", "issue", "pareshani", "پریشانی", "suffering", "suffer",
+      "bardasht", "برداشت", "tolerate", "sahna", "سہنا", "jhel", "bear"
     ]
   },
   "neutral": {

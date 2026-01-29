@@ -41,12 +41,14 @@ type StatusHandler = (status: UserStatus) => void;
 type TypingHandler = (data: TypingIndicator) => void;
 type ErrorHandler = (error: { msg: string }) => void;
 type CommunityHandler = (data: any) => void;
-type CommunityRemovedHandler = (data: { community_id: number; user_id: number; reason: string }) => void;
+type CommunityRemovedHandler = (data: { community_id: number; user_id: number; reason: string; message?: string; notification?: { community_name: string; community_logo?: string; community_color: string; community_icon: string } }) => void;
+type UserBlockedHandler = (data: { community_id: number; user_id: number; blocked_at: string }) => void;
 type ChannelHandler = (data: any) => void;
 type DirectMessageHandler = (message: DirectMessageEvent) => void;
 type FriendRequestHandler = (request: FriendRequestEvent) => void;
 type FriendStatusHandler = (data: { friend_id: number; status: string }) => void;
 type ModerationActionHandler = (data: { community_id: number; channel_id: number; action: string; severity: string; timestamp: string }) => void;
+type CommandResultHandler = (data: { type: string; success: boolean; summary?: string; key_points?: string[]; method?: string; error?: string }) => void;
 
 class SocketService {
   private socket: Socket | null = null;
@@ -59,6 +61,7 @@ class SocketService {
   private errorHandlers: ErrorHandler[] = [];
   private communityHandlers: CommunityHandler[] = [];
   private communityRemovedHandlers: CommunityRemovedHandler[] = [];
+  private userBlockedHandlers: UserBlockedHandler[] = [];
   private communityDeletedHandlers: CommunityHandler[] = [];
   private communityLeftHandlers: CommunityHandler[] = [];
   private channelHandlers: ChannelHandler[] = [];
@@ -66,6 +69,7 @@ class SocketService {
   private friendRequestHandlers: FriendRequestHandler[] = [];
   private friendStatusHandlers: FriendStatusHandler[] = [];
   private moderationActionHandlers: ModerationActionHandler[] = [];
+  private commandResultHandlers: CommandResultHandler[] = [];
   private currentChannel: number | null = null;
   private currentDMUser: number | null = null;
   private typingTimeout: NodeJS.Timeout | null = null;
@@ -166,7 +170,9 @@ class SocketService {
 
     // Message received - Normalized to Message type
     this.socket.on('message_received', (data: any) => {
-      console.log('[SOCKET] 💬 New message received:', data);
+      const chan = data?.channel_id ?? data?.channelId;
+      const msgId = data?.id;
+      console.log('[SOCKET] 💬 New message received', { id: msgId, channel_id: chan, raw: data });
       
       // Normalize the message structure
       const message: Message = {
@@ -178,7 +184,17 @@ class SocketService {
         created_at: data.created_at || new Date().toISOString(),
         author: data.author,
         avatar_url: data.avatar || '',
+        is_blocked: data.is_blocked || false,
+        moderation: data.moderation || undefined,
       };
+      
+      if (message.is_blocked) {
+        console.log('[SOCKET] 🚫 Message from BLOCKED user:', message.author);
+      }
+      
+      if (message.moderation) {
+        console.log('[SOCKET] ⚠️ Message has moderation:', message.moderation.action);
+      }
       
       this.messageHandlers.forEach(handler => handler(message));
     });
@@ -224,6 +240,17 @@ class SocketService {
       this.moderationActionHandlers.forEach(handler => handler(data));
     });
 
+    // AI command result event (for chat commands like /summarize)
+    this.socket.on('command_result', (data: { type: string; success: boolean; summary?: string; key_points?: string[]; method?: string; error?: string }) => {
+      console.log('[SOCKET] ✅ ✅ ✅ AI Command result received from server:', data);
+      console.log('[SOCKET] ✅ Number of registered handlers:', this.commandResultHandlers.length);
+      this.commandResultHandlers.forEach((handler, index) => {
+        console.log(`[SOCKET] ✅ Calling handler ${index + 1}/${this.commandResultHandlers.length}`);
+        handler(data);
+      });
+      console.log('[SOCKET] ✅ All command result handlers called');
+    });
+
     // Channel operation events
     this.socket.on('channel_created', (data: any) => {
       console.log('[SOCKET] ✨ Channel created:', data);
@@ -246,9 +273,15 @@ class SocketService {
     });
 
     // Community removed event - user removed/blocked from community
-    this.socket.on('community:removed', (data: { community_id: number; user_id: number; reason: string }) => {
+    this.socket.on('community:removed', (data: { community_id: number; user_id: number; reason: string; message?: string; notification?: { community_name: string; community_logo?: string; community_color: string; community_icon: string } }) => {
       console.log('[SOCKET] 🚫 Removed from community:', data);
       this.communityRemovedHandlers.forEach(handler => handler(data));
+    });
+
+    // User blocked from community - notify all members to update their UI
+    this.socket.on('user_blocked_from_community', (data: { community_id: number; user_id: number; blocked_at: string }) => {
+      console.log('[SOCKET] 🚷 User blocked from community:', data);
+      this.userBlockedHandlers.forEach(handler => handler(data));
     });
 
     // Direct message events
@@ -568,9 +601,14 @@ class SocketService {
         created_at: message.created_at,
         author: message.author,
         avatar: message.avatar_url,
+        is_blocked: message.is_blocked || false,
+        moderation: message.moderation || undefined,
       },
     });
-    console.log(`[SOCKET] 📤 Broadcasting message ${message.id} to channel ${channelId}`);
+    console.log(`[SOCKET] 📤 Broadcasting message ${message.id} to channel ${channelId}`, message.is_blocked ? '(BLOCKED USER)' : '');
+    if (message.moderation) {
+      console.log(`[SOCKET] ⚠️ Broadcasting message with moderation action: ${message.moderation.action}`);
+    }
   }
 
   // Broadcast community creation
@@ -686,6 +724,13 @@ class SocketService {
     };
   }
 
+  onUserBlocked(handler: UserBlockedHandler) {
+    this.userBlockedHandlers.push(handler);
+    return () => {
+      this.userBlockedHandlers = this.userBlockedHandlers.filter(h => h !== handler);
+    };
+  }
+
   onCommunityDeleted(handler: CommunityHandler) {
     this.communityDeletedHandlers.push(handler);
     return () => {
@@ -751,6 +796,13 @@ class SocketService {
     this.moderationActionHandlers.push(handler);
     return () => {
       this.moderationActionHandlers = this.moderationActionHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onCommandResult(handler: CommandResultHandler) {
+    this.commandResultHandlers.push(handler);
+    return () => {
+      this.commandResultHandlers = this.commandResultHandlers.filter(h => h !== handler);
     };
   }
 

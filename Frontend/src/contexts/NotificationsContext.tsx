@@ -6,7 +6,7 @@ import { useNotifications as useToast } from '@/hooks/useNotifications';
 
 export interface Notification {
   id: string;
-  type: 'friend_request' | 'message' | 'friend_accepted' | 'system';
+  type: 'friend_request' | 'message' | 'friend_accepted' | 'system' | 'community_removal';
   title: string;
   message: string;
   from?: {
@@ -100,6 +100,19 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     }
   }, [notifications, isAuthenticated, user?.id]);
 
+  // Listen for community removal notifications from custom event
+  useEffect(() => {
+    const handleCommunityRemoval = (event: CustomEvent) => {
+      console.log('[NotificationsContext] Community removal notification received:', event.detail);
+      addNotification(event.detail);
+    };
+
+    window.addEventListener('community-removal-notification', handleCommunityRemoval as EventListener);
+    return () => {
+      window.removeEventListener('community-removal-notification', handleCommunityRemoval as EventListener);
+    };
+  }, []);
+
   // Add notification with duplicate prevention
   const addNotification = useCallback((notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
     // Generate a unique ID based on notification content for deduplication
@@ -139,6 +152,12 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         title: notification.title,
         description: notification.message,
         duration: 4000,
+      });
+    } else if (notification.type === 'system' || notification.type === 'community_removal') {
+      showInfo({
+        title: notification.title,
+        description: notification.message,
+        duration: 6000,
       });
     }
 

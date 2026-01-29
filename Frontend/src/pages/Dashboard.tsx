@@ -1,7 +1,7 @@
-// pages/Dashboard.tsx - Professional Real-time Version
+// pages/Dashboard.tsx - Professional Real-time Version with Theme Support
 import { useState, useRef, useEffect } from "react";
-import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus, Mic, SmilePlus } from "lucide-react";
-import { useTheme } from "@/contexts/ThemeContext";
+import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus, Mic, SmilePlus, X, Palette } from "lucide-react";
+import { useTheme, THEMES } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
 import { getAvatarUrl } from "@/lib/utils";
@@ -21,10 +21,11 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
-  const { isDarkMode, toggleTheme } = useTheme();
+  const { isDarkMode, toggleTheme, currentTheme, setTheme, themes } = useTheme();
   const {
     isConnected,
     currentChannel,
+    currentCommunity,
     channels,
     messages,
     sendMessage,
@@ -45,15 +46,30 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
   const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<number, any[]>>({});
+  const [commandResult, setCommandResult] = useState<{ type: string; success: boolean; summary?: string; key_points?: string[]; method?: string; error?: string } | null>(null);
+  const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Available commands
+  const availableCommands = [
+    { command: '/summarize', description: 'Summarize last 20 messages', usage: '/summarize [count]' },
+    { command: '/help', description: 'Show available commands', usage: '/help' },
+  ];
+
+  // Log messages for debugging blocked users
   useEffect(() => {
-    if (messagesEndRef.current && messages.length > 0) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    console.log('[DASHBOARD] Total messages:', messages.length);
+    const blockedMessages = messages.filter(m => m.is_blocked);
+    if (blockedMessages.length > 0) {
+      console.log('[DASHBOARD] Found blocked messages:', blockedMessages.map(m => ({
+        id: m.id,
+        author: m.author,
+        is_blocked: m.is_blocked
+      })));
     }
   }, [messages]);
 
@@ -63,6 +79,21 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
       inputRef.current.focus();
     }
   }, [currentChannel]);
+
+  // Refocus input after sending completes
+  useEffect(() => {
+    if (!isSending && currentChannel && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isSending, currentChannel]);
+
+  // Scroll to bottom when messages are first loaded or updated
+  useEffect(() => {
+    if (messages.length > 0 && messagesContainerRef.current) {
+      // Scroll to bottom to show latest messages
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  }, [messages.length, currentChannel?.id]);
 
   // Load reactions for messages - only when message IDs change
   useEffect(() => {
@@ -121,6 +152,54 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
     };
   }, []);
 
+  // Close reaction picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (reactionPickerMessageId !== null) {
+        const target = e.target as HTMLElement;
+        // Check if click is outside the reaction picker
+        if (!target.closest('[data-reaction-picker]')) {
+          setReactionPickerMessageId(null);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [reactionPickerMessageId]);
+
+  // Listen for AI command results
+  useEffect(() => {
+    const handleCommandResult = (event: CustomEvent) => {
+      const data = event.detail;
+      console.log('[DASHBOARD] ✅ AI Command result received from custom event:', data);
+      
+      setCommandResult(data);
+      
+      // Only show toast for errors (success is shown in floating card)
+      if (!data.success) {
+        console.log('[DASHBOARD] ⚠️ Showing error toast');
+        toast({
+          title: '❌ Command Failed',
+          description: data.error || 'Failed to execute command.',
+          variant: 'destructive',
+          duration: 5000,
+        });
+      }
+      
+      // Auto-clear after 30 seconds
+      setTimeout(() => setCommandResult(null), 30000);
+    };
+
+    console.log('[DASHBOARD] 📡 Setting up ai_command_result event listener');
+    window.addEventListener('ai_command_result', handleCommandResult as EventListener);
+
+    return () => {
+      console.log('[DASHBOARD] 🔌 Removing ai_command_result event listener');
+      window.removeEventListener('ai_command_result', handleCommandResult as EventListener);
+    };
+  }, [toast]);
+
   const handleEmojiSelect = (emoji: string) => {
     setMessage(prev => prev + emoji);
   };
@@ -152,12 +231,7 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const element = e.currentTarget;
     if (element.scrollTop === 0 && !isLoadingMessages) {
-      const scrollHeight = element.scrollHeight;
-      loadMoreMessages().then(() => {
-        requestAnimationFrame(() => {
-          element.scrollTop = element.scrollHeight - scrollHeight;
-        });
-      });
+      loadMoreMessages();
     }
   };
 
@@ -192,11 +266,41 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
       setMessage(messageToSend);
     } finally {
       setIsSending(false);
-      inputRef.current?.focus();
+      // Use setTimeout to ensure focus happens after React re-render
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Handle command suggestions navigation
+    if (showCommandSuggestions) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedCommandIndex((prev) => (prev + 1) % availableCommands.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedCommandIndex((prev) => (prev - 1 + availableCommands.length) % availableCommands.length);
+        return;
+      }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        const selectedCommand = availableCommands[selectedCommandIndex];
+        setMessage(selectedCommand.command + ' ');
+        setShowCommandSuggestions(false);
+        setSelectedCommandIndex(0);
+        return;
+      }
+      if (e.key === "Escape") {
+        setShowCommandSuggestions(false);
+        setSelectedCommandIndex(0);
+        return;
+      }
+    }
+    
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -204,13 +308,23 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setMessage(e.target.value);
+    const value = e.target.value;
+    setMessage(value);
+
+    // Show command suggestions when user types '/'
+    if (value === '/' || (value.startsWith('/') && !value.includes(' '))) {
+      setShowCommandSuggestions(true);
+      setSelectedCommandIndex(0);
+    } else {
+      setShowCommandSuggestions(false);
+    }
 
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
-    if (e.target.value.trim()) {
+    // Only send typing indicator for non-command messages
+    if (value.trim() && !value.startsWith('/')) {
       sendTyping();
       typingTimeoutRef.current = setTimeout(() => {
         // Typing indicator expires
@@ -293,7 +407,20 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
   };
 
   return (
-    <div className={`flex flex-col h-full ${isDarkMode ? "bg-slate-900" : "bg-white"}`}>
+    <div 
+      className="flex flex-col h-full transition-colors duration-300 relative"
+      style={{ background: 'var(--theme-bg-gradient)' }}
+    >
+      {/* Gradient overlay for depth - hidden for basic/onyx themes */}
+      {currentTheme !== 'basic' && currentTheme !== 'onyx' && (
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: 'radial-gradient(ellipse at 30% 20%, hsl(var(--theme-accent-primary) / 0.03) 0%, transparent 50%), radial-gradient(ellipse at 70% 80%, hsl(var(--theme-accent-secondary) / 0.03) 0%, transparent 50%)',
+          }}
+        />
+      )}
+      
       {/* Voice Channel View */}
       {currentChannel?.type === 'voice' && (
         <div className="absolute inset-0 z-50">
@@ -311,47 +438,48 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
         </div>
       )}
 
-      {/* Header */}
+      {/* Header - Discord Style with Theme Support */}
       <header
-        className={`px-4 h-14 flex items-center justify-between border-b ${
-          isDarkMode ? "bg-slate-800/50 border-slate-700/50 backdrop-blur-sm" : "bg-white/80 border-gray-200 backdrop-blur-sm"
-        }`}
+        className="h-12 flex items-center justify-between border-b shadow-sm relative z-30 backdrop-blur-md border-[hsl(var(--theme-border-default)/0.5)] transition-colors duration-300"
+        style={{ background: 'hsl(var(--theme-header-bg) / 0.85)' }}
       >
-        <div className="flex items-center gap-3">
-          <div className={`p-1.5 rounded-md ${isDarkMode ? "bg-slate-700" : "bg-gray-100"}`}>
-            {currentChannel?.type === 'voice' ? (
-              <Mic className={`w-5 h-5 ${isDarkMode ? "text-gray-300" : "text-gray-600"}`} />
-            ) : (
-              <Hash className={`w-5 h-5 ${isDarkMode ? "text-gray-300" : "text-gray-600"}`} />
-            )}
-          </div>
-          <div>
-            <h2 className={`text-base font-semibold leading-none ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-              {currentChannel?.type === 'voice' ? '🎤 ' : ''}
+        <div className="flex items-center h-full">
+          {/* Channel Info */}
+          <div className="flex items-center gap-2 px-4 h-full border-r border-[hsl(var(--theme-border-default)/0.4)]">
+            <div className="flex items-center justify-center w-6 h-6 text-[hsl(var(--theme-text-secondary))]">
+              {currentChannel?.type === 'voice' ? (
+                <Mic className="w-5 h-5" />
+              ) : (
+                <Hash className="w-5 h-5" />
+              )}
+            </div>
+            <h2 className="text-[15px] font-semibold text-[hsl(var(--theme-text-primary))]">
               {currentChannel?.name || "Select a channel"}
             </h2>
-            {currentChannel?.description && (
-              <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+          </div>
+          
+          {/* Channel Description */}
+          {currentChannel?.description && (
+            <div className="flex items-center gap-3 px-4 h-full">
+              <div className="w-px h-6 bg-[hsl(var(--theme-border-default))]" />
+              <p className="text-[13px] text-[hsl(var(--theme-text-secondary))]">
                 {currentChannel.description}
               </p>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Connection Status */}
-          <div className={`ml-2 flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${
+          {/* Connection Status - Subtle */}
+          <div className={`ml-2 flex items-center gap-1 px-2 ${
             isConnected 
-              ? isDarkMode ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-700"
-              : isDarkMode ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"
+              ? "text-green-400/70"
+              : "text-red-400 animate-pulse"
           }`}>
             {isConnected ? (
-              <>
-                <Wifi className="w-3 h-3" />
-                <span>Connected</span>
-              </>
+              <Wifi className="w-3.5 h-3.5" />
             ) : (
               <>
-                <WifiOff className="w-3 h-3 animate-pulse" />
-                <span>Reconnecting...</span>
+                <WifiOff className="w-3.5 h-3.5" />
+                <span className="text-xs">Reconnecting...</span>
               </>
             )}
           </div>
@@ -362,13 +490,9 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
             <input
               type="text"
               placeholder="Search messages..."
-              className={`pl-9 pr-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-56 border transition-all ${
-                isDarkMode
-                  ? "bg-slate-700 border-slate-600 text-white placeholder-gray-400"
-                  : "bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-500"
-              }`}
+              className="pl-9 pr-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] w-56 border transition-all bg-[hsl(var(--theme-input-bg))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]"
             />
-            <Search className={`absolute left-3 top-2.5 w-4 h-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`} />
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-[hsl(var(--theme-text-muted))]" />
           </div>
           
           {/* Notifications */}
@@ -376,28 +500,25 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
           
           <button
             onClick={toggleTheme}
-            className={`p-2 rounded-lg transition-colors ${
-              isDarkMode ? "hover:bg-slate-700 text-gray-300" : "hover:bg-gray-100 text-gray-600"
-            }`}
+            className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]"
             title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
           >
             {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
           
-          <button
-            onClick={toggleRightSidebar}
-            className={`p-2 rounded-lg transition-colors ${
-              isDarkMode ? "hover:bg-slate-700 text-gray-300" : "hover:bg-gray-100 text-gray-600"
-            }`}
-            title="Toggle AI Agents"
-          >
-            <Bot className="w-4 h-4" />
-          </button>
+          {/* Only show AI Agents button when a community is selected */}
+          {currentCommunity && toggleRightSidebar && (
+            <button
+              onClick={toggleRightSidebar}
+              className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]"
+              title="Toggle AI Agents"
+            >
+              <Bot className="w-4 h-4" />
+            </button>
+          )}
           
           {/* <button
-            className={`p-2 rounded-lg transition-colors ${
-              isDarkMode ? "hover:bg-slate-700 text-gray-300" : "hover:bg-gray-100 text-gray-600"
-            }`}
+            className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]"
           >
             <Settings className="w-4 h-4" />
           </button> */}
@@ -408,178 +529,206 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
       <main
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className={`flex-1 overflow-y-auto ${isDarkMode ? "bg-slate-900" : "bg-gray-50"}`}
+        className="flex-1 overflow-y-auto transition-colors duration-300 relative"
         style={{
           scrollbarWidth: 'thin',
-          scrollbarColor: isDarkMode ? '#475569 transparent' : '#cbd5e1 transparent'
+          scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent',
+          background: 'transparent'
         }}
       >
         {isLoadingMessages && messages.length === 0 && (
           <div className="flex justify-center items-center h-full">
             <div className="text-center">
-              <div className={`animate-spin rounded-full h-10 w-10 border-3 border-t-transparent mx-auto mb-4 ${
-                isDarkMode ? "border-blue-400" : "border-blue-600"
-              }`}></div>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+              <div className="animate-spin rounded-full h-10 w-10 border-3 border-t-transparent mx-auto mb-4 border-[hsl(var(--theme-accent-primary))]"></div>
+              <p className="text-sm text-[hsl(var(--theme-text-secondary))]">
                 Loading messages...
               </p>
             </div>
           </div>
         )}
-
         {!currentChannel ? (
           <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-md px-4">
-              <div className={`w-20 h-20 rounded-2xl mx-auto mb-4 flex items-center justify-center ${
-                isDarkMode ? "bg-slate-800" : "bg-gray-100"
-              }`}>
-                <Hash className={`w-10 h-10 ${isDarkMode ? "text-gray-600" : "text-gray-400"}`} />
+            <div className="text-center max-w-lg px-6">
+              <div className="w-[72px] h-[72px] rounded-full mx-auto mb-5 flex items-center justify-center bg-[hsl(var(--theme-bg-secondary))]">
+                <Hash className="w-10 h-10 text-[hsl(var(--theme-text-muted))]" />
               </div>
-              <h3 className={`text-xl font-semibold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Welcome to your workspace
+              <h3 className="text-2xl font-bold mb-2 text-[hsl(var(--theme-text-primary))]">
+                Welcome to AuraFlow
               </h3>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+              <p className="text-[15px] leading-relaxed text-[hsl(var(--theme-text-secondary))]">
                 Select a channel from the sidebar to start messaging with your team
               </p>
             </div>
           </div>
         ) : messages.length === 0 && !isLoadingMessages ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-md px-4">
-              <div className={`w-20 h-20 rounded-2xl mx-auto mb-4 flex items-center justify-center ${
-                isDarkMode ? "bg-slate-800" : "bg-gray-100"
-              }`}>
-                <Hash className={`w-10 h-10 ${isDarkMode ? "text-gray-600" : "text-gray-400"}`} />
+          <div className="flex flex-col items-start justify-end h-full px-4 pb-4">
+            <div className="max-w-2xl">
+              <div className="w-[68px] h-[68px] rounded-full mb-4 flex items-center justify-center bg-[hsl(var(--theme-bg-secondary))]">
+                <Hash className="w-9 h-9 text-[hsl(var(--theme-text-secondary))]" />
               </div>
-              <h3 className={`text-xl font-semibold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Welcome to #{currentChannel.name}
+              <h3 className="text-[32px] font-bold mb-2 text-[hsl(var(--theme-text-primary))]">
+                Welcome to #{currentChannel.name}!
               </h3>
-              <p className={`text-sm mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                This is the beginning of the #{currentChannel.name} channel. Send a message to get started!
+              <p className="text-[15px] text-[hsl(var(--theme-text-secondary))]">
+                This is the start of the <span className="font-semibold">#{currentChannel.name}</span> channel.
               </p>
             </div>
           </div>
         ) : (
-          <div className="max-w-4xl mx-auto px-3 py-2">
+          <div className="flex flex-col min-h-full">
+            {/* Channel Welcome Header */}
+            <div className="px-4 pt-6 pb-4">
+              <div className="w-[68px] h-[68px] rounded-full mb-4 flex items-center justify-center bg-[hsl(var(--theme-bg-secondary))]">
+                <Hash className="w-9 h-9 text-[hsl(var(--theme-text-secondary))]" />
+              </div>
+              <h3 className="text-[32px] font-bold mb-2 text-[hsl(var(--theme-text-primary))]">
+                Welcome to #{currentChannel?.name}!
+              </h3>
+              <p className="text-[15px] text-[hsl(var(--theme-text-secondary))]">
+                This is the start of the <span className="font-semibold">#{currentChannel?.name}</span> channel.
+              </p>
+            </div>
+
             {/* Loading more indicator */}
             {isLoadingMessages && messages.length > 0 && (
-              <div className="flex justify-center py-2">
-                <div className={`animate-spin rounded-full h-5 w-5 border-2 border-t-transparent ${
-                  isDarkMode ? "border-blue-400" : "border-blue-600"
-                }`}></div>
+              <div className="flex justify-center py-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-t-transparent border-[hsl(var(--theme-accent-primary))]"></div>
               </div>
             )}
 
-            {messages.map((msg, index) => {
-              const showDateDivider = shouldShowDateDivider(msg, messages[index - 1]);
-              const showAuthor = index === 0 || messages[index - 1]?.sender_id !== msg.sender_id;
-              const authorName = msg.author || "Unknown User";
-              const nextMsgSameSender = index < messages.length - 1 && messages[index + 1]?.sender_id === msg.sender_id;
+            {/* Messages */}
+            <div className="flex-1">
+              {messages.filter(msg => !msg.content.startsWith('/')).map((msg, index, filteredMessages) => {
+                const showDateDivider = index === 0 || !isSameDay(new Date(msg.created_at), new Date(filteredMessages[index - 1]?.created_at));
+                const showAuthor = index === 0 || filteredMessages[index - 1]?.sender_id !== msg.sender_id || showDateDivider;
+                const authorName = msg.author || "Unknown User";
+                
+                // Check time gap - show header if more than 7 minutes apart
+                const prevMsg = filteredMessages[index - 1];
+                const timeDiff = prevMsg ? new Date(msg.created_at).getTime() - new Date(prevMsg.created_at).getTime() : Infinity;
+                const showHeaderByTime = timeDiff > 7 * 60 * 1000;
+                const shouldShowHeader = showAuthor || showHeaderByTime;
+                
+                // Debug blocked status
+                if (msg.is_blocked) {
+                  console.log(`[BLOCKED USER] Message ${msg.id} from ${authorName} is_blocked:`, msg.is_blocked);
+                }
 
-              return (
-                <div key={`${msg.id}-${index}`}>
-                  {/* Date Divider */}
-                  {showDateDivider && (
-                    <div className="flex items-center gap-3 my-3">
-                      <div className={`flex-1 h-px ${isDarkMode ? "bg-slate-700" : "bg-gray-200"}`} />
-                      <span className={`text-xs font-medium px-3 py-1 rounded-full ${
-                        isDarkMode ? "bg-slate-800 text-gray-300" : "bg-gray-100 text-gray-700"
-                      }`}>
-                        {formatDateDivider(msg.created_at)}
-                      </span>
-                      <div className={`flex-1 h-px ${isDarkMode ? "bg-slate-700" : "bg-gray-200"}`} />
-                    </div>
-                  )}
 
-                  {/* Message - Discord Style */}
-                  <div 
-                    className={`flex gap-2.5 group px-3 py-1.5 transition-all relative ${
-                      showAuthor ? 'pt-2' : 'pt-0.5'
-                    } hover:${isDarkMode ? 'bg-slate-800/40' : 'bg-gray-50/80'} rounded-md`}
-                    onMouseEnter={() => setHoveredMessageId(msg.id)}
-                    onMouseLeave={() => setHoveredMessageId(null)}
-                  >
-                    {/* Avatar Column */}
-                    <div className="flex-shrink-0 w-9">
-                      {showAuthor ? (
-                        msg.avatar_url ? (
-                          <img
-                            src={getAvatarUrl(msg.avatar_url, authorName)}
-                            alt={authorName}
-                            className="w-9 h-9 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                          />
-                        ) : (
-                          <div className={`w-9 h-9 rounded-full ${getAvatarColor(authorName)} flex items-center justify-center text-white font-medium text-sm shadow-sm cursor-pointer hover:opacity-80 transition-opacity`}>
-                            {getAvatarInitials(authorName)}
-                          </div>
-                        )
-                      ) : (
-                        <div className="w-9"></div>
-                      )}
-                    </div>
-
-                    {/* Content Column */}
-                    <div className="flex-1 min-w-0">
-                      {showAuthor && (
-                        <div className="flex items-baseline gap-2 mb-0.5">
-                          <span className={`font-medium text-sm leading-tight ${
-                            isDarkMode ? "text-white" : "text-gray-900"
-                          }`}>
-                            {authorName}
-                          </span>
-                          <span className={`text-xs leading-none ${
-                            isDarkMode ? "text-gray-500" : "text-gray-500"
-                          }`}>
-                            {formatMessageTime(msg.created_at)}
-                          </span>
-                          {/* Moderation Badge */}
-                          {msg.moderation && (
-                            <ModerationBadge
-                              action={msg.moderation.action}
-                              severity={msg.moderation.severity}
-                              reasons={msg.moderation.reasons}
-                            />
-                          )}
+                return (
+                  <div key={`${msg.id}-${index}`}>
+                    {/* Date Divider - Discord Style */}
+                    {showDateDivider && index !== 0 && (
+                      <div className="relative flex items-center justify-center my-4 mx-4">
+                        <div className="absolute inset-0 flex items-center">
+                          <div className="w-full h-px bg-[hsl(var(--theme-border-default)/0.7)]" />
                         </div>
-                      )}
-                      <div className={`text-sm leading-relaxed break-words ${
-                        isDarkMode ? "text-gray-200" : "text-gray-800"
-                      }`}>
-                        <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-normal' : ''}>
-                          {msg.content}
+                        <span className="relative z-10 text-[11px] font-semibold px-2 py-0.5 bg-[hsl(var(--theme-bg-primary))] text-[hsl(var(--theme-text-muted))]">
+                          {formatDateDivider(msg.created_at)}
                         </span>
                       </div>
-                      
-                      {/* Reactions Display */}
-                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                        {messageReactions[msg.id] && messageReactions[msg.id].length > 0 && (
-                          <MessageReactions
-                            reactions={messageReactions[msg.id]}
-                            onReactionClick={(emoji) => handleReactionToggle(msg.id, emoji)}
-                          />
+                    )}
+
+                    {/* Message - Discord Style */}
+                    <div 
+                      className={`group relative flex py-0.5 pr-12 pl-[72px] ${
+                        shouldShowHeader ? 'mt-[17px]' : 'mt-0'
+                      } hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-colors`}
+                      onMouseEnter={() => setHoveredMessageId(msg.id)}
+                      onMouseLeave={() => setHoveredMessageId(null)}
+                    >
+                      {/* Avatar - Positioned absolutely */}
+                      {shouldShowHeader ? (
+                        <div className="absolute left-4 mt-0.5">
+                          {msg.avatar_url ? (
+                            <img
+                              src={getAvatarUrl(msg.avatar_url, authorName)}
+                              alt={authorName}
+                              className="w-10 h-10 rounded-full object-cover cursor-pointer hover:shadow-lg transition-shadow"
+                            />
+                          ) : (
+                            <div className={`w-10 h-10 rounded-full ${getAvatarColor(authorName)} flex items-center justify-center text-white font-medium text-sm cursor-pointer hover:shadow-lg transition-shadow`}>
+                              {getAvatarInitials(authorName)}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="absolute left-4 w-10 text-[11px] text-right opacity-0 group-hover:opacity-100 transition-opacity select-none text-[hsl(var(--theme-text-muted))]">
+                          {new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                        </span>
+                      )}
+
+                      {/* Content */}
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        {shouldShowHeader && (
+                          <div className="flex items-center gap-1 mb-0.5">
+                            <span className="font-medium text-[15px] hover:underline cursor-pointer text-[hsl(var(--theme-text-primary))]">
+                              {authorName}
+                            </span>
+                            {/* Role badges could go here */}
+                            <span className="text-[11px] ml-1 text-[hsl(var(--theme-text-muted))]">
+                              {formatMessageTime(msg.created_at)}
+                            </span>
+                            {/* Removed/Blocked Tag */}
+                            {msg.is_blocked && (
+                              <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500/20 text-red-400">
+                                Removed
+                              </span>
+                            )}
+                            {/* Moderation Badge */}
+                            {msg.moderation && (
+                              <ModerationBadge
+                                action={msg.moderation.action}
+                                severity={msg.moderation.severity}
+                                reasons={msg.moderation.reasons}
+                              />
+                            )}
+                          </div>
                         )}
+                        {/* Show Removed tag even when header is hidden */}
+                        {!shouldShowHeader && msg.is_blocked && (
+                          <span className="inline-block mr-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500/20 text-red-400">
+                            Removed
+                          </span>
+                        )}
+                        <div className="text-[15px] leading-[1.375rem] break-words text-[hsl(var(--theme-text-primary))]">
+                          <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-[44px] leading-[54px]' : ''}>
+                            {msg.content}
+                          </span>
+                        </div>
                         
-                        {/* Add Reaction Button - Shows on Hover */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id);
-                          }}
-                          className={`opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-xs flex items-center gap-1 ${
-                            isDarkMode 
-                              ? 'text-gray-400 hover:text-gray-200 hover:bg-slate-700' 
-                              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
-                          }`}
-                          title="Add reaction"
-                        >
-                          <SmilePlus className="w-3 h-3" />
-                          <span className="text-xs">React</span>
-                        </button>
+                        {/* Reactions Display */}
+                        {(messageReactions[msg.id]?.length > 0 || hoveredMessageId === msg.id) && (
+                          <div className="flex flex-wrap items-center gap-1 mt-1">
+                            {messageReactions[msg.id] && messageReactions[msg.id].length > 0 && (
+                              <MessageReactions
+                                reactions={messageReactions[msg.id]}
+                                onReactionClick={(emoji) => handleReactionToggle(msg.id, emoji)}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Buttons - Floating on hover */}
+                      <div className="absolute -top-4 right-4 opacity-0 group-hover:opacity-100 transition-all">
+                        <div className="flex items-center rounded-md shadow-lg border bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id);
+                            }}
+                            className="p-1.5 transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))] rounded-l-md"
+                            title="Add Reaction"
+                          >
+                            <SmilePlus className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                       
-                      {/* Reaction Picker - Shown when button clicked */}
+                      {/* Reaction Picker */}
                       {reactionPickerMessageId === msg.id && (
-                        <div className="absolute -top-7 left-12 z-30 shadow-xl">
+                        <div data-reaction-picker className="absolute top-0 right-16 z-50 shadow-2xl">
                           <ReactionPicker
                             onReactionSelect={(emoji) => {
                               handleReactionToggle(msg.id, emoji);
@@ -590,116 +739,194 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                       )}
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
 
-            {/* Typing Indicators */}
+            </div>
+
+            {/* Typing Indicators - Discord Style */}
             {typingUsers.length > 0 && (
-              <div className="flex gap-2.5 group px-3 py-1.5 hover:bg-slate-800/40 rounded-md">
-                <div className={`w-9 h-9 rounded-full ${getAvatarColor(typingUsers[0]?.username)} flex items-center justify-center text-white font-medium text-sm shadow-sm`}>
-                  {getAvatarInitials(typingUsers[0]?.username || "")}
+              <div className="flex items-center gap-2 h-6 px-4 text-[13px] text-[hsl(var(--theme-text-secondary))]">
+                <div className="flex items-center gap-0.5">
+                  <div className="w-2 h-2 rounded-full animate-bounce bg-[hsl(var(--theme-text-muted))]" style={{ animationDelay: "0ms", animationDuration: "1s" }}></div>
+                  <div className="w-2 h-2 rounded-full animate-bounce bg-[hsl(var(--theme-text-muted))]" style={{ animationDelay: "200ms", animationDuration: "1s" }}></div>
+                  <div className="w-2 h-2 rounded-full animate-bounce bg-[hsl(var(--theme-text-muted))]" style={{ animationDelay: "400ms", animationDuration: "1s" }}></div>
                 </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-1">
-                    <span className={`text-sm font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                      {typingUsers.map((u) => u.username).join(", ")}
-                    </span>
-                    <span className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}>
-                      typing...
-                    </span>
-                  </div>
-                  <div className="flex gap-1 mt-0.5">
-                    <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-500"}`} style={{ animationDelay: "0ms" }}></div>
-                    <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-500"}`} style={{ animationDelay: "150ms" }}></div>
-                    <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isDarkMode ? "bg-gray-400" : "bg-gray-500"}`} style={{ animationDelay: "300ms" }}></div>
-                  </div>
-                </div>
+                <span>
+                  <strong>{typingUsers.map((u) => u.username).join(", ")}</strong>
+                  {typingUsers.length === 1 ? " is typing..." : " are typing..."}
+                </span>
               </div>
             )}
 
-            <div ref={messagesEndRef} />
+            <div ref={messagesEndRef} className="h-4" />
           </div>
         )}
       </main>
 
-      {/* Input */}
+      {/* Input - Discord Style */}
       {currentChannel?.type !== 'voice' && (
-      <footer className={`border-t ${
-        isDarkMode ? "bg-slate-800/50 border-slate-700/50 backdrop-blur-sm" : "bg-white/80 border-gray-200 backdrop-blur-sm"
-      }`}>
-        <div className="px-4 py-2">
-          <div className="max-w-4xl mx-auto">
-            <div className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 border transition-all ${
-              isDarkMode 
-                ? "bg-slate-900 border-slate-700 focus-within:border-blue-500" 
-                : "bg-white border-gray-300 focus-within:border-blue-500 shadow-sm"
-            }`}>
-              <button
-                className={`p-1.5 rounded-md transition-colors ${
-                  isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
-                }`}
-                disabled={!currentChannel || !isConnected}
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-
-              <input
-                ref={inputRef}
-                type="text"
-                placeholder={currentChannel ? `Message #${currentChannel.name}` : "Select a channel to start messaging"}
-                value={message}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                disabled={!currentChannel || isSending || !isConnected}
-                className={`flex-1 bg-transparent outline-none text-sm py-0 ${
-                  isDarkMode ? "text-white placeholder-gray-500" : "text-gray-900 placeholder-gray-400"
-                } disabled:opacity-50`}
-              />
-
-              <div className="flex items-center gap-0.5">
+      <footer 
+        className="px-4 pb-6 pt-0 relative transition-colors duration-300 backdrop-blur-sm"
+        
+      >
+        <div className="relative">
+          {/* Command Suggestions Dropdown */}
+          {showCommandSuggestions && (
+            <div className="absolute bottom-full left-0 mb-2 w-full max-w-md rounded-lg shadow-2xl border overflow-hidden z-50 backdrop-blur-xl bg-[hsl(var(--theme-bg-elevated)/0.95)] border-[hsl(var(--theme-border-default))]">
+              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide border-b bg-[hsl(var(--theme-bg-secondary)/0.8)] text-[hsl(var(--theme-text-muted))] border-[hsl(var(--theme-border-default))]">
+                Commands
+              </div>
+              {availableCommands.map((cmd, index) => (
                 <button
-                  className={`p-1.5 rounded-md transition-colors ${
-                    isDarkMode ? "hover:bg-slate-700 text-gray-400" : "hover:bg-gray-100 text-gray-600"
-                  }`}
-                  disabled={!currentChannel || !isConnected}
-                >
-                  <Paperclip className="w-4 h-4" />
-                </button>
-                <EmojiPickerButton
-                  onEmojiSelect={handleEmojiSelect}
-                  pickerPosition="top"
-                  disabled={!currentChannel || !isConnected}
-                />
-                <button
-                  onClick={handleSendMessage}
-                  disabled={!currentChannel || !message.trim() || isSending || !isConnected}
-                  className={`p-1.5 rounded-md transition-all ${
-                    message.trim() && currentChannel && isConnected
-                      ? "bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/25"
-                      : isDarkMode
-                        ? "bg-slate-700 text-gray-500 cursor-not-allowed"
-                        : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  key={cmd.command}
+                  onClick={() => {
+                    setMessage(cmd.command + ' ');
+                    setShowCommandSuggestions(false);
+                    setSelectedCommandIndex(0);
+                    inputRef.current?.focus();
+                  }}
+                  className={`w-full px-3 py-2.5 text-left transition-colors ${
+                    index === selectedCommandIndex
+                      ? "bg-[hsl(var(--theme-accent-primary)/0.2)]"
+                      : "hover:bg-[hsl(var(--theme-bg-hover))]"
                   }`}
                 >
-                  {isSending ? (
-                    <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
+                  <div className="flex items-start gap-3">
+                    <div className={`p-1.5 rounded-md ${
+                      index === selectedCommandIndex
+                        ? "bg-[hsl(var(--theme-accent-primary)/0.3)]"
+                        : "bg-[hsl(var(--theme-bg-tertiary))]"
+                    }`}>
+                      <Bot className={`w-4 h-4 ${
+                        index === selectedCommandIndex
+                          ? "text-[hsl(var(--theme-accent-primary))]"
+                          : "text-[hsl(var(--theme-text-muted))]"
+                      }`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-semibold text-[15px] ${
+                        index === selectedCommandIndex
+                          ? "text-[hsl(var(--theme-accent-primary))]"
+                          : "text-[hsl(var(--theme-text-primary))]"
+                      }`}>
+                        {cmd.command}
+                      </div>
+                      <div className="text-[13px] mt-0.5 text-[hsl(var(--theme-text-secondary))]">
+                        {cmd.description}
+                      </div>
+                    </div>
+                  </div>
                 </button>
+              ))}
+              <div className="px-3 py-2 text-[11px] border-t flex items-center gap-3 bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-muted))] border-[hsl(var(--theme-border-default))]">
+                <span><kbd className="px-1.5 py-0.5 rounded text-[10px] bg-[hsl(var(--theme-bg-tertiary))]">↑↓</kbd> navigate</span>
+                <span><kbd className="px-1.5 py-0.5 rounded text-[10px] bg-[hsl(var(--theme-bg-tertiary))]">Tab</kbd> select</span>
+                <span><kbd className="px-1.5 py-0.5 rounded text-[10px] bg-[hsl(var(--theme-bg-tertiary))]">Esc</kbd> close</span>
               </div>
             </div>
+          )}
+
+          <div className={`flex items-center rounded-lg transition-all backdrop-blur-md border ${
+            message.startsWith('/')
+              ? "bg-[hsl(var(--theme-accent-primary)/0.15)] ring-1 ring-[hsl(var(--theme-accent-primary)/0.5)] border-[hsl(var(--theme-accent-primary)/0.3)]"
+              : "bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary)/0.6)] border-[hsl(var(--theme-border-default)/0.4)]"
+          }`}>
+            {/* Plus Button */}
+            <button
+              className="flex-shrink-0 p-3 rounded-l-lg transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
+              disabled={!currentChannel || !isConnected}
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder={
+                message.startsWith('/') 
+                  ? "Type a command..." 
+                  : currentChannel 
+                    ? `Message #${currentChannel.name}` 
+                    : "Select a channel to start messaging"
+              }
+              value={message}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              disabled={!currentChannel || isSending || !isConnected}
+              className={`flex-1 bg-transparent outline-none text-[15px] py-2.5 ${
+                message.startsWith('/')
+                  ? "text-[hsl(var(--theme-accent-primary))] placeholder-[hsl(var(--theme-accent-primary)/0.6)]"
+                  : "text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]"
+              } disabled:opacity-50`}
+            />
+
+            <div className="flex items-center gap-1 pr-2">
+              <button
+                className="p-2 rounded-md transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
+                disabled={!currentChannel || !isConnected}
+              >
+                <Paperclip className="w-5 h-5" />
+              </button>
+              <EmojiPickerButton
+                onEmojiSelect={handleEmojiSelect}
+                pickerPosition="top"
+                disabled={!currentChannel || !isConnected}
+              />
+            </div>
+          </div>
 
           {!isConnected && (
-            <div className="mt-2 flex items-center gap-2 text-xs text-red-500">
+            <div className="mt-2 flex items-center gap-2 text-xs text-red-400">
               <WifiOff className="w-3.5 h-3.5 animate-pulse" />
               <span>Connection lost. Attempting to reconnect...</span>
             </div>
           )}
-          </div>
         </div>
       </footer>
+      )}
+
+      {/* AI Command Result Display */}
+      {commandResult && commandResult.success && (
+        <div className="fixed bottom-20 right-4 max-w-md w-full max-h-[70vh] z-50 rounded-xl shadow-2xl border overflow-hidden flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]">
+          {/* Header - Fixed */}
+          <div className="flex items-start justify-between gap-3 p-4 border-b border-[hsl(var(--theme-border-default))]">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-[hsl(var(--theme-accent-primary)/0.2)]">
+                <Bot className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm text-[hsl(var(--theme-text-primary))]">
+                  Conversation Summary
+                </h3>
+                {commandResult.method && (
+                  <p className="text-xs text-[hsl(var(--theme-text-muted))]">
+                    Method: {commandResult.method}
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setCommandResult(null)}
+              className="p-1 rounded-lg transition-colors flex-shrink-0 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))]"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Content - Scrollable */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {commandResult.summary && (
+              <div className="text-sm p-3 rounded-lg bg-[hsl(var(--theme-bg-secondary))]">
+                <div className="leading-relaxed whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+                  {commandResult.summary}
+                </div>
+              </div>
+            )}
+
+            {/* Hide Key Points - summary already contains everything */}
+          </div>
+        </div>
       )}
     </div>
   );

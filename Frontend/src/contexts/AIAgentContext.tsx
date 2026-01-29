@@ -17,6 +17,7 @@ interface AIAgentContextType {
   trackMood: (timePeriodHours?: number) => Promise<MoodTrackingResult>;
   getMoodHistory: (limit?: number) => Promise<any[]>;
   analyzeMessageSentiment: (text: string) => Promise<any>;
+  reanalyzeMoodHistory: (days?: number) => Promise<any>;
   currentMoodAnalysis: MoodTrackingResult | null;
   
   // Moderation
@@ -27,16 +28,20 @@ interface AIAgentContextType {
   moderationAlerts: any[];
   
   // Engagement
-  getEngagementMetrics: (channelId: number, days?: number) => Promise<EngagementMetrics>;
-  analyzeEngagement: (timePeriodHours: number, channelId?: string) => Promise<any>;
+  analyzeEngagement: (timePeriodHours: number, channelId?: number) => Promise<any>;
+  getEngagementMetrics: (hours?: number) => Promise<any>;
+  getEngagementHistory: (limit?: number) => Promise<any[]>;
   getEngagementTrends: (days?: number) => Promise<any[]>;
   engagementData: Record<number, EngagementMetrics>; // channelId -> metrics
   
   // Wellness
-  getWellnessInsights: (days?: number) => Promise<WellnessInsights>;
+  checkWellness: () => Promise<any>;
   analyzeWellness: (timePeriodHours: number) => Promise<any>;
-  getWellnessRecommendations: () => Promise<any[]>;
-  wellnessData: WellnessInsights | null;
+  getWellnessInsights: (days?: number) => Promise<any>;
+  getWellnessRecommendations: () => Promise<any>;
+  getWellnessHistory: (limit?: number) => Promise<any[]>;
+  getWellnessTrends: (days?: number) => Promise<any>;
+  wellnessData: any | null;
   
   // Knowledge Builder
   extractKnowledge: (timePeriodHours: number, topic?: string) => Promise<any>;
@@ -44,13 +49,14 @@ interface AIAgentContextType {
   getKnowledgeBase: (channelId: number) => Promise<KnowledgeEntry[]>;
   getKnowledgeInsights: (timePeriodHours: number) => Promise<any>;
   getKnowledgeTopics: (limit?: number) => Promise<any[]>;
+  getKnowledgeStats: () => Promise<any>;
   knowledgeBase: Record<number, KnowledgeEntry[]>; // channelId -> knowledge
   
   // Focus
   startFocusSession: (type: 'work' | 'break' | 'meeting', duration: number) => Promise<any>;
   endFocusSession: (sessionId: number) => Promise<any>;
   getFocusStats: (days?: number) => Promise<any>;
-  analyzeFocus: (timePeriodHours: number) => Promise<any>;
+  analyzeFocus: (timePeriodHours: number, channelId?: number) => Promise<any>;
   getFocusMetrics: (days?: number) => Promise<any>;
   getFocusRecommendations: () => Promise<any[]>;
   setFocusGoal: (goal: any) => Promise<any>;
@@ -66,7 +72,7 @@ const AIAgentContext = createContext<AIAgentContextType | undefined>(undefined);
 
 export function AIAgentProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const { currentChannel } = useRealtime();
+  const { currentChannel, currentCommunity } = useRealtime();
   
   // State
   const [agentStatus, setAgentStatus] = useState<Record<string, string>>({});
@@ -141,7 +147,19 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
   // MOOD TRACKER FUNCTIONS
   // =====================================================
   const trackMood = useCallback(async (timePeriodHours: number = 24): Promise<MoodTrackingResult> => {
-    if (!user?.id) throw new Error('User not authenticated');
+    if (!user?.id) {
+      // Return empty result if user not ready yet
+      return {
+        success: false,
+        overall_mood: 'neutral',
+        confidence: 0,
+        message_count: 0,
+        sentiment_distribution: { positive: 0, negative: 0, neutral: 0 },
+        trend: 'stable',
+        dominant_emotions: [],
+        time_period_hours: timePeriodHours
+      };
+    }
     
     try {
       const result = await aiAgentService.trackUserMood(user.id, timePeriodHours);
@@ -155,7 +173,10 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id]);
 
   const getMoodHistory = useCallback(async (limit: number = 10): Promise<any[]> => {
-    if (!user?.id) throw new Error('User not authenticated');
+    if (!user?.id) {
+      // Return empty array if user not ready yet
+      return [];
+    }
     
     try {
       const history = await aiAgentService.getMoodHistoryByUser(user.id, limit);
@@ -177,6 +198,21 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
       throw err;
     }
   }, []);
+
+  const reanalyzeMoodHistory = useCallback(async (days: number = 30): Promise<any> => {
+    if (!user?.id) {
+      return { success: false, error: 'User not authenticated' };
+    }
+    
+    try {
+      const result = await aiAgentService.reanalyzeMoodHistory(user.id, days);
+      setError(null);
+      return result;
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, [user?.id]);
 
   // =====================================================
   // MODERATION FUNCTIONS
@@ -236,36 +272,47 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
   // =====================================================
   // ENGAGEMENT FUNCTIONS
   // =====================================================
-  const getEngagementMetrics = useCallback(async (channelId: number, days: number = 7): Promise<EngagementMetrics> => {
-    try {
-      const metrics = await aiAgentService.getEngagementMetrics(channelId, days);
-      setEngagementData(prev => ({
-        ...prev,
-        [channelId]: metrics
-      }));
-      setError(null);
-      return metrics;
-    } catch (err: any) {
-      setError(err.message);
-      throw err;
-    }
-  }, []);
 
   // Additional Engagement Methods
-  const analyzeEngagement = useCallback(async (timePeriodHours: number, channelId?: string) => {
+  const analyzeEngagement = useCallback(async (timePeriodHours: number, channelId?: number) => {
     try {
-      return await aiAgentService.analyzeEngagement(timePeriodHours, channelId);
+      const targetChannelId = channelId || currentChannel?.id;
+      return await aiAgentService.analyzeEngagement(timePeriodHours, targetChannelId?.toString());
     } catch (error) {
       console.error('Error analyzing engagement:', error);
       setError(error instanceof Error ? error.message : 'Failed to analyze engagement');
       throw error;
     }
-  }, []);
+  }, [currentChannel]);
+
+  const getEngagementMetrics = useCallback(async (hours = 24) => {
+    try {
+      const channelId = currentChannel?.id;
+      if (!channelId) throw new Error('No channel selected');
+      return await aiAgentService.getEngagementMetrics(channelId, hours);
+    } catch (error) {
+      console.error('Error getting engagement metrics:', error);
+      setError(error instanceof Error ? error.message : 'Failed to get engagement metrics');
+      throw error;
+    }
+  }, [currentChannel]);
+
+  const getEngagementHistory = useCallback(async (limit = 10) => {
+    try {
+      const channelId = currentChannel?.id;
+      if (!channelId) throw new Error('No channel selected');
+      return await aiAgentService.getEngagementHistory(channelId, limit);
+    } catch (error) {
+      console.error('Error getting engagement history:', error);
+      setError(error instanceof Error ? error.message : 'Failed to get engagement history');
+      throw error;
+    }
+  }, [currentChannel]);
 
   const getEngagementTrends = useCallback(async (days = 7) => {
     try {
       const channelId = currentChannel?.id || 1;
-      return await aiAgentService.getEngagementTrends(channelId, 'week');
+      return await aiAgentService.getEngagementHistory(channelId, days);
     } catch (error) {
       console.error('Error fetching engagement trends:', error);
       setError(error instanceof Error ? error.message : 'Failed to fetch engagement trends');
@@ -276,12 +323,37 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
   // =====================================================
   // WELLNESS FUNCTIONS
   // =====================================================
-  const getWellnessInsights = useCallback(async (days: number = 7): Promise<WellnessInsights> => {
+  const checkWellness = useCallback(async () => {
+    try {
+      const result = await aiAgentService.checkWellness();
+      setWellnessData(result);
+      setError(null);
+      return result;
+    } catch (error) {
+      console.error('Error checking wellness:', error);
+      setError(error instanceof Error ? error.message : 'Failed to check wellness');
+      throw error;
+    }
+  }, []);
+
+  const analyzeWellness = useCallback(async (timePeriodHours: number) => {
+    try {
+      const result = await aiAgentService.analyzeWellness(timePeriodHours);
+      setWellnessData(result);
+      setError(null);
+      return result;
+    } catch (error) {
+      console.error('Error analyzing wellness:', error);
+      setError(error instanceof Error ? error.message : 'Failed to analyze wellness');
+      throw error;
+    }
+  }, []);
+
+  const getWellnessInsights = useCallback(async (days: number = 7) => {
     if (!user?.id) throw new Error('User not authenticated');
     
     try {
       const insights = await aiAgentService.getWellnessInsights(user.id, days);
-      setWellnessData(insights);
       setError(null);
       return insights;
     } catch (err: any) {
@@ -289,17 +361,6 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
       throw err;
     }
   }, [user?.id]);
-
-  // Additional Wellness Methods
-  const analyzeWellness = useCallback(async (timePeriodHours: number) => {
-    try {
-      return await aiAgentService.analyzeWellness(timePeriodHours);
-    } catch (error) {
-      console.error('Error analyzing wellness:', error);
-      setError(error instanceof Error ? error.message : 'Failed to analyze wellness');
-      throw error;
-    }
-  }, []);
 
   const getWellnessRecommendations = useCallback(async () => {
     try {
@@ -311,30 +372,51 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const getWellnessHistory = useCallback(async (limit: number = 10) => {
+    try {
+      return await aiAgentService.getWellnessHistory(limit);
+    } catch (error) {
+      console.error('Error fetching wellness history:', error);
+      setError(error instanceof Error ? error.message : 'Failed to fetch wellness history');
+      throw error;
+    }
+  }, []);
+
+  const getWellnessTrends = useCallback(async (days: number = 7) => {
+    try {
+      return await aiAgentService.getWellnessTrends(days);
+    } catch (error) {
+      console.error('Error fetching wellness trends:', error);
+      setError(error instanceof Error ? error.message : 'Failed to fetch wellness trends');
+      throw error;
+    }
+  }, []);
+
   // =====================================================
   // KNOWLEDGE BUILDER FUNCTIONS
   // =====================================================
   const extractKnowledge = useCallback(async (timePeriodHours: number, topic?: string): Promise<any> => {
+    if (!currentCommunity?.id) throw new Error('Select a community to extract knowledge');
     try {
-      const result = await aiAgentService.extractKnowledge(timePeriodHours, topic);
+      const result = await aiAgentService.extractKnowledge(timePeriodHours, topic, currentCommunity.id);
       setError(null);
       return result;
     } catch (err: any) {
       setError(err.message);
       throw err;
     }
-  }, []);
+  }, [currentCommunity?.id]);
 
   const searchKnowledge = useCallback(async (query: string, channelId?: number): Promise<KnowledgeEntry[]> => {
     try {
-      const results = await aiAgentService.searchKnowledge(query, channelId);
+      const results = await aiAgentService.searchKnowledge(query, currentCommunity?.id || undefined, channelId);
       setError(null);
       return results;
     } catch (err: any) {
       setError(err.message);
       throw err;
     }
-  }, []);
+  }, [currentCommunity?.id]);
 
   const getKnowledgeBase = useCallback(async (channelId: number): Promise<KnowledgeEntry[]> => {
     try {
@@ -353,24 +435,37 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
 
   // Additional Knowledge Methods
   const getKnowledgeInsights = useCallback(async (timePeriodHours: number) => {
+    if (!currentCommunity?.id) throw new Error('Select a community to view insights');
     try {
-      return await aiAgentService.getKnowledgeInsights(timePeriodHours);
+      return await aiAgentService.getKnowledgeInsights(timePeriodHours, currentCommunity.id);
     } catch (error) {
       console.error('Error fetching knowledge insights:', error);
       setError(error instanceof Error ? error.message : 'Failed to fetch knowledge insights');
       throw error;
     }
-  }, []);
+  }, [currentCommunity?.id]);
 
   const getKnowledgeTopics = useCallback(async (limit = 20) => {
+    if (!currentCommunity?.id) throw new Error('Select a community to view topics');
     try {
-      return await aiAgentService.getKnowledgeTopics(limit);
+      return await aiAgentService.getKnowledgeTopics(limit, currentCommunity.id);
     } catch (error) {
       console.error('Error fetching knowledge topics:', error);
       setError(error instanceof Error ? error.message : 'Failed to fetch knowledge topics');
       throw error;
     }
-  }, []);
+  }, [currentCommunity?.id]);
+
+  const getKnowledgeStats = useCallback(async () => {
+    if (!currentCommunity?.id) throw new Error('Select a community to view stats');
+    try {
+      return await aiAgentService.getKnowledgeStats(currentCommunity.id);
+    } catch (error) {
+      console.error('Error fetching knowledge stats:', error);
+      setError(error instanceof Error ? error.message : 'Failed to fetch knowledge stats');
+      throw error;
+    }
+  }, [currentCommunity?.id]);
 
   // =====================================================
   // FOCUS FUNCTIONS
@@ -421,15 +516,16 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id]);
 
   // Additional Focus Methods
-  const analyzeFocus = useCallback(async (timePeriodHours: number) => {
+  const analyzeFocus = useCallback(async (timePeriodHours: number, channelId?: number) => {
     try {
-      return await aiAgentService.analyzeFocus(timePeriodHours);
+      const targetChannelId = channelId ?? currentChannel?.id;
+      return await aiAgentService.analyzeFocus(timePeriodHours, targetChannelId);
     } catch (error) {
       console.error('Error analyzing focus:', error);
       setError(error instanceof Error ? error.message : 'Failed to analyze focus');
       throw error;
     }
-  }, []);
+  }, [currentChannel?.id]);
 
   const getFocusMetrics = useCallback(async (days = 7) => {
     try {
@@ -467,7 +563,7 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (currentChannel && user) {
       // Auto-load engagement metrics for current channel
-      getEngagementMetrics(currentChannel.id).catch(() => {});
+      getEngagementMetrics().catch(() => {});
       
       // Auto-load knowledge base for current channel
       getKnowledgeBase(currentChannel.id).catch(() => {});
@@ -493,6 +589,7 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
     trackMood,
     getMoodHistory,
     analyzeMessageSentiment,
+    reanalyzeMoodHistory,
     currentMoodAnalysis,
     
     // Moderation
@@ -503,15 +600,19 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
     moderationAlerts,
     
     // Engagement
-    getEngagementMetrics,
     analyzeEngagement,
+    getEngagementMetrics,
+    getEngagementHistory,
     getEngagementTrends,
     engagementData,
     
     // Wellness
-    getWellnessInsights,
+    checkWellness,
     analyzeWellness,
+    getWellnessInsights,
     getWellnessRecommendations,
+    getWellnessHistory,
+    getWellnessTrends,
     wellnessData,
     
     // Knowledge Builder
@@ -520,6 +621,7 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
     getKnowledgeBase,
     getKnowledgeInsights,
     getKnowledgeTopics,
+    getKnowledgeStats,
     knowledgeBase,
     
     // Focus

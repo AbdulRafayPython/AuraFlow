@@ -1,7 +1,9 @@
 """
 Summarizer Agent
 ================
-Intelligent chat summarization using extractive methods
+Intelligent chat summarization using hybrid approach:
+- Extractive method for quick summaries
+- Gemini AI for polished, contextual summaries
 Supports both English and Roman Urdu conversations
 """
 
@@ -10,9 +12,28 @@ from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 import math
 from collections import Counter
+from dotenv import load_dotenv
+import os
+
 
 from database import get_db_connection
 from utils.ai.text_processor import TextProcessor
+
+load_dotenv()
+
+# Gemini API integration
+try:
+    import google.generativeai as genai
+    from config import GEMINI_API_KEY
+    GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
+    if GEMINI_AVAILABLE:
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+except ImportError:
+    GEMINI_AVAILABLE = False
+    print("[SUMMARIZER] Gemini AI not available - using extractive method only")
+except Exception as e:
+    GEMINI_AVAILABLE = False
+    print(f"[SUMMARIZER] Gemini configuration error: {e}")
 
 
 class SummarizerAgent:
@@ -23,8 +44,60 @@ class SummarizerAgent:
     
     def __init__(self):
         self.text_processor = TextProcessor()
-        self.min_messages_for_summary = 10  # Minimum messages to trigger summary (reduced for testing)
-        self.max_summary_sentences = 10     # Maximum sentences in summary
+        self.min_messages_for_summary = 20  # Minimum messages to trigger summary
+        self.max_summary_sentences = 10     # Maximum sentences in extractive summary
+        self.gemini_available = GEMINI_AVAILABLE
+        
+        # Initialize Gemini model if available
+        if self.gemini_available:
+            try:
+                # First, list available models to find the correct one
+                print("[SUMMARIZER] Checking available Gemini models...")
+                available_models = []
+                try:
+                    for m in genai.list_models():
+                        if 'generateContent' in m.supported_generation_methods:
+                            available_models.append(m.name)
+                            print(f"[SUMMARIZER]   Found model: {m.name}")
+                except Exception as list_err:
+                    print(f"[SUMMARIZER] Could not list models: {list_err}")
+                
+                # Try models in order of preference (without 'models/' prefix for v1beta)
+                model_names = [
+                    'gemini-1.5-pro-latest',
+                    'gemini-1.5-pro',
+                    'gemini-pro-latest', 
+                    'gemini-pro',
+                    'gemini-1.0-pro-latest',
+                    'gemini-1.0-pro'
+                ]
+                
+                # If we got available models, prioritize those
+                if available_models:
+                    # Extract just the model name without 'models/' prefix
+                    clean_models = [m.replace('models/', '') for m in available_models]
+                    model_names = clean_models + model_names
+                
+                self.gemini_model = None
+                for model_name in model_names:
+                    try:
+                        self.gemini_model = genai.GenerativeModel(model_name)
+                        # Try a test generation to verify it actually works
+                        test_response = self.gemini_model.generate_content("Test")
+                        if test_response:
+                            print(f"[SUMMARIZER] ✅ Successfully verified model: {model_name}")
+                            break
+                    except Exception as model_err:
+                        print(f"[SUMMARIZER] ❌ Model {model_name} failed: {str(model_err)[:100]}")
+                        continue
+                
+                if not self.gemini_model:
+                    self.gemini_available = False
+                    print("[SUMMARIZER] ⚠️ No compatible Gemini model found")
+                    
+            except Exception as e:
+                print(f"[SUMMARIZER] Failed to initialize Gemini: {e}")
+                self.gemini_available = False
         
     def summarize_channel(self, channel_id: int, message_count: int = 100, 
                          user_id: Optional[int] = None) -> Dict:
@@ -59,22 +132,54 @@ class SummarizerAgent:
                 
                 messages = cur.fetchall()
                 
-                print(f"[SUMMARIZER] Fetched {len(messages)} messages from database")
+                print(f"[SUMMARIZER] Fetched {len(messages)} messages from database for channel {channel_id}")
                 
                 if len(messages) < self.min_messages_for_summary:
+                    error_msg = f'Not enough messages to summarize. Found {len(messages)}, need at least {self.min_messages_for_summary} messages.'
+                    print(f"[SUMMARIZER] ERROR: {error_msg}")
                     return {
                         'success': False,
-                        'error': f'Not enough messages to summarize (minimum {self.min_messages_for_summary})',
+                        'error': error_msg,
                         'message_count': len(messages)
                     }
                 
                 # Reverse to chronological order
                 messages = list(reversed(messages))
+                print(f"[SUMMARIZER] Messages reversed to chronological order")
                 
                 # Generate summary
+                print(f"[SUMMARIZER] Generating extractive summary...")
                 summary_result = self._generate_summary(messages)
+                print(f"[SUMMARIZER] Extractive summary generated: {len(summary_result.get('summary', ''))} chars")
                 
-                print(f"[SUMMARIZER] Generated summary with {len(summary_result['key_points'])} key points")
+                # Polish with Gemini if available
+                if self.gemini_available:
+                    print(f"[SUMMARIZER] Attempting Gemini enhancement (Gemini available: {self.gemini_available})...")
+                    try:
+                        gemini_summary = self._generate_gemini_summary(messages, summary_result)
+                        if gemini_summary:
+                            print(f"[SUMMARIZER] Gemini enhancement successful: {len(gemini_summary)} chars")
+                            summary_result['summary'] = gemini_summary
+                            summary_result['method'] = 'gemini-ai'
+                            
+                            # Extract key points from "KEY DECISIONS:" section
+                            key_points = self._extract_key_decisions(gemini_summary)
+                            if key_points:
+                                summary_result['key_points'] = key_points
+                                print(f"[SUMMARIZER] Extracted {len(key_points)} key decisions from Gemini summary")
+                        else:
+                            print(f"[SUMMARIZER] Gemini returned None, using extractive only")
+                            summary_result['method'] = 'extractive'
+                    except Exception as e:
+                        print(f"[SUMMARIZER] Gemini enhancement failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        summary_result['method'] = 'extractive'
+                else:
+                    print(f"[SUMMARIZER] Gemini not available (API key missing)")
+                    summary_result['method'] = 'extractive'
+                
+                print(f"[SUMMARIZER] Generated summary with {len(summary_result['key_points'])} key points using {summary_result.get('method', 'extractive')} method")
                 
                 # Save summary to database
                 summary_id = self._save_summary(
@@ -83,7 +188,8 @@ class SummarizerAgent:
                     message_count=len(messages),
                     start_message_id=messages[0]['id'],
                     end_message_id=messages[-1]['id'],
-                    created_by=user_id
+                    created_by=user_id,
+                    participants=summary_result['participants']
                 )
                 
                 # Log agent activity
@@ -95,18 +201,22 @@ class SummarizerAgent:
                     status='success'
                 )
                 
-                return {
+                result = {
                     'success': True,
                     'summary_id': summary_id,
                     'summary': summary_result['summary'],
                     'key_points': summary_result['key_points'],
                     'message_count': len(messages),
                     'participants': summary_result['participants'],
+                    'method': summary_result.get('method', 'extractive'),
                     'time_range': {
                         'start': messages[0]['created_at'].isoformat(),
                         'end': messages[-1]['created_at'].isoformat()
                     }
                 }
+                
+                print(f"[SUMMARIZER] Returning success result: {result.keys()}")
+                return result
                 
         except Exception as e:
             print(f"[SUMMARIZER] Error: {e}")
@@ -128,7 +238,7 @@ class SummarizerAgent:
     
     def _generate_summary(self, messages: List[Dict]) -> Dict:
         """
-        Generate summary using extractive method
+        Generate summary using improved extractive method with deduplication
         
         Args:
             messages: List of message dictionaries
@@ -148,7 +258,7 @@ class SummarizerAgent:
                 remove_emojis=True
             )
             
-            if len(cleaned) > 10:  # Filter very short messages (reduced from 15)
+            if len(cleaned) > 10:  # Filter very short messages
                 texts.append({
                     'text': cleaned,
                     'original': msg['content'],
@@ -167,25 +277,20 @@ class SummarizerAgent:
         # Score sentences
         scored_sentences = self._score_sentences(texts)
         
-        # Select top sentences for summary
-        num_sentences = min(self.max_summary_sentences, max(3, len(texts) // 10))
-        top_sentences = scored_sentences[:num_sentences]
+        # Select diverse top sentences (avoid repetition)
+        num_sentences = min(self.max_summary_sentences, max(5, len(texts) // 8))
+        top_sentences = self._select_diverse_sentences(scored_sentences, num_sentences)
         
         # Sort by original order (chronological)
         top_sentences.sort(key=lambda x: x['index'])
         
-        # Build summary
-        summary_parts = []
-        for item in top_sentences:
-            author = item['author']
-            text = item['text']
-            summary_parts.append(f"• {author}: {text}")
-        
+        # Build summary with better formatting
+        summary_parts = self._format_summary(top_sentences)
         summary = '\n'.join(summary_parts)
         
         # Extract key points (most frequent topics)
         all_text = ' '.join([t['text'] for t in texts])
-        key_points = self.text_processor.extract_keywords(all_text, top_n=5)
+        key_points = self.text_processor.extract_keywords(all_text, top_n=7)
         
         return {
             'summary': summary,
@@ -193,9 +298,132 @@ class SummarizerAgent:
             'participants': list(participants)
         }
     
+    def _select_diverse_sentences(self, scored_sentences: List[Dict], num_sentences: int) -> List[Dict]:
+        """
+        Select diverse sentences avoiding repetition and near-duplicates
+        
+        Args:
+            scored_sentences: List of scored sentence dicts
+            num_sentences: Number of sentences to select
+            
+        Returns:
+            List of selected diverse sentences
+        """
+        selected = []
+        seen_texts = set()
+        
+        for sentence in scored_sentences:
+            if len(selected) >= num_sentences:
+                break
+            
+            text_normalized = sentence['text'].lower().strip()
+            
+            # Skip if too similar to already selected
+            is_duplicate = False
+            for seen in seen_texts:
+                # Calculate similarity (simple word overlap)
+                words1 = set(text_normalized.split())
+                words2 = set(seen.split())
+                if len(words1) == 0 or len(words2) == 0:
+                    continue
+                overlap = len(words1 & words2) / len(words1 | words2)
+                if overlap > 0.7:  # 70% similarity threshold
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                selected.append(sentence)
+                seen_texts.add(text_normalized)
+        
+        return selected
+    
+    def _format_summary(self, sentences: List[Dict]) -> List[str]:
+        """
+        Format sentences into clean, structured summary
+        
+        Args:
+            sentences: List of sentence dicts
+            
+        Returns:
+            List of formatted strings
+        """
+        # Categorize sentences
+        questions_answers = []
+        discussions = []
+        decisions = []
+        
+        i = 0
+        while i < len(sentences):
+            item = sentences[i]
+            text = item['text']
+            author = item['author']
+            
+            # Check if already processed
+            if item.get('skip'):
+                i += 1
+                continue
+            
+            # Detect Q&A pairs
+            if '?' in text and i + 1 < len(sentences):
+                next_item = sentences[i + 1]
+                if next_item['author'] != author and '?' not in next_item['text']:
+                    questions_answers.append({
+                        'question': text,
+                        'q_author': author,
+                        'answer': next_item['text'],
+                        'a_author': next_item['author']
+                    })
+                    sentences[i + 1]['skip'] = True
+                    i += 2
+                    continue
+            
+            # Categorize by type
+            if any(word in text.lower() for word in ['decided', 'decision', 'final', 'agreed', 'confirmed', 'will use']):
+                decisions.append({'author': author, 'text': text})
+            elif '?' in text:
+                questions_answers.append({
+                    'question': text,
+                    'q_author': author,
+                    'answer': None,
+                    'a_author': None
+                })
+            else:
+                discussions.append({'author': author, 'text': text})
+            
+            i += 1
+        
+        # Build clean formatted output
+        formatted = []
+        
+        # Add Q&A section
+        if questions_answers:
+            for idx, qa in enumerate(questions_answers, 1):
+                if qa['answer']:
+                    formatted.append(f"Q{idx}: {qa['question']}")
+                    formatted.append(f"A{idx}: {qa['answer']}")
+                    formatted.append("")  # Blank line for spacing
+                else:
+                    formatted.append(f"Q{idx}: {qa['question']}")
+                    formatted.append("")
+        
+        # Add discussions
+        if discussions:
+            for item in discussions:
+                formatted.append(f"• {item['text']}")
+        
+        # Add decisions at the end
+        if decisions:
+            if discussions:
+                formatted.append("")  # Separator
+            formatted.append("KEY DECISIONS:")
+            for item in decisions:
+                formatted.append(f"✓ {item['text']}")
+        
+        return formatted
+    
     def _score_sentences(self, texts: List[Dict]) -> List[Dict]:
         """
-        Score sentences based on various features
+        Score sentences based on various features with improved algorithm
         
         Args:
             texts: List of text dictionaries
@@ -203,42 +431,62 @@ class SummarizerAgent:
         Returns:
             Sorted list of scored sentences
         """
-        # Build word frequency
+        # Build word frequency (excluding stop words)
         all_words = []
+        stop_words = {'is', 'a', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
+                      'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during'}
+        
         for item in texts:
-            words = item['text'].lower().split()
+            words = [w for w in item['text'].lower().split() if w not in stop_words and len(w) > 2]
             all_words.extend(words)
         
         word_freq = Counter(all_words)
+        
+        # Calculate TF-IDF-like scores
+        doc_count = len(texts)
+        word_doc_count = Counter()
+        for item in texts:
+            unique_words = set([w for w in item['text'].lower().split() if w not in stop_words])
+            for word in unique_words:
+                word_doc_count[word] += 1
         
         # Score each sentence
         scored = []
         for idx, item in enumerate(texts):
             text = item['text']
-            words = text.lower().split()
+            words = [w for w in text.lower().split() if w not in stop_words and len(w) > 2]
             
             if not words:
                 continue
             
             # Calculate features
-            # 1. Word frequency score
-            freq_score = sum(word_freq.get(w, 0) for w in words) / len(words)
+            # 1. TF-IDF score (more unique content = higher score)
+            tfidf_score = 0
+            for word in set(words):
+                tf = word_freq.get(word, 0) / len(all_words)
+                idf = math.log(doc_count / (word_doc_count.get(word, 1) + 1))
+                tfidf_score += tf * idf
+            tfidf_score = tfidf_score / len(words) if words else 0
             
-            # 2. Length score (prefer medium-length sentences)
+            # 2. Length score (prefer informative length)
             length_score = self._length_score(len(words))
             
-            # 3. Position score (slight preference for earlier messages)
-            position_score = 1.0 - (idx / len(texts)) * 0.2
+            # 3. Position score (slight preference for middle messages)
+            position_score = 1.0 - abs((idx / len(texts)) - 0.5) * 0.3
             
             # 4. Question/important markers
             importance_score = self._importance_score(text)
             
-            # Combined score
+            # 5. Information density (noun/verb ratio, technical terms)
+            density_score = self._information_density(text)
+            
+            # Combined score with better weighting
             total_score = (
-                freq_score * 0.4 +
-                length_score * 0.2 +
-                position_score * 0.2 +
-                importance_score * 0.2
+                tfidf_score * 0.25 +        # Uniqueness
+                length_score * 0.15 +       # Optimal length
+                position_score * 0.1 +      # Position
+                importance_score * 0.3 +    # Importance markers
+                density_score * 0.2         # Information content
             )
             
             scored.append({
@@ -252,6 +500,37 @@ class SummarizerAgent:
         scored.sort(key=lambda x: x['score'], reverse=True)
         
         return scored
+    
+    def _information_density(self, text: str) -> float:
+        """
+        Calculate information density based on content richness
+        """
+        score = 0.5  # Base score
+        
+        # Technical/informative keywords indicate dense information
+        technical_terms = [
+            'docker', 'flask', 'react', 'mysql', 'redis', 'api', 'database',
+            'frontend', 'backend', 'authentication', 'deploy', 'framework',
+            'containerization', 'platform', 'application', 'interface',
+            'python', 'javascript', 'library', 'tool', 'development'
+        ]
+        
+        text_lower = text.lower()
+        term_count = sum(1 for term in technical_terms if term in text_lower)
+        score += min(0.4, term_count * 0.1)  # Max +0.4 for technical content
+        
+        # Explanatory phrases indicate informative content
+        explanatory_phrases = ['is a', 'means', 'refers to', 'allows', 'enables', 
+                              'provides', 'designed for', 'used for']
+        if any(phrase in text_lower for phrase in explanatory_phrases):
+            score += 0.2
+        
+        # Decision/conclusion phrases
+        decision_phrases = ['decided', 'will use', 'confirmed', 'final', 'agreed']
+        if any(phrase in text_lower for phrase in decision_phrases):
+            score += 0.3
+        
+        return min(1.0, score)
     
     def _length_score(self, word_count: int) -> float:
         """
@@ -295,9 +574,117 @@ class SummarizerAgent:
         
         return min(1.0, score)
     
+    def _generate_gemini_summary(self, messages: List[Dict], extractive_result: Dict) -> Optional[str]:
+        """
+        Generate polished summary using Gemini AI with clean formatting
+        
+        Args:
+            messages: List of message dictionaries
+            extractive_result: Result from extractive summarization
+            
+        Returns:
+            Polished summary string or None if failed
+        """
+        try:
+            # Prepare conversation context
+            conversation_text = []
+            for msg in messages:
+                author = msg.get('display_name') or msg.get('username', 'User')
+                content = msg.get('content', '')
+                conversation_text.append(f"{author}: {content}")
+            
+            conversation = '\n'.join(conversation_text)
+            
+            # Prepare enhanced prompt for discussion-style summary
+            prompt = """You are a professional conversation summarizer. Analyze this chat conversation and create a natural, flowing discussion summary.
+
+CONVERSATION:
+""" + conversation + """
+
+IMPORTANT FORMATTING RULES:
+1. Write in a natural discussion format, NOT Q&A format
+2. Summarize topics as they were discussed in the conversation
+3. Use bullet points for main discussion topics
+4. Group important decisions at the end under "KEY DECISIONS:" with dashes
+5. Keep it concise, clear, and conversational
+6. Do NOT add any introduction or conclusion text
+7. Start directly with the content
+8. Add blank lines between sections for readability
+
+Example format:
+- The team discussed Docker, which is a containerization platform that packages applications with their dependencies. This allows for consistent deployment across different environments.
+
+- Flask was confirmed as the backend framework. It's a lightweight Python web framework that handles HTTP requests and routing efficiently.
+
+- The group covered several technical concepts including MySQL (a relational database), Redis (a cache database), and React (a JavaScript library for building user interfaces).
+
+- Frontend and backend architecture were explained - frontend being the client-side interface users interact with, while backend handles server-side logic and data processing.
+
+KEY DECISIONS:
+- MySQL will be used for the database
+- React will be the frontend framework
+- Deployment will be on Docker containers
+- Flask will be used for backend development
+
+Now create the summary in this discussion style:"""
+
+            # Generate with Gemini
+            response = self.gemini_model.generate_content(prompt)
+            
+            if response and response.text:
+                return response.text.strip()
+            
+            return None
+            
+        except Exception as e:
+            print(f"[SUMMARIZER] Gemini API error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def _extract_key_decisions(self, summary_text: str) -> List[str]:
+        """
+        Extract key decisions/points from summary text that contains "KEY DECISIONS:" section
+        
+        Args:
+            summary_text: Full summary text including KEY DECISIONS section
+            
+        Returns:
+            List of key decision strings
+        """
+        try:
+            # Find the KEY DECISIONS section
+            if 'KEY DECISIONS:' not in summary_text:
+                return []
+            
+            # Split at KEY DECISIONS
+            parts = summary_text.split('KEY DECISIONS:')
+            if len(parts) < 2:
+                return []
+            
+            decisions_section = parts[1].strip()
+            
+            # Extract each line that starts with a dash or bullet
+            key_points = []
+            for line in decisions_section.split('\n'):
+                line = line.strip()
+                # Match lines starting with -, •, or *
+                if line.startswith('-') or line.startswith('•') or line.startswith('*'):
+                    # Remove the leading dash/bullet and clean up
+                    point = line[1:].strip()
+                    if point:  # Only add non-empty points
+                        key_points.append(point)
+            
+            return key_points
+            
+        except Exception as e:
+            print(f"[SUMMARIZER] Error extracting key decisions: {e}")
+            return []
+    
     def _save_summary(self, channel_id: int, summary_text: str, 
                      message_count: int, start_message_id: int,
-                     end_message_id: int, created_by: Optional[int]) -> int:
+                     end_message_id: int, created_by: Optional[int],
+                     participants: List[str]) -> int:
         """Save summary to database"""
         conn = None
         try:
@@ -311,11 +698,14 @@ class SummarizerAgent:
                     if user:
                         generated_by = user['username']
                 
+                import json
+                participants_json = json.dumps(participants)
+                
                 cur.execute("""
                     INSERT INTO conversation_summaries 
-                    (channel_id, summary, generated_by)
-                    VALUES (%s, %s, %s)
-                """, (channel_id, summary_text, generated_by))
+                    (channel_id, summary, generated_by, message_count, participants)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (channel_id, summary_text, generated_by, message_count, participants_json))
                 
                 conn.commit()
                 return cur.lastrowid
@@ -360,12 +750,13 @@ class SummarizerAgent:
         """
         conn = None
         try:
+            print(f"[SUMMARIZER] Fetching summaries for channel {channel_id}, limit {limit}")
             conn = get_db_connection()
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT 
                         cs.id, cs.summary, cs.generated_by,
-                        cs.created_at
+                        cs.created_at, cs.message_count, cs.participants, cs.key_points
                     FROM conversation_summaries cs
                     WHERE cs.channel_id = %s
                     ORDER BY cs.created_at DESC
@@ -374,15 +765,42 @@ class SummarizerAgent:
                 
                 summaries = cur.fetchall()
                 
-                return [{
-                    'id': s['id'],
-                    'summary': s['summary'],
-                    'created_at': s['created_at'].isoformat() if s['created_at'] else None,
-                    'created_by': s['generated_by']
-                } for s in summaries]
+                result = []
+                for s in summaries:
+                    # Parse participants if it's JSON string
+                    participants = s.get('participants', [])
+                    if isinstance(participants, str):
+                        try:
+                            import json
+                            participants = json.loads(participants)
+                        except:
+                            participants = []
+                    
+                    # Parse key_points if it's JSON string
+                    key_points = s.get('key_points', [])
+                    if isinstance(key_points, str):
+                        try:
+                            import json
+                            key_points = json.loads(key_points)
+                        except:
+                            key_points = []
+                    
+                    result.append({
+                        'id': s['id'],
+                        'summary': s['summary'],
+                        'created_at': s['created_at'].isoformat() if s['created_at'] else None,
+                        'created_by': s['generated_by'],
+                        'message_count': s.get('message_count', 0),
+                        'participants': participants,
+                        'key_points': key_points
+                    })
+                
+                return result
                 
         except Exception as e:
             print(f"[SUMMARIZER] Error fetching summaries: {e}")
+            import traceback
+            traceback.print_exc()
             return []
         finally:
             if conn:

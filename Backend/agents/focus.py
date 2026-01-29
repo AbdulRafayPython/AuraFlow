@@ -38,6 +38,7 @@ class FocusAgent:
         """
         conn = None
         try:
+            print(f"[FOCUS] Starting analysis for channel {channel_id}, hours={time_period_hours}")
             conn = get_db_connection()
             with conn.cursor() as cur:
                 # Get recent messages
@@ -56,10 +57,13 @@ class FocusAgent:
                 
                 messages = cur.fetchall()
                 
+                print(f"[FOCUS] Found {len(messages)} messages in channel {channel_id}")
+                
                 if len(messages) < self.min_messages_for_analysis:
+                    print(f"[FOCUS] Not enough messages: {len(messages)} < {self.min_messages_for_analysis}")
                     return {
                         'success': False,
-                        'error': f'Need at least {self.min_messages_for_analysis} messages for analysis'
+                        'error': f'Need at least {self.min_messages_for_analysis} messages for analysis. Found {len(messages)} messages in the last {time_period_hours} hours.'
                     }
                 
                 # Extract topics from messages
@@ -85,18 +89,31 @@ class FocusAgent:
                 # Get dominant topics
                 dominant_topics = topic_counts.most_common(5)
                 
-                # Calculate focus score
+                # Calculate base focus score from topics
                 focus_score = self._calculate_focus_score(topic_counts, total_topics)
                 
                 # Detect topic shifts
                 topic_shifts = self._detect_topic_shifts(message_topics)
+                num_shifts = len(topic_shifts)
+                
+                # BOOST score based on topic shifts (most important indicator!)
+                # Few shifts = very focused conversation
+                shift_ratio = num_shifts / len(messages) if len(messages) > 0 else 0
+                if num_shifts <= 1:
+                    focus_score = min(1.0, focus_score + 0.35)  # Big boost for 0-1 shifts
+                elif num_shifts <= 3:
+                    focus_score = min(1.0, focus_score + 0.20)  # Good boost for 2-3 shifts
+                elif shift_ratio < 0.1:  # Less than 10% of messages are shifts
+                    focus_score = min(1.0, focus_score + 0.10)
+                
+                print(f"[FOCUS] Final score after shift boost: {focus_score:.2f} (shifts={num_shifts})")
                 
                 # Calculate engagement level
                 participant_count = len(set(msg['sender_id'] for msg in messages))
                 messages_per_participant = len(messages) / participant_count if participant_count > 0 else 0
                 
-                # Determine focus level
-                if focus_score >= 0.7:
+                # Determine focus level based on final score
+                if focus_score >= 0.65:
                     focus_level = 'high'
                     recommendation = 'Great focus! The conversation is staying on topic.'
                 elif focus_score >= 0.4:
@@ -138,33 +155,52 @@ class FocusAgent:
         """
         Calculate focus score based on topic distribution
         Higher score = more focused conversation
+        
+        Simple approach:
+        - How much do top topics dominate?
+        - Are there few unique topics (focused) or many (scattered)?
         """
-        if total == 0:
-            return 0.0
+        if total == 0 or len(topic_counts) == 0:
+            return 0.5
         
-        # Get top 3 topics
-        top_topics = topic_counts.most_common(3)
+        num_unique_topics = len(topic_counts)
+        top_topics = topic_counts.most_common(5)
+        
         if not top_topics:
-            return 0.0
+            return 0.5
         
-        # Calculate concentration of top topics
-        top_topic_count = sum(count for _, count in top_topics)
-        concentration = top_topic_count / total
+        # Top 5 topics total mentions
+        top_5_count = sum(count for _, count in top_topics)
         
-        # Calculate entropy (diversity measure)
-        import math
-        entropy = 0
-        for count in topic_counts.values():
-            if count > 0:
-                p = count / total
-                entropy -= p * math.log2(p)
+        # SIMPLE SCORING:
+        # 1. What percentage of ALL mentions are in top 5 topics?
+        dominance = top_5_count / total if total > 0 else 0
         
-        # Normalize entropy (lower entropy = more focused)
-        max_entropy = math.log2(len(topic_counts)) if len(topic_counts) > 1 else 1
-        normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0
+        # 2. How few unique topics are there? (fewer = more focused)
+        # If only 5-10 unique topics, very focused
+        # If 50+ unique topics, scattered
+        if num_unique_topics <= 5:
+            topic_focus = 1.0
+        elif num_unique_topics <= 10:
+            topic_focus = 0.85
+        elif num_unique_topics <= 20:
+            topic_focus = 0.7
+        elif num_unique_topics <= 30:
+            topic_focus = 0.5
+        else:
+            topic_focus = 0.3
         
-        # Focus score: high concentration and low diversity = high focus
-        focus_score = (concentration * 0.7) + ((1 - normalized_entropy) * 0.3)
+        # Combined score: 60% dominance + 40% topic focus
+        focus_score = (dominance * 0.6) + (topic_focus * 0.4)
+        
+        # Ensure minimum score of 0.3 if there are any repeated topics
+        if top_topics[0][1] > 1:  # Most common topic appears more than once
+            focus_score = max(0.3, focus_score)
+        
+        # Cap at 1.0
+        focus_score = min(1.0, focus_score)
+        
+        print(f"[FOCUS] Score: dominance={dominance:.2f}, unique_topics={num_unique_topics}, topic_focus={topic_focus:.2f}, final={focus_score:.2f}")
         
         return focus_score
     

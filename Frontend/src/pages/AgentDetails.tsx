@@ -96,16 +96,17 @@ export default function AgentDetails() {
 
   if (!agent) {
     return (
-      <div className={`h-screen flex items-center justify-center ${
-        isDarkMode ? 'bg-slate-900 text-white' : 'bg-white text-gray-900'
-      }`}>
+      <div 
+        className="h-screen flex items-center justify-center"
+        style={{ background: 'var(--theme-bg-gradient)' }}
+      >
         <div className="text-center">
           <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-red-500" />
-          <h2 className="text-2xl font-bold mb-2">Agent Not Found</h2>
-          <p className="text-gray-500 mb-4">The requested AI agent does not exist.</p>
+          <h2 className="text-2xl font-bold mb-2 text-[hsl(var(--theme-text-primary))]">Agent Not Found</h2>
+          <p className="text-[hsl(var(--theme-text-muted))] mb-4">The requested AI agent does not exist.</p>
           <button
             onClick={() => navigate(-1)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="px-4 py-2 bg-[hsl(var(--theme-accent-primary))] text-white rounded-lg hover:opacity-90 transition-opacity"
           >
             Go Back
           </button>
@@ -159,22 +160,17 @@ export default function AgentDetails() {
   };
 
   return (
-    <div className={`h-screen flex flex-col ${
-      isDarkMode ? 'bg-slate-900' : 'bg-gray-50'
-    }`}>
+    <div 
+      className="h-screen flex flex-col"
+      style={{ background: 'var(--theme-bg-gradient)' }}
+    >
       {/* Header */}
-      <div className={`flex-shrink-0 border-b ${
-        isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
-      } shadow-sm`}>
+      <div className="flex-shrink-0 border-b bg-[hsl(var(--theme-bg-secondary)/0.8)] border-[hsl(var(--theme-border-default))] backdrop-blur-xl shadow-sm">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between mb-4">
             <button
               onClick={() => navigate(-1)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${
-                isDarkMode
-                  ? 'hover:bg-slate-700 text-gray-400 hover:text-white'
-                  : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
-              }`}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))]"
             >
               <ArrowLeft className="w-4 h-4" />
               <span className="text-sm font-medium">Back</span>
@@ -185,11 +181,7 @@ export default function AgentDetails() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleDiscard}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    isDarkMode
-                      ? 'bg-slate-700 text-gray-300 hover:bg-slate-600'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                  className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))]"
                 >
                   <X className="w-4 h-4 inline mr-1" />
                   Discard
@@ -215,9 +207,7 @@ export default function AgentDetails() {
             
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-1">
-                <h1 className={`text-2xl font-bold ${
-                  isDarkMode ? 'text-white' : 'text-gray-900'
-                }`}>
+                <h1 className="text-2xl font-bold text-[hsl(var(--theme-text-primary))]">
                   {agent.name}
                 </h1>
                 
@@ -248,9 +238,7 @@ export default function AgentDetails() {
                 </button>
               </div>
               
-              <p className={`text-sm ${
-                isDarkMode ? 'text-gray-400' : 'text-gray-600'
-              }`}>
+              <p className="text-sm text-[hsl(var(--theme-text-secondary))]">
                 {agent.description}
               </p>
             </div>
@@ -258,9 +246,7 @@ export default function AgentDetails() {
         </div>
 
         {/* Tab Navigation */}
-        <div className={`flex gap-1 px-6 border-t ${
-          isDarkMode ? 'border-slate-700' : 'border-gray-200'
-        }`}>
+        <div className="flex gap-1 px-6 border-t border-[hsl(var(--theme-border-default))]">
           {[
             { id: 'overview', label: 'Overview', icon: <Activity className="w-4 h-4" /> },
             { id: 'capabilities', label: 'Capabilities', icon: <CheckCircle className="w-4 h-4" /> },
@@ -273,18 +259,14 @@ export default function AgentDetails() {
               onClick={() => toggleSection(tab.id as SectionName)}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative ${
                 expandedSections.has(tab.id as SectionName)
-                  ? isDarkMode
-                    ? 'text-blue-400'
-                    : 'text-blue-600'
-                  : isDarkMode
-                    ? 'text-gray-400 hover:text-gray-300'
-                    : 'text-gray-600 hover:text-gray-900'
+                  ? 'text-[hsl(var(--theme-accent-primary))]'
+                  : 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))]'
               }`}
             >
               {tab.icon}
               {tab.label}
               {expandedSections.has(tab.id as SectionName) && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--theme-accent-primary))]" />
               )}
             </button>
           ))}
@@ -296,20 +278,14 @@ export default function AgentDetails() {
         <div className="max-w-5xl mx-auto p-6 space-y-6">
           {/* Overview Section */}
           {expandedSections.has('overview') && (
-            <section className={`rounded-xl border ${
-              isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
-            } shadow-sm overflow-hidden`}>
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] backdrop-blur-sm border-[hsl(var(--theme-border-default))] shadow-sm overflow-hidden">
               <div className="p-6">
-                <h2 className={`text-lg font-semibold mb-4 ${
-                  isDarkMode ? 'text-white' : 'text-gray-900'
-                }`}>
+                <h2 className="text-lg font-semibold mb-4 text-[hsl(var(--theme-text-primary))]">
                   Agent Interface
                 </h2>
                 
                 {/* Agent Component */}
-                <div className={`rounded-lg border ${
-                  isDarkMode ? 'border-slate-600 bg-slate-900/50' : 'border-gray-200 bg-gray-50'
-                }`}>
+                <div className="rounded-lg border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-tertiary)/0.5)]">
                   {renderAgentInterface()}
                 </div>
               </div>
@@ -318,18 +294,12 @@ export default function AgentDetails() {
 
           {/* Capabilities Section */}
           {expandedSections.has('capabilities') && (
-            <section className={`rounded-xl border ${
-              isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
-            } shadow-sm`}>
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] backdrop-blur-sm border-[hsl(var(--theme-border-default))] shadow-sm">
               <div className="p-6">
-                <h2 className={`text-lg font-semibold mb-4 ${
-                  isDarkMode ? 'text-white' : 'text-gray-900'
-                }`}>
+                <h2 className="text-lg font-semibold mb-4 text-[hsl(var(--theme-text-primary))]">
                   Capabilities
                 </h2>
-                <div className={`space-y-3 ${
-                  isDarkMode ? 'text-gray-300' : 'text-gray-700'
-                }`}>
+                <div className="space-y-3 text-[hsl(var(--theme-text-secondary))]">
                   <p className="text-sm">
                     This section will display the agent's capabilities, enabled features, and supported actions.
                   </p>
@@ -341,18 +311,12 @@ export default function AgentDetails() {
 
           {/* Settings Section */}
           {expandedSections.has('settings') && (
-            <section className={`rounded-xl border ${
-              isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
-            } shadow-sm`}>
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] backdrop-blur-sm border-[hsl(var(--theme-border-default))] shadow-sm">
               <div className="p-6">
-                <h2 className={`text-lg font-semibold mb-4 ${
-                  isDarkMode ? 'text-white' : 'text-gray-900'
-                }`}>
+                <h2 className="text-lg font-semibold mb-4 text-[hsl(var(--theme-text-primary))]">
                   Settings
                 </h2>
-                <div className={`space-y-3 ${
-                  isDarkMode ? 'text-gray-300' : 'text-gray-700'
-                }`}>
+                <div className="space-y-3 text-[hsl(var(--theme-text-secondary))]">
                   <p className="text-sm">
                     Configure thresholds, prompts, rules, and other agent-specific settings here.
                   </p>
@@ -364,18 +328,12 @@ export default function AgentDetails() {
 
           {/* Logs Section */}
           {expandedSections.has('logs') && (
-            <section className={`rounded-xl border ${
-              isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
-            } shadow-sm`}>
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] backdrop-blur-sm border-[hsl(var(--theme-border-default))] shadow-sm">
               <div className="p-6">
-                <h2 className={`text-lg font-semibold mb-4 ${
-                  isDarkMode ? 'text-white' : 'text-gray-900'
-                }`}>
+                <h2 className="text-lg font-semibold mb-4 text-[hsl(var(--theme-text-primary))]">
                   Activity Logs
                 </h2>
-                <div className={`space-y-3 ${
-                  isDarkMode ? 'text-gray-300' : 'text-gray-700'
-                }`}>
+                <div className="space-y-3 text-[hsl(var(--theme-text-secondary))]">
                   <p className="text-sm">
                     View recent agent actions, errors, and events.
                   </p>
@@ -387,18 +345,12 @@ export default function AgentDetails() {
 
           {/* Testing Section */}
           {expandedSections.has('testing') && (
-            <section className={`rounded-xl border ${
-              isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
-            } shadow-sm`}>
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] backdrop-blur-sm border-[hsl(var(--theme-border-default))] shadow-sm">
               <div className="p-6">
-                <h2 className={`text-lg font-semibold mb-4 ${
-                  isDarkMode ? 'text-white' : 'text-gray-900'
-                }`}>
+                <h2 className="text-lg font-semibold mb-4 text-[hsl(var(--theme-text-primary))]">
                   Testing & Simulation
                 </h2>
-                <div className={`space-y-3 ${
-                  isDarkMode ? 'text-gray-300' : 'text-gray-700'
-                }`}>
+                <div className="space-y-3 text-[hsl(var(--theme-text-secondary))]">
                   <p className="text-sm">
                     Test the agent with sample inputs and view expected outputs.
                   </p>

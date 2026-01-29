@@ -25,6 +25,7 @@ export interface Message {
   edited_at?: string | null;
   reply_to?: number | null;
   reactions?: Reaction[];
+  is_blocked?: boolean;
   moderation?: {
     action: 'allow' | 'warn' | 'flag' | 'block' | 'remove_message' | 'remove_user' | 'block_user';
     severity: 'none' | 'low' | 'medium' | 'high';
@@ -151,6 +152,7 @@ export interface User {
 
 export interface CommunityMember extends User {
   role: 'owner' | 'admin' | 'member';
+  is_blocked?: boolean;
 }
 
 export interface BlockedUser {

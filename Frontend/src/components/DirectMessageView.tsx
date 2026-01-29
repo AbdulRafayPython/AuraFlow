@@ -200,6 +200,24 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
     };
   }, []);
 
+  // Close reaction picker and menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Close reaction picker if clicking outside
+      if (reactionPickerMessageId !== null && !target.closest('[data-reaction-picker]')) {
+        setReactionPickerMessageId(null);
+      }
+      // Close menu if clicking outside
+      if (menuOpen !== null && !target.closest('[data-message-menu]')) {
+        setMenuOpen(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [reactionPickerMessageId, menuOpen]);
+
   useEffect(() => {
     // Check if user is near bottom before auto-scrolling
     const container = messagesContainerRef.current;
@@ -313,17 +331,13 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   };
 
   return (
-    <div className={`flex-1 flex flex-col h-full ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+    <div className="flex-1 flex flex-col h-full bg-[hsl(var(--theme-bg-primary))] transition-colors duration-300">
       {/* Header - Clean and Simple */}
-      <header className={`px-6 py-3 border-b flex-shrink-0 flex items-center gap-3 ${
-        isDarkMode ? 'bg-slate-900 border-slate-700/50' : 'bg-white border-gray-200'
-      }`}>
+      <header className="px-6 py-3 border-b flex-shrink-0 flex items-center gap-3 bg-[hsl(var(--theme-header-bg)/0.8)] backdrop-blur-xl border-[hsl(var(--theme-border-default))] transition-colors duration-300 sticky top-0 z-40">
         {onClose && (
           <button
             onClick={onClose}
-            className={`p-2 rounded-lg transition ${
-              isDarkMode ? 'hover:bg-slate-800 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
-            }`}
+            className="p-2 rounded-lg transition-all duration-300 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:shadow-[var(--theme-glow-secondary)]"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -332,17 +346,13 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
           <img
             src={getAvatarUrl(avatar, username)}
             alt={displayName || username}
-            className="w-10 h-10 rounded-full object-cover"
+            className="w-10 h-10 rounded-full object-cover ring-2 ring-[hsl(var(--theme-border-default))] hover:ring-[hsl(var(--theme-accent-primary))] transition-all duration-300"
           />
           <div className="flex-1 min-w-0">
-            <h2 className={`text-base font-semibold truncate ${
-              isDarkMode ? 'text-white' : 'text-gray-900'
-            }`}>
+            <h2 className="text-base font-semibold truncate text-[hsl(var(--theme-text-primary))]">
               {displayName || username}
             </h2>
-            <p className={`text-xs ${
-              isDarkMode ? 'text-slate-400' : 'text-gray-500'
-            }`}>
+            <p className="text-xs text-[hsl(var(--theme-text-muted))]">
               Online
             </p>
           </div>
@@ -353,17 +363,13 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
       <main 
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className={`flex-1 overflow-y-auto px-4 py-4 scrollbar ${isDarkMode ? 'scrollbar-thumb-slate-600 scrollbar-track-slate-800/30' : 'scrollbar-thumb-gray-400 scrollbar-track-gray-100'}`}
+        className="flex-1 overflow-y-auto px-4 py-4 scrollbar scrollbar-thumb-[hsl(var(--theme-bg-tertiary))] scrollbar-track-[hsl(var(--theme-bg-secondary)/0.3)]"
       >
         {enrichedMessages.length === 0 ? (
-          <div className={`h-full flex items-center justify-center ${
-            isDarkMode ? 'text-gray-400' : 'text-gray-500'
-          }`}>
+          <div className="h-full flex items-center justify-center text-[hsl(var(--theme-text-muted))]">
             <div className="text-center text-sm">
               <p>No messages yet</p>
-              <p className={`text-xs mt-1 ${
-                isDarkMode ? 'text-gray-500' : 'text-gray-400'
-              }`}>Start chatting!</p>
+              <p className="text-xs mt-1 text-[hsl(var(--theme-text-muted)/0.7)]">Start chatting!</p>
             </div>
           </div>
         ) : (
@@ -376,26 +382,18 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
               <div key={msg.id} className={showAvatar ? 'mt-4' : 'mt-0.5'}>
                 {showDateDivider && (
                   <div className="flex items-center gap-3 my-6">
-                    <div className={`flex-1 h-px ${
-                      isDarkMode ? 'bg-slate-700' : 'bg-gray-300'
-                    }`} />
-                    <span className={`text-xs font-medium px-3 py-1 rounded-full ${
-                      isDarkMode ? 'bg-slate-800 text-gray-400' : 'bg-gray-200 text-gray-600'
-                    }`}>
+                    <div className="flex-1 h-px bg-[hsl(var(--theme-border-default))]" />
+                    <span className="text-xs font-medium px-3 py-1 rounded-full bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-muted))]">
                       {formatDate(msg.created_at)}
                     </span>
-                    <div className={`flex-1 h-px ${
-                      isDarkMode ? 'bg-slate-700' : 'bg-gray-300'
-                    }`} />
+                    <div className="flex-1 h-px bg-[hsl(var(--theme-border-default))]" />
                   </div>
                 )}
 
                 {/* Receiver message (left) */}
                 {!isSent ? (
                   <div 
-                    className={`flex gap-2 group px-2 py-0.5 rounded-lg transition-all justify-start relative ${
-                      isDarkMode ? 'hover:bg-slate-800/40' : 'hover:bg-gray-50'
-                    }`}
+                    className="flex gap-2 group px-2 py-0.5 rounded-lg transition-all duration-300 justify-start relative hover:bg-[hsl(var(--theme-bg-hover)/0.5)]"
                     onMouseEnter={() => setHoveredMessageId(msg.id)}
                     onMouseLeave={() => setHoveredMessageId(null)}
                   >
@@ -414,14 +412,10 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                     <div className="flex-1 min-w-0 max-w-lg">
                       {showAvatar && (
                         <div className="flex items-baseline gap-2 mb-0.5">
-                          <span className={`font-medium text-sm ${
-                            isDarkMode ? 'text-gray-100' : 'text-gray-900'
-                          }`}>
+                          <span className="font-medium text-sm text-[hsl(var(--theme-text-primary))]">
                             {msg.sender?.display_name || msg.sender?.username || 'Unknown'}
                           </span>
-                          <span className={`text-xs ${
-                            isDarkMode ? 'text-gray-500' : 'text-gray-400'
-                          }`}>{formatTime(msg.created_at)}</span>
+                          <span className="text-xs text-[hsl(var(--theme-text-muted))]">{formatTime(msg.created_at)}</span>
                         </div>
                       )}
 
@@ -431,9 +425,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                             type="text"
                             value={editContent}
                             onChange={(e) => setEditContent(e.target.value)}
-                            className={`flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                              isDarkMode ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-900'
-                            }`}
+                            className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-input-bg))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))]"
                             autoFocus
                           />
                           <button
@@ -452,24 +444,18 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                       ) : (
                         <>
                           <div className="flex items-start gap-2">
-                            <p className={`text-sm leading-relaxed break-words rounded-2xl px-4 py-2.5 w-fit max-w-md ${
-                              isDarkMode ? 'text-gray-100 bg-slate-700' : 'text-gray-900 bg-gray-200'
-                            }`}>
+                            <p className="text-sm leading-relaxed break-words rounded-2xl px-4 py-2.5 w-fit max-w-md text-[hsl(var(--theme-text-primary))] bg-[hsl(var(--theme-message-other))] transition-colors duration-300">
                               <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-normal' : ''}>
                                 {msg.content}
                               </span>
                               {!showAvatar && (
-                                <span className={`text-xs ml-2 opacity-0 group-hover:opacity-100 transition-opacity ${
-                                  isDarkMode ? 'text-gray-500' : 'text-gray-400'
-                                }`}>
+                                <span className="text-xs ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-[hsl(var(--theme-text-muted))]">
                                   {formatTime(msg.created_at)}
                                 </span>
                               )}
                             </p>
                             {msg.edited_at && (
-                              <span className={`text-xs mt-3 ${
-                                isDarkMode ? 'text-gray-600' : 'text-gray-500'
-                              }`}>(edited)</span>
+                              <span className="text-xs mt-3 text-[hsl(var(--theme-text-muted)/0.7)]">(edited)</span>
                             )}
                           </div>
                           
@@ -488,11 +474,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                                 e.stopPropagation();
                                 setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id);
                               }}
-                              className={`opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-xs flex items-center gap-1 ${
-                                isDarkMode 
-                                  ? 'text-gray-400 hover:text-gray-200 hover:bg-slate-600' 
-                                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-300'
-                              }`}
+                              className="opacity-0 group-hover:opacity-100 transition-all duration-300 px-1.5 py-0.5 rounded text-xs flex items-center gap-1 text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]"
                               title="Add reaction"
                             >
                               <SmilePlus className="w-3 h-3" />
@@ -503,7 +485,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                       
                       {/* Reaction Picker - Shown when button clicked */}
                       {reactionPickerMessageId === msg.id && (
-                        <div className="absolute left-10 mt-1 z-30 shadow-xl">
+                        <div data-reaction-picker className="absolute left-10 mt-1 z-30 shadow-xl">
                           <ReactionPicker
                             onReactionSelect={(emoji) => {
                               handleReactionToggle(msg.id, emoji);
@@ -517,49 +499,31 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                 ) : (
                   /* Sender message (right) */
                   <div 
-                    className={`flex gap-2.5 group px-2 py-1 rounded-md transition-all justify-end relative ${
-                      isDarkMode ? 'hover:bg-slate-800/40' : 'hover:bg-gray-50'
-                    }`}
+                    className="flex gap-2.5 group px-2 py-1 rounded-md transition-all duration-300 justify-end relative hover:bg-[hsl(var(--theme-bg-hover)/0.5)]"
                     onMouseEnter={() => setHoveredMessageId(msg.id)}
                     onMouseLeave={() => setHoveredMessageId(null)}
                   >
                     {/* Message Menu */}
-                    <div className="opacity-0 group-hover:opacity-100 transition relative flex-shrink-0 flex items-start pt-2">
+                    <div className="opacity-0 group-hover:opacity-100 transition-all duration-300 relative flex-shrink-0 flex items-start pt-2">
                       <button
                         onClick={() => setMenuOpen(menuOpen === msg.id ? null : msg.id)}
-                        className={`p-1.5 rounded-lg transition ${
-                          isDarkMode 
-                            ? 'hover:bg-slate-700 text-gray-400 hover:text-white' 
-                            : 'hover:bg-gray-200 text-gray-600 hover:text-gray-900'
-                        }`}
+                        className="p-1.5 rounded-lg transition-all duration-300 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
                       >
                         <MoreVertical className="w-4 h-4" />
                       </button>
 
                       {menuOpen === msg.id && (
-                        <div className={`absolute left-0 top-10 w-40 rounded-lg shadow-lg z-20 border ${
-                          isDarkMode 
-                            ? 'bg-slate-800 border-slate-700' 
-                            : 'bg-white border-gray-200'
-                        }`}>
+                        <div className="absolute left-0 top-10 w-40 rounded-lg shadow-lg z-20 border bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] shadow-[var(--theme-glow-secondary)]">
                           <button
                             onClick={() => { setEditingId(msg.id); setEditContent(msg.content); setMenuOpen(null); }}
-                            className={`w-full flex items-center gap-2 px-3 py-2 text-sm transition rounded-t-lg ${
-                              isDarkMode 
-                                ? 'text-gray-300 hover:bg-slate-700' 
-                                : 'text-gray-700 hover:bg-gray-100'
-                            }`}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-all duration-300 rounded-t-lg text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))]"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                             Edit
                           </button>
                           <button
                             onClick={() => handleDelete(msg.id)}
-                            className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 transition border-t rounded-b-lg ${
-                              isDarkMode 
-                                ? 'hover:bg-slate-700 border-slate-700' 
-                                : 'hover:bg-gray-100 border-gray-200'
-                            }`}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 transition-all duration-300 border-t rounded-b-lg hover:bg-[hsl(var(--theme-bg-hover))] border-[hsl(var(--theme-border-default))]"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             Delete
@@ -571,12 +535,8 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                     <div className="flex-1 min-w-0 max-w-lg text-right">
                       {showAvatar && (
                         <div className="flex items-baseline gap-2 mb-0.5 justify-end">
-                          <span className={`text-xs ${
-                            isDarkMode ? 'text-gray-500' : 'text-gray-400'
-                          }`}>{formatTime(msg.created_at)}</span>
-                          <span className={`font-medium text-sm ${
-                            isDarkMode ? 'text-gray-100' : 'text-gray-900'
-                          }`}>
+                          <span className="text-xs text-[hsl(var(--theme-text-muted))]">{formatTime(msg.created_at)}</span>
+                          <span className="font-medium text-sm text-[hsl(var(--theme-text-primary))]">
                             You
                           </span>
                         </div>
@@ -588,9 +548,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                             type="text"
                             value={editContent}
                             onChange={(e) => setEditContent(e.target.value)}
-                            className={`flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                              isDarkMode ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-900'
-                            }`}
+                            className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-input-bg))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))]"
                             autoFocus
                           />
                           <button
@@ -610,16 +568,14 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                         <>
                           <div className="flex items-start gap-2 justify-end">
                             {msg.edited_at && (
-                              <span className={`text-xs mt-3 ${
-                                isDarkMode ? 'text-gray-600' : 'text-gray-500'
-                              }`}>(edited)</span>
+                              <span className="text-xs mt-3 text-[hsl(var(--theme-text-muted)/0.7)]">(edited)</span>
                             )}
-                            <p className="text-sm leading-relaxed break-words text-white bg-blue-600 rounded-2xl px-4 py-2.5 w-fit max-w-md">
+                            <p className="text-sm leading-relaxed break-words text-white bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] rounded-2xl px-4 py-2.5 w-fit max-w-md shadow-lg hover:shadow-[var(--theme-glow-secondary)] transition-all duration-300">
                               <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-normal' : ''}>
                                 {msg.content}
                               </span>
                               {!showAvatar && (
-                                <span className="text-xs ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-blue-100">
+                                <span className="text-xs ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-white/70">
                                   {formatTime(msg.created_at)}
                                 </span>
                               )}
@@ -641,11 +597,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                                 e.stopPropagation();
                                 setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id);
                               }}
-                              className={`opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 rounded-lg text-xs flex items-center gap-1 ${
-                                isDarkMode 
-                                  ? 'text-gray-400 hover:text-gray-200 hover:bg-slate-600' 
-                                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-300'
-                              }`}
+                              className="opacity-0 group-hover:opacity-100 transition-all duration-300 px-2 py-1 rounded-lg text-xs flex items-center gap-1 text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]"
                               title="Add reaction"
                             >
                               <SmilePlus className="w-3.5 h-3.5" />
@@ -656,7 +608,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                       
                       {/* Reaction Picker - Shown when button clicked */}
                       {reactionPickerMessageId === msg.id && (
-                        <div className="absolute right-10 mt-1 z-30 shadow-xl">
+                        <div data-reaction-picker className="absolute right-10 mt-1 z-30 shadow-xl">
                           <ReactionPicker
                             onReactionSelect={(emoji) => {
                               handleReactionToggle(msg.id, emoji);
@@ -688,28 +640,16 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
       </main>
 
       {/* Input - Professional */}
-      <footer className={`border-t backdrop-blur flex-shrink-0 ${
-        isDarkMode 
-          ? 'bg-slate-900/95 border-slate-700/50' 
-          : 'bg-white/95 border-gray-200'
-      }`}>
+      <footer className="border-t backdrop-blur flex-shrink-0 bg-[hsl(var(--theme-bg-primary)/0.95)] border-[hsl(var(--theme-border-default)/0.5)] transition-colors duration-300">
         <form onSubmit={handleSend} className="px-6 py-4">
-          <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 border focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500/30 transition-all duration-200 ${
-            isDarkMode 
-              ? 'border-slate-700 bg-slate-800 hover:border-slate-600 focus-within:bg-slate-800/90' 
-              : 'border-gray-300 bg-gray-50 hover:border-gray-400 focus-within:bg-white'
-          }`}>
+          <div className="flex items-center gap-3 rounded-2xl px-4 py-3 border focus-within:border-[hsl(var(--theme-accent-primary))] focus-within:ring-1 focus-within:ring-[hsl(var(--theme-accent-primary)/0.3)] focus-within:shadow-[var(--theme-glow-secondary)] transition-all duration-300 border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-input-bg))] hover:border-[hsl(var(--theme-border-hover))]">
             <input
               type="text"
               placeholder={`Message ${displayName || username}...`}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               disabled={isSending}
-              className={`flex-1 bg-transparent outline-none text-sm disabled:opacity-50 ${
-                isDarkMode 
-                  ? 'text-white placeholder-slate-500' 
-                  : 'text-gray-900 placeholder-gray-400'
-              }`}
+              className="flex-1 bg-transparent outline-none text-sm disabled:opacity-50 text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]"
               onKeyPress={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -725,11 +665,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             <button
               type="submit"
               disabled={!message.trim() || isSending}
-              className={`p-2 text-blue-500 rounded-lg disabled:opacity-40 disabled:hover:text-blue-500 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all flex-shrink-0 ${
-                isDarkMode 
-                  ? 'hover:text-blue-400 hover:bg-slate-700' 
-                  : 'hover:text-blue-600 hover:bg-gray-200'
-              }`}
+              className="p-2 text-[hsl(var(--theme-accent-primary))] rounded-lg disabled:opacity-40 disabled:hover:text-[hsl(var(--theme-accent-primary))] disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all duration-300 flex-shrink-0 hover:text-[hsl(var(--theme-accent-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:shadow-[var(--theme-glow-secondary)]"
               title="Send message (Enter)"
             >
               <Send className="w-5 h-5" />

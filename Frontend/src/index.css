@@ -6,6 +6,22 @@
 
 /* AuraFlow Design System - Futuristic Discord-like Theme */
 
+/* ============================================
+   Z-INDEX SCALE (for reference)
+   ============================================
+   z-0      : Base content
+   z-10     : Elevated content (cards, etc)
+   z-20     : Sticky headers
+   z-30     : Fixed navigation
+   z-40     : Sidebars
+   z-50     : Floating elements
+   z-60     : Sidebar toggle, mobile nav
+   z-100    : Tooltips, popovers
+   z-9998   : Toasts, notifications
+   z-9999   : Tooltips (highest), dropdowns
+   z-[9999] : Modals, dialogs
+   ============================================ */
+
 @layer base {
   :root {
     /* Core Futuristic Palette - Dark Discord-like */
@@ -318,5 +334,29 @@
   .custom-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--muted)) transparent;
+  }
+}
+
+/* Discover Page Hero Animation */
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

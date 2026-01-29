@@ -76,7 +76,7 @@ export default function ChannelManagementModal({
       setFormData({
         name: updated.name,
         description: updated.description || "",
-        type: updated.type,
+        type: (updated.type === 'text' || updated.type === 'voice') ? updated.type : 'text',
       });
       
       // Broadcast the channel update via socket
@@ -119,34 +119,22 @@ export default function ChannelManagementModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
-      <div
-        className={`w-full max-w-md rounded-2xl shadow-2xl border max-h-[90vh] overflow-y-auto ${
-          isDarkMode
-            ? "bg-slate-900/95 border-slate-700/50 backdrop-blur-xl"
-            : "bg-white/95 border-gray-200/70 backdrop-blur-xl"
-        }`}
-      >
+      <div className="w-full max-w-md rounded-2xl shadow-2xl border max-h-[90vh] overflow-y-auto bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl">
         {/* Header */}
-        <div
-          className={`flex items-center justify-between p-5 border-b sticky top-0 ${
-            isDarkMode ? "border-slate-700/70 bg-slate-800/50" : "border-gray-200/70 bg-white/50"
-          }`}
-        >
+        <div className="flex items-center justify-between p-5 border-b sticky top-0 border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))]">
           <div className="flex items-center gap-3">
             {channel.type === "voice" ? (
-              <Volume2 className="w-5 h-5 text-blue-500" />
+              <Volume2 className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
             ) : (
-              <Hash className="w-5 h-5 text-blue-500" />
+              <Hash className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
             )}
-            <h2 className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            <h2 className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
               Channel Settings
             </h2>
           </div>
           <button
             onClick={onClose}
-            className={`p-2 rounded-lg transition-all ${
-              isDarkMode ? "hover:bg-slate-700/50" : "hover:bg-gray-100"
-            }`}
+            className="p-2 rounded-lg transition-all hover:bg-[hsl(var(--theme-bg-hover))]"
           >
             <X className="w-5 h-5" />
           </button>
@@ -155,23 +143,23 @@ export default function ChannelManagementModal({
         {/* Content */}
         <div className="p-6 space-y-6">
           {/* Channel Info */}
-          <div className={`p-4 rounded-xl ${isDarkMode ? "bg-slate-800/50" : "bg-gray-50"}`}>
+          <div className="p-4 rounded-xl bg-[hsl(var(--theme-bg-secondary))]">
             <div className="flex items-center gap-3 mb-3">
               {channel.type === "voice" ? (
-                <Volume2 className="w-5 h-5 text-purple-500" />
+                <Volume2 className="w-5 h-5 text-[hsl(var(--theme-accent-secondary))]" />
               ) : (
-                <Hash className="w-5 h-5 text-blue-500" />
+                <Hash className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
               )}
               <div>
-                <p className={`text-sm font-semibold ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                <p className="text-sm font-semibold text-[hsl(var(--theme-text-secondary))]">
                   Channel Type
                 </p>
-                <p className={`text-sm font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                <p className="text-sm font-bold text-[hsl(var(--theme-text-primary))]">
                   {channel.type === "voice" ? "Voice Channel" : "Text Channel"}
                 </p>
               </div>
             </div>
-            <p className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-600"}`}>
+            <p className="text-xs text-[hsl(var(--theme-text-muted))]">
               {channel.type === "voice"
                 ? "Members can join to have voice conversations"
                 : "Members can send text messages and files"}
@@ -183,36 +171,28 @@ export default function ChannelManagementModal({
             <div className="space-y-4">
               {/* Channel Name */}
               <div>
-                <label className={`block text-sm font-semibold mb-2 ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>
+                <label className="block text-sm font-semibold mb-2 text-[hsl(var(--theme-text-primary))]">
                   Channel Name
                 </label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    isDarkMode
-                      ? "bg-slate-800 border-slate-600 text-white"
-                      : "bg-white border-gray-300 text-gray-900"
-                  }`}
+                  className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))]"
                   placeholder="Channel name"
                 />
               </div>
 
               {/* Description */}
               <div>
-                <label className={`block text-sm font-semibold mb-2 ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>
+                <label className="block text-sm font-semibold mb-2 text-[hsl(var(--theme-text-primary))]">
                   Description
                 </label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={3}
-                  className={`w-full px-3 py-2 rounded-lg border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    isDarkMode
-                      ? "bg-slate-800 border-slate-600 text-white placeholder-gray-500"
-                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  }`}
+                  className="w-full px-3 py-2 rounded-lg border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]"
                   placeholder="Add a description..."
                 />
               </div>
@@ -222,18 +202,14 @@ export default function ChannelManagementModal({
                 <button
                   onClick={() => setIsEditing(false)}
                   disabled={isLoading}
-                  className={`flex-1 px-4 py-2 rounded-lg font-semibold text-sm transition-all ${
-                    isDarkMode
-                      ? "bg-slate-700 hover:bg-slate-600 text-gray-200"
-                      : "bg-gray-200 hover:bg-gray-300 text-gray-800"
-                  } disabled:opacity-50`}
+                  className="flex-1 px-4 py-2 rounded-lg font-semibold text-sm transition-all bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))] disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSaveChanges}
                   disabled={isLoading}
-                  className="flex-1 px-4 py-2 rounded-lg font-semibold text-sm bg-blue-600 hover:bg-blue-700 text-white transition-all disabled:opacity-50"
+                  className="flex-1 px-4 py-2 rounded-lg font-semibold text-sm bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] text-white transition-all disabled:opacity-50"
                 >
                   {isLoading ? "Saving..." : "Save Changes"}
                 </button>
@@ -243,10 +219,10 @@ export default function ChannelManagementModal({
             <div className="space-y-3">
               {/* Channel Name Display */}
               <div>
-                <p className={`text-xs font-semibold mb-1 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                <p className="text-xs font-semibold mb-1 text-[hsl(var(--theme-text-muted))]">
                   CHANNEL NAME
                 </p>
-                <p className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                <p className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
                   {formData.name}
                 </p>
               </div>
@@ -254,10 +230,10 @@ export default function ChannelManagementModal({
               {/* Description Display */}
               {formData.description && (
                 <div>
-                  <p className={`text-xs font-semibold mb-1 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                  <p className="text-xs font-semibold mb-1 text-[hsl(var(--theme-text-muted))]">
                     DESCRIPTION
                   </p>
-                  <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                  <p className="text-sm text-[hsl(var(--theme-text-secondary))]">
                     {formData.description}
                   </p>
                 </div>
@@ -267,14 +243,10 @@ export default function ChannelManagementModal({
 
           {/* Admin Actions */}
           {isAdmin && !isEditing && (
-            <div className="space-y-3 pt-4 border-t border-slate-700/50">
+            <div className="space-y-3 pt-4 border-t border-[hsl(var(--theme-border-default))]">
               <button
                 onClick={() => setIsEditing(true)}
-                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-                  isDarkMode
-                    ? "bg-blue-600/10 hover:bg-blue-600/20 text-blue-400"
-                    : "bg-blue-50 hover:bg-blue-100 text-blue-700"
-                }`}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all bg-[hsl(var(--theme-accent-primary))]/10 hover:bg-[hsl(var(--theme-accent-primary))]/20 text-[hsl(var(--theme-accent-primary))]"
               >
                 <Edit2 className="w-4 h-4" />
                 Edit Channel
@@ -282,11 +254,7 @@ export default function ChannelManagementModal({
 
               <button
                 onClick={() => setShowDeleteConfirm(true)}
-                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-                  isDarkMode
-                    ? "bg-red-600/10 hover:bg-red-600/20 text-red-400"
-                    : "bg-red-50 hover:bg-red-100 text-red-700"
-                }`}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all bg-red-500/10 hover:bg-red-500/20 text-red-400"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete Channel
@@ -296,13 +264,9 @@ export default function ChannelManagementModal({
 
           {/* Permission Warning */}
           {!isAdmin && (
-            <div
-              className={`flex items-start gap-3 p-3 rounded-lg ${
-                isDarkMode ? "bg-yellow-500/10 border border-yellow-500/20" : "bg-yellow-50 border border-yellow-200"
-              }`}
-            >
-              <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isDarkMode ? "text-yellow-400" : "text-yellow-600"}`} />
-              <p className={`text-sm ${isDarkMode ? "text-yellow-200" : "text-yellow-800"}`}>
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-yellow-400" />
+              <p className="text-sm text-yellow-200">
                 Only channel admins can edit or delete this channel
               </p>
             </div>

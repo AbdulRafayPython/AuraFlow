@@ -11,6 +11,7 @@ import os
 # Add agents directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from agents.moderation import ModerationAgent
+from agents.summarizer import SummarizerAgent
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +21,87 @@ user_socket_sessions = {}
 user_heartbeats = {}
 # Track user rooms: username -> list of rooms
 user_rooms = {}
+
+
+def handle_ai_command(content: str, username: str, user_id: int, channel_id: int, community_id: int = None):
+    """Handle AI commands from chat (/summarize, /help, etc.)"""
+    try:
+        log.info(f"[COMMAND HANDLER] Processing command: {content}")
+        command_parts = content.strip().split()
+        command = command_parts[0].lower()
+        log.info(f"[COMMAND HANDLER] Parsed command: {command}")
+        
+        if command == '/summarize':
+            # Parse optional message count
+            message_count = 100
+            if len(command_parts) > 1 and command_parts[1].isdigit():
+                message_count = min(int(command_parts[1]), 200)  # Cap at 200
+            
+            log.info(f"[COMMAND] /summarize requested by {username} for channel {channel_id} with {message_count} messages")
+            
+            # Generate summary
+            log.info(f"[COMMAND] Initializing SummarizerAgent...")
+            summarizer = SummarizerAgent()
+            log.info(f"[COMMAND] SummarizerAgent initialized, calling summarize_channel...")
+            
+            result = summarizer.summarize_channel(
+                channel_id=channel_id,
+                message_count=message_count,
+                user_id=user_id
+            )
+            
+            log.info(f"[COMMAND] Summarizer returned: {result}")
+            
+            if result.get('success'):
+                # Add personalized greeting
+                greeting = f"Hey {username}! 👋\n\nI know it's a bit of a long chat discussion. Here's the discussion that the chat had:\n\n"
+                footer = f"\n\n📊 Summary of last {result['message_count']} messages as requested"
+                summary_with_greeting = greeting + result['summary'] + footer
+                
+                response = {
+                    'type': 'summarize',
+                    'success': True,
+                    'summary': summary_with_greeting,
+                    'username': username,
+                    'key_points': result.get('key_points', []),
+                    'message_count': result['message_count'],
+                    'participants': result.get('participants', []),
+                    'method': result.get('method', 'extractive'),
+                    'message': f"✨ Summary of last {result['message_count']} messages"
+                }
+                log.info(f"[COMMAND] Returning success response: {response}")
+                return response
+            else:
+                error_response = {
+                    'type': 'summarize',
+                    'success': False,
+                    'error': result.get('error', 'Failed to generate summary')
+                }
+                log.warning(f"[COMMAND] Returning error response: {error_response}")
+                return error_response
+        
+        elif command == '/help':
+            return {
+                'type': 'help',
+                'success': True,
+                'message': """**AuraFlow AI Commands:**
+• `/summarize [count]` - Summarize recent messages (default: 100)
+• `/help` - Show this help message
+
+More commands coming soon!"""
+            }
+        
+        else:
+            return None  # Unknown command, let it be treated as regular message
+            
+    except Exception as e:
+        log.error(f"[COMMAND] Error handling command: {e}")
+        return {
+            'type': 'error',
+            'success': False,
+            'error': str(e)
+        }
+
 
 def register_socket_events(socketio):
     """Register all real-time Socket.IO events including voice channel operations."""
@@ -262,6 +344,7 @@ def register_socket_events(socketio):
         try:
             username = get_user_from_socket()
             if not username:
+                log.error(f"[SOCKET] join_channel: Could not get user from socket")
                 return
 
             channel_id = data.get('channel_id')
@@ -271,22 +354,51 @@ def register_socket_events(socketio):
                 log.error(f"[SOCKET] Invalid channel_id: {channel_id}")
                 return
 
-            # Verify user is member of the channel
+            # Verify user can access the channel
             conn = get_db_connection()
             with conn.cursor() as cur:
+                # Get user_id and channel community
+                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+                user_row = cur.fetchone()
+                if not user_row:
+                    log.warning(f"[SOCKET] User {username} not found when joining channel {channel_id}")
+                    return
+                user_id = user_row['id']
+
+                cur.execute("SELECT community_id FROM channels WHERE id = %s", (channel_id,))
+                channel_row = cur.fetchone()
+                if not channel_row:
+                    log.warning(f"[SOCKET] Channel {channel_id} not found")
+                    return
+                community_id = channel_row['community_id']
+
+                # Check channel membership OR community ownership/admin role
                 cur.execute("""
                     SELECT 1 FROM channel_members
-                    WHERE user_id = (SELECT id FROM users WHERE username = %s)
-                    AND channel_id = %s
-                """, (username, channel_id))
-                is_member = cur.fetchone()
+                    WHERE user_id = %s AND channel_id = %s
+                """, (user_id, channel_id))
+                is_channel_member = cur.fetchone()
 
-            if not is_member:
-                log.warning(f"[SOCKET] User {username} NOT a member of channel {channel_id}")
-                return
+                cur.execute("""
+                    SELECT role FROM community_members
+                    WHERE community_id = %s AND user_id = %s
+                """, (community_id, user_id))
+                role_row = cur.fetchone()
+                user_role = role_row['role'] if role_row else None
+
+                if not (is_channel_member or user_role in ('owner', 'admin')):
+                    log.warning(f"[SOCKET] User {username} NOT allowed in channel {channel_id} (role={user_role})")
+                    return
 
             room = f"channel_{channel_id}"
             join_room(room)
+            
+            # Verify room membership and log current rooms
+            from flask_socketio import rooms as get_rooms
+            from flask import request as flask_request
+            current_rooms = get_rooms(sid=flask_request.sid, namespace='/')
+            log.info(f"[SOCKET] ✓ {username} (SID: {flask_request.sid}) joined room: {room}")
+            log.info(f"[SOCKET] 🔍 User {username} is now in rooms: {current_rooms}")
 
             emit('status', {
                 'msg': f"{username} joined the channel",
@@ -294,10 +406,10 @@ def register_socket_events(socketio):
                 'type': 'join'
             }, room=room)
 
-            log.info(f"[SOCKET] {username} joined room: {room}")
+            log.info(f"[SOCKET] Status event emitted to room {room}")
 
         except Exception as e:
-            log.error(f"[SOCKET] join_channel error: {e}")
+            log.error(f"[SOCKET] join_channel error: {e}", exc_info=True)
         finally:
             if conn:
                 conn.close()
@@ -360,12 +472,20 @@ def register_socket_events(socketio):
         try:
             username = get_user_from_socket()
             if not username:
+                log.error(f"[SOCKET] new_message: Could not get user from socket")
                 return
 
             channel_id = data.get('channel_id')
             message = data.get('message')
             content = message.get('content', '')
             message_id = message.get('id')
+
+            # Ensure essential fields are present on the message payload
+            message['channel_id'] = channel_id
+            if not message.get('created_at'):
+                message['created_at'] = datetime.now().isoformat()
+
+            log.info(f"[SOCKET] new_message received: message_id={message_id}, channel_id={channel_id}, user={username}")
 
             # Get user ID and community ID for moderation
             conn = get_db_connection()
@@ -376,6 +496,7 @@ def register_socket_events(socketio):
                     log.error(f"[SOCKET] User not found: {username}")
                     return
                 user_id = user_row['id']
+                log.info(f"[SOCKET] User {username} has id {user_id}")
                 
                 # Get community_id from channel
                 cur.execute("""
@@ -383,25 +504,71 @@ def register_socket_events(socketio):
                 """, (channel_id,))
                 channel_row = cur.fetchone()
                 community_id = channel_row['community_id'] if channel_row else None
-
-            # 🛡️ SMART MODERATION CHECK
+                log.info(f"[SOCKET] Channel {channel_id} belongs to community {community_id}")
+                
+                # Check if user is blocked from this community
+                is_blocked = False
+                if community_id:
+                    cur.execute("""
+                        SELECT 1 FROM blocked_users 
+                        WHERE community_id = %s AND user_id = %s
+                    """, (community_id, user_id))
+                    is_blocked = cur.fetchone() is not None
+                    
+                    if is_blocked:
+                        log.info(f"[SOCKET] User {username} is BLOCKED in community {community_id}")
+            
+            # 🛡️ SMART MODERATION CHECK (don't log here, will be logged by HTTP endpoint with message_id)
             moderation_result = moderation_agent.moderate_message(
                 text=content,
                 user_id=user_id,
-                channel_id=channel_id
+                channel_id=channel_id,
+                log=False  # Don't log here to avoid duplicates
             )
             
             log.info(f"[MODERATION] Message {message_id} checked: {moderation_result['action']} (confidence: {moderation_result['confidence']})")
             
-            # Add moderation data to message
+            # Add moderation data and blocked status to message
             message['moderation'] = {
                 'action': moderation_result['action'],
                 'severity': moderation_result['severity'],
                 'confidence': moderation_result['confidence'],
                 'reasons': moderation_result.get('reasons', [])
             }
+            message['is_blocked'] = is_blocked
 
             room = f"channel_{channel_id}"
+            log.info(f"[SOCKET] Broadcasting to room: {room}")
+            
+            # 🤖 AI COMMAND HANDLING
+            if content.strip().startswith('/'):
+                log.info(f"[COMMAND] Detected command: {content}")
+                try:
+                    command_result = handle_ai_command(content, username, user_id, channel_id, community_id)
+                    log.info(f"[COMMAND] Handler returned: {command_result}")
+                    
+                    if command_result:
+                        log.info(f"[COMMAND] Emitting command_result to {request.sid}")
+                        # Send command result back to user
+                        emit('command_result', command_result, room=request.sid)
+                        log.info(f"[COMMAND] command_result emitted successfully")
+                        
+                        # Also broadcast the command message itself
+                        emit('message_received', {
+                            **message,
+                            'author': username
+                        }, room=room, include_self=True)
+                        log.info(f"[COMMAND] message_received broadcasted to room {room}")
+                        return
+                    else:
+                        log.info(f"[COMMAND] Handler returned None, treating as regular message")
+                except Exception as cmd_error:
+                    log.error(f"[COMMAND] Error handling command: {cmd_error}", exc_info=True)
+                    emit('command_result', {
+                        'type': 'error',
+                        'success': False,
+                        'error': f'Command failed: {str(cmd_error)}'
+                    }, room=request.sid)
             
             # Handle different moderation actions
             if moderation_result['action'] == 'block':
@@ -440,10 +607,11 @@ def register_socket_events(socketio):
             elif moderation_result['action'] == 'flag':
                 # ⚠️ FLAG: Allow but notify moderators
                 log.warning(f"[MODERATION] ⚠️ Message FLAGGED from {username}: {moderation_result['reasons']}")
+                log.info(f"[SOCKET] Emitting message_received to room {room}")
                 emit('message_received', {
                     **message,
                     'author': username
-                }, room=room)
+                }, room=room, include_self=True)
                 
                 # Notify moderators for review
                 emit('moderation_alert', {
@@ -471,10 +639,11 @@ def register_socket_events(socketio):
             elif moderation_result['action'] == 'warn':
                 # ⚠️ WARN: Allow but send warning to user
                 log.info(f"[MODERATION] ⚠️ Message WARNING for {username}")
+                log.info(f"[SOCKET] Emitting message_received to room {room}")
                 emit('message_received', {
                     **message,
                     'author': username
-                }, room=room)
+                }, room=room, include_self=True)
                 
                 emit('moderation_warning', {
                     'message_id': message_id,
@@ -494,10 +663,12 @@ def register_socket_events(socketio):
                 
             else:
                 # ✅ CLEAN: Normal broadcast
+                log.info(f"[SOCKET] Emitting message_received to room {room}")
                 emit('message_received', {
                     **message,
                     'author': username
-                }, room=room)
+                }, room=room, include_self=True)
+                log.info(f"[SOCKET] ✓ Message {message_id} broadcast complete")
 
             log.info(f"[SOCKET] Message from {username} to channel {channel_id} - Action: {moderation_result['action']}")
 

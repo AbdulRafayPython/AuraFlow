@@ -88,19 +88,10 @@ export default function AddFriendModal({
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
       {/* Premium Modal Container */}
       <div
-        className={`
-          w-full max-w-2xl rounded-3xl shadow-2xl border
-          max-h-[85vh] overflow-y-auto flex flex-col
-          ${isDarkMode
-            ? "bg-slate-900/95 border-slate-700/50 backdrop-blur-xl"
-            : "bg-white/95 border-gray-200/70 backdrop-blur-xl"
-          }
-        `}
+        className="w-full max-w-2xl rounded-3xl shadow-2xl border max-h-[85vh] overflow-y-auto flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl"
         style={{
           scrollbarWidth: "thin",
-          scrollbarColor: isDarkMode
-            ? "#64748b transparent"
-            : "#94a3b8 transparent",
+          scrollbarColor: "hsl(var(--theme-border-default)) transparent",
         }}
       >
         {/* Webkit-specific scrollbar styling */}
@@ -113,43 +104,35 @@ export default function AddFriendModal({
             border-radius: 12px;
           }
           .add-friend-modal::-webkit-scrollbar-thumb {
-            background-color: ${isDarkMode ? "#64748b" : "#94a3b8"};
+            background-color: hsl(var(--theme-border-default));
             border-radius: 12px;
-            border: 3px solid ${isDarkMode ? "#1e293b" : "white"};
+            border: 3px solid hsl(var(--theme-bg-elevated));
             background-clip: padding-box;
           }
           .add-friend-modal:hover::-webkit-scrollbar-thumb {
-            background-color: ${isDarkMode ? "#94a3b8" : "#64748b"};
+            background-color: hsl(var(--theme-accent-primary));
           }
         `}</style>
 
         {/* Sticky Header */}
         <div
-          className={`sticky top-0 z-10 p-5 border-b backdrop-blur-xl
-            ${isDarkMode ? "bg-slate-900/80 border-slate-700/70" : "bg-white/80 border-gray-200/70"}
-          `}
+          className="sticky top-0 z-10 p-5 border-b backdrop-blur-xl bg-[hsl(var(--theme-bg-elevated)/0.8)] border-[hsl(var(--theme-border-default))]"
         >
           {/* Header Title */}
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-rose-500 via-pink-500 to-red-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <div className="w-10 h-10 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] rounded-2xl flex items-center justify-center shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.3)]">
                 <UserPlus className="w-5 h-5 text-white drop-shadow-sm" />
               </div>
               <h2
-                className={`text-xl font-bold tracking-tight ${
-                  isDarkMode ? "text-white" : "text-gray-900"
-                }`}
+                className="text-xl font-bold tracking-tight text-[hsl(var(--theme-text-primary))]"
               >
                 Add Friend
               </h2>
             </div>
             <button
               onClick={onClose}
-              className={`p-2.5 rounded-xl transition-all duration-200 ${
-                isDarkMode
-                  ? "hover:bg-slate-800/80 text-gray-400"
-                  : "hover:bg-gray-100 text-gray-600"
-              } active:scale-95`}
+              className="p-2.5 rounded-xl transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] active:scale-95"
             >
               <X className="w-5 h-5" />
             </button>
@@ -157,17 +140,13 @@ export default function AddFriendModal({
 
           {/* Search Bar */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[hsl(var(--theme-text-muted))]" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => handleSearch(e.target.value)}
               placeholder="Search by username or email..."
-              className={`w-full pl-10 pr-4 py-3 rounded-2xl border text-sm transition-all duration-200
-                ${isDarkMode
-                  ? "bg-slate-800/70 border-slate-600 text-white placeholder-gray-500 focus:border-rose-500"
-                  : "bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-600 focus:border-rose-500"
-                } focus:outline-none focus:ring-4 focus:ring-rose-500/20`}
+              className="w-full pl-10 pr-4 py-3 rounded-2xl border text-sm transition-all duration-200 bg-[hsl(var(--theme-input-bg))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))] focus:border-[hsl(var(--theme-accent-primary))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--theme-accent-primary)/0.2)]"
             />
           </div>
         </div>
@@ -188,11 +167,7 @@ export default function AddFriendModal({
               {searchResults.map((user) => (
                 <div
                   key={user.id}
-                  className={`p-4 rounded-2xl border transition-all duration-200 flex items-center justify-between
-                    ${isDarkMode
-                      ? "bg-slate-800/50 border-slate-700/50 hover:bg-slate-800/70 hover:border-slate-600"
-                      : "bg-gray-50/50 border-gray-200/50 hover:bg-gray-100/70 hover:border-gray-300"
-                    }`}
+                  className="p-4 rounded-2xl border transition-all duration-200 flex items-center justify-between bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] hover:bg-[hsl(var(--theme-bg-hover))] hover:border-[hsl(var(--theme-accent-primary)/0.3)] hover:shadow-[var(--theme-glow-secondary)]"
                 >
                   {/* User Info */}
                   <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -205,7 +180,7 @@ export default function AddFriendModal({
                       />
                     ) : (
                       <div
-                        className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 bg-gradient-to-br from-purple-500 to-pink-500`}
+                        className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))]"
                       >
                         {user.display_name?.[0]?.toUpperCase() || user.username[0].toUpperCase()}
                       </div>
@@ -213,16 +188,12 @@ export default function AddFriendModal({
 
                     <div className="flex-1 min-w-0">
                       <h3
-                        className={`font-semibold truncate ${
-                          isDarkMode ? "text-white" : "text-gray-900"
-                        }`}
+                        className="font-semibold truncate text-[hsl(var(--theme-text-primary))]"
                       >
                         {user.display_name || user.username}
                       </h3>
                       <p
-                        className={`text-xs ${
-                          isDarkMode ? "text-gray-400" : "text-gray-600"
-                        }`}
+                        className="text-xs text-[hsl(var(--theme-text-muted))]"
                       >
                         @{user.username}
                       </p>
@@ -235,10 +206,8 @@ export default function AddFriendModal({
                     disabled={sendingId === user.id || user.sent_request}
                     className={`ml-4 flex-shrink-0 py-2 px-4 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center gap-2 ${
                       user.sent_request
-                        ? isDarkMode
-                          ? "bg-green-500/20 text-green-400 cursor-default"
-                          : "bg-green-100 text-green-600 cursor-default"
-                        : "text-white bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 shadow-lg hover:shadow-xl disabled:opacity-60 active:scale-98"
+                        ? "bg-green-500/20 text-green-400 cursor-default"
+                        : "text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] disabled:opacity-60 active:scale-98"
                     }`}
                   >
                     {sendingId === user.id ? (
@@ -263,40 +232,32 @@ export default function AddFriendModal({
             </div>
           ) : isSearching ? (
             <div className="flex items-center justify-center py-12">
-              <Loader className="w-8 h-8 animate-spin text-rose-500" />
+              <Loader className="w-8 h-8 animate-spin text-[hsl(var(--theme-accent-primary))]" />
             </div>
           ) : searchTerm ? (
             <div className="flex flex-col items-center justify-center py-12 px-4">
-              <User className={`w-12 h-12 mb-3 ${isDarkMode ? "text-gray-600" : "text-gray-400"}`} />
+              <User className="w-12 h-12 mb-3 text-[hsl(var(--theme-text-muted))]" />
               <p
-                className={`text-center ${
-                  isDarkMode ? "text-gray-400" : "text-gray-600"
-                }`}
+                className="text-center text-[hsl(var(--theme-text-muted))]"
               >
                 No users found matching "{searchTerm}"
               </p>
               <p
-                className={`text-center text-xs mt-2 ${
-                  isDarkMode ? "text-gray-500" : "text-gray-500"
-                }`}
+                className="text-center text-xs mt-2 text-[hsl(var(--theme-text-muted))]"
               >
                 Try searching by username or email
               </p>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-12 px-4">
-              <User className={`w-12 h-12 mb-3 ${isDarkMode ? "text-gray-600" : "text-gray-400"}`} />
+              <User className="w-12 h-12 mb-3 text-[hsl(var(--theme-text-muted))]" />
               <p
-                className={`text-center ${
-                  isDarkMode ? "text-gray-400" : "text-gray-600"
-                }`}
+                className="text-center text-[hsl(var(--theme-text-muted))]"
               >
                 Start typing to search for users
               </p>
               <p
-                className={`text-center text-xs mt-2 ${
-                  isDarkMode ? "text-gray-500" : "text-gray-500"
-                }`}
+                className="text-center text-xs mt-2 text-[hsl(var(--theme-text-muted))]"
               >
                 Search by username or email (minimum 2 characters)
               </p>

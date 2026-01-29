@@ -5,11 +5,16 @@ Clean and prepare text for AI processing
 """
 
 import re
-from typing import List, Dict, Optional
+import json
+import os
+from typing import List, Dict, Optional, Set
 
 
 class TextProcessor:
     """Handle text cleaning, normalization, and preprocessing"""
+    
+    # Class-level cache for stopwords
+    _stopwords_cache: Optional[Set[str]] = None
     
     def __init__(self):
         self.url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
@@ -127,53 +132,111 @@ class TextProcessor:
         Returns:
             Text without stopwords
         """
-        # Basic English stopwords
-        english_stopwords = {
-            'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been',
-            'and', 'or', 'but', 'if', 'of', 'at', 'by', 'for', 'with',
-            'about', 'as', 'into', 'through', 'to', 'from', 'in', 'on'
-        }
-        
-        # Basic Roman Urdu stopwords
-        urdu_stopwords = {
-            'hai', 'hain', 'tha', 'the', 'ka', 'ki', 'ke', 'ko', 'se',
-            'mein', 'par', 'aur', 'ya', 'nahi', 'bhi', 'jo', 'is'
-        }
-        
-        stopwords = english_stopwords if language == 'en' else urdu_stopwords
+        stopwords = self._load_stopwords()
         
         words = text.lower().split()
         filtered = [w for w in words if w not in stopwords]
         
         return ' '.join(filtered)
     
+    @classmethod
+    def _load_stopwords(cls) -> Set[str]:
+        """
+        Load stopwords from JSON file (cached)
+        
+        Returns:
+            Set of all stopwords
+        """
+        if cls._stopwords_cache is not None:
+            return cls._stopwords_cache
+        
+        stopwords: Set[str] = set()
+        
+        # Try to load from lexicons/stopwords.json
+        try:
+            lexicons_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                'lexicons', 'stopwords.json'
+            )
+            
+            if os.path.exists(lexicons_path):
+                with open(lexicons_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                # Combine all categories into one set
+                for category, words in data.items():
+                    if isinstance(words, list):
+                        stopwords.update(word.lower() for word in words)
+                
+                print(f"[TextProcessor] Loaded {len(stopwords)} stopwords from lexicons")
+            else:
+                print(f"[TextProcessor] Stopwords file not found at {lexicons_path}")
+                # Fallback to basic stopwords
+                stopwords = cls._get_fallback_stopwords()
+                
+        except Exception as e:
+            print(f"[TextProcessor] Error loading stopwords: {e}")
+            stopwords = cls._get_fallback_stopwords()
+        
+        cls._stopwords_cache = stopwords
+        return stopwords
+    
+    @staticmethod
+    def _get_fallback_stopwords() -> Set[str]:
+        """Get basic fallback stopwords if JSON loading fails"""
+        return {
+            'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been',
+            'and', 'or', 'but', 'if', 'of', 'at', 'by', 'for', 'with',
+            'about', 'as', 'into', 'through', 'to', 'from', 'in', 'on',
+            'what', 'which', 'who', 'when', 'where', 'why', 'how',
+            'i', 'you', 'he', 'she', 'it', 'we', 'they', 'this', 'that'
+        }
+    
     def extract_keywords(self, text: str, top_n: int = 5) -> List[str]:
         """
-        Extract top keywords from text (simple frequency-based)
+        Extract top keywords from text (frequency-based with comprehensive stopword filtering)
         
         Args:
             text: Input text
             top_n: Number of top keywords to return
             
         Returns:
-            List of keywords
+            List of meaningful keywords
         """
         if not text:
             return []
         
+        # Load comprehensive stopwords
+        stopwords = self._load_stopwords()
+        
         # Clean and split
         cleaned = self.clean_text(text, remove_urls=True, remove_mentions=True)
+        
+        # Remove punctuation and special characters, keep alphanumeric
+        cleaned = re.sub(r'[^\w\s-]', ' ', cleaned)
         words = cleaned.lower().split()
         
-        # Count frequencies
+        # Count frequencies, filtering stopwords
         word_freq: Dict[str, int] = {}
         for word in words:
-            if len(word) > 3:  # Only words longer than 3 chars
+            # Strip any remaining punctuation
+            word = word.strip('-_')
+            
+            # Filter criteria:
+            # - Length > 2 (allow short tech terms like "api", "sql")
+            # - Not a stopword
+            # - Not pure numbers
+            # - Not single repeated characters
+            if (len(word) > 2 and 
+                word not in stopwords and 
+                not word.isdigit() and
+                len(set(word)) > 1):  # Not "aaa", "bbb", etc.
                 word_freq[word] = word_freq.get(word, 0) + 1
         
         # Sort by frequency
         sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
         
+        # Return top N keywords
         return [word for word, _ in sorted_words[:top_n]]
     
     def truncate_text(self, text: str, max_length: int = 200, 

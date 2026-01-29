@@ -1,0 +1,977 @@
+/* ============================================
+   AURAFLOW FUTURISTIC THEME SYSTEM
+   Multiple Themes for Ultimate Customization
+   ============================================ */
+
+/* Base Theme Variables Structure */
+:root {
+  /* Theme transition for smooth changes */
+  --theme-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================
+   THEME: MIDNIGHT (Default Dark)
+   Classic dark theme with blue accents
+   ============================================ */
+[data-theme="midnight"] {
+  --theme-bg-primary: 222 47% 11%;
+  --theme-bg-secondary: 217 33% 17%;
+  --theme-bg-tertiary: 215 28% 23%;
+  --theme-bg-elevated: 220 40% 13%;
+  --theme-bg-hover: 217 33% 20%;
+  --theme-bg-active: 217 35% 25%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(222, 47%, 11%) 0%, hsl(240, 40%, 8%) 50%, hsl(262, 50%, 10%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(222, 47%, 9%) 0%, hsl(240, 45%, 6%) 100%);
+  
+  --theme-text-primary: 0 0% 100%;
+  --theme-text-secondary: 215 20% 65%;
+  --theme-text-muted: 215 15% 50%;
+  --theme-text-accent: 217 91% 60%;
+  
+  --theme-accent-primary: 217 91% 60%;
+  --theme-accent-secondary: 262 83% 58%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(217, 91%, 60%) 0%, hsl(262, 83%, 58%) 100%);
+  
+  --theme-border-default: 217 33% 25%;
+  --theme-border-hover: 217 33% 35%;
+  
+  --theme-glow-primary: 0 0 30px hsla(217, 91%, 60%, 0.3);
+  --theme-glow-secondary: 0 0 20px hsla(262, 83%, 58%, 0.2);
+  
+  /* Overlay effects enabled */
+  --theme-overlay-visible: 1;
+  
+  --theme-message-self: 217 91% 60%;
+  --theme-message-other: 217 33% 20%;
+  
+  --theme-sidebar-bg: 222 47% 9%;
+  --theme-header-bg: 222 40% 12%;
+  --theme-input-bg: 222 47% 11%;
+}
+
+/* ============================================
+   THEME: CYBERPUNK
+   Neon pink and cyan with dark backgrounds
+   ============================================ */
+[data-theme="cyberpunk"] {
+  --theme-bg-primary: 270 50% 5%;
+  --theme-bg-secondary: 280 40% 10%;
+  --theme-bg-tertiary: 285 35% 15%;
+  --theme-bg-elevated: 275 45% 8%;
+  --theme-bg-hover: 280 40% 14%;
+  --theme-bg-active: 280 40% 18%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(270, 50%, 5%) 0%, hsl(300, 60%, 4%) 30%, hsl(330, 70%, 6%) 60%, hsl(180, 80%, 5%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(270, 55%, 4%) 0%, hsl(300, 50%, 3%) 50%, hsl(330, 60%, 4%) 100%);
+  
+  --theme-text-primary: 300 100% 95%;
+  --theme-text-secondary: 310 30% 70%;
+  --theme-text-muted: 310 20% 50%;
+  --theme-text-accent: 330 100% 65%;
+  
+  --theme-accent-primary: 330 100% 65%;
+  --theme-accent-secondary: 180 100% 50%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(330, 100%, 65%) 0%, hsl(180, 100%, 50%) 100%);
+  
+  --theme-border-default: 300 50% 20%;
+  --theme-border-hover: 330 100% 50%;
+  
+  --theme-glow-primary: 0 0 40px hsla(330, 100%, 65%, 0.5);
+  --theme-glow-secondary: 0 0 30px hsla(180, 100%, 50%, 0.4);
+  
+  --theme-message-self: 330 100% 55%;
+  --theme-message-other: 280 40% 15%;
+  
+  --theme-sidebar-bg: 270 55% 4%;
+  --theme-header-bg: 275 45% 7%;
+  --theme-input-bg: 270 50% 8%;
+}
+
+/* ============================================
+   THEME: AURORA
+   Northern lights inspired with greens/purples
+   ============================================ */
+[data-theme="aurora"] {
+  --theme-bg-primary: 230 35% 10%;
+  --theme-bg-secondary: 235 30% 15%;
+  --theme-bg-tertiary: 235 28% 20%;
+  --theme-bg-elevated: 232 35% 12%;
+  --theme-bg-hover: 235 30% 18%;
+  --theme-bg-active: 235 30% 23%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(230, 35%, 10%) 0%, hsl(200, 40%, 8%) 25%, hsl(280, 40%, 10%) 50%, hsl(160, 50%, 8%) 75%, hsl(230, 35%, 10%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(230, 38%, 8%) 0%, hsl(200, 40%, 6%) 50%, hsl(280, 35%, 7%) 100%);
+  
+  --theme-text-primary: 150 80% 95%;
+  --theme-text-secondary: 160 30% 70%;
+  --theme-text-muted: 160 20% 55%;
+  --theme-text-accent: 160 84% 55%;
+  
+  --theme-accent-primary: 160 84% 55%;
+  --theme-accent-secondary: 280 80% 60%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(160, 84%, 55%) 0%, hsl(280, 80%, 60%) 50%, hsl(200, 90%, 50%) 100%);
+  
+  --theme-border-default: 235 30% 22%;
+  --theme-border-hover: 160 84% 45%;
+  
+  --theme-glow-primary: 0 0 40px hsla(160, 84%, 55%, 0.4);
+  --theme-glow-secondary: 0 0 30px hsla(280, 80%, 60%, 0.3);
+  
+  --theme-message-self: 160 84% 40%;
+  --theme-message-other: 235 30% 18%;
+  
+  --theme-sidebar-bg: 230 38% 8%;
+  --theme-header-bg: 232 35% 11%;
+  --theme-input-bg: 230 35% 12%;
+}
+
+/* ============================================
+   THEME: SUNSET
+   Warm orange and red tones
+   ============================================ */
+[data-theme="sunset"] {
+  --theme-bg-primary: 15 40% 8%;
+  --theme-bg-secondary: 18 35% 12%;
+  --theme-bg-tertiary: 20 32% 16%;
+  --theme-bg-elevated: 16 38% 10%;
+  --theme-bg-hover: 18 35% 15%;
+  --theme-bg-active: 18 35% 20%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(15, 40%, 8%) 0%, hsl(25, 50%, 7%) 30%, hsl(350, 45%, 8%) 60%, hsl(40, 40%, 6%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(15, 45%, 6%) 0%, hsl(350, 40%, 5%) 50%, hsl(25, 45%, 5%) 100%);
+  
+  --theme-text-primary: 40 100% 97%;
+  --theme-text-secondary: 30 50% 70%;
+  --theme-text-muted: 25 30% 55%;
+  --theme-text-accent: 25 95% 60%;
+  
+  --theme-accent-primary: 25 95% 55%;
+  --theme-accent-secondary: 350 85% 55%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(40, 100%, 60%) 0%, hsl(25, 95%, 55%) 50%, hsl(350, 85%, 55%) 100%);
+  
+  --theme-border-default: 18 35% 20%;
+  --theme-border-hover: 25 95% 50%;
+  
+  --theme-glow-primary: 0 0 35px hsla(25, 95%, 55%, 0.4);
+  --theme-glow-secondary: 0 0 25px hsla(350, 85%, 55%, 0.3);
+  
+  --theme-message-self: 25 95% 45%;
+  --theme-message-other: 18 35% 15%;
+  
+  --theme-sidebar-bg: 15 45% 6%;
+  --theme-header-bg: 16 38% 9%;
+  --theme-input-bg: 15 40% 10%;
+}
+
+/* ============================================
+   THEME: OCEAN
+   Deep sea blues and teals
+   ============================================ */
+[data-theme="ocean"] {
+  --theme-bg-primary: 200 60% 8%;
+  --theme-bg-secondary: 195 50% 12%;
+  --theme-bg-tertiary: 195 45% 16%;
+  --theme-bg-elevated: 198 55% 10%;
+  --theme-bg-hover: 195 50% 15%;
+  --theme-bg-active: 195 50% 20%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(200, 60%, 8%) 0%, hsl(185, 55%, 6%) 30%, hsl(220, 50%, 9%) 60%, hsl(195, 60%, 7%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(200, 65%, 6%) 0%, hsl(185, 55%, 4%) 50%, hsl(210, 50%, 5%) 100%);
+  
+  --theme-text-primary: 185 100% 97%;
+  --theme-text-secondary: 190 40% 70%;
+  --theme-text-muted: 190 30% 55%;
+  --theme-text-accent: 185 90% 55%;
+  
+  --theme-accent-primary: 185 90% 50%;
+  --theme-accent-secondary: 220 85% 60%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(185, 90%, 50%) 0%, hsl(220, 85%, 60%) 100%);
+  
+  --theme-border-default: 195 50% 20%;
+  --theme-border-hover: 185 90% 45%;
+  
+  --theme-glow-primary: 0 0 35px hsla(185, 90%, 50%, 0.4);
+  --theme-glow-secondary: 0 0 25px hsla(220, 85%, 60%, 0.3);
+  
+  --theme-message-self: 185 90% 40%;
+  --theme-message-other: 195 50% 15%;
+  
+  --theme-sidebar-bg: 200 65% 6%;
+  --theme-header-bg: 198 55% 9%;
+  --theme-input-bg: 200 60% 10%;
+}
+
+/* ============================================
+   THEME: MATRIX
+   Classic green on black hacker aesthetic
+   ============================================ */
+[data-theme="matrix"] {
+  --theme-bg-primary: 120 100% 2%;
+  --theme-bg-secondary: 120 50% 5%;
+  --theme-bg-tertiary: 120 40% 8%;
+  --theme-bg-elevated: 120 60% 3%;
+  --theme-bg-hover: 120 50% 7%;
+  --theme-bg-active: 120 50% 10%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(120, 100%, 2%) 0%, hsl(140, 80%, 2%) 40%, hsl(100, 90%, 2%) 70%, hsl(120, 100%, 1%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(120, 100%, 1%) 0%, hsl(130, 80%, 1%) 50%, hsl(110, 90%, 1%) 100%);
+  
+  --theme-text-primary: 120 100% 70%;
+  --theme-text-secondary: 120 60% 50%;
+  --theme-text-muted: 120 40% 35%;
+  --theme-text-accent: 120 100% 55%;
+  
+  --theme-accent-primary: 120 100% 50%;
+  --theme-accent-secondary: 140 100% 40%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(120, 100%, 50%) 0%, hsl(140, 100%, 40%) 100%);
+  
+  --theme-border-default: 120 50% 15%;
+  --theme-border-hover: 120 100% 45%;
+  
+  --theme-glow-primary: 0 0 40px hsla(120, 100%, 50%, 0.5);
+  --theme-glow-secondary: 0 0 25px hsla(120, 100%, 40%, 0.3);
+  
+  --theme-message-self: 120 100% 35%;
+  --theme-message-other: 120 50% 8%;
+  
+  --theme-sidebar-bg: 120 100% 1%;
+  --theme-header-bg: 120 60% 2%;
+  --theme-input-bg: 120 100% 3%;
+}
+
+/* ============================================
+   THEME: LAVENDER (Light Theme)
+   Soft purple light theme
+   ============================================ */
+[data-theme="lavender"] {
+  --theme-bg-primary: 270 30% 98%;
+  --theme-bg-secondary: 270 35% 95%;
+  --theme-bg-tertiary: 270 30% 92%;
+  --theme-bg-elevated: 0 0% 100%;
+  --theme-bg-hover: 270 40% 92%;
+  --theme-bg-active: 270 45% 88%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(270, 30%, 98%) 0%, hsl(280, 35%, 96%) 30%, hsl(320, 25%, 97%) 60%, hsl(260, 30%, 98%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(270, 35%, 96%) 0%, hsl(280, 30%, 95%) 50%, hsl(290, 25%, 96%) 100%);
+  
+  --theme-text-primary: 270 50% 15%;
+  --theme-text-secondary: 270 30% 40%;
+  --theme-text-muted: 270 20% 55%;
+  --theme-text-accent: 270 80% 50%;
+  
+  --theme-accent-primary: 270 80% 55%;
+  --theme-accent-secondary: 320 70% 55%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(270, 80%, 55%) 0%, hsl(320, 70%, 55%) 100%);
+  
+  --theme-border-default: 270 30% 85%;
+  --theme-border-hover: 270 80% 60%;
+  
+  --theme-glow-primary: 0 0 30px hsla(270, 80%, 55%, 0.25);
+  --theme-glow-secondary: 0 0 20px hsla(320, 70%, 55%, 0.2);
+  
+  --theme-message-self: 270 80% 55%;
+  --theme-message-other: 270 30% 92%;
+  
+  --theme-sidebar-bg: 270 35% 96%;
+  --theme-header-bg: 0 0% 100%;
+  --theme-input-bg: 270 30% 98%;
+}
+
+/* ============================================
+   THEME: ROSE GOLD (Light Theme)
+   Elegant rose and gold tones
+   ============================================ */
+[data-theme="rosegold"] {
+  --theme-bg-primary: 20 25% 97%;
+  --theme-bg-secondary: 25 30% 94%;
+  --theme-bg-tertiary: 25 25% 90%;
+  --theme-bg-elevated: 0 0% 100%;
+  --theme-bg-hover: 25 35% 91%;
+  --theme-bg-active: 25 40% 87%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(20, 25%, 97%) 0%, hsl(350, 30%, 96%) 30%, hsl(35, 30%, 96%) 60%, hsl(15, 25%, 97%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(20, 30%, 95%) 0%, hsl(350, 25%, 94%) 50%, hsl(30, 25%, 95%) 100%);
+  
+  --theme-text-primary: 350 30% 20%;
+  --theme-text-secondary: 350 20% 40%;
+  --theme-text-muted: 350 15% 55%;
+  --theme-text-accent: 350 70% 55%;
+  
+  --theme-accent-primary: 350 70% 55%;
+  --theme-accent-secondary: 35 80% 55%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(350, 70%, 55%) 0%, hsl(35, 80%, 55%) 100%);
+  
+  --theme-border-default: 25 30% 85%;
+  --theme-border-hover: 350 70% 60%;
+  
+  --theme-glow-primary: 0 0 30px hsla(350, 70%, 55%, 0.25);
+  --theme-glow-secondary: 0 0 20px hsla(35, 80%, 55%, 0.2);
+  
+  --theme-message-self: 350 70% 55%;
+  --theme-message-other: 25 30% 92%;
+  
+  --theme-sidebar-bg: 20 30% 95%;
+  --theme-header-bg: 0 0% 100%;
+  --theme-input-bg: 20 25% 97%;
+}
+
+/* ============================================
+   THEME: NEON NIGHTS
+   Ultra vibrant neon with electric glows
+   ============================================ */
+[data-theme="neon"] {
+  --theme-bg-primary: 260 100% 3%;
+  --theme-bg-secondary: 260 80% 6%;
+  --theme-bg-tertiary: 260 60% 9%;
+  --theme-bg-elevated: 260 90% 4%;
+  --theme-bg-hover: 260 80% 10%;
+  --theme-bg-active: 260 80% 14%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(260, 100%, 3%) 0%, hsl(320, 100%, 4%) 25%, hsl(180, 100%, 3%) 50%, hsl(60, 100%, 3%) 75%, hsl(260, 100%, 3%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(260, 100%, 2%) 0%, hsl(300, 90%, 2%) 30%, hsl(200, 90%, 2%) 70%, hsl(260, 100%, 2%) 100%);
+  
+  --theme-text-primary: 180 100% 90%;
+  --theme-text-secondary: 300 100% 80%;
+  --theme-text-muted: 280 60% 60%;
+  --theme-text-accent: 320 100% 65%;
+  
+  --theme-accent-primary: 320 100% 60%;
+  --theme-accent-secondary: 180 100% 55%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(320, 100%, 60%) 0%, hsl(280, 100%, 50%) 30%, hsl(180, 100%, 55%) 70%, hsl(60, 100%, 50%) 100%);
+  
+  --theme-border-default: 280 80% 25%;
+  --theme-border-hover: 320 100% 55%;
+  
+  --theme-glow-primary: 0 0 50px hsla(320, 100%, 60%, 0.6), 0 0 100px hsla(320, 100%, 60%, 0.3), 0 0 150px hsla(320, 100%, 60%, 0.1);
+  --theme-glow-secondary: 0 0 40px hsla(180, 100%, 55%, 0.5), 0 0 80px hsla(180, 100%, 55%, 0.2);
+  
+  --theme-message-self: 320 100% 50%;
+  --theme-message-other: 260 80% 10%;
+  
+  --theme-sidebar-bg: 260 100% 2%;
+  --theme-header-bg: 260 90% 4%;
+  --theme-input-bg: 260 80% 5%;
+}
+
+/* ============================================
+   THEME: HOLOGRAM
+   Translucent cyber holographic effect
+   ============================================ */
+[data-theme="hologram"] {
+  --theme-bg-primary: 200 60% 5%;
+  --theme-bg-secondary: 210 50% 8%;
+  --theme-bg-tertiary: 205 45% 12%;
+  --theme-bg-elevated: 195 55% 6%;
+  --theme-bg-hover: 200 50% 12%;
+  --theme-bg-active: 200 50% 16%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(200, 60%, 5%) 0%, hsl(165, 70%, 4%) 30%, hsl(195, 60%, 5%) 60%, hsl(225, 50%, 6%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(200, 65%, 3%) 0%, hsl(165, 60%, 3%) 50%, hsl(210, 55%, 4%) 100%);
+  
+  --theme-text-primary: 180 100% 85%;
+  --theme-text-secondary: 200 80% 70%;
+  --theme-text-muted: 200 40% 50%;
+  --theme-text-accent: 165 100% 65%;
+  
+  --theme-accent-primary: 165 100% 60%;
+  --theme-accent-secondary: 195 100% 65%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(165, 100%, 60%) 0%, hsl(195, 100%, 65%) 50%, hsl(225, 100%, 70%) 100%);
+  
+  --theme-border-default: 200 50% 20%;
+  --theme-border-hover: 165 100% 55%;
+  
+  --theme-glow-primary: 0 0 60px hsla(165, 100%, 60%, 0.5), 0 0 120px hsla(165, 100%, 60%, 0.2), inset 0 0 30px hsla(195, 100%, 65%, 0.1);
+  --theme-glow-secondary: 0 0 45px hsla(195, 100%, 65%, 0.4), 0 0 90px hsla(195, 100%, 65%, 0.15);
+  
+  --theme-message-self: 165 100% 45%;
+  --theme-message-other: 200 50% 10%;
+  
+  --theme-sidebar-bg: 200 65% 3%;
+  --theme-header-bg: 195 55% 5%;
+  --theme-input-bg: 200 60% 6%;
+}
+
+/* ============================================
+   THEME: PLASMA
+   Hot plasma energy with dynamic flows
+   ============================================ */
+[data-theme="plasma"] {
+  --theme-bg-primary: 270 80% 4%;
+  --theme-bg-secondary: 280 70% 7%;
+  --theme-bg-tertiary: 275 60% 10%;
+  --theme-bg-elevated: 270 75% 5%;
+  --theme-bg-hover: 280 70% 12%;
+  --theme-bg-active: 280 70% 16%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(270, 80%, 4%) 0%, hsl(290, 90%, 4%) 25%, hsl(320, 80%, 5%) 50%, hsl(35, 90%, 4%) 75%, hsl(270, 80%, 4%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(270, 85%, 3%) 0%, hsl(300, 75%, 3%) 50%, hsl(330, 80%, 3%) 100%);
+  
+  --theme-text-primary: 60 100% 92%;
+  --theme-text-secondary: 30 90% 75%;
+  --theme-text-muted: 300 40% 55%;
+  --theme-text-accent: 35 100% 60%;
+  
+  --theme-accent-primary: 35 100% 55%;
+  --theme-accent-secondary: 290 100% 65%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(290, 100%, 65%) 0%, hsl(320, 100%, 55%) 25%, hsl(35, 100%, 55%) 50%, hsl(45, 100%, 65%) 75%, hsl(60, 100%, 70%) 100%);
+  
+  --theme-border-default: 280 70% 20%;
+  --theme-border-hover: 35 100% 50%;
+  
+  --theme-glow-primary: 0 0 55px hsla(35, 100%, 55%, 0.6), 0 0 110px hsla(35, 100%, 55%, 0.3), 0 0 165px hsla(290, 100%, 65%, 0.2);
+  --theme-glow-secondary: 0 0 40px hsla(290, 100%, 65%, 0.5), 0 0 80px hsla(320, 100%, 55%, 0.25);
+  
+  --theme-message-self: 35 100% 45%;
+  --theme-message-other: 280 70% 10%;
+  
+  --theme-sidebar-bg: 270 85% 3%;
+  --theme-header-bg: 270 75% 4%;
+  --theme-input-bg: 270 80% 5%;
+}
+
+/* ============================================
+   THEME: GALAXY
+   Deep space with cosmic nebula colors
+   ============================================ */
+[data-theme="galaxy"] {
+  --theme-bg-primary: 240 70% 4%;
+  --theme-bg-secondary: 250 60% 8%;
+  --theme-bg-tertiary: 245 55% 12%;
+  --theme-bg-elevated: 240 65% 5%;
+  --theme-bg-hover: 250 60% 12%;
+  --theme-bg-active: 250 60% 16%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(240, 70%, 4%) 0%, hsl(280, 60%, 5%) 25%, hsl(200, 50%, 5%) 50%, hsl(320, 55%, 4%) 75%, hsl(240, 70%, 4%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(240, 75%, 2%) 0%, hsl(260, 65%, 3%) 50%, hsl(280, 55%, 3%) 100%);
+  
+  --theme-text-primary: 220 100% 95%;
+  --theme-text-secondary: 280 80% 80%;
+  --theme-text-muted: 260 40% 55%;
+  --theme-text-accent: 280 100% 70%;
+  
+  --theme-accent-primary: 280 100% 65%;
+  --theme-accent-secondary: 200 100% 60%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(200, 100%, 60%) 0%, hsl(240, 100%, 65%) 25%, hsl(280, 100%, 65%) 50%, hsl(320, 100%, 60%) 75%, hsl(350, 100%, 65%) 100%);
+  
+  --theme-border-default: 250 60% 20%;
+  --theme-border-hover: 280 100% 60%;
+  
+  --theme-glow-primary: 0 0 50px hsla(280, 100%, 65%, 0.5), 0 0 100px hsla(280, 100%, 65%, 0.25), 0 0 150px hsla(200, 100%, 60%, 0.15);
+  --theme-glow-secondary: 0 0 40px hsla(200, 100%, 60%, 0.4), 0 0 80px hsla(320, 100%, 60%, 0.2);
+  
+  --theme-message-self: 280 100% 50%;
+  --theme-message-other: 250 60% 12%;
+  
+  --theme-sidebar-bg: 240 75% 2%;
+  --theme-header-bg: 240 65% 4%;
+  --theme-input-bg: 240 70% 5%;
+}
+
+/* ============================================
+   THEME: FROST
+   Ice blue crystalline elegance
+   ============================================ */
+[data-theme="frost"] {
+  --theme-bg-primary: 210 60% 6%;
+  --theme-bg-secondary: 210 55% 10%;
+  --theme-bg-tertiary: 210 50% 14%;
+  --theme-bg-elevated: 210 58% 7%;
+  --theme-bg-hover: 210 55% 14%;
+  --theme-bg-active: 210 55% 18%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(210, 60%, 6%) 0%, hsl(190, 65%, 5%) 30%, hsl(220, 55%, 6%) 60%, hsl(200, 60%, 5%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(210, 65%, 4%) 0%, hsl(195, 60%, 3%) 50%, hsl(220, 55%, 4%) 100%);
+  
+  --theme-text-primary: 200 100% 96%;
+  --theme-text-secondary: 200 70% 78%;
+  --theme-text-muted: 200 40% 55%;
+  --theme-text-accent: 190 100% 65%;
+  
+  --theme-accent-primary: 190 100% 60%;
+  --theme-accent-secondary: 220 100% 70%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(220, 100%, 70%) 0%, hsl(200, 100%, 65%) 50%, hsl(190, 100%, 60%) 100%);
+  
+  --theme-border-default: 210 50% 22%;
+  --theme-border-hover: 190 100% 55%;
+  
+  --theme-glow-primary: 0 0 45px hsla(190, 100%, 60%, 0.5), 0 0 90px hsla(200, 100%, 65%, 0.25), 0 0 135px hsla(220, 100%, 70%, 0.1);
+  --theme-glow-secondary: 0 0 35px hsla(220, 100%, 70%, 0.4), 0 0 70px hsla(220, 100%, 70%, 0.15);
+  
+  --theme-message-self: 190 100% 45%;
+  --theme-message-other: 210 55% 12%;
+  
+  --theme-sidebar-bg: 210 65% 4%;
+  --theme-header-bg: 210 58% 6%;
+  --theme-input-bg: 210 60% 7%;
+}
+
+/* ============================================
+   THEME: EMBER
+   Burning coal and fire aesthetic
+   ============================================ */
+[data-theme="ember"] {
+  --theme-bg-primary: 10 70% 4%;
+  --theme-bg-secondary: 12 60% 8%;
+  --theme-bg-tertiary: 14 55% 12%;
+  --theme-bg-elevated: 10 65% 5%;
+  --theme-bg-hover: 12 60% 12%;
+  --theme-bg-active: 12 60% 16%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(10, 70%, 4%) 0%, hsl(0, 75%, 4%) 30%, hsl(25, 70%, 5%) 60%, hsl(45, 60%, 4%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(10, 75%, 2%) 0%, hsl(0, 70%, 2%) 50%, hsl(20, 65%, 3%) 100%);
+  
+  --theme-text-primary: 40 100% 95%;
+  --theme-text-secondary: 35 80% 75%;
+  --theme-text-muted: 20 40% 50%;
+  --theme-text-accent: 25 100% 60%;
+  
+  --theme-accent-primary: 25 100% 55%;
+  --theme-accent-secondary: 0 100% 60%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(0, 100%, 60%) 0%, hsl(25, 100%, 55%) 40%, hsl(45, 100%, 60%) 100%);
+  
+  --theme-border-default: 12 60% 20%;
+  --theme-border-hover: 25 100% 50%;
+  
+  --theme-glow-primary: 0 0 50px hsla(25, 100%, 55%, 0.6), 0 0 100px hsla(25, 100%, 55%, 0.3), 0 0 150px hsla(0, 100%, 60%, 0.2);
+  --theme-glow-secondary: 0 0 40px hsla(0, 100%, 60%, 0.5), 0 0 80px hsla(45, 100%, 60%, 0.2);
+  
+  --theme-message-self: 25 100% 45%;
+  --theme-message-other: 12 60% 12%;
+  
+  --theme-sidebar-bg: 10 75% 2%;
+  --theme-header-bg: 10 65% 4%;
+  --theme-input-bg: 10 70% 5%;
+}
+
+/* ============================================
+   THEME: BASIC
+   Professional Discord-like dark theme
+   Clean, flat design with no gradients or glows
+   ============================================ */
+[data-theme="basic"] {
+  --theme-bg-primary: 223 7% 20%;
+  --theme-bg-secondary: 220 7% 18%;
+  --theme-bg-tertiary: 225 6% 25%;
+  --theme-bg-elevated: 220 8% 22%;
+  --theme-bg-hover: 225 6% 27%;
+  --theme-bg-active: 225 6% 30%;
+  
+  /* Solid backgrounds - no gradients for basic theme */
+  --theme-bg-gradient: hsl(223, 7%, 20%);
+  --theme-sidebar-gradient: hsl(220, 8%, 15%);
+  
+  --theme-text-primary: 0 0% 100%;
+  --theme-text-secondary: 214 8% 70%;
+  --theme-text-muted: 214 8% 50%;
+  --theme-text-accent: 235 86% 65%;
+  
+  --theme-accent-primary: 235 86% 65%;
+  --theme-accent-secondary: 235 86% 65%;
+  --theme-accent-gradient: hsl(235, 86%, 65%);
+  
+  --theme-border-default: 225 6% 27%;
+  --theme-border-hover: 235 86% 60%;
+  
+  --theme-glow-primary: 0 0 0 transparent;
+  --theme-glow-secondary: 0 0 0 transparent;
+  
+  --theme-message-self: 235 86% 55%;
+  --theme-message-other: 220 7% 22%;
+  
+  --theme-sidebar-bg: 220 8% 15%;
+  --theme-header-bg: 223 7% 20%;
+  --theme-input-bg: 225 7% 17%;
+}
+
+/* ============================================
+   THEME: OBSIDIAN
+   Discord-style midnight purple theme
+   Rich purple tones with elegant accents
+   ============================================ */
+[data-theme="obsidian"] {
+  --theme-bg-primary: 240 25% 12%;
+  --theme-bg-secondary: 240 30% 9%;
+  --theme-bg-tertiary: 240 22% 17%;
+  --theme-bg-elevated: 240 28% 14%;
+  --theme-bg-hover: 240 22% 20%;
+  --theme-bg-active: 240 22% 24%;
+  
+  /* Gradient backgrounds for Nitro-like effect */
+  --theme-bg-gradient: linear-gradient(145deg, hsl(240, 25%, 12%) 0%, hsl(260, 30%, 10%) 30%, hsl(280, 25%, 11%) 60%, hsl(235, 28%, 11%) 100%);
+  --theme-sidebar-gradient: linear-gradient(180deg, hsl(240, 35%, 7%) 0%, hsl(260, 30%, 6%) 50%, hsl(250, 32%, 6%) 100%);
+  
+  --theme-text-primary: 0 0% 100%;
+  --theme-text-secondary: 230 15% 70%;
+  --theme-text-muted: 230 12% 50%;
+  --theme-text-accent: 235 86% 70%;
+  
+  --theme-accent-primary: 235 86% 65%;
+  --theme-accent-secondary: 280 60% 60%;
+  --theme-accent-gradient: linear-gradient(135deg, hsl(235, 86%, 65%) 0%, hsl(260, 70%, 58%) 50%, hsl(280, 60%, 60%) 100%);
+  
+  --theme-border-default: 240 25% 18%;
+  --theme-border-hover: 235 86% 60%;
+  
+  --theme-glow-primary: 0 0 30px hsla(235, 86%, 65%, 0.35), 0 0 60px hsla(280, 60%, 55%, 0.15);
+  --theme-glow-secondary: 0 0 25px hsla(280, 60%, 55%, 0.25);
+  
+  --theme-message-self: 235 86% 55%;
+  --theme-message-other: 240 28% 16%;
+  
+  --theme-sidebar-bg: 240 35% 7%;
+  --theme-header-bg: 240 28% 11%;
+  --theme-input-bg: 240 30% 10%;
+}
+
+/* ============================================
+   THEME: ONYX
+   True black AMOLED theme like Discord Onyx
+   Pure black backgrounds for OLED screens
+   ============================================ */
+[data-theme="onyx"] {
+  --theme-bg-primary: 0 0% 0%;
+  --theme-bg-secondary: 0 0% 4%;
+  --theme-bg-tertiary: 0 0% 8%;
+  --theme-bg-elevated: 0 0% 6%;
+  --theme-bg-hover: 0 0% 10%;
+  --theme-bg-active: 0 0% 14%;
+  
+  /* Solid backgrounds - true black for AMOLED */
+  --theme-bg-gradient: hsl(0, 0%, 0%);
+  --theme-sidebar-gradient: hsl(0, 0%, 0%);
+  
+  --theme-text-primary: 0 0% 100%;
+  --theme-text-secondary: 0 0% 72%;
+  --theme-text-muted: 0 0% 50%;
+  --theme-text-accent: 235 86% 65%;
+  
+  --theme-accent-primary: 235 86% 65%;
+  --theme-accent-secondary: 235 70% 55%;
+  --theme-accent-gradient: hsl(235, 86%, 65%);
+  
+  --theme-border-default: 0 0% 18%;
+  --theme-border-hover: 235 86% 60%;
+  
+  --theme-glow-primary: 0 0 0 transparent;
+  --theme-glow-secondary: 0 0 0 transparent;
+  
+  /* No overlay effects for onyx theme */
+  --theme-overlay-visible: 0;
+  
+  --theme-message-self: 235 86% 55%;
+  --theme-message-other: 0 0% 8%;
+  
+  --theme-sidebar-bg: 0 0% 0%;
+  --theme-header-bg: 0 0% 2%;
+  --theme-input-bg: 0 0% 6%;
+}
+
+/* ============================================
+   UTILITY CLASSES FOR THEMES
+   ============================================ */
+
+/* Background utilities */
+.theme-bg-primary { background-color: hsl(var(--theme-bg-primary)); }
+.theme-bg-secondary { background-color: hsl(var(--theme-bg-secondary)); }
+.theme-bg-tertiary { background-color: hsl(var(--theme-bg-tertiary)); }
+.theme-bg-elevated { background-color: hsl(var(--theme-bg-elevated)); }
+.theme-bg-hover:hover { background-color: hsl(var(--theme-bg-hover)); }
+
+/* Text utilities */
+.theme-text-primary { color: hsl(var(--theme-text-primary)); }
+.theme-text-secondary { color: hsl(var(--theme-text-secondary)); }
+.theme-text-muted { color: hsl(var(--theme-text-muted)); }
+.theme-text-accent { color: hsl(var(--theme-text-accent)); }
+
+/* Border utilities */
+.theme-border { border-color: hsl(var(--theme-border-default)); }
+.theme-border-hover:hover { border-color: hsl(var(--theme-border-hover)); }
+
+/* Accent utilities */
+.theme-accent-bg { background-color: hsl(var(--theme-accent-primary)); }
+.theme-accent-text { color: hsl(var(--theme-accent-primary)); }
+.theme-accent-gradient { background: var(--theme-accent-gradient); }
+
+/* Glow utilities */
+.theme-glow { box-shadow: var(--theme-glow-primary); }
+.theme-glow-secondary { box-shadow: var(--theme-glow-secondary); }
+.theme-glow-hover:hover { box-shadow: var(--theme-glow-primary); }
+
+/* Interactive element utilities */
+.theme-interactive {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-interactive:hover {
+  box-shadow: var(--theme-glow-primary);
+  border-color: hsl(var(--theme-border-hover));
+  transform: translateY(-1px);
+}
+
+.theme-interactive:active {
+  transform: translateY(0);
+}
+
+/* Card with glow effect */
+.theme-card {
+  background-color: hsl(var(--theme-bg-secondary));
+  border: 1px solid hsl(var(--theme-border-default));
+  border-radius: 12px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-card:hover {
+  border-color: hsl(var(--theme-border-hover));
+  box-shadow: var(--theme-glow-secondary);
+}
+
+/* Button with gradient */
+.theme-button-gradient {
+  background: var(--theme-accent-gradient);
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-button-gradient::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--theme-accent-gradient);
+  filter: blur(15px);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: -1;
+}
+
+.theme-button-gradient:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--theme-glow-primary);
+}
+
+.theme-button-gradient:hover::before {
+  opacity: 0.6;
+}
+
+/* Input with glow focus */
+.theme-input {
+  background-color: hsl(var(--theme-input-bg));
+  border: 1px solid hsl(var(--theme-border-default));
+  color: hsl(var(--theme-text-primary));
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-input:focus {
+  outline: none;
+  border-color: hsl(var(--theme-accent-primary));
+  box-shadow: var(--theme-glow-secondary);
+}
+
+.theme-input::placeholder {
+  color: hsl(var(--theme-text-muted));
+}
+
+/* Smooth transitions for theme changes */
+.theme-transition {
+  transition: var(--theme-transition);
+}
+
+/* ============================================
+   ANIMATED BACKGROUNDS
+   ============================================ */
+
+/* Gradient animation for accent elements */
+@keyframes gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.theme-animated-gradient {
+  background: var(--theme-accent-gradient);
+  background-size: 200% 200%;
+  animation: gradient-shift 5s ease infinite;
+}
+
+/* Pulse glow animation */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: var(--theme-glow-primary); }
+  50% { box-shadow: var(--theme-glow-secondary); }
+}
+
+.theme-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+/* Breathe glow animation - more subtle */
+@keyframes breathe-glow {
+  0%, 100% { 
+    box-shadow: 0 0 20px hsla(var(--theme-accent-primary), 0.2);
+    opacity: 0.9;
+  }
+  50% { 
+    box-shadow: 0 0 40px hsla(var(--theme-accent-primary), 0.4);
+    opacity: 1;
+  }
+}
+
+.theme-breathe-glow {
+  animation: breathe-glow 4s ease-in-out infinite;
+}
+
+/* Shimmer effect */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.theme-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsla(var(--theme-accent-primary), 0.1) 50%,
+    transparent 100%
+  );
+  animation: shimmer 3s infinite;
+}
+
+/* Rainbow border animation */
+@keyframes rainbow-border {
+  0%, 100% { border-color: hsl(var(--theme-accent-primary)); }
+  25% { border-color: hsl(var(--theme-accent-secondary)); }
+  50% { border-color: hsl(var(--theme-accent-primary) / 0.7); }
+  75% { border-color: hsl(var(--theme-accent-secondary) / 0.7); }
+}
+
+.theme-rainbow-border {
+  animation: rainbow-border 4s ease-in-out infinite;
+}
+
+/* Floating animation for elements */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-5px); }
+}
+
+.theme-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Subtle background pattern for futuristic feel */
+[data-theme="cyberpunk"]::before,
+[data-theme="matrix"]::before,
+[data-theme="neon"]::before,
+[data-theme="hologram"]::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: 
+    linear-gradient(0deg, transparent 24%, 
+    hsla(var(--theme-accent-primary), 0.5) 25%, 
+    hsla(var(--theme-accent-primary), 0.5) 26%, 
+    transparent 27%, transparent 74%, 
+    hsla(var(--theme-accent-primary), 0.5) 75%, 
+    hsla(var(--theme-accent-primary), 0.5) 76%, 
+    transparent 77%, transparent),
+    linear-gradient(90deg, transparent 24%, 
+    hsla(var(--theme-accent-primary), 0.5) 25%, 
+    hsla(var(--theme-accent-primary), 0.5) 26%, 
+    transparent 27%, transparent 74%, 
+    hsla(var(--theme-accent-primary), 0.5) 75%, 
+    hsla(var(--theme-accent-primary), 0.5) 76%, 
+    transparent 77%, transparent);
+  background-size: 50px 50px;
+  z-index: 0;
+}
+
+/* Starfield effect for galaxy theme */
+[data-theme="galaxy"]::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.4;
+  background-image: 
+    radial-gradient(1px 1px at 20px 30px, hsl(280, 100%, 80%), transparent),
+    radial-gradient(1px 1px at 40px 70px, hsl(200, 100%, 70%), transparent),
+    radial-gradient(1px 1px at 50px 160px, hsl(320, 100%, 75%), transparent),
+    radial-gradient(1.5px 1.5px at 90px 40px, hsl(280, 100%, 85%), transparent),
+    radial-gradient(1px 1px at 130px 80px, hsl(200, 100%, 65%), transparent),
+    radial-gradient(1.5px 1.5px at 160px 120px, hsl(350, 100%, 80%), transparent);
+  background-repeat: repeat;
+  background-size: 200px 200px;
+  z-index: 0;
+}
+
+/* Frost crystalline effect */
+[data-theme="frost"]::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.02;
+  background-image: 
+    linear-gradient(60deg, transparent 40%, hsla(190, 100%, 60%, 0.3) 45%, transparent 50%),
+    linear-gradient(-60deg, transparent 40%, hsla(220, 100%, 70%, 0.3) 45%, transparent 50%);
+  background-size: 100px 100px;
+  z-index: 0;
+}
+
+/* Ember/fire particle effect */
+[data-theme="ember"]::before,
+[data-theme="plasma"]::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.03;
+  background: 
+    radial-gradient(circle at 30% 70%, hsla(25, 100%, 55%, 0.4) 0%, transparent 50%),
+    radial-gradient(circle at 70% 30%, hsla(0, 100%, 60%, 0.3) 0%, transparent 50%);
+  z-index: 0;
+}

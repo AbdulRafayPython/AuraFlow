@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, ErrorInfo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -6,8 +6,47 @@ import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAIAgents } from '../../contexts/AIAgentContext';
+import { useRealtime } from '../../hooks/useRealtime';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Target, Timer, CheckCircle, Activity, TrendingUp, Star } from 'lucide-react';
+import { Target, Timer, CheckCircle, Activity, TrendingUp, Star, Brain, Hash, AlertCircle, Loader2 } from 'lucide-react';
+
+// Error Boundary Component
+class FocusAgentErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('FocusAgent Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 text-center">
+          <AlertCircle className="w-16 h-16 mx-auto mb-4 text-red-500" />
+          <h3 className="text-lg font-medium mb-2">Something went wrong</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            {this.state.error?.message || 'An error occurred while loading Focus Agent'}
+          </p>
+          <Button onClick={() => this.setState({ hasError: false, error: null })}>
+            Try Again
+          </Button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 interface FocusSession {
   id: string;
@@ -44,8 +83,18 @@ interface FocusRecommendation {
   priority: 'high' | 'medium' | 'low';
 }
 
-export const FocusAgent: React.FC = () => {
+interface FocusAnalysis {
+  focus_score: number;
+  main_topics: Array<{ topic: string; count: number }>;
+  focus_shifts: number | any[];  // Can be number or array depending on API response
+  analysis_period_hours: number;
+  total_messages: number;
+  recommendations: string[];
+}
+
+const FocusAgentContent: React.FC = () => {
   const { isDarkMode } = useTheme();
+  const { currentChannel } = useRealtime();
   const { 
     analyzeFocus,
     getFocusMetrics,
@@ -65,7 +114,11 @@ export const FocusAgent: React.FC = () => {
   });
   const [goals, setGoals] = useState<FocusGoal[]>([]);
   const [recommendations, setRecommendations] = useState<FocusRecommendation[]>([]);
+  const [focusAnalysis, setFocusAnalysis] = useState<FocusAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [analysisTimePeriod, setAnalysisTimePeriod] = useState(24);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   
   // Session creation
   const [newSessionGoal, setNewSessionGoal] = useState('');
@@ -87,23 +140,51 @@ export const FocusAgent: React.FC = () => {
   const loadFocusData = async () => {
     setIsLoading(true);
     try {
-      // Load metrics
-      const metricsData = await getFocusMetrics();
-      setMetrics(metricsData);
-
-      // Load recommendations
-      const recsData = await getFocusRecommendations();
-      setRecommendations(recsData);
-
-      // Simulate loading focus history and goals from local storage or API
-      const storedHistory = localStorage.getItem('focusHistory');
-      if (storedHistory) {
-        setFocusHistory(JSON.parse(storedHistory));
+      // Load metrics (optional, may not be available yet)
+      try {
+        const metricsData = await getFocusMetrics();
+        if (metricsData) {
+          setMetrics(prev => ({ ...prev, ...metricsData }));
+        }
+      } catch (error) {
+        console.log('Focus metrics not available yet');
       }
 
-      const storedGoals = localStorage.getItem('focusGoals');
-      if (storedGoals) {
-        setGoals(JSON.parse(storedGoals));
+      // Load recommendations (optional)
+      try {
+        const recsData = await getFocusRecommendations();
+        if (recsData && Array.isArray(recsData) && recsData.length > 0) {
+          setRecommendations(recsData);
+        }
+      } catch (error) {
+        console.log('Focus recommendations not available yet');
+      }
+
+      // Load focus analysis for current channel - only if we have a channel
+      if (currentChannel?.id) {
+        try {
+          const analysisData = await analyzeFocus(analysisTimePeriod, currentChannel.id);
+          if (analysisData && analysisData.success && analysisData.analysis) {
+            setFocusAnalysis(analysisData.analysis);
+          }
+        } catch (error) {
+          console.log('Focus analysis not available yet');
+        }
+      }
+
+      // Load focus history and goals from local storage
+      try {
+        const storedHistory = localStorage.getItem('focusHistory');
+        if (storedHistory) {
+          setFocusHistory(JSON.parse(storedHistory));
+        }
+
+        const storedGoals = localStorage.getItem('focusGoals');
+        if (storedGoals) {
+          setGoals(JSON.parse(storedGoals));
+        }
+      } catch (error) {
+        console.log('Could not load stored data');
       }
     } catch (error) {
       console.error('Failed to load focus data:', error);
@@ -157,7 +238,30 @@ export const FocusAgent: React.FC = () => {
 
     // Analyze the completed session - using hours from session duration
     const sessionHours = Math.max(1, Math.floor(sessionTimer / 3600));
-    analyzeFocus(sessionHours);
+    analyzeFocus(sessionHours, currentChannel?.id);
+  };
+
+  const handleAnalyzeFocus = async () => {
+    if (!currentChannel?.id) return;
+    
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+    try {
+      const analysisData = await analyzeFocus(analysisTimePeriod, currentChannel.id);
+      if (analysisData && analysisData.success && analysisData.analysis) {
+        setFocusAnalysis(analysisData.analysis);
+        setAnalysisError(null);
+      } else if (analysisData && !analysisData.success) {
+        setAnalysisError(analysisData.error || 'Analysis failed');
+        setFocusAnalysis(null);
+      }
+    } catch (error: any) {
+      console.error('Failed to analyze focus:', error);
+      setAnalysisError(error.message || 'Failed to analyze focus');
+      setFocusAnalysis(null);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const createFocusGoal = async () => {
@@ -211,8 +315,187 @@ export const FocusAgent: React.FC = () => {
     return sessionTimer >= activeSession.duration * 60;
   };
 
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-12 bg-[hsl(var(--theme-bg-primary))]">
+        <div className="text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[hsl(var(--theme-bg-secondary))] flex items-center justify-center border border-[hsl(var(--theme-border-default))]">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+          </div>
+          <p className="text-sm text-[hsl(var(--theme-text-muted))]">Loading Focus Agent...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-5 bg-[hsl(var(--theme-bg-primary))] overflow-y-auto h-full" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}>
+      {/* Header Section */}
+      <div className="relative overflow-hidden rounded-xl bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))] p-5">
+        {/* Gradient accent line at top */}
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500" />
+        
+        <div className="flex items-center gap-4 mb-4">
+          <div className="relative">
+            <div className="absolute inset-0 bg-blue-500 rounded-xl blur-lg opacity-40"></div>
+            <div className="relative p-3 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl shadow-lg border border-blue-400/30">
+              <Target className="w-6 h-6 text-white" />
+            </div>
+          </div>
+          <div>
+            <h3 className="font-semibold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
+              Focus Agent
+              <Brain className="w-4 h-4 text-cyan-400" />
+            </h3>
+            <p className="text-sm text-[hsl(var(--theme-text-muted))]">
+              Track concentration, set goals, and boost productivity
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Focus Analysis Section */}
+      {currentChannel && (
+        <Card className="bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))]">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-[hsl(var(--theme-text-primary))]">
+              <Brain className="h-5 w-5 text-blue-400" />
+              Focus Analysis - {currentChannel.name}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <label className="text-sm font-medium mb-2 block text-[hsl(var(--theme-text-secondary))]">
+                  Analysis Period (hours)
+                </label>
+                <Select 
+                  value={analysisTimePeriod.toString()} 
+                  onValueChange={(value) => setAnalysisTimePeriod(parseInt(value))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="6">Last 6 hours</SelectItem>
+                    <SelectItem value="12">Last 12 hours</SelectItem>
+                    <SelectItem value="24">Last 24 hours</SelectItem>
+                    <SelectItem value="48">Last 2 days</SelectItem>
+                    <SelectItem value="168">Last week</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button 
+                onClick={handleAnalyzeFocus}
+                disabled={isAnalyzing}
+              >
+                {isAnalyzing ? 'Analyzing...' : 'Analyze Focus'}
+              </Button>
+            </div>
+
+            {/* Error Display */}
+            {analysisError && (
+              <div className="p-4 border border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                <div className="flex items-center gap-2 text-yellow-700 dark:text-yellow-400">
+                  <Activity className="h-4 w-4" />
+                  <span className="text-sm font-medium">Analysis Notice</span>
+                </div>
+                <p className="text-sm text-yellow-600 dark:text-yellow-300 mt-1">{analysisError}</p>
+                <p className="text-xs text-yellow-500 dark:text-yellow-400 mt-2">
+                  Tip: Try selecting a longer time period or send more messages to the channel.
+                </p>
+              </div>
+            )}
+
+            {focusAnalysis && (
+              <div className="space-y-4 mt-4">
+                {/* Focus Score */}
+                <div className="border rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium">Focus Score</span>
+                    <Badge variant={focusAnalysis.focus_score >= 70 ? 'default' : focusAnalysis.focus_score >= 40 ? 'secondary' : 'destructive'}>
+                      {focusAnalysis.focus_score}/100
+                    </Badge>
+                  </div>
+                  <Progress value={focusAnalysis.focus_score} className="mb-2" />
+                  <div className="text-xs text-muted-foreground">
+                    Based on {focusAnalysis.total_messages} messages over {focusAnalysis.analysis_period_hours} hours
+                  </div>
+                </div>
+
+                {/* Main Topics */}
+                {focusAnalysis.main_topics && focusAnalysis.main_topics.length > 0 && (
+                  <div className="border rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Hash className="h-4 w-4" />
+                      <span className="text-sm font-medium">Main Discussion Topics</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {focusAnalysis.main_topics.map((topic, index) => (
+                        <Badge key={index} variant="outline">
+                          {topic.topic} ({topic.count})
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Focus Shifts */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="border rounded-lg p-4">
+                    <div className="text-sm text-muted-foreground mb-1">Topic Shifts</div>
+                    <div className="text-2xl font-bold">
+                      {typeof focusAnalysis.focus_shifts === 'number' 
+                        ? focusAnalysis.focus_shifts 
+                        : Array.isArray(focusAnalysis.focus_shifts) 
+                          ? (focusAnalysis.focus_shifts as any[]).length 
+                          : 0}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {(() => {
+                        const shifts = typeof focusAnalysis.focus_shifts === 'number' 
+                          ? focusAnalysis.focus_shifts 
+                          : Array.isArray(focusAnalysis.focus_shifts) 
+                            ? (focusAnalysis.focus_shifts as any[]).length 
+                            : 0;
+                        return shifts < 5 
+                          ? 'Highly focused' 
+                          : shifts < 10 
+                            ? 'Moderately focused' 
+                            : 'Scattered focus';
+                      })()}
+                    </div>
+                  </div>
+                  <div className="border rounded-lg p-4">
+                    <div className="text-sm text-muted-foreground mb-1">Messages</div>
+                    <div className="text-2xl font-bold">{focusAnalysis.total_messages}</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {(focusAnalysis.total_messages / focusAnalysis.analysis_period_hours).toFixed(1)} per hour
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recommendations */}
+                {focusAnalysis.recommendations && focusAnalysis.recommendations.length > 0 && (
+                  <div className="border rounded-lg p-4">
+                    <div className="text-sm font-medium mb-3">AI Recommendations</div>
+                    <ul className="space-y-2">
+                      {focusAnalysis.recommendations.map((rec, index) => (
+                        <li key={index} className="text-sm flex items-start gap-2">
+                          <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                          <span>{rec}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Active Session */}
       {activeSession ? (
         <Card>
@@ -478,5 +761,14 @@ export const FocusAgent: React.FC = () => {
         </Card>
       )}
     </div>
+  );
+};
+
+// Wrapped export with error boundary
+export const FocusAgent: React.FC = () => {
+  return (
+    <FocusAgentErrorBoundary>
+      <FocusAgentContent />
+    </FocusAgentErrorBoundary>
   );
 };

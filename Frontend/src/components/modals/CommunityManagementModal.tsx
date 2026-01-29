@@ -83,19 +83,9 @@ export default function CommunityManagementModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
-      <div
-        className={`w-full max-w-md rounded-2xl shadow-2xl border max-h-[90vh] overflow-y-auto ${
-          isDarkMode
-            ? "bg-slate-900/95 border-slate-700/50 backdrop-blur-xl"
-            : "bg-white/95 border-gray-200/70 backdrop-blur-xl"
-        }`}
-      >
+      <div className="w-full max-w-md rounded-2xl shadow-2xl border max-h-[90vh] overflow-y-auto bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl">
         {/* Header with Icon */}
-        <div
-          className={`p-6 border-b text-center ${
-            isDarkMode ? "border-slate-700/70 bg-slate-800/50" : "border-gray-200/70 bg-gray-50"
-          }`}
-        >
+        <div className="p-6 border-b text-center border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))]">
           <div className="flex justify-center mb-4">
             <div
               className="w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-2xl text-white shadow-lg overflow-hidden"
@@ -112,19 +102,17 @@ export default function CommunityManagementModal({
               )}
             </div>
           </div>
-          <h2 className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+          <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))]">
             {community.name}
           </h2>
           {community.description && (
-            <p className={`text-sm mt-2 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+            <p className="text-sm mt-2 text-[hsl(var(--theme-text-muted))]">
               {community.description}
             </p>
           )}
           <button
             onClick={onClose}
-            className={`absolute top-4 right-4 p-2 rounded-lg transition-all ${
-              isDarkMode ? "hover:bg-slate-700/50" : "hover:bg-gray-100"
-            }`}
+            className="absolute top-4 right-4 p-2 rounded-lg transition-all hover:bg-[hsl(var(--theme-bg-hover))]"
           >
             <X className="w-5 h-5" />
           </button>
@@ -133,26 +121,20 @@ export default function CommunityManagementModal({
         {/* Content */}
         <div className="p-6 space-y-4">
           {/* Community Info */}
-          <div className={`p-4 rounded-xl ${isDarkMode ? "bg-slate-800/50" : "bg-gray-50"}`}>
-            <h3 className={`text-sm font-semibold mb-3 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+          <div className="p-4 rounded-xl bg-[hsl(var(--theme-bg-secondary))]">
+            <h3 className="text-sm font-semibold mb-3 text-[hsl(var(--theme-text-secondary))]">
               YOUR ROLE
             </h3>
             <div className="flex items-center justify-between">
-              <span className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+              <span className="text-sm text-[hsl(var(--theme-text-muted))]">
                 Community Role
               </span>
               <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
                 isOwner
-                  ? isDarkMode
-                    ? "bg-amber-500/20 text-amber-300"
-                    : "bg-amber-100 text-amber-700"
+                  ? "bg-amber-500/20 text-amber-400"
                   : isAdmin
-                  ? isDarkMode
-                    ? "bg-blue-500/20 text-blue-300"
-                    : "bg-blue-100 text-blue-700"
-                  : isDarkMode
-                  ? "bg-slate-700 text-gray-300"
-                  : "bg-gray-200 text-gray-700"
+                  ? "bg-blue-500/20 text-blue-400"
+                  : "bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-secondary))]"
               }`}>
                 {userRole === "owner" ? "Owner" : userRole === "admin" ? "Admin" : "Member"}
               </span>
@@ -164,11 +146,7 @@ export default function CommunityManagementModal({
             <div className="space-y-3">
               <button
                 onClick={() => setShowSettings(true)}
-                className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-sm transition-all ${
-                  isDarkMode
-                    ? "bg-blue-600/10 hover:bg-blue-600/20 text-blue-400"
-                    : "bg-blue-50 hover:bg-blue-100 text-blue-700"
-                }`}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-sm transition-all bg-[hsl(var(--theme-accent-primary))]/10 hover:bg-[hsl(var(--theme-accent-primary))]/20 text-[hsl(var(--theme-accent-primary))]"
               >
                 <Image className="w-4 h-4" />
                 Customize Logo & Banner
@@ -178,20 +156,16 @@ export default function CommunityManagementModal({
 
           {/* Owner-only Actions */}
           {isOwner && (
-            <div className="space-y-3 pt-4 border-t border-slate-700/50">
+            <div className="space-y-3 pt-4 border-t border-[hsl(var(--theme-border-default))]">
               <button
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={isLoading}
-                className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-sm transition-all ${
-                  isDarkMode
-                    ? "bg-red-600/10 hover:bg-red-600/20 text-red-400"
-                    : "bg-red-50 hover:bg-red-100 text-red-700"
-                } disabled:opacity-50`}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-sm transition-all bg-red-500/10 hover:bg-red-500/20 text-red-400 disabled:opacity-50"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete Community
               </button>
-              <p className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-600"}`}>
+              <p className="text-xs text-[hsl(var(--theme-text-muted))]">
                 Permanently delete this community and all its channels. This cannot be undone.
               </p>
             </div>
@@ -199,20 +173,16 @@ export default function CommunityManagementModal({
 
           {/* Member Leave Action */}
           {!isOwner && (
-            <div className="space-y-3 pt-4 border-t border-slate-700/50">
+            <div className="space-y-3 pt-4 border-t border-[hsl(var(--theme-border-default))]">
               <button
                 onClick={() => setShowLeaveConfirm(true)}
                 disabled={isLoading}
-                className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-sm transition-all ${
-                  isDarkMode
-                    ? "bg-orange-600/10 hover:bg-orange-600/20 text-orange-400"
-                    : "bg-orange-50 hover:bg-orange-100 text-orange-700"
-                } disabled:opacity-50`}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold text-sm transition-all bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 disabled:opacity-50"
               >
                 <LogOut className="w-4 h-4" />
                 Leave Community
               </button>
-              <p className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-600"}`}>
+              <p className="text-xs text-[hsl(var(--theme-text-muted))]">
                 You will no longer have access to this community and its channels.
               </p>
             </div>
@@ -220,13 +190,9 @@ export default function CommunityManagementModal({
 
           {/* Admin Info (non-owner admins only) */}
           {isAdmin && !isOwner && (
-            <div
-              className={`flex items-start gap-3 p-3 rounded-lg ${
-                isDarkMode ? "bg-blue-500/10 border border-blue-500/20" : "bg-blue-50 border border-blue-200"
-              }`}
-            >
-              <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isDarkMode ? "text-blue-400" : "text-blue-600"}`} />
-              <p className={`text-sm ${isDarkMode ? "text-blue-200" : "text-blue-800"}`}>
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-blue-400" />
+              <p className="text-sm text-blue-200">
                 As an admin, you can manage channels but cannot delete the community. Only the owner can delete it.
               </p>
             </div>
@@ -234,13 +200,9 @@ export default function CommunityManagementModal({
 
           {/* Owner Info */}
           {isOwner && (
-            <div
-              className={`flex items-start gap-3 p-3 rounded-lg ${
-                isDarkMode ? "bg-amber-500/10 border border-amber-500/20" : "bg-amber-50 border border-amber-200"
-              }`}
-            >
-              <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isDarkMode ? "text-amber-400" : "text-amber-600"}`} />
-              <p className={`text-sm ${isDarkMode ? "text-amber-200" : "text-amber-800"}`}>
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-400" />
+              <p className="text-sm text-amber-200">
                 As the owner, you cannot leave this community. You must delete it instead.
               </p>
             </div>

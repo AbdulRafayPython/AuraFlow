@@ -241,6 +241,73 @@ class KnowledgeBuilderAgent:
                     min(knowledge['total_items'] / 10, 1.0)
                 ))
                 
+                # Persist extracted items into knowledge_base (schema-preserving)
+                # Store structured content as JSON string in the TEXT column
+                # Source marked as 'agent' and link to related_channel
+                def insert_kb_entry(title: str, content_obj: Dict):
+                    cur.execute(
+                        """
+                        INSERT INTO knowledge_base (title, content, source, related_channel)
+                        VALUES (%s, %s, %s, %s)
+                        """,
+                        (title[:255] if title else None, json.dumps(content_obj), 'agent', channel_id)
+                    )
+
+                # Topics
+                for entry in knowledge.get('knowledge_entries', []):
+                    title = f"Topic: {entry.get('topic', 'General')}"
+                    content_obj = {
+                        'type': 'topic',
+                        'topic': entry.get('topic'),
+                        'summary': entry.get('summary'),
+                        'participants': entry.get('participants', []),
+                        'message_count': entry.get('message_count', 0),
+                        'timestamp': entry.get('timestamp')
+                    }
+                    insert_kb_entry(title, content_obj)
+
+                # Q/A pairs
+                for qa in knowledge.get('qa_pairs', []):
+                    # Simple tags from keywords in question
+                    tags = self.text_processor.extract_keywords(qa.get('question', ''), top_n=5) if qa.get('question') else []
+                    title = qa.get('question', 'Q/A')
+                    content_obj = {
+                        'type': 'qa',
+                        'question': qa.get('question'),
+                        'answer': qa.get('answer'),
+                        'asker': qa.get('asker'),
+                        'answerer': qa.get('answerer'),
+                        'tags': tags,
+                        'relevance_score': 0.0,
+                        'usage_count': 0,
+                        'timestamp': qa.get('timestamp')
+                    }
+                    insert_kb_entry(title, content_obj)
+
+                # Decisions
+                for dec in knowledge.get('decisions', []):
+                    title = dec.get('decision', 'Decision')
+                    content_obj = {
+                        'type': 'decision',
+                        'decision': dec.get('decision'),
+                        'decided_by': dec.get('decided_by'),
+                        'tags': self.text_processor.extract_keywords(dec.get('decision', ''), top_n=5) if dec.get('decision') else [],
+                        'timestamp': dec.get('timestamp')
+                    }
+                    insert_kb_entry(title, content_obj)
+
+                # Resources (links)
+                for res in knowledge.get('resources', []):
+                    title = f"Resource: {res.get('url', '')}".strip()
+                    content_obj = {
+                        'type': 'resource',
+                        'url': res.get('url'),
+                        'shared_by': res.get('shared_by'),
+                        'context': res.get('context'),
+                        'timestamp': res.get('timestamp')
+                    }
+                    insert_kb_entry(title, content_obj)
+
                 conn.commit()
         except Exception as e:
             print(f"[KNOWLEDGE] Error saving knowledge: {e}")

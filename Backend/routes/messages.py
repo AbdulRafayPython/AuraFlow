@@ -3,15 +3,87 @@ from flask import jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
 from utils import get_avatar_url
+from datetime import datetime
 import sys
 import os
+import logging
 
-# Import moderation agent
+log = logging.getLogger(__name__)
+
+# Import moderation agent and summarizer
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from agents.moderation import ModerationAgent
+from agents.summarizer import SummarizerAgent
 
-# Initialize moderation agent
+# Initialize agents
 moderation_agent = ModerationAgent()
+
+
+def handle_ai_command(content: str, username: str, user_id: int, channel_id: int, community_id: int = None):
+    """Handle AI commands from chat (/summarize, /help, etc.)"""
+    try:
+        log.info(f"[HTTP COMMAND] Processing command: {content}")
+        command_parts = content.strip().split()
+        command = command_parts[0].lower()
+        log.info(f"[HTTP COMMAND] Parsed command: {command}")
+        
+        if command == '/summarize':
+            # Parse optional message count
+            message_count = 100
+            if len(command_parts) > 1 and command_parts[1].isdigit():
+                message_count = min(int(command_parts[1]), 200)
+            
+            log.info(f"[HTTP COMMAND] /summarize requested by {username} for channel {channel_id} with {message_count} messages")
+            
+            # Generate summary
+            summarizer = SummarizerAgent()
+            result = summarizer.summarize_channel(
+                channel_id=channel_id,
+                message_count=message_count,
+                user_id=user_id
+            )
+            
+            log.info(f"[HTTP COMMAND] Summarizer returned: {result}")
+            
+            if result.get('success'):
+                return {
+                    'type': 'summarize',
+                    'success': True,
+                    'summary': result['summary'],
+                    'key_points': result.get('key_points', []),
+                    'message_count': result['message_count'],
+                    'participants': result.get('participants', []),
+                    'method': result.get('method', 'extractive'),
+                    'message': f"✨ Summary of last {result['message_count']} messages"
+                }
+            else:
+                return {
+                    'type': 'summarize',
+                    'success': False,
+                    'error': result.get('error', 'Failed to generate summary')
+                }
+        
+        elif command == '/help':
+            return {
+                'type': 'help',
+                'success': True,
+                'message': """**AuraFlow AI Commands:**
+• `/summarize [count]` - Summarize recent messages (default: 100)
+• `/help` - Show this help message
+
+More commands coming soon!"""
+            }
+        
+        else:
+            return None
+            
+    except Exception as e:
+        log.error(f"[HTTP COMMAND] Error: {e}", exc_info=True)
+        return {
+            'type': 'error',
+            'success': False,
+            'error': str(e)
+        }
 
 
 # Helper: format user avatar fallback
@@ -48,14 +120,32 @@ def get_channel_messages(channel_id):
             cur.execute("""
                 SELECT 
                     m.id, m.sender_id, m.content, m.message_type, m.reply_to, m.created_at,
-                    u.username, u.display_name, u.avatar_url
+                    u.username, u.display_name, u.avatar_url,
+                    CASE WHEN bu.user_id IS NOT NULL THEN 1 ELSE 0 END as is_blocked
                 FROM messages m
                 JOIN users u ON m.sender_id = u.id
+                JOIN channels ch ON m.channel_id = ch.id
+                LEFT JOIN blocked_users bu ON ch.community_id = bu.community_id AND m.sender_id = bu.user_id
                 WHERE m.channel_id = %s
                 ORDER BY m.created_at DESC
                 LIMIT %s OFFSET %s
             """, (channel_id, limit, offset))
             rows = cur.fetchall()
+            
+            # Debug: Check blocked_users table
+            cur.execute("SELECT id FROM channels WHERE id = %s", (channel_id,))
+            channel_info = cur.fetchone()
+            if channel_info:
+                cur.execute("SELECT community_id FROM channels WHERE id = %s", (channel_id,))
+                comm_row = cur.fetchone()
+                if comm_row:
+                    community_id_check = comm_row['community_id']
+                    cur.execute("SELECT user_id, blocked_at FROM blocked_users WHERE community_id = %s", (community_id_check,))
+                    blocked_list = cur.fetchall()
+                    if blocked_list:
+                        print(f"[DEBUG] Blocked users in community {community_id_check}: {[(b['user_id'], b['blocked_at']) for b in blocked_list]}")
+                    else:
+                        print(f"[DEBUG] No blocked users in community {community_id_check}")
 
         result = [{
             'id': m['id'],
@@ -67,8 +157,17 @@ def get_channel_messages(channel_id):
             'created_at': m['created_at'].isoformat() if m['created_at'] else None,
             'author': m['username'],
             'display_name': m['display_name'] or m['username'],
-            'avatar_url': get_avatar_url(m['username'], m['avatar_url'])  # ← FIXED!
+            'avatar_url': get_avatar_url(m['username'], m['avatar_url']),
+            'is_blocked': bool(m['is_blocked'])
         } for m in rows]
+        
+        # Debug: Log blocked users
+        blocked_messages = [msg for msg in result if msg['is_blocked']]
+        if blocked_messages:
+            print(f"[DEBUG] Found {len(blocked_messages)} messages from blocked users in channel {channel_id}")
+            for msg in blocked_messages:
+                print(f"  - Message {msg['id']} from {msg['author']} (user {msg['sender_id']}) is_blocked: True")
+        
         print("[DEBUG] Fetched channel messages:", result)
         return jsonify(result), 200
 
@@ -97,6 +196,8 @@ def send_message():
         if not channel_id or not content:
             return jsonify({'error': 'channel_id and content required'}), 400
 
+        log.info(f"[HTTP SEND] User {current_user} sending message to channel {channel_id}: {content[:50]}...")
+
         conn = get_db_connection()
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
@@ -104,12 +205,14 @@ def send_message():
             if not user:
                 return jsonify({'error': 'User not found'}), 404
             user_id = user['id']
+            log.info(f"[HTTP SEND] User ID: {user_id}")
 
             cur.execute("SELECT id, community_id FROM channels WHERE id = %s", (channel_id,))
             channel_row = cur.fetchone()
             if not channel_row:
                 return jsonify({'error': 'Channel not found'}), 404
             community_id = channel_row['community_id']
+            log.info(f"[HTTP SEND] Channel {channel_id} in community {community_id}")
 
             cur.execute("SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
                         (channel_id, user_id))
@@ -148,6 +251,99 @@ def send_message():
             role_row = cur.fetchone()
             user_role = role_row['role'] if role_row else 'member'
 
+            # 🤖 AI COMMAND DETECTION - Check before any processing
+            if content.strip().startswith('/'):
+                log.info(f"[HTTP] ✅ COMMAND DETECTED: {content}")
+                try:
+                    command_result = handle_ai_command(content, current_user, user_id, channel_id, community_id)
+                    log.info(f"[HTTP] ✅ Command handler returned: {command_result}")
+                    
+                    if command_result:
+                        # Emit command result via socket to ALL users in the channel
+                        from flask import current_app
+                        socketio = current_app.extensions.get('socketio')
+                        if socketio:
+                            log.info(f"[HTTP] ✅ SocketIO found, emitting to channel_{channel_id} and community_{community_id}")
+                            
+                            # Get all rooms and connected sockets for debugging
+                            try:
+                                from routes.sockets import user_socket_sessions
+                                user_sid = user_socket_sessions.get(current_user)
+                                log.info(f"[HTTP] 🔍 User '{current_user}' socket SID: {user_sid}")
+                                
+                                # Get socket's current rooms
+                                if user_sid:
+                                    from flask_socketio import rooms as get_rooms
+                                    user_rooms = get_rooms(sid=user_sid, namespace='/')
+                                    log.info(f"[HTTP] 🔍 Socket {user_sid} is in rooms: {user_rooms}")
+                                    
+                                    # Direct emission to user's socket as BACKUP
+                                    socketio.emit('command_result', command_result, room=user_sid, namespace='/')
+                                    log.info(f"[HTTP] ✅ DIRECT EMIT to user socket {user_sid}")
+                            except Exception as room_err:
+                                log.warning(f"[HTTP] ⚠️  Room check failed: {room_err}")
+                            
+                            # Emit to both rooms (standard broadcast)
+                            socketio.emit('command_result', command_result, room=f"channel_{channel_id}", namespace='/')
+                            log.info(f"[HTTP] ✅ ROOM EMIT to channel_{channel_id}")
+                            
+                            socketio.emit('command_result', command_result, room=f"community_{community_id}", namespace='/')
+                            log.info(f"[HTTP] ✅ ROOM EMIT to community_{community_id}")
+                        else:
+                            log.error(f"[HTTP] ❌ SocketIO not found in app extensions!")
+                        
+                        # Still save and broadcast the command message for transparency
+                        cur.execute("""
+                            INSERT INTO messages (channel_id, sender_id, content, message_type, reply_to)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (channel_id, user_id, content, 'text', reply_to or None))
+                        message_id = cur.lastrowid
+                        conn.commit()
+                        log.info(f"[HTTP] ✅ Command message saved with ID {message_id}")
+                        
+                        # Broadcast the command message itself too
+                        if socketio:
+                            msg_payload = {
+                                'id': message_id,
+                                'channel_id': channel_id,
+                                'sender_id': user_id,
+                                'content': content,
+                                'message_type': 'text',
+                                'created_at': datetime.now().isoformat(),
+                                'author': current_user,
+                                'avatar': None
+                            }
+                            socketio.emit('message_received', msg_payload, room=f"channel_{channel_id}", namespace='/')
+                            socketio.emit('message_received', msg_payload, room=f"community_{community_id}", namespace='/')
+                            log.info(f"[HTTP] ✅ Command message broadcasted")
+                        
+                        # Return command result + message info
+                        log.info(f"[HTTP] ✅ Returning success response with command_result")
+                        return jsonify({
+                            'message': {
+                                'id': message_id,
+                                'channel_id': channel_id,
+                                'sender_id': user_id,
+                                'content': content,
+                                'message_type': 'text',
+                                'created_at': datetime.now().isoformat(),
+                                'author': current_user
+                            },
+                            'command_result': command_result
+                        }), 201
+                    else:
+                        log.info(f"[HTTP] ⚠️  Command handler returned None, treating as regular message")
+                except Exception as cmd_error:
+                    log.error(f"[HTTP] ❌ Command error: {cmd_error}", exc_info=True)
+                    return jsonify({
+                        'error': f'Command failed: {str(cmd_error)}',
+                        'command_result': {
+                            'type': 'error',
+                            'success': False,
+                            'error': str(cmd_error)
+                        }
+                    }), 500
+
             # OWNER IMMUNITY: Skip all moderation for community owners
             if user_role == 'owner':
                 cur.execute("""
@@ -165,6 +361,26 @@ def send_message():
                 msg = cur.fetchone()
 
                 conn.commit()
+
+                # Broadcast over socket so all channel members receive instantly
+                from flask import current_app
+                socketio = current_app.extensions.get('socketio')
+                if socketio:
+                    payload = {
+                        'id': msg['id'],
+                        'channel_id': msg['channel_id'],
+                        'sender_id': user_id,
+                        'content': msg['content'],
+                        'message_type': msg['message_type'],
+                        'reply_to': msg['reply_to'],
+                        'created_at': msg['created_at'].isoformat(),
+                        'author': msg['username'],
+                        'avatar': get_avatar_url(msg['username'], msg['avatar_url']),
+                        'is_blocked': False,
+                        'moderation': None
+                    }
+                    socketio.emit('message_received', payload, room=f"channel_{channel_id}", namespace='/')
+                    socketio.emit('message_received', payload, room=f"community_{community_id}", namespace='/')
 
                 avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
                 return jsonify({
@@ -224,8 +440,41 @@ def send_message():
                     WHERE m.id = %s
                 """, (message_id,))
                 msg = cur.fetchone()
+                
+                # Check if user is blocked
+                cur.execute("""
+                    SELECT 1 FROM blocked_users 
+                    WHERE community_id = %s AND user_id = %s
+                """, (community_id, user_id))
+                is_blocked = cur.fetchone() is not None
 
                 conn.commit()
+
+                # Broadcast over socket so all channel members receive instantly
+                from flask import current_app
+                socketio = current_app.extensions.get('socketio')
+                if socketio:
+                    payload = {
+                        'id': msg['id'],
+                        'channel_id': msg['channel_id'],
+                        'sender_id': user_id,
+                        'content': msg['content'],
+                        'message_type': msg['message_type'],
+                        'reply_to': msg['reply_to'],
+                        'created_at': msg['created_at'].isoformat(),
+                        'author': msg['username'],
+                        'avatar': get_avatar_url(msg['username'], msg['avatar_url']),
+                        'is_blocked': is_blocked,
+                        'moderation': {
+                            'action': final_action,
+                            'severity': moderation_result['severity'],
+                            'flagged': final_action == 'warn',
+                            'reasons': moderation_result.get('reasons', []),
+                            'violation_count': violation_count
+                        }
+                    }
+                    socketio.emit('message_received', payload, room=f"channel_{channel_id}", namespace='/')
+                    socketio.emit('message_received', payload, room=f"community_{community_id}", namespace='/')
 
                 if final_action != 'allow':
                     moderation_agent.log_moderation_action(
@@ -247,6 +496,7 @@ def send_message():
                         'author': msg['username'],
                         'display_name': msg['display_name'] or msg['username'],
                         'avatar_url': avatar_url,
+                        'is_blocked': is_blocked,
                         'moderation': {
                             'action': final_action,
                             'severity': moderation_result['severity'],
@@ -284,6 +534,20 @@ def send_message():
 
             # Remove user from community and all its channels
             if final_action == 'remove_user':
+                # Get community details for notification
+                cur.execute("""
+                    SELECT name, logo_url, color, icon 
+                    FROM communities WHERE id = %s
+                """, (community_id,))
+                community_data = cur.fetchone()
+                
+                # Add to blocked_users table so they can't rejoin
+                cur.execute(
+                    "INSERT IGNORE INTO blocked_users (community_id, user_id) VALUES (%s, %s)",
+                    (community_id, user_id)
+                )
+                print(f"[DEBUG] Inserted into blocked_users: community_id={community_id}, user_id={user_id}")
+                
                 cur.execute(
                     "DELETE FROM channel_members WHERE user_id = %s AND channel_id IN (SELECT id FROM channels WHERE community_id = %s)",
                     (user_id, community_id)
@@ -293,15 +557,43 @@ def send_message():
                     (community_id, user_id)
                 )
                 conn.commit()
+                print(f"[DEBUG] Committed: User {user_id} removed from community {community_id}")
                 
-                # Emit socket event to disconnect user from community
+                # Verify the insert worked
+                cur.execute("""
+                    SELECT id FROM blocked_users 
+                    WHERE community_id = %s AND user_id = %s
+                """, (community_id, user_id))
+                blocked_record = cur.fetchone()
+                if blocked_record:
+                    print(f"[DEBUG] ✓ Verified blocked_users record exists: {blocked_record}")
+                else:
+                    print(f"[ERROR] ✗ blocked_users record NOT FOUND after insert!")
+                
+                # Emit socket event to disconnect user from community with notification data
                 from flask_socketio import emit
+                from flask import current_app
+                socketio = current_app.extensions['socketio']
+                
                 emit('community:removed', {
                     'community_id': community_id,
                     'user_id': user_id,
-                    'reason': 'moderation',
-                    'message': user_message
+                    'reason': 'violation',
+                    'message': user_message,
+                    'notification': {
+                        'community_name': community_data['name'] if community_data else 'Community',
+                        'community_logo': community_data['logo_url'] if community_data else None,
+                        'community_color': community_data['color'] if community_data else '#8B5CF6',
+                        'community_icon': community_data['icon'] if community_data else 'AF'
+                    }
                 }, to=f"user_{user_id}", namespace='/')
+                
+                # Notify all community members that this user was removed (so they can update UI)
+                socketio.emit('user_blocked_from_community', {
+                    'community_id': community_id,
+                    'user_id': user_id,
+                    'blocked_at': datetime.now().isoformat()
+                }, room=f"community_{community_id}", namespace='/')
                 
                 moderation_agent.log_moderation_action(
                     user_id, channel_id, content, 'remove_user',
@@ -320,10 +612,19 @@ def send_message():
                 }), 403
 
             # Block user (default case once count >= 4)
+            # Get community details for notification
+            cur.execute("""
+                SELECT name, logo_url, color, icon 
+                FROM communities WHERE id = %s
+            """, (community_id,))
+            community_data = cur.fetchone()
+            
             cur.execute(
                 "INSERT IGNORE INTO blocked_users (community_id, user_id) VALUES (%s, %s)",
                 (community_id, user_id)
             )
+            print(f"[DEBUG] Inserted into blocked_users: community_id={community_id}, user_id={user_id}")
+            
             cur.execute(
                 "DELETE FROM channel_members WHERE user_id = %s AND channel_id IN (SELECT id FROM channels WHERE community_id = %s)",
                 (user_id, community_id)
@@ -333,16 +634,43 @@ def send_message():
                 (community_id, user_id)
             )
             conn.commit()
+            print(f"[DEBUG] Committed: User {user_id} blocked from community {community_id}")
             
-            # Emit socket event to disconnect user from community
+            # Verify the insert worked
+            cur.execute("""
+                SELECT id FROM blocked_users 
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id))
+            blocked_record = cur.fetchone()
+            if blocked_record:
+                print(f"[DEBUG] ✓ Verified blocked_users record exists: {blocked_record}")
+            else:
+                print(f"[ERROR] ✗ blocked_users record NOT FOUND after insert!")
+            
+            # Emit socket event to disconnect user from community with notification data
             from flask_socketio import emit
+            from flask import current_app
+            socketio = current_app.extensions['socketio']
+            
             emit('community:removed', {
                 'community_id': community_id,
                 'user_id': user_id,
                 'reason': 'blocked',
-                'message': user_message,
-                'blocked': True
+                'message': 'You were blocked from this community for repeated violations.',
+                'notification': {
+                    'community_name': community_data['name'] if community_data else 'Community',
+                    'community_logo': community_data['logo_url'] if community_data else None,
+                    'community_color': community_data['color'] if community_data else '#8B5CF6',
+                    'community_icon': community_data['icon'] if community_data else 'AF'
+                }
             }, to=f"user_{user_id}", namespace='/')
+            
+            # Notify all community members that this user was blocked (so they can update UI)
+            socketio.emit('user_blocked_from_community', {
+                'community_id': community_id,
+                'user_id': user_id,
+                'blocked_at': datetime.now().isoformat()
+            }, room=f"community_{community_id}", namespace='/')
             
             moderation_agent.log_moderation_action(
                 user_id, channel_id, content, 'block_user',

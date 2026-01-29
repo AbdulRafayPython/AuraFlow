@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import AuthCard from "@/components/AuthCard";
 
 interface AuthPageProps {
@@ -7,6 +7,22 @@ interface AuthPageProps {
 
 const AuthPage = ({ onAuth }: AuthPageProps) => {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+
+  // Memoize particles to prevent re-renders
+  const particles = useMemo(() => 
+    [...Array(30)].map((_, i) => ({
+      id: i,
+      width: 2 + Math.random() * 4,
+      height: 2 + Math.random() * 4,
+      r: 150 + Math.random() * 105,
+      g: 100 + Math.random() * 155,
+      opacity: 0.3 + Math.random() * 0.4,
+      left: Math.random() * 100,
+      top: Math.random() * 100,
+      delay: Math.random() * 5,
+      duration: 8 + Math.random() * 12,
+      blur: 4 + Math.random() * 8
+    })), []);
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[#1a0b2e]">
@@ -27,19 +43,19 @@ const AuthPage = ({ onAuth }: AuthPageProps) => {
         
         {/* Floating particles - stars effect */}
         <div className="absolute inset-0">
-          {[...Array(30)].map((_, i) => (
+          {particles.map((p) => (
             <div
-              key={i}
+              key={p.id}
               className="absolute rounded-full animate-float"
               style={{
-                width: `${2 + Math.random() * 4}px`,
-                height: `${2 + Math.random() * 4}px`,
-                background: `rgba(${150 + Math.random() * 105}, ${100 + Math.random() * 155}, 255, ${0.3 + Math.random() * 0.4})`,
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 5}s`,
-                animationDuration: `${8 + Math.random() * 12}s`,
-                boxShadow: `0 0 ${4 + Math.random() * 8}px rgba(147, 112, 219, 0.6)`
+                width: `${p.width}px`,
+                height: `${p.height}px`,
+                background: `rgba(${p.r}, ${p.g}, 255, ${p.opacity})`,
+                left: `${p.left}%`,
+                top: `${p.top}%`,
+                animationDelay: `${p.delay}s`,
+                animationDuration: `${p.duration}s`,
+                boxShadow: `0 0 ${p.blur}px rgba(147, 112, 219, 0.6)`
               }}
             />
           ))}
@@ -88,6 +104,9 @@ const AuthPage = ({ onAuth }: AuthPageProps) => {
         }
         .animate-float {
           animation: float linear infinite;
+        }
+        .bg-gradient-radial {
+          background: radial-gradient(ellipse at center, var(--tw-gradient-stops));
         }
       `}</style>
     </div>

@@ -18,7 +18,7 @@ export default function EmojiPickerButton({
 }: EmojiPickerButtonProps) {
   const [showPicker, setShowPicker] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
-  const { isDarkMode } = useTheme();
+  const { isDarkMode, currentTheme } = useTheme();
 
   // Close picker when clicking outside
   useEffect(() => {
@@ -45,11 +45,7 @@ export default function EmojiPickerButton({
         type="button"
         onClick={() => setShowPicker(!showPicker)}
         disabled={disabled}
-        className={buttonClassName || `p-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-          isDarkMode 
-            ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700' 
-            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-        }`}
+        className={buttonClassName || `p-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-primary))]`}
         title="Add emoji"
       >
         <Smile className="w-5 h-5" />
@@ -59,9 +55,10 @@ export default function EmojiPickerButton({
         <div 
           className={`absolute z-50 ${
             pickerPosition === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
-          } right-0`}
+          } right-0 rounded-xl shadow-2xl border border-[hsl(var(--theme-border-default))] overflow-hidden`}
           style={{
-            animation: 'fadeIn 0.15s ease-in-out'
+            animation: 'fadeIn 0.15s ease-in-out',
+            backgroundColor: `hsl(var(--theme-bg-secondary))`,
           }}
         >
           <EmojiPicker

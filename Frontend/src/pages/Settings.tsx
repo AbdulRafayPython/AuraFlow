@@ -1,16 +1,21 @@
 import { useState, useEffect, useRef } from "react";
-import { useTheme } from "@/contexts/ThemeContext";
+import { useTheme, THEMES, ThemeId } from "@/contexts/ThemeContext";
 import { useFriends } from "@/contexts/FriendsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAvatarUrl } from "@/lib/utils";
-import { Settings as SettingsIcon, Shield, Lock, Bell, Palette, Moon, Sun, Volume2, Download, Ban, Trash2, AlertCircle, User as UserIcon, Camera, X, Save, Mail } from "lucide-react";
+import { 
+  Settings as SettingsIcon, Shield, Lock, Bell, Palette, Moon, Sun, Volume2, 
+  Download, Ban, Trash2, AlertCircle, User as UserIcon, Camera, X, Save, Mail, 
+  Check, Sparkles, ChevronRight, Edit3, Globe, Eye, EyeOff, Key, Smartphone,
+  MessageSquare, Users, Zap, Monitor, VolumeX, Volume1, ArrowRight, RefreshCw
+} from "lucide-react";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 
 export default function Settings() {
-  const { isDarkMode, toggleTheme } = useTheme();
+  const { isDarkMode, toggleTheme, currentTheme, setTheme, themes } = useTheme();
   const { blockedUsers, getBlockedUsers, unblockUser } = useFriends();
   const { user, updateProfile } = useAuth();
-  const [activeTab, setActiveTab] = useState<"profile" | "general" | "privacy" | "notifications" | "blocked">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "appearance" | "general" | "privacy" | "notifications" | "blocked">("profile");
   const [isLoadingBlocked, setIsLoadingBlocked] = useState(false);
   const [showUnblockConfirm, setShowUnblockConfirm] = useState(false);
   const [selectedBlockedUserId, setSelectedBlockedUserId] = useState<number | null>(null);
@@ -23,6 +28,7 @@ export default function Settings() {
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [profileSuccess, setProfileSuccess] = useState("");
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Update profile state when user changes
@@ -64,13 +70,11 @@ export default function Settings() {
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Validate file type
       if (!file.type.startsWith('image/')) {
         setProfileError('Please select an image file');
         return;
       }
       
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         setProfileError('Image size must be less than 5MB');
         return;
@@ -78,7 +82,6 @@ export default function Settings() {
       
       setAvatarFile(file);
       
-      // Create preview
       const reader = new FileReader();
       reader.onloadend = () => {
         setAvatarPreview(reader.result as string);
@@ -97,7 +100,7 @@ export default function Settings() {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
-      setProfileSuccess('Profile picture removed successfully');
+      setProfileSuccess('Profile picture removed');
       setTimeout(() => setProfileSuccess(''), 3000);
     } catch (error: any) {
       setProfileError(error.message || 'Failed to remove profile picture');
@@ -132,6 +135,7 @@ export default function Settings() {
       }
       
       setProfileSuccess('Profile updated successfully!');
+      setIsEditingProfile(false);
       setTimeout(() => setProfileSuccess(''), 3000);
     } catch (error: any) {
       setProfileError(error.message || 'Failed to update profile');
@@ -146,88 +150,173 @@ export default function Settings() {
   };
 
   const tabs = [
-    { id: "profile" as const, label: "Profile", icon: UserIcon },
-    { id: "general" as const, label: "General", icon: SettingsIcon },
-    { id: "privacy" as const, label: "Privacy & Safety", icon: Shield },
-    { id: "notifications" as const, label: "Notifications", icon: Bell },
-    { id: "blocked" as const, label: "Blocked Users", icon: Ban, count: blockedUsers.length },
+    { id: "profile" as const, label: "Profile", icon: UserIcon, description: "Manage your public profile" },
+    { id: "appearance" as const, label: "Appearance", icon: Palette, description: "Customize your theme" },
+    { id: "general" as const, label: "General", icon: SettingsIcon, description: "Language & accessibility" },
+    { id: "privacy" as const, label: "Privacy", icon: Shield, description: "Control your privacy" },
+    { id: "notifications" as const, label: "Notifications", icon: Bell, description: "Manage alerts" },
+    { id: "blocked" as const, label: "Blocked", icon: Ban, count: blockedUsers.length, description: "Blocked users" },
   ];
 
+  // Modern Toggle Switch Component
+  const ToggleSwitch = ({ enabled, onChange, size = "default" }: { enabled: boolean; onChange: () => void; size?: "default" | "small" }) => {
+    const sizes = {
+      default: { track: "h-7 w-12", thumb: "h-5 w-5", translate: "translate-x-5" },
+      small: { track: "h-5 w-9", thumb: "h-3.5 w-3.5", translate: "translate-x-4" }
+    };
+    const s = sizes[size];
+    
+    return (
+      <button
+        type="button"
+        onClick={onChange}
+        className={`relative inline-flex ${s.track} items-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] focus:ring-offset-2 focus:ring-offset-[hsl(var(--theme-bg-primary))] ${
+          enabled 
+            ? 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-[var(--theme-glow-secondary)]' 
+            : 'bg-[hsl(var(--theme-bg-tertiary))]'
+        }`}
+      >
+        <span
+          className={`inline-flex items-center justify-center ${s.thumb} transform rounded-full bg-white shadow-lg transition-all duration-300 ${
+            enabled ? s.translate : "translate-x-1"
+          }`}
+        >
+          {enabled && size === "default" && <Check className="w-3 h-3 text-[hsl(var(--theme-accent-primary))]" />}
+        </span>
+      </button>
+    );
+  };
+
+  // Setting Row Component
+  const SettingRow = ({ 
+    icon: Icon, 
+    title, 
+    description, 
+    children,
+    onClick,
+    danger = false
+  }: { 
+    icon: any; 
+    title: string; 
+    description?: string; 
+    children?: React.ReactNode;
+    onClick?: () => void;
+    danger?: boolean;
+  }) => (
+    <div 
+      className={`group flex items-center justify-between p-4 rounded-2xl transition-all duration-300 ${
+        onClick ? 'cursor-pointer hover:bg-[hsl(var(--theme-bg-hover))]' : ''
+      } ${danger ? 'hover:bg-red-500/10' : ''}`}
+      onClick={onClick}
+    >
+      <div className="flex items-center gap-4">
+        <div className={`p-2.5 rounded-xl transition-all duration-300 ${
+          danger 
+            ? 'bg-red-500/10 text-red-500 group-hover:bg-red-500/20' 
+            : 'bg-[hsl(var(--theme-accent-primary)/0.1)] text-[hsl(var(--theme-accent-primary))] group-hover:bg-[hsl(var(--theme-accent-primary)/0.15)]'
+        }`}>
+          <Icon className="w-5 h-5" />
+        </div>
+        <div>
+          <p className={`font-medium ${danger ? 'text-red-500' : 'text-[hsl(var(--theme-text-primary))]'}`}>
+            {title}
+          </p>
+          {description && (
+            <p className="text-sm text-[hsl(var(--theme-text-muted))] mt-0.5">
+              {description}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {children}
+        {onClick && <ChevronRight className="w-5 h-5 text-[hsl(var(--theme-text-muted))] group-hover:text-[hsl(var(--theme-text-primary))] transition-colors" />}
+      </div>
+    </div>
+  );
+
+  // Settings Card Component
+  const SettingsCard = ({ 
+    title, 
+    description,
+    children 
+  }: { 
+    title?: string; 
+    description?: string;
+    children: React.ReactNode 
+  }) => (
+    <div className="rounded-2xl border bg-[hsl(var(--theme-bg-secondary)/0.5)] border-[hsl(var(--theme-border-default)/0.5)] backdrop-blur-sm overflow-hidden">
+      {title && (
+        <div className="px-5 py-4 border-b border-[hsl(var(--theme-border-default)/0.5)]">
+          <h3 className="font-semibold text-[hsl(var(--theme-text-primary))]">{title}</h3>
+          {description && <p className="text-sm text-[hsl(var(--theme-text-muted))] mt-1">{description}</p>}
+        </div>
+      )}
+      <div className="p-2">
+        {children}
+      </div>
+    </div>
+  );
+
+  // Profile Settings
   const ProfileSettings = () => (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Success/Error Messages */}
       {profileSuccess && (
-        <div className={`p-4 rounded-xl border flex items-center gap-3 ${
-          isDarkMode ? 'bg-green-900/20 border-green-700 text-green-400' : 'bg-green-50 border-green-300 text-green-600'
-        }`}>
-          <Save className="w-5 h-5" />
-          <span>{profileSuccess}</span>
+        <div className="p-4 rounded-2xl border flex items-center gap-3 bg-emerald-500/10 border-emerald-500/30 text-emerald-500 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="p-1 rounded-full bg-emerald-500/20">
+            <Check className="w-4 h-4" />
+          </div>
+          <span className="font-medium">{profileSuccess}</span>
         </div>
       )}
       
       {profileError && (
-        <div className={`p-4 rounded-xl border flex items-center gap-3 ${
-          isDarkMode ? 'bg-red-900/20 border-red-700 text-red-400' : 'bg-red-50 border-red-300 text-red-600'
-        }`}>
-          <AlertCircle className="w-5 h-5" />
-          <span>{profileError}</span>
+        <div className="p-4 rounded-2xl border flex items-center gap-3 bg-red-500/10 border-red-500/30 text-red-500 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="p-1 rounded-full bg-red-500/20">
+            <AlertCircle className="w-4 h-4" />
+          </div>
+          <span className="font-medium">{profileError}</span>
         </div>
       )}
 
-      {/* Profile Picture Section */}
-      <div className={`p-6 rounded-xl border ${
-        isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
-      }`}>
-        <h3 className={`text-lg font-semibold mb-6 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-          Profile Picture
-        </h3>
-        
-        <div className="flex flex-col sm:flex-row items-center gap-6">
-          <div className="relative group">
-            <div className={`w-32 h-32 rounded-full overflow-hidden border-4 transition-all ${
-              isDarkMode ? 'border-slate-600' : 'border-gray-200'
-            } group-hover:border-blue-500`}>
-              <img 
-                src={getAvatarDisplay()} 
-                alt="Profile" 
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className={`absolute bottom-0 right-0 p-3 rounded-full shadow-lg transition-all ${
-                isDarkMode 
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-                  : 'bg-blue-500 hover:bg-blue-600 text-white'
-              }`}
-            >
-              <Camera className="w-5 h-5" />
-            </button>
-            {(avatarPreview || user?.avatar_url) && (
+      {/* Profile Card */}
+      <div className="relative overflow-hidden rounded-3xl border bg-[hsl(var(--theme-bg-secondary)/0.5)] border-[hsl(var(--theme-border-default)/0.5)] backdrop-blur-sm">
+        {/* Banner */}
+        <div className="h-32 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] via-[hsl(var(--theme-accent-secondary))] to-[hsl(var(--theme-accent-primary)/0.8)] relative">
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiIHN0cm9rZS13aWR0aD0iMiIvPjwvZz48L3N2Zz4=')] opacity-30" />
+        </div>
+
+        {/* Profile Content */}
+        <div className="px-6 pb-6">
+          {/* Avatar */}
+          <div className="relative -mt-16 mb-4">
+            <div className="relative inline-block group">
+              <div className="w-28 h-28 rounded-2xl overflow-hidden border-4 border-[hsl(var(--theme-bg-secondary))] shadow-xl transition-all duration-300 group-hover:scale-105">
+                <img 
+                  src={getAvatarDisplay()} 
+                  alt="Profile" 
+                  className="w-full h-full object-cover"
+                />
+              </div>
               <button
                 type="button"
-                onClick={removeAvatar}
-                disabled={isUpdatingProfile}
-                className={`absolute top-0 right-0 p-2 rounded-full shadow-lg transition-all ${
-                  isDarkMode 
-                    ? 'bg-red-600 hover:bg-red-700 text-white' 
-                    : 'bg-red-500 hover:bg-red-600 text-white'
-                } disabled:opacity-50`}
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute -bottom-2 -right-2 p-2.5 rounded-xl bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg hover:shadow-[var(--theme-glow-primary)] transition-all duration-300 hover:scale-110"
               >
-                <X className="w-4 h-4" />
+                <Camera className="w-4 h-4" />
               </button>
-            )}
-          </div>
-          
-          <div className="flex-1">
-            <h4 className={`font-medium mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              Upload New Picture
-            </h4>
-            <p className={`text-sm mb-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              Upload a profile picture or remove the current one to use the default avatar.
-              Maximum size: 5MB
-            </p>
+              {(avatarPreview || user?.avatar_url) && (
+                <button
+                  type="button"
+                  onClick={removeAvatar}
+                  disabled={isUpdatingProfile}
+                  className="absolute -top-2 -right-2 p-1.5 rounded-lg bg-red-500 text-white shadow-lg hover:bg-red-600 transition-all duration-300 disabled:opacity-50"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
             <input
               ref={fileInputRef}
               type="file"
@@ -235,438 +324,471 @@ export default function Settings() {
               onChange={handleAvatarChange}
               className="hidden"
             />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  isDarkMode
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                    : 'bg-blue-500 hover:bg-blue-600 text-white'
-                }`}
-              >
-                Choose File
-              </button>
-              {(avatarPreview || user?.avatar_url) && (
+          </div>
+
+          {/* User Info or Edit Form */}
+          {!isEditingProfile ? (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-2xl font-bold text-[hsl(var(--theme-text-primary))]">
+                  {user?.display_name || user?.username}
+                </h2>
+                <p className="text-[hsl(var(--theme-text-muted))] flex items-center gap-1 mt-1">
+                  @{user?.username}
+                </p>
+              </div>
+              
+              {user?.bio && (
+                <p className="text-[hsl(var(--theme-text-secondary))] leading-relaxed">
+                  {user.bio}
+                </p>
+              )}
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  onClick={() => setIsEditingProfile(true)}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white font-medium shadow-lg hover:shadow-[var(--theme-glow-primary)] transition-all duration-300 hover:scale-[1.02]"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  Edit Profile
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleProfileUpdate} className="space-y-5 pt-2">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2 text-[hsl(var(--theme-text-secondary))]">
+                    Display Name
+                  </label>
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    required
+                    className="w-full px-4 py-3 rounded-xl border bg-[hsl(var(--theme-bg-tertiary)/0.5)] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] focus:border-transparent transition-all duration-300"
+                    placeholder="Your display name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2 text-[hsl(var(--theme-text-secondary))]">
+                    Bio
+                  </label>
+                  <textarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    rows={3}
+                    maxLength={500}
+                    placeholder="Tell others about yourself..."
+                    className="w-full px-4 py-3 rounded-xl border bg-[hsl(var(--theme-bg-tertiary)/0.5)] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] focus:border-transparent resize-none transition-all duration-300"
+                  />
+                  <p className="text-xs mt-2 text-[hsl(var(--theme-text-muted))]">
+                    {bio.length}/500 characters
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={isUpdatingProfile || !displayName.trim()}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white font-medium shadow-lg hover:shadow-[var(--theme-glow-primary)] transition-all duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
+                >
+                  {isUpdatingProfile ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      Save Changes
+                    </>
+                  )}
+                </button>
                 <button
                   type="button"
-                  onClick={removeAvatar}
-                  disabled={isUpdatingProfile}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    isDarkMode
-                      ? 'bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-600/50'
-                      : 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200'
-                  } disabled:opacity-50`}
+                  onClick={() => {
+                    setIsEditingProfile(false);
+                    setDisplayName(user?.display_name || "");
+                    setBio(user?.bio || "");
+                  }}
+                  className="px-5 py-2.5 rounded-xl border border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-secondary))] font-medium hover:bg-[hsl(var(--theme-bg-hover))] transition-all duration-300"
                 >
-                  Remove
+                  Cancel
                 </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Profile Information Form */}
-      <form onSubmit={handleProfileUpdate} className={`p-6 rounded-xl border ${
-        isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
-      }`}>
-        <h3 className={`text-lg font-semibold mb-6 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-          Profile Information
-        </h3>
-        
-        <div className="space-y-5">
-          {/* Username (Read-only) */}
-          <div>
-            <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              Username
-            </label>
-            <div className={`flex items-center gap-2 px-4 py-3 rounded-lg border ${
-              isDarkMode ? 'bg-slate-700/50 border-slate-600 text-gray-400' : 'bg-gray-50 border-gray-300 text-gray-500'
-            }`}>
-              <span>@{user?.username}</span>
-              <span className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>(cannot be changed)</span>
-            </div>
-          </div>
-
-          {/* Email (Read-only) */}
-          <div>
-            <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              Email
-            </label>
-            <div className={`flex items-center gap-2 px-4 py-3 rounded-lg border ${
-              isDarkMode ? 'bg-slate-700/50 border-slate-600 text-gray-400' : 'bg-gray-50 border-gray-300 text-gray-500'
-            }`}>
-              <Mail className="w-4 h-4" />
-              <span>{user?.email || 'Not set'}</span>
-            </div>
-          </div>
-
-          {/* Display Name */}
-          <div>
-            <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              Display Name *
-            </label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              required
-              className={`w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
-                isDarkMode 
-                  ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-500' 
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
-              }`}
-            />
-          </div>
-
-          {/* Bio */}
-          <div>
-            <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              Bio
-            </label>
-            <textarea
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              rows={4}
-              maxLength={500}
-              placeholder="Tell others about yourself..."
-              className={`w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none transition-all ${
-                isDarkMode 
-                  ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-500' 
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
-              }`}
-            />
-            <p className={`text-xs mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-600'}`}>
-              {bio.length}/500 characters
-            </p>
-          </div>
-
-          {/* Save Button */}
-          <div className="flex justify-end pt-4">
-            <button
-              type="submit"
-              disabled={isUpdatingProfile || !displayName.trim()}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg font-semibold transition-all transform hover:scale-[1.02] shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-            >
-              {isUpdatingProfile ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="w-5 h-5" />
-                  Save Changes
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      </form>
-    </div>
-  );
-
-  const GeneralSettings = () => (
-    <div className="max-w-2xl space-y-6">
-      <div>
-        <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          Appearance
-        </h3>
-        <div className={`p-4 rounded-lg border ${
-          isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-        }`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Dark Mode
-              </p>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Toggle between light and dark theme
-              </p>
-            </div>
-            <button
-              onClick={toggleTheme}
-              className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
-                isDarkMode ? "bg-blue-600" : "bg-gray-300"
-              }`}
-            >
-              <span
-                className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
-                  isDarkMode ? "translate-x-7" : "translate-x-1"
-                }`}
-              />
-              <div className={`absolute flex items-center justify-center w-full h-full pointer-events-none ${
-                isDarkMode ? "text-blue-600" : "text-gray-400"
-              }`}>
-                {isDarkMode ? <Moon className="w-3 h-3 ml-1" /> : <Sun className="w-3 h-3 mr-1" />}
               </div>
-            </button>
-          </div>
+            </form>
+          )}
         </div>
       </div>
 
-      <div>
-        <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          Language & Region
-        </h3>
-        <div className={`p-4 rounded-lg border ${
-          isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-        }`}>
-          <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-            Language
-          </label>
-          <select className={`w-full px-3 py-2 rounded border ${
-            isDarkMode
-              ? "bg-slate-900 border-slate-700 text-white"
-              : "bg-white border-gray-300 text-gray-900"
-          } focus:outline-none focus:ring-2 focus:ring-blue-500`}>
-            <option>English (US)</option>
-            <option>English (UK)</option>
-            <option>Spanish</option>
-            <option>French</option>
-            <option>German</option>
-            <option>Chinese</option>
-            <option>Japanese</option>
-          </select>
+      {/* Account Details */}
+      <SettingsCard title="Account Details" description="Your account information">
+        <SettingRow 
+          icon={Mail} 
+          title="Email Address"
+          description={user?.email || 'Not set'}
+        />
+        <SettingRow 
+          icon={UserIcon} 
+          title="Username"
+          description={`@${user?.username}`}
+        />
+      </SettingsCard>
+    </div>
+  );
+
+  // Theme Preview Card Component  
+  const ThemePreviewCard = ({ themeId, theme }: { themeId: ThemeId; theme: typeof themes[ThemeId] }) => {
+    const isSelected = currentTheme === themeId;
+    const isSpecialTheme = ['neon', 'hologram', 'plasma', 'galaxy', 'frost', 'ember'].includes(themeId);
+    
+    return (
+      <button
+        onClick={() => setTheme(themeId)}
+        className={`relative group rounded-2xl overflow-hidden transition-all duration-500 ${
+          isSelected 
+            ? 'ring-2 ring-[hsl(var(--theme-accent-primary))] scale-[1.02] shadow-xl shadow-[hsl(var(--theme-accent-primary)/0.2)]' 
+            : 'hover:scale-[1.02] hover:shadow-lg border border-[hsl(var(--theme-border-default)/0.5)]'
+        }`}
+      >
+        {/* Theme Preview */}
+        <div 
+          className="h-24 relative overflow-hidden"
+          style={{ backgroundColor: theme.preview.bg }}
+        >
+          {/* Minimalist UI mockup */}
+          <div className="absolute inset-3 flex gap-2">
+            <div 
+              className="w-8 h-full rounded-lg opacity-60"
+              style={{ backgroundColor: theme.preview.bg, filter: 'brightness(0.7)' }}
+            />
+            <div className="flex-1 flex flex-col gap-2">
+              <div 
+                className="h-4 w-full rounded-md opacity-40"
+                style={{ backgroundColor: theme.preview.bg, filter: 'brightness(1.3)' }}
+              />
+              <div className="flex-1 rounded-lg opacity-20" style={{ backgroundColor: theme.preview.accent }} />
+              <div 
+                className="h-6 w-20 rounded-full ml-auto"
+                style={{ background: `linear-gradient(135deg, ${theme.preview.accent} 0%, ${theme.preview.secondary} 100%)` }}
+              />
+            </div>
+          </div>
+          
+          {/* Glow effect for special themes */}
+          {isSpecialTheme && (
+            <div 
+              className="absolute inset-0 opacity-30"
+              style={{ 
+                background: `radial-gradient(circle at 70% 70%, ${theme.preview.accent}60 0%, transparent 50%)` 
+              }}
+            />
+          )}
+          
+          {/* Selected indicator */}
+          {isSelected && (
+            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-lg">
+              <Check className="w-4 h-4" style={{ color: theme.preview.accent }} />
+            </div>
+          )}
+          
+          {/* Special badge */}
+          {isSpecialTheme && (
+            <div 
+              className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider"
+              style={{ 
+                background: `linear-gradient(135deg, ${theme.preview.accent} 0%, ${theme.preview.secondary} 100%)`,
+                color: '#fff'
+              }}
+            >
+              New
+            </div>
+          )}
+        </div>
+        
+        {/* Theme Info */}
+        <div className="p-3 bg-[hsl(var(--theme-bg-secondary))]">
+          <div className="flex items-center justify-between">
+            <h4 className="font-semibold text-sm text-[hsl(var(--theme-text-primary))]">
+              {theme.name}
+            </h4>
+            {theme.isDark ? (
+              <Moon className="w-3.5 h-3.5 text-[hsl(var(--theme-text-muted))]" />
+            ) : (
+              <Sun className="w-3.5 h-3.5 text-amber-500" />
+            )}
+          </div>
+          
+          {/* Color dots */}
+          <div className="flex items-center gap-1 mt-2">
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: theme.preview.bg }} />
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: theme.preview.accent }} />
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: theme.preview.secondary }} />
+          </div>
+        </div>
+      </button>
+    );
+  };
+
+  // Appearance Settings
+  const AppearanceSettings = () => (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Current Theme Highlight */}
+      <div className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-[hsl(var(--theme-bg-secondary)/0.8)] to-[hsl(var(--theme-bg-tertiary)/0.5)] border-[hsl(var(--theme-border-default)/0.5)] backdrop-blur-sm p-6">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-[hsl(var(--theme-accent-primary)/0.1)] to-transparent rounded-full blur-3xl" />
+        
+        <div className="relative flex items-center gap-5">
+          <div 
+            className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-xl relative overflow-hidden"
+            style={{ 
+              background: `linear-gradient(135deg, ${themes[currentTheme].preview.accent} 0%, ${themes[currentTheme].preview.secondary} 100%)` 
+            }}
+          >
+            <Sparkles className="w-8 h-8 text-white drop-shadow-lg" />
+            <div className="absolute inset-0 bg-white/10 animate-pulse" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm text-[hsl(var(--theme-text-muted))] mb-1">Active Theme</p>
+            <h3 className="text-2xl font-bold text-[hsl(var(--theme-text-primary))]">
+              {themes[currentTheme].name}
+            </h3>
+            <p className="text-sm text-[hsl(var(--theme-text-secondary))] mt-1">
+              {themes[currentTheme].description}
+            </p>
+          </div>
+          <button
+            onClick={toggleTheme}
+            className="p-4 rounded-2xl bg-[hsl(var(--theme-bg-tertiary))] hover:bg-[hsl(var(--theme-bg-hover))] transition-all duration-300 group"
+          >
+            {isDarkMode ? (
+              <Moon className="w-6 h-6 text-[hsl(var(--theme-accent-primary))] group-hover:scale-110 transition-transform" />
+            ) : (
+              <Sun className="w-6 h-6 text-amber-500 group-hover:scale-110 transition-transform" />
+            )}
+          </button>
         </div>
       </div>
 
-      <div>
-        <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          Accessibility
-        </h3>
-        <div className={`space-y-3`}>
-          <div className={`p-4 rounded-lg border flex items-center justify-between ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-          }`}>
-            <div>
-              <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Compact Mode
-              </p>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Use a more compact layout
-              </p>
-            </div>
-            <input type="checkbox" className="w-5 h-5" />
-          </div>
-          <div className={`p-4 rounded-lg border flex items-center justify-between ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-          }`}>
-            <div>
-              <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Reduce Motion
-              </p>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Minimize animations and transitions
-              </p>
-            </div>
-            <input type="checkbox" className="w-5 h-5" />
-          </div>
+      {/* Theme Grid */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Moon className="w-4 h-4 text-[hsl(var(--theme-text-muted))]" />
+          <h4 className="text-sm font-medium text-[hsl(var(--theme-text-secondary))]">Dark Themes</h4>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {(Object.entries(themes) as [ThemeId, typeof themes[ThemeId]][])
+            .filter(([_, theme]) => theme.isDark)
+            .map(([id, theme]) => (
+              <ThemePreviewCard key={id} themeId={id} theme={theme} />
+            ))}
+        </div>
+      </div>
+      
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Sun className="w-4 h-4 text-amber-500" />
+          <h4 className="text-sm font-medium text-[hsl(var(--theme-text-secondary))]">Light Themes</h4>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {(Object.entries(themes) as [ThemeId, typeof themes[ThemeId]][])
+            .filter(([_, theme]) => !theme.isDark)
+            .map(([id, theme]) => (
+              <ThemePreviewCard key={id} themeId={id} theme={theme} />
+            ))}
         </div>
       </div>
     </div>
   );
 
-  const PrivacySettings = () => (
-    <div className="max-w-2xl space-y-6">
-      <div>
-        <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          Privacy Controls
-        </h3>
-        <div className={`space-y-3`}>
-          <div className={`p-4 rounded-lg border flex items-center justify-between ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-          }`}>
-            <div>
-              <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Show Online Status
-              </p>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Let friends see when you're online
-              </p>
-            </div>
-            <input type="checkbox" defaultChecked className="w-5 h-5" />
-          </div>
-          <div className={`p-4 rounded-lg border flex items-center justify-between ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-          }`}>
-            <div>
-              <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Show Last Seen
-              </p>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Let friends see when you were last active
-              </p>
-            </div>
-            <input type="checkbox" defaultChecked className="w-5 h-5" />
-          </div>
-          <div className={`p-4 rounded-lg border flex items-center justify-between ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-          }`}>
-            <div>
-              <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Allow Friend Requests
-              </p>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Allow anyone to send you friend requests
-              </p>
-            </div>
-            <input type="checkbox" defaultChecked className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
+  // General Settings
+  const GeneralSettings = () => {
+    const [compactMode, setCompactMode] = useState(false);
+    const [reduceMotion, setReduceMotion] = useState(false);
+    
+    return (
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <SettingsCard title="Language & Region" description="Configure your language preferences">
+          <SettingRow 
+            icon={Globe} 
+            title="Language"
+            description="English (US)"
+            onClick={() => {}}
+          />
+        </SettingsCard>
 
-      <div>
-        <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          Security
-        </h3>
-        <div className={`space-y-3`}>
-          <div className={`p-4 rounded-lg border ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-          }`}>
-            <p className={`font-medium mb-3 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-              Change Password
-            </p>
-            <button className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors">
-              Update Password
-            </button>
-          </div>
-          <div className={`p-4 rounded-lg border ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-          }`}>
-            <p className={`font-medium mb-3 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-              Two-Factor Authentication
-            </p>
-            <p className={`text-sm mb-3 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-              Add an extra layer of security to your account
-            </p>
-            <button className="px-4 py-2 rounded-lg border border-blue-600 text-blue-600 hover:bg-blue-600/10 text-sm font-medium transition-colors">
-              Enable 2FA
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+        <SettingsCard title="Accessibility" description="Customize your experience">
+          <SettingRow 
+            icon={Monitor} 
+            title="Compact Mode"
+            description="Use a more compact layout"
+          >
+            <ToggleSwitch enabled={compactMode} onChange={() => setCompactMode(!compactMode)} />
+          </SettingRow>
+          <SettingRow 
+            icon={Zap} 
+            title="Reduce Motion"
+            description="Minimize animations"
+          >
+            <ToggleSwitch enabled={reduceMotion} onChange={() => setReduceMotion(!reduceMotion)} />
+          </SettingRow>
+        </SettingsCard>
 
-  const NotificationSettings = () => (
-    <div className="max-w-2xl space-y-6">
-      <div>
-        <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          Message Notifications
-        </h3>
-        <div className={`space-y-3`}>
-          <div className={`p-4 rounded-lg border flex items-center justify-between ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-          }`}>
-            <div>
-              <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Direct Messages
-              </p>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Notify me about direct messages
-              </p>
-            </div>
-            <input type="checkbox" defaultChecked className="w-5 h-5" />
-          </div>
-          <div className={`p-4 rounded-lg border flex items-center justify-between ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-          }`}>
-            <div>
-              <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Channel Messages
-              </p>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Notify me about channel messages
-              </p>
-            </div>
-            <input type="checkbox" defaultChecked className="w-5 h-5" />
-          </div>
-        </div>
+        <SettingsCard title="Data & Storage" description="Manage your data">
+          <SettingRow 
+            icon={Download} 
+            title="Download Your Data"
+            description="Get a copy of your data"
+            onClick={() => {}}
+          />
+        </SettingsCard>
       </div>
+    );
+  };
 
-      <div>
-        <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          Friend Activity
-        </h3>
-        <div className={`space-y-3`}>
-          <div className={`p-4 rounded-lg border flex items-center justify-between ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-          }`}>
-            <div>
-              <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Friend Requests
-              </p>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Notify me about new friend requests
-              </p>
-            </div>
-            <input type="checkbox" defaultChecked className="w-5 h-5" />
-          </div>
-          <div className={`p-4 rounded-lg border flex items-center justify-between ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-          }`}>
-            <div>
-              <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Friend Online Status
-              </p>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Notify me when friends come online
-              </p>
-            </div>
-            <input type="checkbox" className="w-5 h-5" />
-          </div>
-        </div>
+  // Privacy Settings
+  const PrivacySettings = () => {
+    const [showOnline, setShowOnline] = useState(true);
+    const [showLastSeen, setShowLastSeen] = useState(true);
+    const [allowRequests, setAllowRequests] = useState(true);
+    
+    return (
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <SettingsCard title="Visibility" description="Control who can see your activity">
+          <SettingRow 
+            icon={Eye} 
+            title="Show Online Status"
+            description="Let friends see when you're online"
+          >
+            <ToggleSwitch enabled={showOnline} onChange={() => setShowOnline(!showOnline)} />
+          </SettingRow>
+          <SettingRow 
+            icon={EyeOff} 
+            title="Show Last Seen"
+            description="Let friends see when you were last active"
+          >
+            <ToggleSwitch enabled={showLastSeen} onChange={() => setShowLastSeen(!showLastSeen)} />
+          </SettingRow>
+          <SettingRow 
+            icon={Users} 
+            title="Allow Friend Requests"
+            description="Allow anyone to send you friend requests"
+          >
+            <ToggleSwitch enabled={allowRequests} onChange={() => setAllowRequests(!allowRequests)} />
+          </SettingRow>
+        </SettingsCard>
+
+        <SettingsCard title="Security" description="Protect your account">
+          <SettingRow 
+            icon={Key} 
+            title="Change Password"
+            description="Update your password"
+            onClick={() => {}}
+          />
+          <SettingRow 
+            icon={Smartphone} 
+            title="Two-Factor Authentication"
+            description="Add an extra layer of security"
+            onClick={() => {}}
+          />
+        </SettingsCard>
+
+        <SettingsCard>
+          <SettingRow 
+            icon={Trash2} 
+            title="Delete Account"
+            description="Permanently delete your account"
+            onClick={() => {}}
+            danger
+          />
+        </SettingsCard>
       </div>
+    );
+  };
 
-      <div>
-        <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          Sound & Vibration
-        </h3>
-        <div className={`space-y-3`}>
-          <div className={`p-4 rounded-lg border flex items-center justify-between ${
-            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-          }`}>
-            <div>
-              <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                Notification Sounds
-              </p>
-              <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                Play sounds for notifications
-              </p>
-            </div>
-            <input type="checkbox" defaultChecked className="w-5 h-5" />
-          </div>
-        </div>
+  // Notification Settings
+  const NotificationSettings = () => {
+    const [dmNotifs, setDmNotifs] = useState(true);
+    const [channelNotifs, setChannelNotifs] = useState(true);
+    const [friendRequests, setFriendRequests] = useState(true);
+    const [friendOnline, setFriendOnline] = useState(false);
+    const [sounds, setSounds] = useState(true);
+    
+    return (
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <SettingsCard title="Messages" description="Notification preferences for messages">
+          <SettingRow 
+            icon={MessageSquare} 
+            title="Direct Messages"
+            description="Notify me about direct messages"
+          >
+            <ToggleSwitch enabled={dmNotifs} onChange={() => setDmNotifs(!dmNotifs)} />
+          </SettingRow>
+          <SettingRow 
+            icon={Users} 
+            title="Channel Messages"
+            description="Notify me about channel messages"
+          >
+            <ToggleSwitch enabled={channelNotifs} onChange={() => setChannelNotifs(!channelNotifs)} />
+          </SettingRow>
+        </SettingsCard>
+
+        <SettingsCard title="Friends" description="Friend activity notifications">
+          <SettingRow 
+            icon={UserIcon} 
+            title="Friend Requests"
+            description="Notify me about new friend requests"
+          >
+            <ToggleSwitch enabled={friendRequests} onChange={() => setFriendRequests(!friendRequests)} />
+          </SettingRow>
+          <SettingRow 
+            icon={Zap} 
+            title="Friend Online Status"
+            description="Notify me when friends come online"
+          >
+            <ToggleSwitch enabled={friendOnline} onChange={() => setFriendOnline(!friendOnline)} />
+          </SettingRow>
+        </SettingsCard>
+
+        <SettingsCard title="Sound" description="Audio preferences">
+          <SettingRow 
+            icon={sounds ? Volume2 : VolumeX} 
+            title="Notification Sounds"
+            description="Play sounds for notifications"
+          >
+            <ToggleSwitch enabled={sounds} onChange={() => setSounds(!sounds)} />
+          </SettingRow>
+        </SettingsCard>
       </div>
-    </div>
-  );
+    );
+  };
 
+  // Blocked Users Settings
   const BlockedUsersSettings = () => (
-    <div className="max-w-2xl">
-      <div className="mb-6">
-        <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          Blocked Users
-        </h3>
-        <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-          Manage users you've blocked. They won't be able to send you messages or friend requests.
-        </p>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-[hsl(var(--theme-text-primary))]">Blocked Users</h3>
+          <p className="text-sm text-[hsl(var(--theme-text-muted))] mt-1">
+            {blockedUsers.length} {blockedUsers.length === 1 ? 'user' : 'users'} blocked
+          </p>
+        </div>
       </div>
 
       {isLoadingBlocked ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="flex items-center justify-center py-16">
+          <RefreshCw className="w-8 h-8 text-[hsl(var(--theme-accent-primary))] animate-spin" />
         </div>
       ) : blockedUsers.length === 0 ? (
-        <div className={`text-center py-12 rounded-lg border ${
-          isDarkMode ? "bg-slate-800/50 border-slate-700" : "bg-gray-50 border-gray-200"
-        }`}>
-          <Ban className={`w-12 h-12 mx-auto mb-3 ${isDarkMode ? "text-gray-600" : "text-gray-400"}`} />
-          <h4 className={`font-semibold mb-1 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-            No blocked users
-          </h4>
-          <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-            You haven't blocked anyone yet. When you block someone, they'll appear here.
+        <div className="text-center py-16 rounded-3xl border border-dashed bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.5)]">
+          <div className="w-16 h-16 rounded-2xl bg-[hsl(var(--theme-bg-tertiary))] flex items-center justify-center mx-auto mb-4">
+            <Ban className="w-8 h-8 text-[hsl(var(--theme-text-muted))]" />
+          </div>
+          <h4 className="font-semibold text-[hsl(var(--theme-text-primary))] mb-2">No blocked users</h4>
+          <p className="text-sm text-[hsl(var(--theme-text-muted))] max-w-xs mx-auto">
+            When you block someone, they'll appear here and won't be able to contact you.
           </p>
         </div>
       ) : (
@@ -674,32 +796,24 @@ export default function Settings() {
           {blockedUsers.map((user) => (
             <div
               key={user.id}
-              className={`flex items-center justify-between p-4 rounded-lg border transition-all ${
-                isDarkMode
-                  ? "bg-slate-800 border-slate-700 hover:bg-slate-750"
-                  : "bg-white border-gray-200 hover:bg-gray-50"
-              }`}
+              className="flex items-center justify-between p-4 rounded-2xl border bg-[hsl(var(--theme-bg-secondary)/0.5)] border-[hsl(var(--theme-border-default)/0.5)] hover:bg-[hsl(var(--theme-bg-hover))] transition-all duration-300 group"
             >
-              <div className="flex items-center gap-4 flex-1">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold text-lg relative flex-shrink-0 ${
-                  isDarkMode ? "bg-slate-700 text-slate-300" : "bg-gray-200 text-gray-700"
-                }`}>
-                  {user.blocked_user?.display_name?.charAt(0).toUpperCase() || 
-                   user.blocked_user?.username?.charAt(0).toUpperCase() || "?"}
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full">
-                    <Ban className="w-5 h-5 text-red-500" />
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="w-12 h-12 rounded-xl bg-[hsl(var(--theme-bg-tertiary))] flex items-center justify-center font-semibold text-lg text-[hsl(var(--theme-text-muted))]">
+                    {user.blocked_user?.display_name?.charAt(0).toUpperCase() || 
+                     user.blocked_user?.username?.charAt(0).toUpperCase() || "?"}
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 p-1 rounded-lg bg-red-500">
+                    <Ban className="w-3 h-3 text-white" />
                   </div>
                 </div>
                 <div>
-                  <h4 className={`font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                  <h4 className="font-semibold text-[hsl(var(--theme-text-primary))]">
                     {user.blocked_user?.display_name || user.blocked_user?.username}
                   </h4>
-                  <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                  <p className="text-sm text-[hsl(var(--theme-text-muted))]">
                     @{user.blocked_user?.username}
-                  </p>
-                  <p className={`text-xs flex items-center gap-1 mt-1 ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}>
-                    <AlertCircle className="w-3 h-3" />
-                    This user is blocked
                   </p>
                 </div>
               </div>
@@ -709,11 +823,7 @@ export default function Settings() {
                   setSelectedBlockedUserId(user.blocked_user_id);
                   setShowUnblockConfirm(true);
                 }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  isDarkMode
-                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                    : "bg-blue-100 hover:bg-blue-200 text-blue-700"
-                }`}
+                className="px-4 py-2 rounded-xl text-sm font-medium bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-accent-primary))] hover:text-white transition-all duration-300"
               >
                 Unblock
               </button>
@@ -725,45 +835,42 @@ export default function Settings() {
   );
 
   return (
-    <div className={`flex h-full ${isDarkMode ? "bg-slate-700" : "bg-gray-50"}`}>
+    <div className="flex h-full bg-[hsl(var(--theme-bg-primary))] transition-colors duration-300">
       {/* Sidebar */}
-      <div className={`hidden sm:flex w-64 flex-shrink-0 border-r ${
-        isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
-      }`}>
-        <div className="w-full p-6">
+      <div className="hidden md:flex w-72 flex-shrink-0 border-r bg-[hsl(var(--theme-bg-secondary)/0.5)] border-[hsl(var(--theme-border-default)/0.3)] backdrop-blur-sm">
+        <div className="w-full p-6 flex flex-col">
+          {/* Header */}
           <div className="flex items-center gap-3 mb-8">
-            <SettingsIcon className={`w-6 h-6 ${isDarkMode ? "text-blue-400" : "text-blue-600"}`} />
-            <h1 className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.3)]">
+              <SettingsIcon className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-xl font-bold text-[hsl(var(--theme-text-primary))]">
               Settings
             </h1>
           </div>
 
-          <nav className="space-y-2">
+          {/* Navigation */}
+          <nav className="space-y-1.5 flex-1">
             {tabs.map((tab) => {
               const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === tab.id
-                      ? isDarkMode
-                        ? "bg-blue-600 text-white"
-                        : "bg-blue-100 text-blue-600"
-                      : isDarkMode
-                      ? "text-gray-400 hover:bg-slate-700 hover:text-white"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-300 group ${
+                    isActive
+                      ? "bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.25)]"
+                      : "text-[hsl(var(--theme-text-muted))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]"
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className={`w-5 h-5 transition-transform duration-300 ${isActive ? '' : 'group-hover:scale-110'}`} />
                   <span className="flex-1 text-left">{tab.label}</span>
                   {tab.count !== undefined && tab.count > 0 && (
                     <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                      activeTab === tab.id
-                        ? "bg-white text-blue-600"
-                        : isDarkMode
-                        ? "bg-slate-700 text-gray-300"
-                        : "bg-gray-200 text-gray-700"
+                      isActive
+                        ? "bg-white/20"
+                        : "bg-red-500 text-white"
                     }`}>
                       {tab.count}
                     </span>
@@ -772,26 +879,30 @@ export default function Settings() {
               );
             })}
           </nav>
+
+          {/* Footer */}
+          <div className="pt-4 border-t border-[hsl(var(--theme-border-default)/0.3)]">
+            <p className="text-xs text-[hsl(var(--theme-text-muted))] text-center">
+              AuraFlow v1.0.0
+            </p>
+          </div>
         </div>
       </div>
 
       {/* Mobile Tab Selector */}
-      <div className={`sm:hidden w-full border-b ${isDarkMode ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
-        <div className="flex overflow-x-auto px-4 py-3">
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 border-b border-[hsl(var(--theme-border-default)/0.3)] bg-[hsl(var(--theme-bg-secondary)/0.95)] backdrop-blur-lg">
+        <div className="flex overflow-x-auto px-4 py-3 gap-2 no-scrollbar">
           {tabs.map((tab) => {
             const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
-                  activeTab === tab.id
-                    ? isDarkMode
-                      ? "bg-blue-600 text-white"
-                      : "bg-blue-100 text-blue-600"
-                    : isDarkMode
-                    ? "text-gray-400 hover:bg-slate-700"
-                    : "text-gray-600 hover:bg-gray-100"
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-300 ${
+                  isActive
+                    ? "bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg"
+                    : "text-[hsl(var(--theme-text-muted))] bg-[hsl(var(--theme-bg-tertiary))]"
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -803,12 +914,26 @@ export default function Settings() {
       </div>
 
       {/* Content */}
-      <div className={`flex-1 overflow-y-auto p-6 sm:p-8 ${isDarkMode ? "bg-slate-700" : "bg-gray-50"}`}>
-        {activeTab === "profile" && <ProfileSettings />}
-        {activeTab === "general" && <GeneralSettings />}
-        {activeTab === "privacy" && <PrivacySettings />}
-        {activeTab === "notifications" && <NotificationSettings />}
-        {activeTab === "blocked" && <BlockedUsersSettings />}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto p-6 md:p-8 md:pt-8 pt-20">
+          {/* Section Header */}
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-[hsl(var(--theme-text-primary))]">
+              {tabs.find(t => t.id === activeTab)?.label}
+            </h2>
+            <p className="text-[hsl(var(--theme-text-muted))] mt-1">
+              {tabs.find(t => t.id === activeTab)?.description}
+            </p>
+          </div>
+
+          {/* Tab Content */}
+          {activeTab === "profile" && <ProfileSettings />}
+          {activeTab === "appearance" && <AppearanceSettings />}
+          {activeTab === "general" && <GeneralSettings />}
+          {activeTab === "privacy" && <PrivacySettings />}
+          {activeTab === "notifications" && <NotificationSettings />}
+          {activeTab === "blocked" && <BlockedUsersSettings />}
+        </div>
       </div>
 
       {/* Unblock Confirmation Dialog */}

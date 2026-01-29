@@ -62,15 +62,9 @@ export default function FriendProfileModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
-        isDarkMode ? "bg-slate-800" : "bg-white"
-      }`}>
+      <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 bg-[hsl(var(--theme-bg-elevated))]">
         {/* Header with Gradient Background */}
-        <div className={`relative h-32 bg-gradient-to-br ${
-          isDarkMode
-            ? "from-blue-600 to-purple-600"
-            : "from-blue-500 to-purple-500"
-        }`}>
+        <div className="relative h-32 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))]">
           <button
             onClick={onClose}
             className="absolute top-4 right-4 p-2 rounded-lg bg-black/20 hover:bg-black/40 text-white transition-colors"
@@ -87,42 +81,29 @@ export default function FriendProfileModal({
               <img
                 src={getAvatarUrl(friend.avatar_url, friend.username)}
                 alt={friend.display_name}
-                className="w-28 h-28 rounded-full border-4 shadow-lg object-cover"
-                style={{
-                  borderColor: isDarkMode ? '#1e293b' : 'white'
-                }}
+                className="w-28 h-28 rounded-full border-4 shadow-lg object-cover border-[hsl(var(--theme-bg-elevated))]"
               />
-              <div className={`absolute bottom-2 right-2 w-6 h-6 rounded-full border-3 ${
-                isDarkMode ? "border-slate-800" : "border-white"
-              } ${statusColors[friend.status]} shadow-lg`} title={statusLabels[friend.status]} />
+              <div className={`absolute bottom-2 right-2 w-6 h-6 rounded-full border-3 border-[hsl(var(--theme-bg-elevated))] ${statusColors[friend.status]} shadow-lg`} title={statusLabels[friend.status]} />
             </div>
           </div>
 
           {/* User Info */}
           <div className="text-center mb-6">
-            <h2 className={`text-2xl font-bold mb-1 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            <h2 className="text-2xl font-bold mb-1 text-[hsl(var(--theme-text-primary))]">
               {friend.display_name}
             </h2>
-            <p className={`text-sm mb-3 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+            <p className="text-sm mb-3 text-[hsl(var(--theme-text-muted))]">
               @{friend.username}
             </p>
             <div className="flex items-center justify-center gap-2">
               <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
                 friend.status === "online"
-                  ? isDarkMode
-                    ? "bg-green-500/20 text-green-400"
-                    : "bg-green-100 text-green-700"
+                  ? "bg-green-500/20 text-green-400"
                   : friend.status === "idle"
-                  ? isDarkMode
-                    ? "bg-yellow-500/20 text-yellow-400"
-                    : "bg-yellow-100 text-yellow-700"
+                  ? "bg-yellow-500/20 text-yellow-400"
                   : friend.status === "dnd"
-                  ? isDarkMode
-                    ? "bg-red-500/20 text-red-400"
-                    : "bg-red-100 text-red-700"
-                  : isDarkMode
-                  ? "bg-gray-700 text-gray-400"
-                  : "bg-gray-100 text-gray-600"
+                  ? "bg-red-500/20 text-red-400"
+                  : "bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))]"
               }`}>
                 <div className={`w-2 h-2 rounded-full ${statusColors[friend.status]}`} />
                 {statusLabels[friend.status]}
@@ -131,7 +112,7 @@ export default function FriendProfileModal({
 
             {/* Last Seen */}
             {getLastSeenText(friend.last_seen) && (
-              <p className={`text-xs mt-2 ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}>
+              <p className="text-xs mt-2 text-[hsl(var(--theme-text-muted))]">
                 Last seen {getLastSeenText(friend.last_seen)}
               </p>
             )}
@@ -139,40 +120,36 @@ export default function FriendProfileModal({
 
           {/* Custom Status */}
           {friend.custom_status && (
-            <div className={`mb-6 p-3 rounded-lg text-center ${
-              isDarkMode
-                ? "bg-slate-700/50 border border-slate-600"
-                : "bg-gray-50 border border-gray-200"
-            }`}>
-              <p className={`text-sm italic ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+            <div className="mb-6 p-3 rounded-lg text-center bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))]">
+              <p className="text-sm italic text-[hsl(var(--theme-text-secondary))]">
                 "{friend.custom_status}"
               </p>
             </div>
           )}
 
           {/* Stats */}
-          <div className="grid grid-cols-3 gap-3 mb-6 py-4 border-y border-slate-700/50">
+          <div className="grid grid-cols-3 gap-3 mb-6 py-4 border-y border-[hsl(var(--theme-border-default))]">
             <div className="text-center">
-              <div className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              <div className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
                 0
               </div>
-              <div className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+              <div className="text-xs text-[hsl(var(--theme-text-muted))]">
                 Mutual Friends
               </div>
             </div>
             <div className="text-center">
-              <div className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              <div className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
                 0
               </div>
-              <div className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+              <div className="text-xs text-[hsl(var(--theme-text-muted))]">
                 Communities
               </div>
             </div>
             <div className="text-center">
-              <div className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              <div className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
                 —
               </div>
-              <div className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+              <div className="text-xs text-[hsl(var(--theme-text-muted))]">
                 Joined
               </div>
             </div>
@@ -185,16 +162,16 @@ export default function FriendProfileModal({
                 if (onMessage) onMessage(friend.id);
                 onClose();
               }}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white font-medium transition-all hover:shadow-[var(--theme-glow-primary)]"
             >
               <MessageCircle className="w-4 h-4" />
               Message
             </button>
-            <button className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium transition-colors">
+            <button className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] font-medium transition-colors">
               <Phone className="w-4 h-4" />
               Call
             </button>
-            <button className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium transition-colors">
+            <button className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] font-medium transition-colors">
               <Video className="w-4 h-4" />
               Video
             </button>
@@ -204,27 +181,19 @@ export default function FriendProfileModal({
           <div className="relative">
             <button
               onClick={() => setShowMenu(!showMenu)}
-              className={`w-full py-2 rounded-lg text-sm font-medium transition-colors ${
-                isDarkMode
-                  ? "bg-slate-700/50 hover:bg-slate-700 text-gray-300"
-                  : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-              }`}
+              className="w-full py-2 rounded-lg text-sm font-medium transition-colors bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]"
             >
               More Options
             </button>
 
             {showMenu && (
-              <div className={`absolute top-full mt-2 left-0 right-0 rounded-lg shadow-xl border overflow-hidden z-50 ${
-                isDarkMode
-                  ? "bg-slate-700 border-slate-600"
-                  : "bg-white border-gray-200"
-              }`}>
+              <div className="absolute top-full mt-2 left-0 right-0 rounded-lg shadow-xl border overflow-hidden z-50 bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]">
                 <button
                   onClick={() => {
                     setShowRemoveConfirm(true);
                     setShowMenu(false);
                   }}
-                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-500/10 text-red-500 transition-colors`}
+                  className="w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-500/10 text-red-500 transition-colors"
                 >
                   <UserMinus className="w-4 h-4" />
                   Remove Friend
@@ -234,7 +203,7 @@ export default function FriendProfileModal({
                     setShowBlockConfirm(true);
                     setShowMenu(false);
                   }}
-                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-500/10 text-red-500 transition-colors`}
+                  className="w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-500/10 text-red-500 transition-colors"
                 >
                   <Ban className="w-4 h-4" />
                   Block User

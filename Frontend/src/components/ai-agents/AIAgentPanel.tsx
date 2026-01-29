@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Bot, Brain, Shield, Heart, TrendingUp, BookOpen, Focus, X
+  Bot, Brain, Shield, Heart, TrendingUp, BookOpen, Focus, X, Sparkles, Activity
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -15,7 +15,7 @@ interface AIAgentPanelProps {
 
 export default function AIAgentPanel({ isOpen, onClose }: AIAgentPanelProps) {
   const { isDarkMode } = useTheme();
-  const { agentStatus, moderationAlerts } = useAIAgents();
+  const { agentStatus, moderationAlerts, getModerationStats } = useAIAgents();
   const { currentCommunity } = useRealtime();
   const navigate = useNavigate();
   const [agentStates, setAgentStates] = useState({
@@ -27,20 +27,30 @@ export default function AIAgentPanel({ isOpen, onClose }: AIAgentPanelProps) {
     knowledge: true,
     focus: true
   });
+  const [moderationCount, setModerationCount] = useState(0);
 
   // Check if user is owner
   const isOwner = currentCommunity?.role === 'owner';
-  
-  // Debug logging - comprehensive
+
+  // Fetch moderation stats when community changes
   useEffect(() => {
-    console.log('[AIAgentPanel] === DEBUG START ===');
-    console.log('[AIAgentPanel] currentCommunity:', JSON.stringify(currentCommunity, null, 2));
-    console.log('[AIAgentPanel] role value:', currentCommunity?.role);
-    console.log('[AIAgentPanel] role type:', typeof currentCommunity?.role);
-    console.log('[AIAgentPanel] isOwner:', isOwner);
-    console.log('[AIAgentPanel] comparison result:', currentCommunity?.role === 'owner');
-    console.log('[AIAgentPanel] === DEBUG END ===');
-  }, [currentCommunity, isOwner]);
+    const fetchModerationCount = async () => {
+      if (currentCommunity?.id && isOwner) {
+        try {
+          const stats = await getModerationStats(currentCommunity.id, 7);
+          const totalFlagged = (stats?.flagged_messages || 0) + 
+                               (stats?.blocked_messages || 0) + 
+                               (stats?.warnings_issued || 0);
+          setModerationCount(totalFlagged);
+        } catch (error) {
+          console.error('Error fetching moderation stats:', error);
+          setModerationCount(0);
+        }
+      }
+    };
+
+    fetchModerationCount();
+  }, [currentCommunity?.id, isOwner, getModerationStats]);
 
   const agents = [
     {
@@ -61,7 +71,6 @@ export default function AIAgentPanel({ isOpen, onClose }: AIAgentPanelProps) {
       color: 'pink',
       enabled: agentStates.mood
     },
-    // Only show moderation agent to owners
     ...(isOwner ? [{
       id: 'moderation',
       name: 'Moderation',
@@ -69,7 +78,7 @@ export default function AIAgentPanel({ isOpen, onClose }: AIAgentPanelProps) {
       icon: <Shield className="w-5 h-5" />,
       status: agentStatus.moderation || 'active',
       color: 'red',
-      alerts: moderationAlerts.length,
+      alerts: moderationCount + moderationAlerts.length,
       enabled: agentStates.moderation
     }] : []),
     {
@@ -115,51 +124,52 @@ export default function AIAgentPanel({ isOpen, onClose }: AIAgentPanelProps) {
       ...prev,
       [agentId]: enabled
     }));
-    // TODO: Persist to backend
   };
 
   const handleConfigure = (agentId: string) => {
     navigate(`/agent/${agentId}`);
   };
 
+  const activeCount = agents.filter(a => a.enabled).length;
+
   if (!isOpen) return null;
 
   return (
-    <div className={`h-full flex flex-col ${
-      isDarkMode ? 'bg-slate-900' : 'bg-white'
-    }`}>
-      {/* Fixed Header */}
-      <div className={`flex-shrink-0 flex items-center justify-between px-4 py-3 border-b ${
-        isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-gray-200 bg-white'
-      } shadow-sm`}>
-        <div className="flex items-center gap-2">
-          <div className={`p-2 rounded-lg ${
-            isDarkMode ? 'bg-blue-500/10' : 'bg-blue-50'
-          }`}>
-            <Bot className={`w-5 h-5 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+    <div className="h-full flex flex-col bg-[hsl(var(--theme-bg-primary))] transition-colors duration-300">
+      {/* Header */}
+      <div className="flex-shrink-0 px-4 py-4 border-b border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-header-bg))] transition-colors duration-300">
+        {/* Top accent line */}
+        <div 
+          className="absolute top-0 left-0 right-0 h-px"
+          style={{ background: 'var(--theme-accent-gradient)' }}
+        />
+        
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            {/* Glow effect */}
+            <div className="absolute inset-0 rounded-xl blur-lg opacity-40 bg-[hsl(var(--theme-accent-primary))]" />
+            <div className="relative p-2.5 rounded-xl bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-lg">
+              <Bot className="w-5 h-5 text-white" />
+            </div>
           </div>
-          <div>
-            <h2 className={`text-base font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+          <div className="flex-1">
+            <h2 className="text-base font-bold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
               AI Agents
+              <Sparkles className="w-4 h-4 text-[hsl(var(--theme-accent-primary))]" />
             </h2>
-            <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-600'}`}>
-              {agents.filter(a => a.enabled).length} of {agents.length} active
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <div className="flex items-center gap-1.5 text-xs text-[hsl(var(--theme-text-muted))]">
+                <Activity className="w-3 h-3 text-emerald-400" />
+                <span className="text-emerald-400 font-medium">{activeCount}</span>
+                <span>of {agents.length} active</span>
+              </div>
+            </div>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className={`p-1.5 rounded-lg transition-colors ${
-            isDarkMode ? 'hover:bg-slate-800 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
-          }`}
-          aria-label="Close AI Agents Panel"
-        >
-          <X className="w-4 h-4" />
-        </button>
       </div>
 
       {/* Scrollable Agent Cards */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}>
         {agents.map(agent => (
           <AgentCard
             key={agent.id}
@@ -175,6 +185,9 @@ export default function AIAgentPanel({ isOpen, onClose }: AIAgentPanelProps) {
             onConfigure={handleConfigure}
           />
         ))}
+        
+        {/* Bottom spacer for better scroll experience */}
+        <div className="h-4" />
       </div>
     </div>
   );
