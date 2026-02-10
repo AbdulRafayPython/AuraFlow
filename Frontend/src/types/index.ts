@@ -98,6 +98,7 @@ export interface Community {
   bio?: string;
   role?: 'owner' | 'admin' | 'member';
   member_count?: number;
+  channel_count?: number;
   created_at?: string;
   creator?: {
     username: string;

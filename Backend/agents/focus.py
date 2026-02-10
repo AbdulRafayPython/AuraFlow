@@ -244,6 +244,23 @@ class FocusAgent:
         try:
             conn = get_db_connection()
             with conn.cursor() as cur:
+                # Get or create the focus agent ID
+                cur.execute("""
+                    SELECT id FROM ai_agents WHERE type = 'focus' LIMIT 1
+                """)
+                agent_row = cur.fetchone()
+                
+                if not agent_row:
+                    # Create focus agent if it doesn't exist
+                    cur.execute("""
+                        INSERT INTO ai_agents (name, type, description, is_active)
+                        VALUES ('Focus Agent', 'focus', 
+                                'AI-powered conversation focus analysis', TRUE)
+                    """)
+                    agent_id = cur.lastrowid
+                else:
+                    agent_id = agent_row['id']
+                
                 output_data = {
                     'focus_score': analysis['focus_score'],
                     'focus_level': analysis['focus_level'],
@@ -254,11 +271,11 @@ class FocusAgent:
                 
                 cur.execute("""
                     INSERT INTO ai_agent_logs 
-                    (channel_id, action_type, input_text, 
+                    (agent_id, channel_id, action_type, input_text, 
                      output_text, confidence_score)
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                 """, (
-                    channel_id, 'focus_analysis',
+                    agent_id, channel_id, 'focus_analysis',
                     f"Analyzed {analysis['message_count']} messages",
                     json.dumps(output_data),
                     analysis['focus_score']

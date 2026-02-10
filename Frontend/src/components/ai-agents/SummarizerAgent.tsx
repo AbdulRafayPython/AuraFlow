@@ -7,7 +7,8 @@ import { SummaryResult } from '@/services/aiAgentService';
 import { useNavigate } from 'react-router-dom';
 
 export default function SummarizerAgent() {
-  const { isDarkMode } = useTheme();
+  const { isDarkMode, currentTheme } = useTheme();
+  const isBasicTheme = currentTheme === 'basic';
   const { generateSummary, getChannelSummaries, summaries } = useAIAgents();
   const { currentChannel } = useRealtime();
   const navigate = useNavigate();
@@ -94,7 +95,7 @@ export default function SummarizerAgent() {
         
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="text-center max-w-md">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center border border-blue-500/30">
+            <div className={`w-20 h-20 mx-auto mb-6 ${isBasicTheme ? 'rounded-lg bg-blue-500/15' : 'rounded-2xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20'} flex items-center justify-center border border-blue-500/30`}>
               <Brain className="w-10 h-10 text-blue-400" />
             </div>
             <h3 className="text-xl font-bold mb-3 text-[hsl(var(--theme-text-primary))]">
@@ -121,7 +122,7 @@ export default function SummarizerAgent() {
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div className="flex items-center gap-3 flex-1">
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30">
+            <div className={`p-2.5 ${isBasicTheme ? 'rounded-md bg-blue-500/15' : 'rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20'} border border-blue-500/30`}>
               <Brain className="w-5 h-5 text-blue-400" />
             </div>
             <div>
@@ -157,7 +158,7 @@ export default function SummarizerAgent() {
           <button
             onClick={handleGenerateSummary}
             disabled={isGenerating}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:from-blue-500 hover:to-cyan-500 hover:shadow-[0_0_20px_rgba(59,130,246,0.4)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
+            className={`flex items-center gap-2 px-5 py-2.5 ${isBasicTheme ? 'rounded-md bg-blue-600 hover:bg-blue-700' : 'rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 hover:shadow-[0_0_20px_rgba(59,130,246,0.4)]'} text-sm font-semibold transition-all duration-300 text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none`}
           >
             {isGenerating ? (
               <>

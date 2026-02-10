@@ -518,12 +518,13 @@ def register_socket_events(socketio):
                     if is_blocked:
                         log.info(f"[SOCKET] User {username} is BLOCKED in community {community_id}")
             
-            # 🛡️ SMART MODERATION CHECK (don't log here, will be logged by HTTP endpoint with message_id)
+            # 🛡️ SMART MODERATION CHECK (log all checks for accurate stats)
             moderation_result = moderation_agent.moderate_message(
                 text=content,
                 user_id=user_id,
                 channel_id=channel_id,
-                log=False  # Don't log here to avoid duplicates
+                message_id=message_id,
+                log=True  # Log all moderation checks for stats tracking
             )
             
             log.info(f"[MODERATION] Message {message_id} checked: {moderation_result['action']} (confidence: {moderation_result['confidence']})")

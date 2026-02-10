@@ -1,3 +1,4 @@
+
 # routes/friends.py
 from flask import jsonify, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -426,6 +427,139 @@ def remove_friend(friend_id):
         if conn:
             conn.rollback()
         return jsonify({'error': 'Failed to remove friend'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# =====================================
+# BLOCK FRIEND
+# =====================================
+from flask import abort
+@jwt_required()
+def block_friend(friend_id):
+    conn = None
+    try:
+        current_user = get_jwt_identity()
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get current user id
+            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+
+            if user_id == friend_id:
+                return jsonify({'error': 'Cannot block yourself'}), 400
+
+            # Check if already blocked
+            cur.execute("SELECT 1 FROM blocked_friends WHERE blocker_id = %s AND blocked_id = %s", (user_id, friend_id))
+            if cur.fetchone():
+                return jsonify({'error': 'User already blocked'}), 400
+
+            # Check if friend exists
+            cur.execute("SELECT id FROM users WHERE id = %s", (friend_id,))
+            if not cur.fetchone():
+                return jsonify({'error': 'User to block not found'}), 404
+
+            # Insert block
+            cur.execute("INSERT INTO blocked_friends (blocker_id, blocked_id) VALUES (%s, %s)", (user_id, friend_id))
+
+            # Optionally, remove from friends if present
+            cur.execute("""
+                DELETE FROM friends 
+                WHERE (user_id = %s AND friend_id = %s) 
+                   OR (user_id = %s AND friend_id = %s)
+            """, (user_id, friend_id, friend_id, user_id))
+
+        conn.commit()
+        return jsonify({'message': 'User blocked'}), 200
+
+    except Exception as e:
+        print(f"[ERROR] block_friend: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to block user'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@jwt_required()
+def get_blocked_friends():
+    conn = None
+    try:
+        current_user = get_jwt_identity()
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get current user id
+            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+
+            # Get blocked users
+            cur.execute("""
+                SELECT u.id, u.username, u.display_name, u.avatar_url
+                FROM blocked_friends bf
+                JOIN users u ON bf.blocked_id = u.id
+                WHERE bf.blocker_id = %s
+                ORDER BY bf.created_at DESC
+            """, (user_id,))
+            blocked = cur.fetchall()
+
+        result = [
+            {
+                'id': u['id'],
+                'username': u['username'],
+                'display_name': u['display_name'] or u['username'],
+                'avatar_url': u['avatar_url'] or f"https://api.dicebear.com/7.x/avataaars/svg?seed={u['username']}"
+            } for u in blocked
+        ]
+        return jsonify(result), 200
+
+    except Exception as e:
+        print(f"[ERROR] get_blocked_friends: {e}")
+        return jsonify({'error': 'Failed to fetch blocked users'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# UNBLOCK FRIEND
+# =====================================
+@jwt_required()
+def unblock_friend(friend_id):
+    conn = None
+    try:
+        current_user = get_jwt_identity()
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get current user id
+            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+
+            # Check if blocked
+            cur.execute("SELECT 1 FROM blocked_friends WHERE blocker_id = %s AND blocked_id = %s", (user_id, friend_id))
+            if not cur.fetchone():
+                return jsonify({'error': 'User is not blocked'}), 400
+
+            # Remove block
+            cur.execute("DELETE FROM blocked_friends WHERE blocker_id = %s AND blocked_id = %s", (user_id, friend_id))
+
+        conn.commit()
+        return jsonify({'message': 'User unblocked'}), 200
+
+    except Exception as e:
+        print(f"[ERROR] unblock_friend: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to unblock user'}), 500
     finally:
         if conn:
             conn.close()

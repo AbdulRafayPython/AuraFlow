@@ -91,6 +91,13 @@ def login():
 
             token = create_access_token(identity=row['username'])
             cur.execute("UPDATE users SET token = %s WHERE username = %s", (token, row['username']))
+            
+            # Check if user is admin (owner of any community)
+            cur.execute(
+                "SELECT 1 FROM community_members WHERE user_id = %s AND role = 'owner' LIMIT 1",
+                (row['id'],)
+            )
+            is_admin = cur.fetchone() is not None
         conn.commit()
     finally:
         conn.close()
@@ -98,6 +105,9 @@ def login():
     # 🔥 FIX: Use format_user_data helper for consistent avatar URL
     user_data = format_user_data(row)
     user_data['is_first_login'] = bool(row.get('is_first_login', False))
+    user_data['role'] = 'admin' if is_admin else 'user'
+    
+    print(f"[LOGIN] User: {user_data['username']}, Role: {user_data['role']}, Is Admin: {is_admin}")
 
     return jsonify({
         "token": token,
@@ -158,12 +168,23 @@ def get_me():
             row = cur.fetchone()
             if not row:
                 return jsonify({'error': 'User not found'}), 404
+            
+            # Check if user is admin (owner of any community)
+            user_id = row['id']
+            cur.execute(
+                "SELECT 1 FROM community_members WHERE user_id = %s AND role = 'owner' LIMIT 1",
+                (user_id,)
+            )
+            is_admin = cur.fetchone() is not None
     finally:
         conn.close()
 
     # 🔥 FIX: Use format_user_data helper
     user_data = format_user_data(row)
     user_data['is_first_login'] = bool(row.get('is_first_login', False))
+    user_data['role'] = 'admin' if is_admin else 'user'
+    
+    print(f"[GET_ME] User: {user_data['username']}, Role: {user_data['role']}, Is Admin: {is_admin}")
 
     return jsonify(user_data), 200
 

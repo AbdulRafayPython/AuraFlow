@@ -721,13 +721,30 @@ Now create the summary in this discussion style:"""
         try:
             conn = get_db_connection()
             with conn.cursor() as cur:
-                # Use actual schema: action_type, input_text, output_text
+                # Get or create the summarizer agent ID
+                cur.execute("""
+                    SELECT id FROM ai_agents WHERE type = 'summarizer' LIMIT 1
+                """)
+                agent_row = cur.fetchone()
+                
+                if not agent_row:
+                    # Create summarizer agent if it doesn't exist
+                    cur.execute("""
+                        INSERT INTO ai_agents (name, type, description, is_active)
+                        VALUES ('Summarizer Agent', 'summarizer', 
+                                'AI-powered conversation summarization', TRUE)
+                    """)
+                    agent_id = cur.lastrowid
+                else:
+                    agent_id = agent_row['id']
+                
+                # Log with agent_id for proper stats tracking
                 cur.execute("""
                     INSERT INTO ai_agent_logs 
-                    (action_type, channel_id, user_id, 
+                    (agent_id, action_type, channel_id, user_id, 
                      input_text, output_text)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, ('summarize_channel', channel_id, user_id,
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (agent_id, 'summarize_channel', channel_id, user_id,
                       input_data, output_data))
                 
                 conn.commit()

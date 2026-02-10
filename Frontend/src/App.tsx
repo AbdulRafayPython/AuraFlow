@@ -8,6 +8,7 @@ import { RealtimeProvider } from './contexts/RealtimeContext';
 import { VoiceProvider } from './contexts/VoiceContext';
 import { NotificationsProvider } from './contexts/NotificationsContext';
 import { AIAgentProvider } from './contexts/AIAgentContext';
+import { CommunityDashboardProvider } from './contexts/CommunityDashboardContext';
 import { useRealtime } from './hooks/useRealtime';
 import AuthPageWrapper from '@/pages/AuthPageWrapper';
 import Welcome from './components/onboarding/Welcome';
@@ -24,6 +25,18 @@ import OtpVerification from './pages/OtpVerification';
 import ResetPassword from './pages/ResetPassword';
 import { Toaster } from './components/ui/toaster';
 import { ModerationToastListener } from './components/ModerationToast';
+// Admin Dashboard Pages
+import {
+  AdminLayout,
+  AdminOverview,
+  FlaggedContent,
+  BlockedUsers,
+  CommunityHealth,
+  EngagementAnalytics,
+  MoodTrends,
+  UserManagement,
+  Reports
+} from './pages/admin';
 
 function AppRouter() {
   const { user, isAuthenticated, completeOnboarding } = useAuth();
@@ -125,6 +138,25 @@ export default function App() {
                           <Route path="/forgot-password" element={<ForgotPassword />} />
                           <Route path="/otp-verification" element={<OtpVerification />} />
                           <Route path="/reset-password" element={<ResetPassword />} />
+                          {/* Admin Dashboard Routes (wrapped with CommunityDashboardProvider) */}
+                          <Route path="/admin" element={
+                            <CommunityDashboardProvider>
+                              <AdminLayout />
+                            </CommunityDashboardProvider>
+                          }>
+                            <Route index element={<AdminOverview />} />
+                            <Route path="moderation">
+                              <Route path="flagged" element={<FlaggedContent />} />
+                              <Route path="blocked" element={<BlockedUsers />} />
+                            </Route>
+                            <Route path="users" element={<UserManagement />} />
+                            <Route path="analytics">
+                              <Route path="health" element={<CommunityHealth />} />
+                              <Route path="engagement" element={<EngagementAnalytics />} />
+                              <Route path="mood" element={<MoodTrends />} />
+                            </Route>
+                            <Route path="reports" element={<Reports />} />
+                          </Route>
                           <Route path="/*" element={<AppRouter />} />
                         </Routes>
                         <Toaster />

@@ -60,6 +60,10 @@ interface WorkspaceContextType {
   getCommunityMembers: (communityId: number) => Promise<void>;
   addCommunityMember: (communityId: number, userId: number) => Promise<void>;
   
+  // Community discovery
+  discoverCommunities: (search?: string, limit?: number, offset?: number) => Promise<Community[]>;
+  joinCommunity: (communityId: number) => Promise<void>;
+  
   // Loading states
   isLoadingWorkspaces: boolean;
   isLoadingChannels: boolean;
@@ -506,6 +510,39 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Discover communities (not joined yet)
+  const discoverCommunities = useCallback(async (search: string = '', limit: number = 20, offset: number = 0): Promise<Community[]> => {
+    try {
+      const communities = await channelService.discoverCommunities(search, limit, offset);
+      setError(null);
+      return communities;
+    } catch (err: any) {
+      console.error('[WorkspaceContext] Failed to discover communities:', err);
+      setError(err.message || 'Failed to discover communities');
+      throw err;
+    }
+  }, []);
+
+  // Join a community
+  const joinCommunity = useCallback(async (communityId: number) => {
+    try {
+      await channelService.joinCommunity(communityId);
+      // Refresh workspaces list to include the newly joined community
+      const data = await channelService.getCommunities();
+      setWorkspaces(data);
+      // Optionally set the joined community as current
+      const joinedCommunity = data.find(c => c.id === communityId);
+      if (joinedCommunity) {
+        setCurrentWorkspace(joinedCommunity);
+      }
+      setError(null);
+    } catch (err: any) {
+      console.error('[WorkspaceContext] Failed to join community:', err);
+      setError(err.message || 'Failed to join community');
+      throw err;
+    }
+  }, []);
+
   const clearError = useCallback(() => {
     setError(null);
   }, []);
@@ -555,6 +592,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     searchUsers,
     getCommunityMembers,
     addCommunityMember,
+    
+    // Community discovery
+    discoverCommunities,
+    joinCommunity,
     
     // Loading states
     isLoadingWorkspaces,

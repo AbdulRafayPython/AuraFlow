@@ -852,23 +852,24 @@ def analyze_engagement():
         if not result.get('success'):
             return jsonify(result), 400
         
-        # Format response
+        # Format response with safe defaults
+        engagement_score = result.get('engagement_score', 0)
         response = {
             'success': True,
             'analysis': {
-                'engagement_level': result['engagement_level'],
-                'engagement_score': int(result['engagement_score'] * 100),  # Convert to 0-100
-                'message_count': result['message_count'],
-                'participant_count': result['participant_count'],
-                'avg_messages_per_user': result['avg_messages_per_user'],
-                'silence_minutes': result['silence_minutes'],
-                'participation_balance': result['participation_balance'],
-                'suggestions': result['suggestions'],
-                'time_period_hours': result['time_period_hours']
+                'engagement_level': result.get('engagement_level', 'inactive'),
+                'engagement_score': int(engagement_score * 100) if engagement_score else 0,  # Convert to 0-100
+                'message_count': result.get('message_count', 0),
+                'participant_count': result.get('participant_count', 0),
+                'avg_messages_per_user': result.get('avg_messages_per_user', 0),
+                'silence_minutes': result.get('silence_minutes', 0),
+                'participation_balance': result.get('participation_balance', 0),
+                'suggestions': result.get('suggestions', []),
+                'time_period_hours': result.get('time_period_hours', time_period_hours)
             }
         }
         
-        print(f"[ENGAGEMENT] Analysis complete: {result['engagement_level']} ({result['engagement_score']}))")
+        print(f"[ENGAGEMENT] Analysis complete: {result.get('engagement_level', 'unknown')} ({result.get('engagement_score', 0)})")
         
         return jsonify(response), 200
         
@@ -902,7 +903,17 @@ def get_engagement_metrics(channel_id):
             """, (channel_id, user_id))
             
             if not cur.fetchone():
-                return jsonify({'error': 'Access denied'}), 403
+                # Return empty metrics instead of 403 for better UX
+                return jsonify({
+                    'success': True,
+                    'metrics': {
+                        'total_messages': 0,
+                        'active_users': 0,
+                        'engagement_score': 0,
+                        'silence_minutes': 0,
+                        'avg_messages_per_user': 0
+                    }
+                }), 200
         
         conn.close()
         
@@ -916,23 +927,26 @@ def get_engagement_metrics(channel_id):
                     'total_messages': 0,
                     'active_users': 0,
                     'engagement_score': 0,
-                    'silence_minutes': 0
+                    'silence_minutes': 0,
+                    'avg_messages_per_user': 0
                 }
             }), 200
         
         return jsonify({
             'success': True,
             'metrics': {
-                'total_messages': result['message_count'],
-                'active_users': result['participant_count'],
-                'engagement_score': int(result['engagement_score'] * 100),
-                'silence_minutes': result['silence_minutes'],
-                'avg_messages_per_user': result['avg_messages_per_user']
+                'total_messages': result.get('message_count', 0),
+                'active_users': result.get('participant_count', 0),
+                'engagement_score': int(result.get('engagement_score', 0) * 100),
+                'silence_minutes': result.get('silence_minutes', 0),
+                'avg_messages_per_user': result.get('avg_messages_per_user', 0)
             }
         }), 200
         
     except Exception as e:
         print(f"[AGENTS API] Error in get_engagement_metrics: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -1882,6 +1896,112 @@ def _calculate_wellness_insights(history):
 # =====================================
 # KNOWLEDGE BUILDER AGENT ROUTES
 # =====================================
+
+@agents_bp.route('/knowledge/base/<int:channel_id>', methods=['GET'])
+@jwt_required()
+def get_knowledge_base(channel_id):
+    """
+    Get knowledge base entries for a channel.
+    This endpoint is used by the AIAgentContext.
+    
+    Query params:
+        - limit: Maximum number of entries (default: 20)
+    
+    Returns:
+        List of knowledge base entries
+    """
+    conn = None
+    try:
+        username = get_jwt_identity()
+        limit = min(request.args.get('limit', 20, type=int), 100)
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get user ID
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+            
+            # Check if user is member of the channel
+            cur.execute("""
+                SELECT 1 FROM channel_members 
+                WHERE channel_id = %s AND user_id = %s
+            """, (channel_id, user_id))
+            
+            if not cur.fetchone():
+                # Return empty result instead of 403 for better UX
+                return jsonify({
+                    'success': True,
+                    'knowledge': [],
+                    'total': 0
+                }), 200
+            
+            # Get the community_id for this channel
+            cur.execute("SELECT community_id FROM channels WHERE id = %s", (channel_id,))
+            channel_row = cur.fetchone()
+            if not channel_row:
+                return jsonify({
+                    'success': True,
+                    'knowledge': [],
+                    'total': 0
+                }), 200
+            
+            community_id = channel_row['community_id']
+            
+            # Get knowledge base entries for this channel or community
+            cur.execute("""
+                SELECT 
+                    kb.id, kb.title, kb.content, kb.source, kb.question, kb.answer,
+                    kb.tags, kb.relevance_score, kb.usage_count, kb.related_channel,
+                    kb.created_at, kb.updated_at,
+                    u.username as created_by_username,
+                    c.name as channel_name
+                FROM knowledge_base kb
+                LEFT JOIN users u ON kb.created_by = u.id
+                LEFT JOIN channels c ON kb.related_channel = c.id
+                WHERE kb.related_channel = %s OR kb.community_id = %s
+                ORDER BY kb.created_at DESC
+                LIMIT %s
+            """, (channel_id, community_id, limit))
+            
+            entries = cur.fetchall()
+            
+            result = []
+            for entry in entries:
+                result.append({
+                    'id': entry['id'],
+                    'title': entry['title'],
+                    'content': entry['content'],
+                    'source': entry['source'],
+                    'question': entry['question'],
+                    'answer': entry['answer'],
+                    'tags': entry['tags'].split(',') if entry['tags'] else [],
+                    'relevance_score': float(entry['relevance_score']) if entry['relevance_score'] else 0,
+                    'usage_count': entry['usage_count'] or 0,
+                    'channel_id': entry['related_channel'],
+                    'channel_name': entry['channel_name'],
+                    'created_by': entry['created_by_username'],
+                    'created_at': entry['created_at'].isoformat() if entry['created_at'] else None,
+                    'updated_at': entry['updated_at'].isoformat() if entry['updated_at'] else None
+                })
+            
+            return jsonify({
+                'success': True,
+                'knowledge': result,
+                'total': len(result)
+            }), 200
+            
+    except Exception as e:
+        print(f"[AGENTS API] Error in get_knowledge_base: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
 
 @agents_bp.route('/knowledge/insights', methods=['GET'])
 @jwt_required()

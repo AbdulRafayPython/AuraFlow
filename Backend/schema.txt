@@ -186,6 +186,9 @@ CREATE TABLE messages (
   message_type ENUM('text','image','file','system','ai') DEFAULT 'text',
   reply_to BIGINT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  edited_at TIMESTAMP NULL,
+  moderation_flagged BOOLEAN DEFAULT FALSE,
+  moderation_score FLOAT DEFAULT 0.0,
   FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
   FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (reply_to) REFERENCES messages(id) ON DELETE SET NULL,
@@ -230,9 +233,23 @@ CREATE TABLE direct_messages (
   is_read BOOLEAN DEFAULT FALSE,
   read_at TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  edited_at TIMESTAMP NULL,
   FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_dm_pair (sender_id, receiver_id, created_at DESC)
+);
+
+CREATE TABLE direct_message_reactions (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  direct_message_id BIGINT NOT NULL,
+  user_id INT NOT NULL,
+  emoji VARCHAR(50) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (direct_message_id) REFERENCES direct_messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_dm_reaction (direct_message_id, user_id, emoji),
+  INDEX idx_dm_reactions (direct_message_id),
+  INDEX idx_dm_user_reactions (user_id)
 );
 
 -- =====================================
@@ -263,7 +280,7 @@ CREATE TABLE friends (
 );
 
 -- =====================================
--- 8️⃣ VOICE CHANNELS
+-- 8️⃣ VOICE CHANNELS & SESSIONS
 -- =====================================
 
 CREATE TABLE voice_channels (
@@ -283,6 +300,22 @@ CREATE TABLE voice_participants (
   left_at TIMESTAMP NULL,
   FOREIGN KEY (voice_channel_id) REFERENCES voice_channels(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE voice_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  channel_id INT NOT NULL,
+  user_id INT NOT NULL,
+  is_muted BOOLEAN DEFAULT FALSE,
+  is_deaf BOOLEAN DEFAULT FALSE,
+  joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_voice_session (channel_id, user_id),
+  INDEX idx_channel_id (channel_id),
+  INDEX idx_user_id (user_id),
+  INDEX idx_joined_at (joined_at)
 );
 
 -- =====================================
@@ -349,27 +382,107 @@ CREATE TABLE user_mood_history (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE user_moods (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  channel_id INT,
+  mood VARCHAR(50) NOT NULL,
+  sentiment_score FLOAT,
+  detected_emotions JSON,
+  message_sample TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE SET NULL,
+  INDEX idx_user_mood (user_id, created_at),
+  INDEX idx_channel_mood (channel_id, created_at)
+);
+
+CREATE TABLE mood_tracking (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  channel_id INT,
+  message_id BIGINT,
+  sentiment ENUM('positive', 'negative', 'neutral') NOT NULL,
+  sentiment_score DECIMAL(3,2) DEFAULT 0.00,
+  detected_language VARCHAR(20) DEFAULT 'en',
+  original_text TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  INDEX idx_user_mood (user_id, created_at DESC),
+  INDEX idx_channel_mood (channel_id, created_at DESC)
+);
+
+CREATE TABLE wellness_tracking (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  date DATE NOT NULL,
+  activity_score DECIMAL(5,2) DEFAULT 0.00,
+  stress_indicators INT DEFAULT 0,
+  positive_interactions INT DEFAULT 0,
+  negative_interactions INT DEFAULT 0,
+  breaks_taken INT DEFAULT 0,
+  total_messages INT DEFAULT 0,
+  wellness_score DECIMAL(3,2) DEFAULT 0.00,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_user_date (user_id, date),
+  INDEX idx_wellness_user (user_id, date DESC)
+);
+
 -- =====================================
 -- 1️⃣2️⃣ KNOWLEDGE BASE & SUMMARIES
 -- =====================================
 
 CREATE TABLE conversation_summaries (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  channel_id INT,
+  channel_id INT NOT NULL,
   summary TEXT,
+  summary_text TEXT NOT NULL,
+  message_count INT DEFAULT 0,
+  participants TEXT,
+  time_range_start TIMESTAMP NULL,
+  time_range_end TIMESTAMP NULL,
+  key_points TEXT,
+  start_message_id BIGINT,
+  end_message_id BIGINT,
   generated_by VARCHAR(50) DEFAULT 'summarizer_agent',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+  created_by INT,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_channel_summaries (channel_id, created_at DESC)
 );
 
 CREATE TABLE knowledge_base (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  title VARCHAR(255),
-  content TEXT,
-  source ENUM('chat','document','summary','agent'),
+  title VARCHAR(500) NOT NULL,
+  content TEXT NOT NULL,
+  source VARCHAR(50) DEFAULT 'agent',
+  question TEXT,
+  answer TEXT,
+  source_message_id BIGINT,
+  tags VARCHAR(500),
+  relevance_score DECIMAL(3,2) DEFAULT 0.00,
+  usage_count INT DEFAULT 0,
   related_channel INT NULL,
+  community_id INT,
+  created_by INT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (related_channel) REFERENCES channels(id) ON DELETE SET NULL
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (related_channel) REFERENCES channels(id) ON DELETE SET NULL,
+  FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE SET NULL,
+  FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE SET NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_kb_channel (related_channel),
+  INDEX idx_kb_community (community_id),
+  INDEX idx_channel (related_channel),
+  INDEX idx_created (created_at),
+  FULLTEXT INDEX idx_search (title, content),
+  FULLTEXT INDEX ft_kb_question (question),
+  FULLTEXT INDEX ft_kb_answer (answer)
 );
 
 -- =====================================
@@ -389,6 +502,67 @@ CREATE TABLE notifications (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (related_message_id) REFERENCES messages(id) ON DELETE SET NULL,
   FOREIGN KEY (related_channel_id) REFERENCES channels(id) ON DELETE SET NULL
+);
+
+-- =====================================
+-- 1️⃣4️⃣ MODERATION SYSTEM
+-- =====================================
+
+CREATE TABLE moderation_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  channel_id INT,
+  message_text TEXT NOT NULL,
+  flag_type ENUM('clean', 'profanity', 'hate_speech', 'harassment', 'spam', 'personal_info', 'toxic') DEFAULT 'clean',
+  severity ENUM('low', 'medium', 'high', 'critical') DEFAULT 'low',
+  confidence FLOAT DEFAULT 0.0,
+  action_taken ENUM('none', 'flagged', 'warned', 'deleted', 'banned') DEFAULT 'none',
+  reason TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE SET NULL,
+  INDEX idx_user_id (user_id),
+  INDEX idx_channel_id (channel_id),
+  INDEX idx_created_at (created_at),
+  INDEX idx_flag_type (flag_type),
+  INDEX idx_severity (severity)
+);
+
+CREATE TABLE moderation_log (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  message_id BIGINT NOT NULL,
+  channel_id INT NOT NULL,
+  user_id INT NOT NULL,
+  flag_type ENUM('toxic', 'spam', 'inappropriate', 'other') NOT NULL,
+  severity ENUM('low', 'medium', 'high', 'critical') DEFAULT 'medium',
+  action_taken ENUM('flagged', 'warned', 'deleted', 'none') DEFAULT 'flagged',
+  flagged_content TEXT,
+  reason TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_moderation_channel (channel_id, created_at DESC),
+  INDEX idx_moderation_user (user_id, created_at DESC)
+);
+
+-- =====================================
+-- 1️⃣5️⃣ ENGAGEMENT METRICS
+-- =====================================
+
+CREATE TABLE engagement_metrics (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  channel_id INT NOT NULL,
+  date DATE NOT NULL,
+  total_messages INT DEFAULT 0,
+  active_users INT DEFAULT 0,
+  avg_response_time DECIMAL(10,2) DEFAULT 0.00,
+  engagement_score DECIMAL(5,2) DEFAULT 0.00,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_channel_date (channel_id, date),
+  INDEX idx_engagement_channel (channel_id, date DESC)
 );
 
 -- 12. FINAL INDEXES

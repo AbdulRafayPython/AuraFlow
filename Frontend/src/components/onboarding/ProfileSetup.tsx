@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { getAvatarUrl } from "@/lib/utils";
-import { User, ArrowLeft, Loader, Camera, X } from "lucide-react";
+import { User, ArrowLeft, Loader, Camera, X, Check } from "lucide-react";
 
 interface ProfileSetupProps {
   onComplete: () => void;
@@ -23,21 +23,17 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Validate file type
       if (!file.type.startsWith('image/')) {
         setError('Please select an image file');
         return;
       }
       
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         setError('Image size must be less than 5MB');
         return;
       }
       
       setAvatarFile(file);
-      
-      // Create preview
       const reader = new FileReader();
       reader.onloadend = () => {
         setAvatarPreview(reader.result as string);
@@ -67,14 +63,12 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
     setIsLoading(true);
 
     try {
-      // Update profile with display_name, bio, and avatar
       await updateProfile({
         display_name: displayName,
         bio: bio || undefined,
         avatar: avatarFile || undefined,
       });
 
-      // Complete onboarding
       await completeOnboarding();
       onComplete();
     } catch (err: any) {
@@ -93,35 +87,36 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
   };
 
   return (
-    <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900' : 'bg-gradient-to-br from-gray-50 via-blue-50 to-gray-50'}`}>
-      <div className={`w-full max-w-2xl p-8 md:p-12 rounded-3xl shadow-2xl backdrop-blur-sm ${isDarkMode ? 'bg-slate-800/90 border border-slate-700/50' : 'bg-white/90 border border-gray-200/50'}`}>
+    <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
+      <div className={`w-full max-w-lg rounded-2xl shadow-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Header */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl mb-6 shadow-lg">
-            <User className="w-10 h-10 text-white" />
+        <div className={`p-6 pb-4 text-center border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl mb-4 shadow-lg shadow-indigo-500/25">
+            <User className="w-7 h-7 text-white" />
           </div>
-          <h1 className={`text-3xl md:text-4xl font-bold mb-3 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent`}>
-            Set Up Your Profile
+          <h1 className={`text-2xl font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            Set Up Profile
           </h1>
-          <p className={`text-lg ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            Personalize your AuraFlow experience
+          <p className={`text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            Personalize your account
           </p>
         </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className={`mb-6 p-4 rounded-xl border flex items-start gap-3 ${isDarkMode ? 'bg-red-900/20 border-red-700 text-red-400' : 'bg-red-50 border-red-300 text-red-600'}`}>
-            <div className="flex-1">{error}</div>
-          </div>
-        )}
+        {/* Content */}
+        <div className="p-6">
+          {/* Error Message */}
+          {error && (
+            <div className={`mb-4 p-3 rounded-lg border text-sm ${isDarkMode ? 'bg-red-900/20 border-red-800 text-red-400' : 'bg-red-50 border-red-200 text-red-600'}`}>
+              {error}
+            </div>
+          )}
 
-        {/* Avatar Upload Section */}
-        <div className="mb-8">
-          <div className="flex flex-col items-center gap-4">
-            <div className="relative group">
-              <div className={`w-32 h-32 rounded-full overflow-hidden border-4 transition-all ${
-                isDarkMode ? 'border-slate-600' : 'border-gray-200'
-              } group-hover:border-blue-500`}>
+          {/* Avatar Upload */}
+          <div className="flex justify-center mb-5">
+            <div className="relative">
+              <div className={`w-20 h-20 rounded-full overflow-hidden border-3 ${
+                isDarkMode ? 'border-slate-600' : 'border-slate-200'
+              }`}>
                 <img 
                   src={getAvatarDisplay()} 
                   alt="Profile" 
@@ -131,25 +126,17 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className={`absolute bottom-0 right-0 p-3 rounded-full shadow-lg transition-all ${
-                  isDarkMode 
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-                    : 'bg-blue-500 hover:bg-blue-600 text-white'
-                }`}
+                className="absolute -bottom-1 -right-1 p-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg transition-all"
               >
-                <Camera className="w-5 h-5" />
+                <Camera className="w-4 h-4" />
               </button>
               {avatarPreview && (
                 <button
                   type="button"
                   onClick={removeAvatar}
-                  className={`absolute top-0 right-0 p-2 rounded-full shadow-lg transition-all ${
-                    isDarkMode 
-                      ? 'bg-red-600 hover:bg-red-700 text-white' 
-                      : 'bg-red-500 hover:bg-red-600 text-white'
-                  }`}
+                  className="absolute -top-1 -right-1 p-1.5 rounded-full bg-red-500 hover:bg-red-600 text-white shadow-lg transition-all"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3 h-3" />
                 </button>
               )}
             </div>
@@ -160,104 +147,101 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
               onChange={handleAvatarChange}
               className="hidden"
             />
-            <p className={`text-sm text-center ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              Click the camera icon to upload a profile picture
-              <br />
-              <span className="text-xs">Maximum size: 5MB</span>
-            </p>
           </div>
+
+          {/* Username Badge */}
+          <div className={`mb-5 px-3 py-2 rounded-lg text-center ${isDarkMode ? 'bg-slate-700/50' : 'bg-slate-50'}`}>
+            <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Username: </span>
+            <span className={`text-sm font-medium ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>
+              @{user?.username}
+            </span>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                Display Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="How should we call you?"
+                required
+                className={`w-full px-3 py-2.5 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                  isDarkMode 
+                    ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-500' 
+                    : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
+                }`}
+              />
+            </div>
+
+            <div>
+              <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                Bio <span className="text-slate-400">(optional)</span>
+              </label>
+              <textarea
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                placeholder="Tell us about yourself..."
+                rows={2}
+                maxLength={200}
+                className={`w-full px-3 py-2.5 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none ${
+                  isDarkMode 
+                    ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-500' 
+                    : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
+                }`}
+              />
+              <p className={`text-[10px] mt-1 text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                {bio.length}/200
+              </p>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onBack}
+                className={`flex-1 py-3 border rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 ${
+                  isDarkMode
+                    ? 'border-slate-600 text-slate-300 hover:bg-slate-700'
+                    : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <ArrowLeft className="w-4 h-4" /> Back
+              </button>
+              <button
+                type="submit"
+                disabled={isLoading || !displayName.trim()}
+                className="flex-1 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader className="w-4 h-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    Complete
+                    <Check className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
 
-        {/* Current Username Display */}
-        <div className={`mb-6 p-4 rounded-xl border-2 border-dashed ${isDarkMode ? 'border-slate-600 bg-slate-700/50' : 'border-gray-300 bg-gray-50'}`}>
-          <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Your registration username:</p>
-          <p className={`text-lg font-semibold ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-            @{user?.username}
+        {/* Footer Progress */}
+        <div className={`px-6 py-4 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
+          <div className="flex items-center justify-center gap-2">
+            <div className={`w-8 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
+            <div className={`w-8 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
+            <div className="w-8 h-1 bg-indigo-600 rounded-full"></div>
+          </div>
+          <p className={`text-center text-[10px] mt-2 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+            STEP 3 OF 3
           </p>
         </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              Display Name *
-            </label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="How should we call you?"
-              required
-              className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
-                isDarkMode 
-                  ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-500' 
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
-              }`}
-            />
-            <p className={`text-xs mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-600'}`}>
-              This is how other users will see your name in the community
-            </p>
-          </div>
-
-          <div>
-            <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              Bio (Optional)
-            </label>
-            <textarea
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              placeholder="Tell us about yourself. What are your interests, skills, or what brings you here?"
-              rows={4}
-              maxLength={500}
-              className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none transition-all ${
-                isDarkMode 
-                  ? 'bg-slate-700 border-slate-600 text-white placeholder-gray-500' 
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
-              }`}
-            />
-            <p className={`text-xs mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-600'}`}>
-              {bio.length}/500 characters
-            </p>
-          </div>
-
-          <div className="flex flex-col md:flex-row gap-4 pt-4">
-            <button
-              type="button"
-              onClick={onBack}
-              className={`flex-1 py-4 border-2 rounded-xl font-semibold transition-all transform hover:scale-[1.02] shadow-lg flex items-center justify-center gap-2 ${
-                isDarkMode
-                  ? 'border-blue-600 text-blue-400 hover:bg-blue-600/10'
-                  : 'border-blue-600 text-blue-600 hover:bg-blue-50'
-              }`}
-            >
-              <ArrowLeft className="w-5 h-5" /> Back
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading || !displayName.trim()}
-              className="flex-1 py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl font-semibold transition-all transform hover:scale-[1.02] shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-            >
-              {isLoading ? (
-                <>
-                  <Loader className="w-5 h-5 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                "Complete Setup →"
-              )}
-            </button>
-          </div>
-        </form>
-
-        {/* Progress Indicator */}
-        <div className="flex items-center justify-center gap-2 mt-8">
-          <div className={`w-8 h-1.5 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></div>
-          <div className={`w-8 h-1.5 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></div>
-          <div className="w-8 h-1.5 bg-blue-600 rounded-full"></div>
-        </div>
-        <p className={`text-center text-xs mt-2 ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-          Step 3 of 3
-        </p>
       </div>
     </div>
   );

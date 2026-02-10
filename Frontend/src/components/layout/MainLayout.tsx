@@ -28,6 +28,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [selectedDMUser, setSelectedDMUser] = useState<{ id: number; username: string; display_name: string; avatar_url?: string } | null>(null);
+  const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
+  const [isCommunityManagementModalOpen, setIsCommunityManagementModalOpen] = useState(false);
 
   // Check if we're on an agent page or discover page
   const isAgentPage = location.pathname.startsWith('/agent/');
@@ -118,6 +120,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
           onNavigate={handleNavigation} 
           currentView={currentView} 
           selectedCommunity={currentCommunity?.id.toString()}
+          isMembersModalOpen={isMembersModalOpen}
+          isCommunityManagementModalOpen={isCommunityManagementModalOpen}
         />
       </div>
 
@@ -126,6 +130,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
         <div className="hidden md:flex flex-shrink-0 relative z-[50]">
           <ChannelSidebar 
             onNavigate={handleNavigation}
+            onMembersModalChange={setIsMembersModalOpen}
+            onCommunityManagementModalChange={setIsCommunityManagementModalOpen}
           />
         </div>
       )}

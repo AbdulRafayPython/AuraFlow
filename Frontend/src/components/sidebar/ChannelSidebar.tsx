@@ -22,6 +22,8 @@ import toast from "react-hot-toast";
 
 interface ChannelSidebarProps {
   onNavigate?: (view: string) => void;
+  onMembersModalChange?: (isOpen: boolean) => void;
+  onCommunityManagementModalChange?: (isOpen: boolean) => void;
 }
 
 interface CommunityMember {
@@ -33,7 +35,7 @@ interface CommunityMember {
   role: "owner" | "admin" | "member";
 }
 
-export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
+export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCommunityManagementModalChange }: ChannelSidebarProps) {
   const { isDarkMode, currentTheme } = useTheme();
   const {
     currentCommunity,
@@ -121,6 +123,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
 
   const handleCommunityManagementClick = () => {
     setIsCommunityManagementOpen(true);
+    onCommunityManagementModalChange?.(true);
   };
 
   const handleChannelCreated = (newChannel: any) => {
@@ -144,6 +147,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
 
   const handleCommunityDeleted = async () => {
     setIsCommunityManagementOpen(false);
+    onCommunityManagementModalChange?.(false);
     
     // Reload communities to update the list
     await reloadCommunities();
@@ -154,6 +158,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
 
   const handleCommunityLeft = async () => {
     setIsCommunityManagementOpen(false);
+    onCommunityManagementModalChange?.(false);
     
     // Reload communities to update the list
     await reloadCommunities();
@@ -213,7 +218,7 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
       <div
         className={`relative flex-shrink-0 h-full transition-all duration-200 ${
           isCollapsed ? "w-0" : "w-60"
-        }`}
+        } ${isMembersModalOpen ? "blur-[2px] pointer-events-none" : ""}`}
       >
         {/* Main Content */}
         {!isCollapsed && (
@@ -401,7 +406,10 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
                 className="px-4 py-3 border-t border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)]"
               >
                 <button
-                  onClick={() => setIsMembersModalOpen(true)}
+                  onClick={() => {
+                    setIsMembersModalOpen(true);
+                    onMembersModalChange?.(true);
+                  }}
                   className="w-full flex items-center gap-2 px-2 py-2 rounded text-sm transition-colors text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]"
                 >
                   <Users className="w-4 h-4 flex-shrink-0" />
@@ -455,7 +463,10 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
       {currentCommunity && (
         <CommunityMembersAddModal
           isOpen={isMembersModalOpen}
-          onClose={() => setIsMembersModalOpen(false)}
+          onClose={() => {
+            setIsMembersModalOpen(false);
+            onMembersModalChange?.(false);
+          }}
           communityId={currentCommunity.id}
           existingMembers={communityMembers}
           onMemberAdded={() => {
@@ -494,16 +505,17 @@ export default function ChannelSidebar({ onNavigate }: ChannelSidebarProps) {
       {currentCommunity && (
         <CommunityManagementModal
           isOpen={isCommunityManagementOpen}
-          onClose={() => setIsCommunityManagementOpen(false)}
+          onClose={() => {
+            setIsCommunityManagementOpen(false);
+            onCommunityManagementModalChange?.(false);
+          }}
           community={{
-            id: currentCommunity.id,
-            name: currentCommunity.name,
-            description: currentCommunity.description,
+            ...currentCommunity,
             icon: currentCommunity.icon || "AF",
             color: currentCommunity.color || "#8B5CF6",
-            logo_url: currentCommunity.logo_url,
-            banner_url: currentCommunity.banner_url,
             role: userRoleInCommunity,
+            member_count: communityMembers.length || currentCommunity.member_count,
+            channel_count: channels.length || currentCommunity.channel_count,
           }}
           userRole={userRoleInCommunity}
           onCommunityDeleted={handleCommunityDeleted}

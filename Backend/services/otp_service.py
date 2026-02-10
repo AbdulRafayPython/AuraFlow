@@ -50,7 +50,6 @@ def verify_otp(email: str, otp: str) -> tuple[bool, str]:
             if not _check(str(otp), row["otp_hash"]):
                 return False, "Invalid OTP"
 
-            # cur.execute("DELETE FROM otp_codes WHERE email = %s", (email,))
         conn.commit()
     finally:
         conn.close()

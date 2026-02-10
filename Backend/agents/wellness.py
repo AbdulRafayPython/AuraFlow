@@ -304,6 +304,23 @@ class WellnessAgent:
         try:
             conn = get_db_connection()
             with conn.cursor() as cur:
+                # Get or create the wellness agent ID
+                cur.execute("""
+                    SELECT id FROM ai_agents WHERE type = 'wellness' LIMIT 1
+                """)
+                agent_row = cur.fetchone()
+                
+                if not agent_row:
+                    # Create wellness agent if it doesn't exist
+                    cur.execute("""
+                        INSERT INTO ai_agents (name, type, description, is_active)
+                        VALUES ('Wellness Agent', 'wellness', 
+                                'AI-powered user wellness tracking', TRUE)
+                    """)
+                    agent_id = cur.lastrowid
+                else:
+                    agent_id = agent_row['id']
+                
                 output_data = {
                     'wellness_level': check_result['wellness_level'],
                     'concerns': check_result['concerns'],
@@ -313,11 +330,11 @@ class WellnessAgent:
                 
                 cur.execute("""
                     INSERT INTO ai_agent_logs 
-                    (user_id, action_type, input_text, 
+                    (agent_id, user_id, action_type, input_text, 
                      output_text, confidence_score)
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                 """, (
-                    user_id, 'wellness_check',
+                    agent_id, user_id, 'wellness_check',
                     f"Checked wellness metrics",
                     json.dumps(output_data),
                     1.0 if check_result['wellness_level'] == 'good' else 0.5

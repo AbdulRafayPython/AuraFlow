@@ -216,11 +216,29 @@ class KnowledgeBuilderAgent:
         return resources
     
     def _save_knowledge(self, channel_id: int, knowledge: Dict):
-        """Save knowledge to database"""
+        """Save knowledge to MySQL"""
         conn = None
+        
         try:
             conn = get_db_connection()
             with conn.cursor() as cur:
+                # Get or create the knowledge builder agent ID
+                cur.execute("""
+                    SELECT id FROM ai_agents WHERE type = 'knowledge' LIMIT 1
+                """)
+                agent_row = cur.fetchone()
+                
+                if not agent_row:
+                    # Create knowledge builder agent if it doesn't exist
+                    cur.execute("""
+                        INSERT INTO ai_agents (name, type, description, is_active)
+                        VALUES ('Knowledge Builder', 'knowledge', 
+                                'AI-powered knowledge extraction', TRUE)
+                    """)
+                    agent_id = cur.lastrowid
+                else:
+                    agent_id = agent_row['id']
+                
                 output_data = {
                     'knowledge_entries': len(knowledge['knowledge_entries']),
                     'qa_pairs': len(knowledge['qa_pairs']),
@@ -231,19 +249,17 @@ class KnowledgeBuilderAgent:
                 
                 cur.execute("""
                     INSERT INTO ai_agent_logs 
-                    (channel_id, action_type, input_text, 
+                    (agent_id, channel_id, action_type, input_text, 
                      output_text, confidence_score)
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                 """, (
-                    channel_id, 'knowledge_extraction',
+                    agent_id, channel_id, 'knowledge_extraction',
                     f"Extracted knowledge from conversations",
                     json.dumps(output_data),
                     min(knowledge['total_items'] / 10, 1.0)
                 ))
                 
-                # Persist extracted items into knowledge_base (schema-preserving)
-                # Store structured content as JSON string in the TEXT column
-                # Source marked as 'agent' and link to related_channel
+                # Helper to insert into MySQL
                 def insert_kb_entry(title: str, content_obj: Dict):
                     cur.execute(
                         """
@@ -268,7 +284,6 @@ class KnowledgeBuilderAgent:
 
                 # Q/A pairs
                 for qa in knowledge.get('qa_pairs', []):
-                    # Simple tags from keywords in question
                     tags = self.text_processor.extract_keywords(qa.get('question', ''), top_n=5) if qa.get('question') else []
                     title = qa.get('question', 'Q/A')
                     content_obj = {
@@ -287,11 +302,12 @@ class KnowledgeBuilderAgent:
                 # Decisions
                 for dec in knowledge.get('decisions', []):
                     title = dec.get('decision', 'Decision')
+                    tags = self.text_processor.extract_keywords(dec.get('decision', ''), top_n=5) if dec.get('decision') else []
                     content_obj = {
                         'type': 'decision',
                         'decision': dec.get('decision'),
                         'decided_by': dec.get('decided_by'),
-                        'tags': self.text_processor.extract_keywords(dec.get('decision', ''), top_n=5) if dec.get('decision') else [],
+                        'tags': tags,
                         'timestamp': dec.get('timestamp')
                     }
                     insert_kb_entry(title, content_obj)
@@ -309,6 +325,7 @@ class KnowledgeBuilderAgent:
                     insert_kb_entry(title, content_obj)
 
                 conn.commit()
+                
         except Exception as e:
             print(f"[KNOWLEDGE] Error saving knowledge: {e}")
         finally:
@@ -332,14 +349,13 @@ class KnowledgeBuilderAgent:
         try:
             conn = get_db_connection()
             with conn.cursor() as cur:
-                # Search in logged knowledge
+                # Search in knowledge_base table
                 cur.execute("""
                     SELECT 
-                        id, input_text, output_text, created_at
-                    FROM ai_agent_logs
-                    WHERE channel_id = %s 
-                    AND action_type = 'knowledge_extraction'
-                    AND (input_text LIKE %s OR output_text LIKE %s)
+                        id, title, content, source, related_channel, created_at
+                    FROM knowledge_base
+                    WHERE related_channel = %s 
+                    AND (title LIKE %s OR content LIKE %s)
                     ORDER BY created_at DESC
                     LIMIT %s
                 """, (channel_id, f'%{query}%', f'%{query}%', limit))
@@ -348,8 +364,9 @@ class KnowledgeBuilderAgent:
                 
                 return [{
                     'id': r['id'],
-                    'description': r['input_text'],
-                    'data': json.loads(r['output_text']) if r['output_text'] else {},
+                    'title': r['title'],
+                    'content': json.loads(r['content']) if r['content'] else {},
+                    'source': r['source'],
                     'created_at': r['created_at'].isoformat() if r['created_at'] else None
                 } for r in results]
                 

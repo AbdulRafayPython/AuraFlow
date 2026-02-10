@@ -34,7 +34,8 @@ export function ConfirmDialog({
   isDangerous = false,
   isLoading = false,
 }: ConfirmDialogProps) {
-  const { isDarkMode } = useTheme();
+  const { isDarkMode, currentTheme } = useTheme();
+  const isBasicTheme = currentTheme === 'basic';
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleConfirm = async () => {
@@ -75,7 +76,9 @@ export function ConfirmDialog({
             className={`${
               isDangerous
                 ? 'bg-red-600 hover:bg-red-700 text-white'
-                : 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] text-white'
+                : isBasicTheme
+                  ? 'bg-[hsl(var(--theme-accent-primary))] hover:bg-[hsl(var(--theme-accent-primary)/0.9)] text-white'
+                  : 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] text-white'
             } disabled:opacity-50`}
           >
             {isProcessing ? 'Processing...' : confirmText}

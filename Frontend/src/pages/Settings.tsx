@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 
 export default function Settings() {
   const { isDarkMode, toggleTheme, currentTheme, setTheme, themes } = useTheme();
+  const isBasicTheme = currentTheme === 'basic';
   const { blockedUsers, getBlockedUsers, unblockUser } = useFriends();
   const { user, updateProfile } = useAuth();
   const [activeTab, setActiveTab] = useState<"profile" | "appearance" | "general" | "privacy" | "notifications" | "blocked">("profile");
@@ -172,7 +173,9 @@ export default function Settings() {
         onClick={onChange}
         className={`relative inline-flex ${s.track} items-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] focus:ring-offset-2 focus:ring-offset-[hsl(var(--theme-bg-primary))] ${
           enabled 
-            ? 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-[var(--theme-glow-secondary)]' 
+            ? isBasicTheme 
+              ? 'bg-[hsl(var(--theme-accent-primary))]'
+              : 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-[var(--theme-glow-secondary)]' 
             : 'bg-[hsl(var(--theme-bg-tertiary))]'
         }`}
       >
@@ -347,7 +350,7 @@ export default function Settings() {
               <div className="flex items-center gap-2 pt-2">
                 <button
                   onClick={() => setIsEditingProfile(true)}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white font-medium shadow-lg hover:shadow-[var(--theme-glow-primary)] transition-all duration-300 hover:scale-[1.02]"
+                  className={`flex items-center gap-2 px-5 py-2.5 ${isBasicTheme ? 'rounded-md bg-[hsl(var(--theme-accent-primary))]' : 'rounded-xl bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-lg hover:shadow-[var(--theme-glow-primary)] hover:scale-[1.02]'} text-white font-medium transition-all duration-300`}
                 >
                   <Edit3 className="w-4 h-4" />
                   Edit Profile
@@ -393,7 +396,7 @@ export default function Settings() {
                 <button
                   type="submit"
                   disabled={isUpdatingProfile || !displayName.trim()}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white font-medium shadow-lg hover:shadow-[var(--theme-glow-primary)] transition-all duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
+                  className={`flex items-center gap-2 px-5 py-2.5 ${isBasicTheme ? 'rounded-md bg-[hsl(var(--theme-accent-primary))]' : 'rounded-xl bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-lg hover:shadow-[var(--theme-glow-primary)] hover:scale-[1.02]'} text-white font-medium transition-all duration-300 disabled:opacity-50 disabled:hover:scale-100`}
                 >
                   {isUpdatingProfile ? (
                     <>
@@ -858,9 +861,11 @@ export default function Settings() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-300 group ${
+                  className={`w-full flex items-center gap-3 px-4 py-3 ${isBasicTheme ? 'rounded-md' : 'rounded-xl'} text-sm font-medium transition-all duration-300 group ${
                     isActive
-                      ? "bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.25)]"
+                      ? isBasicTheme
+                        ? "bg-[hsl(var(--theme-accent-primary))] text-white"
+                        : "bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.25)]"
                       : "text-[hsl(var(--theme-text-muted))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]"
                   }`}
                 >
@@ -899,9 +904,11 @@ export default function Settings() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-300 ${
+                className={`flex items-center gap-2 px-4 py-2 ${isBasicTheme ? 'rounded-md' : 'rounded-xl'} text-sm font-medium whitespace-nowrap transition-all duration-300 ${
                   isActive
-                    ? "bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg"
+                    ? isBasicTheme
+                      ? "bg-[hsl(var(--theme-accent-primary))] text-white"
+                      : "bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg"
                     : "text-[hsl(var(--theme-text-muted))] bg-[hsl(var(--theme-bg-tertiary))]"
                 }`}
               >

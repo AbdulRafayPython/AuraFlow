@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { channelService } from '@/services/channelService';
 import { getAvatarUrl } from '@/lib/utils';
+import { useTheme } from '@/contexts/ThemeContext';
 import type { Community } from '@/types';
 
 interface DiscoverCommunitiesProps {
@@ -29,6 +30,7 @@ const SIDEBAR_ITEMS = [
 
 export default function DiscoverCommunities({ onClose, onJoinCommunity }: DiscoverCommunitiesProps) {
   const navigate = useNavigate();
+  const { isDarkMode } = useTheme();
   const [communities, setCommunities] = useState<Community[]>([]);
   const [featuredCommunities, setFeaturedCommunities] = useState<Community[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -131,6 +133,11 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
     return `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.logo_url}`;
   };
 
+  const getCommunityBannerUrl = (community: Community) => {
+    if (!community.banner_url) return null;
+    return `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.banner_url}`;
+  };
+
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
@@ -177,32 +184,64 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
         <div 
           className={`sticky top-0 z-30 transition-all duration-300 ${
             isScrolled 
-              ? 'bg-[#111214] shadow-lg' 
-              : 'bg-transparent'
+              ? 'bg-[hsl(var(--theme-bg-primary))] shadow-lg border-b border-[hsl(var(--theme-border-default)/0.3)]' 
+              : !isDarkMode 
+                ? 'bg-[hsl(var(--theme-bg-primary)/0.85)] backdrop-blur-sm shadow-sm' 
+                : 'bg-transparent'
           }`}
         >
           {/* Top Header */}
           <div className={`h-12 flex items-center justify-center border-b transition-colors duration-300 ${
-            isScrolled ? 'border-[#1e1f22]' : 'border-white/5'
+            isScrolled 
+              ? 'border-[hsl(var(--theme-border-default)/0.3)]' 
+              : !isDarkMode 
+                ? 'border-[hsl(var(--theme-border-default)/0.2)]' 
+                : 'border-white/5'
           }`}>
             <div className="flex items-center gap-2">
-              <Compass className={`w-5 h-5 transition-colors duration-300 ${isScrolled ? 'text-white/70' : 'text-white/80'}`} />
-              <span className="text-sm font-semibold text-white">Discover</span>
+              <Compass className={`w-5 h-5 transition-colors duration-300 ${
+                isScrolled 
+                  ? 'text-[hsl(var(--theme-text-secondary))]' 
+                  : !isDarkMode 
+                    ? 'text-[hsl(var(--theme-text-primary))]' 
+                    : 'text-white/80'
+              }`} />
+              <span className={`text-sm font-semibold ${
+                isScrolled 
+                  ? 'text-[hsl(var(--theme-text-primary))]' 
+                  : !isDarkMode 
+                    ? 'text-[hsl(var(--theme-text-primary))]' 
+                    : 'text-white'
+              }`}>Discover</span>
             </div>
           </div>
 
           {/* Category Navigation */}
           <div className="px-6 py-2 flex items-center justify-between">
             <div className="flex items-center gap-0.5">
-              <Home className={`w-5 h-5 mr-3 transition-colors duration-300 ${isScrolled ? 'text-white/70' : 'text-white/90'}`} />
+              <Home className={`w-5 h-5 mr-3 transition-colors duration-300 ${
+                isScrolled 
+                  ? 'text-[hsl(var(--theme-text-secondary))]' 
+                  : !isDarkMode 
+                    ? 'text-[hsl(var(--theme-text-secondary))]' 
+                    : 'text-white/90'
+              }`} />
               {CATEGORIES.map(cat => (
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id)}
                   className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
                     selectedCategory === cat.id
-                      ? isScrolled ? 'bg-white/10 text-white' : 'bg-white/15 text-white'
-                      : isScrolled ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-white/80 hover:text-white hover:bg-white/10'
+                      ? isScrolled 
+                        ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]' 
+                        : !isDarkMode
+                          ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]'
+                          : 'bg-white/15 text-white'
+                      : isScrolled 
+                        ? 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]' 
+                        : !isDarkMode
+                          ? 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
+                          : 'text-white/80 hover:text-white hover:bg-white/10'
                   }`}
                 >
                   {cat.label}
@@ -212,14 +251,22 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
 
             {/* Search */}
             <div className="relative w-48">
-              <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors duration-300 ${isScrolled ? 'text-white/30' : 'text-white/40'}`} />
+              <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors duration-300 ${
+                isScrolled 
+                  ? 'text-[hsl(var(--theme-text-muted))]' 
+                  : !isDarkMode 
+                    ? 'text-[hsl(var(--theme-text-muted))]' 
+                    : 'text-white/40'
+              }`} />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => handleSearch(e.target.value)}
                 placeholder="Search"
-                className={`w-full pl-9 pr-3 py-1.5 rounded text-sm border-none text-white placeholder-white/40 focus:outline-none transition-all ${
-                  isScrolled ? 'bg-[#1e1f22]' : 'bg-[#1e1f22]/60'
+                className={`w-full pl-9 pr-3 py-1.5 rounded text-sm border-none focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] transition-all ${
+                  isScrolled || !isDarkMode
+                    ? 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]' 
+                    : 'bg-[#1e1f22]/60 text-white placeholder-white/40'
                 }`}
               />
             </div>
@@ -291,6 +338,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {featuredCommunities.map((community) => {
                       const logoUrl = getCommunityLogoUrl(community);
+                      const bannerUrl = getCommunityBannerUrl(community);
                       return (
                         <div
                           key={community.id}
@@ -299,17 +347,29 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                         >
                           {/* Banner Image/Gradient */}
                           <div className="relative h-36 overflow-hidden">
-                            <div 
-                              className="absolute inset-0"
-                              style={{
-                                background: `linear-gradient(135deg, ${community.color || '#5865f2'} 0%, #eb459f 50%, #fee75c 100%)`,
-                              }}
-                            />
-                            {/* Decorative shapes */}
-                            <div className="absolute inset-0 opacity-30">
-                              <div className="absolute right-0 top-0 w-32 h-32 bg-white/20 rounded-full -translate-y-1/2 translate-x-1/2" />
-                              <div className="absolute left-1/4 bottom-0 w-24 h-24 bg-black/10 rounded-full translate-y-1/2" />
-                            </div>
+                            {bannerUrl ? (
+                              <img 
+                                src={bannerUrl} 
+                                alt={`${community.name} banner`}
+                                className="absolute inset-0 w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div 
+                                className="absolute inset-0"
+                                style={{
+                                  background: `linear-gradient(135deg, ${community.color || '#5865f2'} 0%, #eb459f 50%, #fee75c 100%)`,
+                                }}
+                              />
+                            )}
+                            {/* Overlay gradient for text readability */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                            {/* Decorative shapes (only when no banner) */}
+                            {!bannerUrl && (
+                              <div className="absolute inset-0 opacity-30">
+                                <div className="absolute right-0 top-0 w-32 h-32 bg-white/20 rounded-full -translate-y-1/2 translate-x-1/2" />
+                                <div className="absolute left-1/4 bottom-0 w-24 h-24 bg-black/10 rounded-full translate-y-1/2" />
+                              </div>
+                            )}
                           </div>
 
                           {/* Community Icon */}
@@ -340,10 +400,6 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                             </p>
 
                             <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
-                              <div className="flex items-center gap-1">
-                                <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                                <span>{formatMemberCount(Math.floor((community.member_count || 1) * 0.3))} Online</span>
-                              </div>
                               <div className="flex items-center gap-1">
                                 <Users className="w-3 h-3" />
                                 <span>{formatMemberCount(community.member_count || 0)} Members</span>
@@ -394,20 +450,30 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                     {communities.map((community) => {
                       const logoUrl = getCommunityLogoUrl(community);
+                      const bannerUrl = getCommunityBannerUrl(community);
                       return (
                         <div
                           key={community.id}
                           className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-[hsl(var(--theme-accent-primary)/0.5)] transition-all duration-300 hover:shadow-lg"
                         >
                           {/* Banner */}
-                          <div 
-                            className="relative h-28 overflow-hidden"
-                            style={{ 
-                              background: community.color 
-                                ? `linear-gradient(135deg, ${community.color}, ${community.color}88)` 
-                                : 'linear-gradient(135deg, hsl(var(--theme-accent-primary)), hsl(var(--theme-accent-secondary)))' 
-                            }}
-                          >
+                          <div className="relative h-28 overflow-hidden">
+                            {bannerUrl ? (
+                              <img 
+                                src={bannerUrl} 
+                                alt={`${community.name} banner`}
+                                className="absolute inset-0 w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div 
+                                className="absolute inset-0"
+                                style={{ 
+                                  background: community.color 
+                                    ? `linear-gradient(135deg, ${community.color}, ${community.color}88)` 
+                                    : 'linear-gradient(135deg, hsl(var(--theme-accent-primary)), hsl(var(--theme-accent-secondary)))' 
+                                }}
+                              />
+                            )}
                             <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
                           </div>
 
@@ -441,10 +507,6 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                             </p>
 
                             <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
-                              <div className="flex items-center gap-1">
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                <span>Online</span>
-                              </div>
                               <div className="flex items-center gap-1">
                                 <Users className="w-3 h-3" />
                                 <span>{formatMemberCount(community.member_count || 0)} Members</span>

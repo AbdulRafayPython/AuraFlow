@@ -148,16 +148,15 @@ export default function CreateChannelModal({
 
               <button
                 type="button"
-                onClick={() => setFormData({ ...formData, type: "voice" })}
-                className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${
-                  formData.type === "voice"
-                    ? "border-[hsl(var(--theme-accent-secondary))] bg-[hsl(var(--theme-accent-secondary))]/10"
-                    : "border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] hover:border-[hsl(var(--theme-border-subtle))]"
-                }`}
+                disabled
+                className="p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 relative border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.5)] cursor-not-allowed opacity-60"
               >
-                <Volume2 className={`w-6 h-6 ${formData.type === "voice" ? "text-[hsl(var(--theme-accent-secondary))]" : "text-[hsl(var(--theme-text-muted))]"}`} />
-                <span className={`text-sm font-semibold ${formData.type === "voice" ? "text-[hsl(var(--theme-accent-secondary))]" : "text-[hsl(var(--theme-text-secondary))]"}`}>
+                <Volume2 className="w-6 h-6 text-[hsl(var(--theme-text-muted))]" />
+                <span className="text-sm font-semibold text-[hsl(var(--theme-text-muted))]">
                   Voice
+                </span>
+                <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-[hsl(var(--theme-accent-secondary))] text-white text-[9px] font-bold rounded">
+                  FYP 2
                 </span>
               </button>
             </div>

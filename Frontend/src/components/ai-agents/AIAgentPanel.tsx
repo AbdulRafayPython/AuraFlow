@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Bot, Brain, Shield, Heart, TrendingUp, BookOpen, Focus, X, Sparkles, Activity
+  Bot, Brain, Shield, Heart, TrendingUp, BookOpen, Focus, X, Sparkles
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -14,7 +14,8 @@ interface AIAgentPanelProps {
 }
 
 export default function AIAgentPanel({ isOpen, onClose }: AIAgentPanelProps) {
-  const { isDarkMode } = useTheme();
+  const { isDarkMode, currentTheme } = useTheme();
+  const isBasicTheme = currentTheme === 'basic';
   const { agentStatus, moderationAlerts, getModerationStats } = useAIAgents();
   const { currentCommunity } = useRealtime();
   const navigate = useNavigate();
@@ -136,40 +137,40 @@ export default function AIAgentPanel({ isOpen, onClose }: AIAgentPanelProps) {
 
   return (
     <div className="h-full flex flex-col bg-[hsl(var(--theme-bg-primary))] transition-colors duration-300">
-      {/* Header */}
-      <div className="flex-shrink-0 px-4 py-4 border-b border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-header-bg))] transition-colors duration-300">
-        {/* Top accent line */}
-        <div 
-          className="absolute top-0 left-0 right-0 h-px"
-          style={{ background: 'var(--theme-accent-gradient)' }}
-        />
+      {/* Header - Fixed h-12 to align with Dashboard header */}
+      <div className="flex-shrink-0 h-12 px-4 flex items-center border-b border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-header-bg))] transition-colors duration-300 relative">
+        {/* Top accent line - hidden in basic theme */}
+        {!isBasicTheme && (
+          <div 
+            className="absolute top-0 left-0 right-0 h-px"
+            style={{ background: 'var(--theme-accent-gradient)' }}
+          />
+        )}
         
         <div className="flex items-center gap-3">
           <div className="relative">
-            {/* Glow effect */}
-            <div className="absolute inset-0 rounded-xl blur-lg opacity-40 bg-[hsl(var(--theme-accent-primary))]" />
-            <div className="relative p-2.5 rounded-xl bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-lg">
-              <Bot className="w-5 h-5 text-white" />
+            {/* Glow effect - hidden in basic theme */}
+            {!isBasicTheme && (
+              <div className="absolute inset-0 rounded-lg blur-md opacity-40 bg-[hsl(var(--theme-accent-primary))]" />
+            )}
+            <div className={`relative p-1.5 ${isBasicTheme ? 'rounded-md bg-[hsl(var(--theme-accent-primary))]' : 'rounded-lg bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-md'}`}>
+              <Bot className="w-4 h-4 text-white" />
             </div>
           </div>
           <div className="flex-1">
-            <h2 className="text-base font-bold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
               AI Agents
-              <Sparkles className="w-4 h-4 text-[hsl(var(--theme-accent-primary))]" />
+              {!isBasicTheme && <Sparkles className="w-3.5 h-3.5 text-[hsl(var(--theme-accent-primary))]" />}
+              <span className="text-xs font-normal text-[hsl(var(--theme-text-muted))]">
+                <span className="text-emerald-400 font-medium">{activeCount}</span>/{agents.length}
+              </span>
             </h2>
-            <div className="flex items-center gap-2 mt-0.5">
-              <div className="flex items-center gap-1.5 text-xs text-[hsl(var(--theme-text-muted))]">
-                <Activity className="w-3 h-3 text-emerald-400" />
-                <span className="text-emerald-400 font-medium">{activeCount}</span>
-                <span>of {agents.length} active</span>
-              </div>
-            </div>
           </div>
         </div>
       </div>
 
       {/* Scrollable Agent Cards */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}>
         {agents.map(agent => (
           <AgentCard
             key={agent.id}
@@ -187,7 +188,7 @@ export default function AIAgentPanel({ isOpen, onClose }: AIAgentPanelProps) {
         ))}
         
         {/* Bottom spacer for better scroll experience */}
-        <div className="h-4" />
+        <div className="h-2" />
       </div>
     </div>
   );

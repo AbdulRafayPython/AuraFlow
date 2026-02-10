@@ -65,7 +65,9 @@ def get_communities():
             cur.execute("""
                 SELECT 
                     c.id, c.name, c.description, c.icon, c.color, 
-                    c.logo_url, c.banner_url, cm.role, c.created_at
+                    c.logo_url, c.banner_url, cm.role, c.created_at,
+                    (SELECT COUNT(*) FROM community_members WHERE community_id = c.id) as member_count,
+                    (SELECT COUNT(*) FROM channels WHERE community_id = c.id) as channel_count
                 FROM communities c
                 JOIN community_members cm ON c.id = cm.community_id
                 LEFT JOIN blocked_users bu ON c.id = bu.community_id AND bu.user_id = %s
@@ -83,7 +85,9 @@ def get_communities():
             'logo_url': c['logo_url'],
             'banner_url': c['banner_url'],
             'role': c['role'],
-            'created_at': c['created_at'].isoformat() if c['created_at'] else None
+            'created_at': c['created_at'].isoformat() if c['created_at'] else None,
+            'member_count': c['member_count'],
+            'channel_count': c['channel_count']
         } for c in communities]
 
         return jsonify(result), 200
@@ -1619,7 +1623,7 @@ def discover_communities():
                 AND bu.user_id IS NULL
                 {search_condition}
                 GROUP BY c.id
-                ORDER BY c.created_at DESC
+                ORDER BY member_count DESC, c.created_at DESC
                 LIMIT %s OFFSET %s
             """
             

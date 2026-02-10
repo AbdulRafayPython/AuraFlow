@@ -29,6 +29,8 @@ interface FriendsSidebarProps {
   onNavigate: (view: string, communityId?: string) => void;
   currentView: string;
   selectedCommunity?: string;
+  isMembersModalOpen?: boolean;
+  isCommunityManagementModalOpen?: boolean;
 }
 
 const statusColors = {
@@ -45,11 +47,12 @@ const statusGlow = {
   offline: "",
 };
 
-export default function FriendsSidebar({ onNavigate, currentView, selectedCommunity }: FriendsSidebarProps) {
+export default function FriendsSidebar({ onNavigate, currentView, selectedCommunity, isMembersModalOpen, isCommunityManagementModalOpen }: FriendsSidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const isDiscoverPage = location.pathname === '/discover';
-  const { isDarkMode, toggleTheme } = useTheme();
+  const { isDarkMode, toggleTheme, currentTheme } = useTheme();
+  const isBasicTheme = currentTheme === 'basic';
   const { pendingRequests, friends = [] } = useFriends();
   const { logout } = useAuth();
   const {
@@ -103,7 +106,11 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   }, [showProfileMenu]);
 
   const handleLogout = async () => {
-    setShowLogoutDialog(true);
+    setShowProfileMenu(false); // Close the menu first
+    // Small delay to allow menu animation to complete before showing dialog
+    setTimeout(() => {
+      setShowLogoutDialog(true);
+    }, 150);
   };
 
   const confirmLogout = async () => {
@@ -230,8 +237,9 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   };
 
   return (
+    <>
     <div 
-      className="flex-shrink-0 h-full flex transition-all duration-300 relative" 
+      className={`flex-shrink-0 h-full flex transition-all duration-300 relative ${showLogoutDialog || isMembersModalOpen || isCommunityManagementModalOpen ? 'blur-[2px] pointer-events-none' : ''}`}
       style={{ 
         overflow: 'visible',
         background: 'var(--theme-sidebar-gradient)'
@@ -460,21 +468,21 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                 {renderUserAvatar()}
               </div>
               <div 
-                className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[hsl(var(--theme-sidebar-bg))] ${statusColors[userStatus]} ${statusGlow[userStatus]}`} 
+                className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[hsl(var(--theme-sidebar-bg))] ${statusColors[userStatus]} ${isBasicTheme ? '' : statusGlow[userStatus]}`} 
               />
             </button>
 
             {/* Profile Menu */}
             {showProfileMenu && currentUser && (
               <div 
-                className={`${isCollapsed ? 'absolute' : 'fixed'} w-80 rounded-2xl shadow-2xl border overflow-hidden z-[9999] bg-[hsl(var(--theme-bg-elevated))/0.95] border-[hsl(var(--theme-border-default))] backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 duration-200`}
+                className={`${isCollapsed ? 'absolute' : 'fixed'} w-80 ${isBasicTheme ? 'rounded-lg shadow-lg' : 'rounded-2xl shadow-2xl'} border overflow-hidden z-[9999] bg-[hsl(var(--theme-bg-elevated))/0.95] border-[hsl(var(--theme-border-default))] ${isBasicTheme ? '' : 'backdrop-blur-xl'} animate-in fade-in slide-in-from-bottom-2 duration-200`}
                 style={isCollapsed 
                   ? { left: 'calc(100% + 12px)', bottom: '0', transform: 'translateY(0)' } 
                   : { left: '84px', bottom: '1rem', transform: 'translateY(0)' }
                 }
               >
                 {/* Profile Header */}
-                <div className="p-5 border-b bg-gradient-to-br from-[hsl(var(--theme-accent-primary)/0.15)] to-[hsl(var(--theme-accent-secondary)/0.1)] border-[hsl(var(--theme-border-default))]">
+                <div className={`p-5 border-b ${isBasicTheme ? 'bg-[hsl(var(--theme-bg-secondary))]' : 'bg-gradient-to-br from-[hsl(var(--theme-accent-primary)/0.15)] to-[hsl(var(--theme-accent-secondary)/0.1)]'} border-[hsl(var(--theme-border-default))]`}>
                   <div className="flex items-center gap-4">
                     <div className="relative w-16 h-16">
                       {renderUserAvatar()}
@@ -488,7 +496,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                         @{currentUser.username}
                       </div>
                       <div className="flex items-center gap-2 mt-2">
-                        <div className={`w-2 h-2 rounded-full ${statusColors[userStatus]} ${statusGlow[userStatus]}`} />
+                        <div className={`w-2 h-2 rounded-full ${statusColors[userStatus]} ${isBasicTheme ? '' : statusGlow[userStatus]}`} />
                         <span className="text-xs font-medium capitalize text-[hsl(var(--theme-text-secondary))]">{userStatus}</span>
                       </div>
                     </div>
@@ -666,7 +674,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                                   {getAvatarInitials(conv.user.display_name || conv.user.username)}
                                 </div>
                               )}
-                              <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[hsl(var(--theme-bg-secondary))] ${getStatusColor(status)} ${statusGlow[status as keyof typeof statusGlow] || ''}`} />
+                              <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[hsl(var(--theme-bg-secondary))] ${getStatusColor(status)} ${isBasicTheme ? '' : (statusGlow[status as keyof typeof statusGlow] || '')}`} />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="truncate font-semibold text-sm text-[hsl(var(--theme-text-primary))]">
@@ -735,7 +743,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                                 {getAvatarInitials(friend.display_name)}
                               </div>
                             )}
-                            <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[hsl(var(--theme-bg-secondary))] ${getStatusColor(status)} ${statusGlow[status as keyof typeof statusGlow] || ''}`} />
+                            <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[hsl(var(--theme-bg-secondary))] ${getStatusColor(status)} ${isBasicTheme ? '' : (statusGlow[status as keyof typeof statusGlow] || '')}`} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="truncate font-semibold text-sm text-[hsl(var(--theme-text-primary))]">{friend.display_name}</div>
@@ -829,8 +837,9 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
           </div>
         </div>
       )}
+    </div>
 
-      {/* Modals */}
+      {/* Modals - Outside of blurred container */}
       <CreateCommunityModal 
         isOpen={showCreateCommunityModal} 
         onClose={() => setShowCreateCommunityModal(false)} 
@@ -859,6 +868,6 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         onConfirm={confirmLogout} 
         onCancel={() => setShowLogoutDialog(false)} 
       />
-    </div>
+    </>
   );
 }

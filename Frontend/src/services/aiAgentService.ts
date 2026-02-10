@@ -523,10 +523,13 @@ class AIAgentService {
 
   async getKnowledgeBase(channelId: number, limit: number = 20): Promise<KnowledgeEntry[]> {
     try {
-      const response = await api.get(`/api/agents/knowledge/base/${channelId}?limit=${limit}`);
-      return response.data.knowledge || [];
+      const response: any = await api.get(`/api/agents/knowledge/base/${channelId}?limit=${limit}`);
+      // appService returns data directly, not wrapped in response.data
+      return response.knowledge || response.data?.knowledge || [];
     } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Failed to fetch knowledge base');
+      console.error('[KB Service] getKnowledgeBase error:', error);
+      // Return empty array instead of throwing - better UX
+      return [];
     }
   }
 

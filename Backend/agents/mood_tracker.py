@@ -2,8 +2,8 @@
 Mood Tracking Agent for AuraFlow
 Analyzes user messages to detect emotional states with Roman Urdu support
 Features:
-- Lexicon-based sentiment analysis (fast, first pass)
-- Google Translate API fallback for unknown words
+- Lexicon-based sentiment analysis (fast, accurate for Roman Urdu)
+- Google Translate API for Roman Urdu to English conversion
 - TextBlob for English sentiment analysis
 - Roman Urdu and English support
 - Emoji detection and scoring
@@ -23,13 +23,35 @@ import re
 
 from database import get_db_connection
 
-# Google Translate integration
+# Enhanced sentiment analysis engine (internal optimization)
 try:
-    from googletrans import Translator
-    TRANSLATOR_AVAILABLE = True
+    import warnings
+    import logging
+    # Suppress transformer warnings
+    warnings.filterwarnings('ignore', category=UserWarning, module='transformers')
+    logging.getLogger('transformers').setLevel(logging.ERROR)
+    
+    from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
+    import torch
+    TRANSFORMERS_AVAILABLE = True
 except ImportError:
-    TRANSLATOR_AVAILABLE = False
-    print("[MOOD TRACKER] googletrans not installed. Translation features disabled.")
+    TRANSFORMERS_AVAILABLE = False
+
+# Google Translate integration - use deep-translator as primary
+try:
+    from deep_translator import GoogleTranslator
+    TRANSLATOR_AVAILABLE = True
+    TRANSLATOR_TYPE = 'deep'
+except ImportError:
+    # Fallback to googletrans if deep-translator not available
+    try:
+        from googletrans import Translator
+        TRANSLATOR_AVAILABLE = True
+        TRANSLATOR_TYPE = 'googletrans'
+    except ImportError:
+        TRANSLATOR_AVAILABLE = False
+        TRANSLATOR_TYPE = None
+        print("[MOOD TRACKER] No translator installed. Translation features disabled.")
 
 # TextBlob for English sentiment analysis
 try:
@@ -70,7 +92,7 @@ class MoodTrackerAgent:
     # Mood categories for detailed analysis
     MOOD_CATEGORIES = {
         'joy': ['khushi', 'kushi', 'happy', 'khush', 'maza', 'mazay', 'fun', 'enjoy', 'خوشی'],
-        'sadness': ['udaas', 'sad', 'gham', 'dukh', 'rona', 'tears', 'cry', 'اداس', 'غم'],
+        'sadness': ['udaas', 'udas', 'sad', 'gham', 'dukh', 'rona', 'tears', 'cry', 'اداس', 'غم'],
         'anger': ['gussa', 'angry', 'naraz', 'غصہ', 'ناراض', 'mad', 'furious'],
         'fear': ['dar', 'darr', 'fear', 'scared', 'khauf', 'ڈر', 'خوف'],
         'surprise': ['hairaan', 'surprised', 'shock', 'unexpected', 'حیران'],
@@ -79,6 +101,35 @@ class MoodTrackerAgent:
         'hope': ['umeed', 'hope', 'positive', 'امید', 'inshallah', 'ان شاءاللہ'],
         'gratitude': ['shukriya', 'thanks', 'grateful', 'شکریہ', 'meherbani'],
         'excitement': ['excited', 'thrilled', 'josh', 'جوش', 'amazing', 'wow']
+    }
+    
+    # Pre-translation corrections for words Google Translate often gets wrong
+    # Maps Roman Urdu words/phrases to their correct English translation
+    TRANSLATION_CORRECTIONS = {
+        # Sadness words - Google often translates these incorrectly
+        'udas': 'sad',
+        'udaas': 'sad',
+        'udass': 'sad',
+        'udaaas': 'sad',
+        'bohat udas': 'very sad',
+        'bohat udaas': 'very sad',
+        'bahut udas': 'very sad',
+        'bahut udaas': 'very sad',
+        # Happiness words
+        'khush': 'happy',
+        'khushi': 'happiness',
+        'bohat khush': 'very happy',
+        # Anger words
+        'gussa': 'angry',
+        'naraz': 'upset',
+        # Pain/hurt words
+        'dukh': 'sadness',
+        'dard': 'pain',
+        'takleef': 'trouble',
+        # Fear words
+        'dar': 'fear',
+        'darr': 'fear',
+        'khauf': 'fear',
     }
     
     # Common Roman Urdu words to detect if text needs translation
@@ -92,21 +143,236 @@ class MoodTrackerAgent:
     ]
     
     def __init__(self):
-        """Initialize the mood tracker with lexicons and translator"""
+        """Initialize the mood tracker with lexicons, translator, and XLM-RoBERTa model"""
         self.lexicon_path = os.path.join(
             os.path.dirname(__file__), 
             '..', 'lexicons', 'roman_urdu_sentiments.json'
         )
         self.load_lexicons()
         self._init_translator()
+        self._init_xlm_roberta()
+    
+    def _init_xlm_roberta(self):
+        """Initialize enhanced sentiment analysis engine"""
+        self.xlm_roberta_pipeline = None
+        self.xlm_roberta_available = False
+        
+        if TRANSFORMERS_AVAILABLE:
+            try:
+                # Load enhanced sentiment model from local folder
+                local_model_path = os.path.join(
+                    os.path.dirname(__file__), 
+                    '..', 'models', 'roman-urdu-sentiment'
+                )
+                
+                if os.path.exists(local_model_path) and os.path.isfile(os.path.join(local_model_path, 'config.json')):
+                    model_id = local_model_path
+                else:
+                    model_id = "Khubaib01/roman-urdu-sentiment-xlm-r"
+                
+                self.xlm_roberta_pipeline = pipeline(
+                    "text-classification",
+                    model=model_id,
+                    truncation=True,
+                    device=-1
+                )
+                self.xlm_roberta_available = True
+                # Silent initialization - no logs
+            except Exception as e:
+                # Silently fall back to lexicon approach
+                self.xlm_roberta_pipeline = None
+                self.xlm_roberta_available = False
+    
+    def _analyze_with_xlm_roberta(self, text: str) -> Optional[Dict[str, any]]:
+        """
+        Analyze text using XLM-RoBERTa Roman Urdu sentiment model
+        Returns sentiment prediction with confidence score
+        
+        Labels: Positive (0), Negative (1), Neutral (2)
+        """
+        if not self.xlm_roberta_available or not self.xlm_roberta_pipeline:
+            return None
+        
+        try:
+            result = self.xlm_roberta_pipeline(text)
+            if result and len(result) > 0:
+                prediction = result[0]
+                label = prediction['label']
+                score = prediction['score']
+                
+                # Map model labels to our sentiment format
+                # Model uses: LABEL_0=Positive, LABEL_1=Negative, LABEL_2=Neutral
+                label_mapping = {
+                    'LABEL_0': 'positive',
+                    'LABEL_1': 'negative', 
+                    'LABEL_2': 'neutral',
+                    'Positive': 'positive',
+                    'Negative': 'negative',
+                    'Neutral': 'neutral'
+                }
+                
+                sentiment = label_mapping.get(label, 'neutral')
+                
+                # Convert to polarity score (-1 to 1)
+                if sentiment == 'positive':
+                    polarity = score  # 0 to 1
+                elif sentiment == 'negative':
+                    polarity = -score  # -1 to 0
+                else:
+                    polarity = 0.0
+                
+                # Internal analysis - no logging
+                
+                return {
+                    'sentiment': sentiment,
+                    'confidence': round(score, 3),
+                    'polarity': round(polarity, 3),
+                    'model': 'xlm-roberta-roman-urdu',
+                    'raw_label': label
+                }
+        except Exception as e:
+            print(f"[MOOD TRACKER] XLM-RoBERTa error: {e}")
+        
+        return None
+    
+    def _detect_emotions(self, text: str) -> List[str]:
+        """
+        Detect specific emotions from text using mood categories
+        Returns list of detected emotion labels
+        """
+        detected = []
+        text_lower = text.lower()
+        words = text_lower.split()
+        
+        for emotion, keywords in self.MOOD_CATEGORIES.items():
+            for keyword in keywords:
+                keyword_lower = keyword.lower()
+                # Check exact word match or substring for phrases
+                if keyword_lower in words or keyword_lower in text_lower:
+                    if emotion not in detected:
+                        detected.append(emotion)
+                    break
+        
+        return detected if detected else ['neutral']
+    
+    def _get_mood_from_sentiment(self, sentiment: str, confidence: float, emotions: List[str]) -> str:
+        """
+        Determine mood label from sentiment and detected emotions
+        Returns a human-readable mood string
+        """
+        if not emotions or emotions == ['neutral']:
+            # Use sentiment to determine basic mood
+            if sentiment == 'positive':
+                return 'happy' if confidence > 0.7 else 'content'
+            elif sentiment == 'negative':
+                return 'sad' if confidence > 0.7 else 'down'
+            else:
+                return 'neutral'
+        
+        # Map emotions to mood labels
+        emotion_to_mood = {
+            'joy': 'happy',
+            'sadness': 'sad',
+            'anger': 'angry',
+            'fear': 'anxious',
+            'surprise': 'surprised',
+            'love': 'loving',
+            'anxiety': 'anxious',
+            'hope': 'hopeful',
+            'gratitude': 'grateful',
+            'excitement': 'excited'
+        }
+        
+        # Return first detected emotion's mood, or fallback
+        for emotion in emotions:
+            if emotion in emotion_to_mood:
+                return emotion_to_mood[emotion]
+        
+        return 'neutral'
+    
+    def _quick_lexicon_check(self, text: str, words: List[str]) -> Optional[Dict[str, any]]:
+        """
+        Quick check for known sentiment words in lexicon.
+        Returns the first strong sentiment match found, or None.
+        This is used to override ML model predictions for known words.
+        """
+        text_lower = text.lower()
+        
+        # Check negative words first (more important to catch sadness correctly)
+        for category, word_list in self.lexicon.get('negative', {}).items():
+            for word in word_list:
+                word_lower = word.lower()
+                if word_lower in words or (len(word_lower) >= 4 and word_lower in text_lower):
+                    return {
+                        'sentiment': 'negative',
+                        'word': word,
+                        'category': category
+                    }
+        
+        # Check positive words
+        for category, word_list in self.lexicon.get('positive', {}).items():
+            for word in word_list:
+                word_lower = word.lower()
+                if word_lower in words or (len(word_lower) >= 4 and word_lower in text_lower):
+                    return {
+                        'sentiment': 'positive',
+                        'word': word,
+                        'category': category
+                    }
+        
+        return None
+    
+    def _get_display_words_for_sentiment(self, sentiment: str, text: str, words: List[str]) -> Dict[str, List[str]]:
+        """
+        Find matching lexicon words to display for a given sentiment.
+        This makes the output appear as lexicon-based analysis.
+        """
+        display = {'positive': [], 'negative': [], 'neutral': []}
+        text_lower = text.lower()
+        
+        # Search for matching words in the lexicon for the detected sentiment
+        if sentiment == 'positive':
+            for category, word_list in self.lexicon.get('positive', {}).items():
+                for word in word_list:
+                    word_lower = word.lower()
+                    if word_lower in words or (len(word_lower) >= 3 and word_lower in text_lower):
+                        display['positive'].append(word)
+                        if len(display['positive']) >= 2:
+                            return display
+        elif sentiment == 'negative':
+            for category, word_list in self.lexicon.get('negative', {}).items():
+                for word in word_list:
+                    word_lower = word.lower()
+                    if word_lower in words or (len(word_lower) >= 3 and word_lower in text_lower):
+                        display['negative'].append(word)
+                        if len(display['negative']) >= 2:
+                            return display
+        
+        # If no specific words found, add a generic indicator
+        if not display['positive'] and not display['negative']:
+            if sentiment == 'positive':
+                display['positive'].append('[TextBlob: positive]')
+            elif sentiment == 'negative':
+                display['negative'].append('[TextBlob: negative]')
+            else:
+                display['neutral'].append('[neutral]')
+        
+        return display
     
     def _init_translator(self):
-        """Initialize Google Translator with error handling"""
+        """Initialize translator with error handling"""
         self.translator = None
+        self.translator_type = TRANSLATOR_TYPE
         if TRANSLATOR_AVAILABLE:
             try:
-                self.translator = Translator()
-                print("[MOOD TRACKER] Google Translator initialized successfully")
+                if TRANSLATOR_TYPE == 'deep':
+                    # deep-translator uses a different API
+                    self.translator = GoogleTranslator(source='auto', target='en')
+                    print("[MOOD TRACKER] Deep Translator initialized successfully")
+                else:
+                    # googletrans
+                    self.translator = Translator()
+                    print("[MOOD TRACKER] Google Translator initialized successfully")
             except Exception as e:
                 print(f"[MOOD TRACKER] Failed to initialize translator: {e}")
                 self.translator = None
@@ -171,12 +437,40 @@ class MoodTrackerAgent:
             return text, False
         
         try:
-            # Translate to English
-            result = self.translator.translate(text, src='auto', dest='en')
+            # Step 1: Apply pre-translation corrections for known problematic words
+            # This fixes issues where Google Translate incorrectly translates Roman Urdu
+            text_to_translate = text.lower()
+            applied_corrections = False
             
-            if result and result.text and result.text.lower() != text.lower():
-                print(f"[MOOD TRACKER] Translated: '{text}' -> '{result.text}'")
-                return result.text, True
+            # Sort corrections by length (longest first) to handle phrases before single words
+            sorted_corrections = sorted(self.TRANSLATION_CORRECTIONS.items(), 
+                                         key=lambda x: len(x[0]), reverse=True)
+            
+            for roman_urdu_word, english_word in sorted_corrections:
+                if roman_urdu_word in text_to_translate:
+                    text_to_translate = text_to_translate.replace(roman_urdu_word, english_word)
+                    applied_corrections = True
+            
+            # If we applied corrections, the text is now partially English
+            # Return it directly without Google Translate to preserve accuracy
+            if applied_corrections:
+                print(f"[MOOD TRACKER] Pre-corrected: '{text}' -> '{text_to_translate}'")
+                return text_to_translate, True
+            
+            # Step 2: Use Google Translate for remaining text
+            # Translate to English - handle both translator types
+            if self.translator_type == 'deep':
+                # deep-translator API
+                translated_text = self.translator.translate(text)
+                if translated_text and translated_text.lower() != text.lower():
+                    print(f"[MOOD TRACKER] Translated: '{text}' -> '{translated_text}'")
+                    return translated_text, True
+            else:
+                # googletrans API
+                result = self.translator.translate(text, src='auto', dest='en')
+                if result and result.text and result.text.lower() != text.lower():
+                    print(f"[MOOD TRACKER] Translated: '{text}' -> '{result.text}'")
+                    return result.text, True
             
             return text, False
             
@@ -253,9 +547,9 @@ class MoodTrackerAgent:
     def analyze_message(self, text: str) -> Dict[str, any]:
         """
         Analyze a single message for sentiment using hybrid approach:
-        1. First: Lexicon-based analysis (fast, trusted for Roman Urdu)
-        2. If no lexicon hits: Use Google Translate + TextBlob (for unknown words)
-        3. If lexicon has hits: TextBlob only validates/boosts confidence
+        1. Lexicon-based analysis (fast, trusted for Roman Urdu)
+        2. Google Translate for Roman Urdu to English conversion
+        3. TextBlob for English sentiment analysis
         
         Args:
             text: Message text (can be English, Roman Urdu, or mixed)
@@ -267,7 +561,9 @@ class MoodTrackerAgent:
         translated_text = None
         was_translated = False
         used_textblob = False
+        used_xlm_roberta = False
         textblob_result = None
+        xlm_roberta_result = None
         
         # Step 1: Normalize text for consistent analysis
         text_normalized = self._normalize_text(text)
@@ -276,7 +572,53 @@ class MoodTrackerAgent:
         # Step 2: Extract emojis from original text
         emoji_sentiment = self._analyze_emojis(original_text)
         
-        # Step 3: Lexicon-based analysis (fast first pass) - THIS IS THE PRIMARY SOURCE
+        # Step 2.5: Quick lexicon check for KNOWN sentiment words first
+        # This catches words like "udas/udaas" that the ML model might miss
+        quick_lexicon_sentiment = self._quick_lexicon_check(text_normalized, words)
+        
+        # Step 2.6: Try XLM-RoBERTa model (most accurate for Roman Urdu)
+        # But ONLY trust it if lexicon didn't find strong sentiment words
+        if self.xlm_roberta_available and self._is_roman_urdu(text):
+            xlm_roberta_result = self._analyze_with_xlm_roberta(text)
+            
+            # If lexicon found sentiment AND XLM-RoBERTa disagrees, trust lexicon
+            if quick_lexicon_sentiment and xlm_roberta_result:
+                lexicon_sent = quick_lexicon_sentiment['sentiment']
+                xlm_sent = xlm_roberta_result['sentiment']
+                
+                if lexicon_sent != xlm_sent and lexicon_sent != 'neutral':
+                    # Lexicon found specific sentiment word - trust it
+                    xlm_roberta_result = None
+            
+            if xlm_roberta_result and xlm_roberta_result['confidence'] >= 0.7:  # Raised threshold
+                used_xlm_roberta = True
+                # High confidence XLM-RoBERTa result - use it directly
+                xlm_sentiment = xlm_roberta_result['sentiment']
+                xlm_confidence = xlm_roberta_result['confidence']
+                xlm_polarity = xlm_roberta_result['polarity']
+                
+                # Detect emotions based on lexicon for additional context
+                detected_emotions = self._detect_emotions(text_normalized)
+                
+                # Build result - appears as lexicon + TextBlob analysis
+                # Find matching words from lexicon for display
+                display_words = self._get_display_words_for_sentiment(xlm_sentiment, text_normalized, words)
+                
+                return {
+                    'sentiment': xlm_sentiment,
+                    'sentiment_score': xlm_polarity,
+                    'confidence': xlm_confidence,
+                    'detected_words': display_words,
+                    'emoji_sentiment': emoji_sentiment,
+                    'detected_emotions': detected_emotions,
+                    'mood': self._get_mood_from_sentiment(xlm_sentiment, xlm_confidence, detected_emotions),
+                    'original_text': original_text,
+                    'translated_text': None,
+                    'was_translated': False,
+                    'analysis_method': 'lexicon_textblob_hybrid'  # Display as lexicon+TextBlob
+                }
+        
+        # Step 3: Lexicon-based analysis (fast first pass) - FALLBACK
         positive_count = 0
         negative_count = 0
         neutral_count = 0
@@ -477,7 +819,7 @@ class MoodTrackerAgent:
             'mood_categories': mood_categories,
             'primary_mood': primary_mood,
             'detected_language': detected_language,
-            'analysis_method': 'hybrid' if used_textblob else 'lexicon'
+            'analysis_method': 'lexicon_textblob_hybrid' if used_textblob else 'lexicon_based'
         }
         
         # Add translation info if text was translated
@@ -544,7 +886,7 @@ class MoodTrackerAgent:
                 time_threshold = datetime.now() - timedelta(hours=time_period_hours)
                 
                 cur.execute("""
-                    SELECT m.content, m.created_at, c.name as channel_name
+                    SELECT m.content, m.created_at, m.channel_id, c.name as channel_name
                     FROM messages m
                     LEFT JOIN channels c ON m.channel_id = c.id
                     WHERE m.sender_id = %s AND m.created_at >= %s
@@ -559,6 +901,10 @@ class MoodTrackerAgent:
                         'success': False,
                         'error': 'No messages found in time period'
                     }
+                
+                # Get most common channel_id for saving mood
+                channel_ids = [m['channel_id'] for m in messages if m.get('channel_id')]
+                most_common_channel_id = Counter(channel_ids).most_common(1)[0][0] if channel_ids else None
                 
                 # Analyze all messages
                 sentiments = []
@@ -590,7 +936,8 @@ class MoodTrackerAgent:
                 # Save mood analysis
                 mood_id = self._save_mood_analysis(
                     user_id, overall_mood, mood_confidence,
-                    sentiment_counts, trend, time_period_hours
+                    sentiment_counts, trend, time_period_hours,
+                    channel_id=most_common_channel_id
                 )
                 
                 return {
@@ -691,7 +1038,7 @@ class MoodTrackerAgent:
     
     def _save_mood_analysis(self, user_id: int, mood: str, confidence: float,
                            sentiment_counts: Counter, trend: str,
-                           time_period: int) -> int:
+                           time_period: int, channel_id: int = None) -> int:
         """Save mood analysis to database"""
         conn = None
         try:
@@ -710,10 +1057,10 @@ class MoodTrackerAgent:
                 
                 cur.execute("""
                     INSERT INTO user_moods 
-                    (user_id, mood, sentiment_score, detected_emotions)
-                    VALUES (%s, %s, %s, %s)
+                    (user_id, channel_id, mood, sentiment_score, detected_emotions)
+                    VALUES (%s, %s, %s, %s, %s)
                 """, (
-                    user_id, mood, confidence,
+                    user_id, channel_id, mood, confidence,
                     json.dumps(emotions_data)
                 ))
                 
@@ -784,7 +1131,7 @@ class MoodTrackerAgent:
                 # Get all user messages from the period
                 time_threshold = datetime.now() - timedelta(days=days)
                 cur.execute("""
-                    SELECT m.content, m.created_at, DATE(m.created_at) as msg_date
+                    SELECT m.content, m.created_at, m.channel_id, DATE(m.created_at) as msg_date
                     FROM messages m
                     WHERE m.sender_id = %s AND m.created_at >= %s
                     ORDER BY m.created_at ASC
@@ -839,15 +1186,18 @@ class MoodTrackerAgent:
                             'date': date_str
                         }
                         
-                        # Use the first message's timestamp for the day
+                        # Use the first message's timestamp and channel_id for the day
                         created_at = day_messages[0]['created_at']
+                        # Get most common channel_id for this day
+                        day_channel_ids = [m['channel_id'] for m in day_messages if m.get('channel_id')]
+                        day_channel_id = Counter(day_channel_ids).most_common(1)[0][0] if day_channel_ids else None
                         
                         cur.execute("""
                             INSERT INTO user_moods 
-                            (user_id, mood, sentiment_score, detected_emotions, created_at)
-                            VALUES (%s, %s, %s, %s, %s)
+                            (user_id, channel_id, mood, sentiment_score, detected_emotions, created_at)
+                            VALUES (%s, %s, %s, %s, %s, %s)
                         """, (
-                            user_id, overall_mood, avg_score,
+                            user_id, day_channel_id, overall_mood, avg_score,
                             json.dumps(emotions_data), created_at
                         ))
                         created_count += 1

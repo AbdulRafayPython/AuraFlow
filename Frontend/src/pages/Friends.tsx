@@ -45,7 +45,8 @@ const statusLabels = {
 };
 
 export default function Friends({ onOpenDM }: FriendsProps) {
-  const { isDarkMode } = useTheme();
+  const { isDarkMode, currentTheme } = useTheme();
+  const isBasicTheme = currentTheme === 'basic';
   const { friends, pendingRequests = [], sentRequests = [], blockedUsers, addFriend, acceptFriendRequest, rejectFriendRequest, removeFriend, blockUser, unblockUser, cancelFriendRequest, sendFriendRequest } = useFriends();
   const { selectConversation } = useDirectMessages();
   const [activeTab, setActiveTab] = useState<Tab>("all");
@@ -137,7 +138,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
 
     return (
     <div
-      className="flex items-center justify-between p-4 rounded-lg border transition-all hover:shadow-[var(--theme-glow-secondary)] backdrop-blur-sm bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary)/0.7)]"
+      className={`flex items-center justify-between p-4 rounded-lg border transition-all hover:shadow-[var(--theme-glow-secondary)] backdrop-blur-sm bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary)/0.7)] ${showMenu === friend.id ? 'relative z-50' : ''}`}
     >
       {/* Friend Info - Clickable to open profile */}
       <div 
@@ -201,12 +202,30 @@ export default function Friends({ onOpenDM }: FriendsProps) {
         >
           <MessageCircle className="w-5 h-5" />
         </button>
-        <button className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))]">
-          <Phone className="w-5 h-5" />
-        </button>
-        <button className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))]">
-          <Video className="w-5 h-5" />
-        </button>
+        <div className="relative group/call">
+          <button 
+            className="p-2 rounded-lg transition-colors bg-[hsl(var(--theme-bg-tertiary)/0.5)] text-[hsl(var(--theme-text-muted))] cursor-not-allowed opacity-60"
+            disabled
+            title="Coming in FYP 2"
+          >
+            <Phone className="w-5 h-5" />
+          </button>
+          <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-[hsl(var(--theme-bg-elevated))] text-[10px] text-[hsl(var(--theme-text-muted))] rounded whitespace-nowrap opacity-0 group-hover/call:opacity-100 transition-opacity border border-[hsl(var(--theme-border-default)/0.5)]">
+            FYP 2
+          </div>
+        </div>
+        <div className="relative group/video">
+          <button 
+            className="p-2 rounded-lg transition-colors bg-[hsl(var(--theme-bg-tertiary)/0.5)] text-[hsl(var(--theme-text-muted))] cursor-not-allowed opacity-60"
+            disabled
+            title="Coming in FYP 2"
+          >
+            <Video className="w-5 h-5" />
+          </button>
+          <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-[hsl(var(--theme-bg-elevated))] text-[10px] text-[hsl(var(--theme-text-muted))] rounded whitespace-nowrap opacity-0 group-hover/video:opacity-100 transition-opacity border border-[hsl(var(--theme-border-default)/0.5)]">
+            FYP 2
+          </div>
+        </div>
         
         {/* More Menu */}
         <div className="relative">
@@ -271,7 +290,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
       <div className="flex items-center gap-2">
         <button
           onClick={() => acceptFriendRequest(request.id)}
-          className="p-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors hover:shadow-[0_0_15px_rgba(34,197,94,0.4)]"
+          className={`p-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors ${isBasicTheme ? '' : 'hover:shadow-[0_0_15px_rgba(34,197,94,0.4)]'}`}
           title="Accept request"
         >
           <Check className="w-5 h-5" />

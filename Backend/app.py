@@ -32,11 +32,13 @@ from routes.messages import (
 from routes.friends import (
     send_friend_request, get_pending_requests, get_sent_requests,
     accept_friend_request, reject_friend_request,
-    cancel_friend_request, remove_friend
+    cancel_friend_request, remove_friend, block_friend, unblock_friend, get_blocked_friends
 )
 from routes.reactions import reactions_bp
 from routes.sockets import register_socket_events
 from routes.agents import agents_bp
+from routes.admin import admin_bp
+from routes.community_admin import community_admin_bp
 
 load_dotenv()
 
@@ -164,8 +166,20 @@ app.register_blueprint(reactions_bp)
 app.register_blueprint(agents_bp)
 
 # ======================================================================
+# ADMIN DASHBOARD ROUTES
+# ======================================================================
+app.register_blueprint(admin_bp)
+
+# ======================================================================
+# COMMUNITY ADMIN DASHBOARD ROUTES
+# ======================================================================
+app.register_blueprint(community_admin_bp)
+
+# ======================================================================
 # FRIEND ROUTES
 # ======================================================================
+
+# Friend routes
 app.route("/api/channels/friends", methods=["GET"])(get_friends)
 app.route("/api/friends/request", methods=["POST"])(send_friend_request)
 app.route("/api/friends/requests/pending", methods=["GET"])(get_pending_requests)
@@ -174,6 +188,9 @@ app.route("/api/friends/request/<int:request_id>/accept", methods=["POST"])(acce
 app.route("/api/friends/request/<int:request_id>/reject", methods=["POST"])(reject_friend_request)
 app.route("/api/friends/request/<int:request_id>/cancel", methods=["POST"])(cancel_friend_request)
 app.route("/api/friends/<int:friend_id>", methods=["DELETE"])(remove_friend)
+app.route("/api/friends/block/<int:friend_id>", methods=["POST"])(block_friend)
+app.route("/api/friends/unblock/<int:friend_id>", methods=["POST"])(unblock_friend)
+app.route("/api/friends/blocked", methods=["GET"])(get_blocked_friends)
 
 # ======================================================================
 # SOCKET EVENTS

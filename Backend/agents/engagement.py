@@ -325,9 +325,18 @@ class EngagementAgent:
                     return {
                         'success': True,
                         'engagement_level': 'inactive',
+                        'engagement_score': 0,
                         'message_count': 0,
-                        'suggestion': self._suggest_conversation_starter('general'),
-                        'reason': 'No recent activity detected'
+                        'participant_count': 0,
+                        'avg_messages_per_user': 0,
+                        'silence_minutes': 0,
+                        'participation_balance': 0,
+                        'suggestions': [{
+                            'type': 'conversation_starter',
+                            'message': self._suggest_conversation_starter('general'),
+                            'reason': 'No recent activity detected'
+                        }],
+                        'time_period_hours': time_period_hours
                     }
                 
                 # Calculate metrics
@@ -511,6 +520,23 @@ class EngagementAgent:
         try:
             conn = get_db_connection()
             with conn.cursor() as cur:
+                # Get or create the engagement agent ID
+                cur.execute("""
+                    SELECT id FROM ai_agents WHERE type = 'engagement' LIMIT 1
+                """)
+                agent_row = cur.fetchone()
+                
+                if not agent_row:
+                    # Create engagement agent if it doesn't exist
+                    cur.execute("""
+                        INSERT INTO ai_agents (name, type, description, is_active)
+                        VALUES ('Engagement Agent', 'engagement', 
+                                'AI-powered engagement analysis', TRUE)
+                    """)
+                    agent_id = cur.lastrowid
+                else:
+                    agent_id = agent_row['id']
+                
                 output_data = {
                     'engagement_level': analysis['engagement_level'],
                     'engagement_score': analysis['engagement_score'],
@@ -521,11 +547,11 @@ class EngagementAgent:
                 
                 cur.execute("""
                     INSERT INTO ai_agent_logs 
-                    (channel_id, action_type, input_text, 
+                    (agent_id, channel_id, action_type, input_text, 
                      output_text, confidence_score)
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                 """, (
-                    channel_id, 'engagement_analysis',
+                    agent_id, channel_id, 'engagement_analysis',
                     f"Analyzed {analysis['message_count']} messages",
                     json.dumps(output_data),
                     analysis['engagement_score']
@@ -827,11 +853,28 @@ class EngagementAgent:
         try:
             conn = get_db_connection()
             with conn.cursor() as cur:
+                # Get or create the engagement agent ID
+                cur.execute("""
+                    SELECT id FROM ai_agents WHERE type = 'engagement' LIMIT 1
+                """)
+                agent_row = cur.fetchone()
+                
+                if not agent_row:
+                    cur.execute("""
+                        INSERT INTO ai_agents (name, type, description, is_active)
+                        VALUES ('Engagement Agent', 'engagement', 
+                                'AI-powered engagement analysis', TRUE)
+                    """)
+                    agent_id = cur.lastrowid
+                else:
+                    agent_id = agent_row['id']
+                
                 cur.execute("""
                     INSERT INTO ai_agent_logs 
-                    (channel_id, action_type, input_text, output_text, confidence_score)
-                    VALUES (%s, %s, %s, %s, %s)
+                    (agent_id, channel_id, action_type, input_text, output_text, confidence_score)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                 """, (
+                    agent_id,
                     channel_id,
                     'engagement_activity',
                     f"Activity used: {activity_type}",

@@ -4,6 +4,10 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+# Environment
+FLASK_ENV = os.getenv('FLASK_ENV', 'development')
+IS_PRODUCTION = FLASK_ENV == 'production'
+
 # Database configuration variables
 DB_HOST = os.getenv('DB_HOST')
 DB_USER = os.getenv('DB_USER')
@@ -19,7 +23,17 @@ SMTP_APP_PASSWORD = os.getenv("SMTP_APP_PASSWORD", "")
 # AI API Keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-# Debug print (remove after fixing)
-print(f"[CONFIG] SMTP_EMAIL loaded: {bool(SMTP_EMAIL)}")
-print(f"[CONFIG] SMTP_APP_PASSWORD loaded: {bool(SMTP_APP_PASSWORD)}")
-print(f"[CONFIG] GEMINI_API_KEY loaded: {bool(GEMINI_API_KEY)}")
+# Security - JWT
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.urandom(32).hex() if not IS_PRODUCTION else None)
+if IS_PRODUCTION and not JWT_SECRET_KEY:
+    raise RuntimeError("JWT_SECRET_KEY must be set in production environment")
+
+# Rate limiting
+RATE_LIMIT_DEFAULT = os.getenv("RATE_LIMIT_DEFAULT", "100 per minute")
+RATE_LIMIT_AUTH = os.getenv("RATE_LIMIT_AUTH", "5 per minute")
+
+# Log configuration status only in development
+if not IS_PRODUCTION:
+    print(f"[CONFIG] Environment: {FLASK_ENV}")
+    print(f"[CONFIG] SMTP_EMAIL loaded: {bool(SMTP_EMAIL)}")
+    print(f"[CONFIG] GEMINI_API_KEY loaded: {bool(GEMINI_API_KEY)}")
