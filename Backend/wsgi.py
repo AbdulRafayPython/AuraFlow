@@ -1,18 +1,19 @@
-# Production entry point — gevent monkey-patch BEFORE any other imports
-from gevent import monkey
-monkey.patch_all()
+# Production WSGI entry point
+# Gevent monkey-patch is done in gunicorn.conf.py (loaded before this module)
+# This import-guard ensures it also works when run directly: python wsgi.py
+import gevent.monkey
+if not gevent.monkey.is_module_patched('os'):
+    gevent.monkey.patch_all()
 
 import os
-
-port = int(os.environ.get('PORT', 5000))
-print(f"[WSGI] Starting on port {port}...")
-
 from app import app, socketio
 
-print("=" * 60)
-print("AuroFlow Backend Server Starting (Production)...")
-print(f"Server: http://0.0.0.0:{port}")
-print(f"WebSocket: ws://0.0.0.0:{port}")
-print("=" * 60)
-
-socketio.run(app, host='0.0.0.0', port=port, debug=False, log_output=True)
+# When run directly (python wsgi.py), use socketio.run()
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 10000))
+    print("=" * 60)
+    print("AuroFlow Backend Server Starting (Production)...")
+    print(f"Server: http://0.0.0.0:{port}")
+    print(f"WebSocket: ws://0.0.0.0:{port}")
+    print("=" * 60)
+    socketio.run(app, host='0.0.0.0', port=port, debug=False, log_output=True)
