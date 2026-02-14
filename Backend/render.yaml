@@ -7,7 +7,7 @@ services:
     region: oregon
     plan: free
     buildCommand: chmod +x build.sh && ./build.sh
-    startCommand: gunicorn -c gunicorn.conf.py wsgi:app
+    startCommand: python wsgi.py
     envVars:
       - key: FLASK_ENV
         value: production
