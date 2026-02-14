@@ -12,7 +12,8 @@ DBUtils
 
 # Production server
 gunicorn
-eventlet
+gevent
+gevent-websocket
 
 # AI Agent Dependencies
 nltk

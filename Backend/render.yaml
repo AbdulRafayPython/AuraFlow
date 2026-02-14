@@ -7,12 +7,12 @@ services:
     region: oregon
     plan: free
     buildCommand: chmod +x build.sh && ./build.sh
-    startCommand: python wsgi.py
+    startCommand: gunicorn -k geventwebsocket.gunicorn.workers.GeventWebSocketWorker -w 1 --bind 0.0.0.0:$PORT --timeout 120 wsgi:app
     envVars:
       - key: FLASK_ENV
         value: production
       - key: SOCKETIO_ASYNC_MODE
-        value: eventlet
+        value: gevent
       - key: DB_HOST
         sync: false    # set manually
       - key: DB_USER

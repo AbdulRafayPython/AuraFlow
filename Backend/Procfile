@@ -1,1 +1,1 @@
-web: python wsgi.py
+web: gunicorn -k geventwebsocket.gunicorn.workers.GeventWebSocketWorker -w 1 --bind 0.0.0.0:$PORT --timeout 120 wsgi:app

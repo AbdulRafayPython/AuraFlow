@@ -1,13 +1,4 @@
-# Eventlet monkey-patch — only when running directly (wsgi.py handles production)
-import os
-if os.getenv('RENDER') is None:
-    # Local dev: patch here; Production: wsgi.py patches before importing this module
-    try:
-        import eventlet
-        eventlet.monkey_patch()
-    except ImportError:
-        pass
-
+# NOTE: Do NOT monkey_patch here. Production uses wsgi.py which patches before importing this module.
 import os
 from flask import Flask
 from flask_jwt_extended import JWTManager
@@ -111,12 +102,10 @@ except Exception:
     pass  # Tables may not exist yet on first run
 # ── End Session Management ───────────────────────────────────────────
 
-# Initialize SocketIO — use eventlet in production, threading in dev
-SOCKETIO_ASYNC = os.getenv('SOCKETIO_ASYNC_MODE', 'threading')
+# Initialize SocketIO — auto-detect async mode (eventlet if available, otherwise threading)
 socketio = SocketIO(
     app, 
     cors_allowed_origins="*",
-    async_mode=SOCKETIO_ASYNC,
     logger=False,
     engineio_logger=False,
     ping_timeout=25,
