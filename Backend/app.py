@@ -1,10 +1,15 @@
+# Eventlet monkey-patch MUST happen before all other imports
+import os
+if os.getenv('SOCKETIO_ASYNC_MODE') == 'eventlet':
+    import eventlet
+    eventlet.monkey_patch()
+
 from flask import Flask
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 from flask_compress import Compress
 from dotenv import load_dotenv
 from datetime import timedelta
-import os
 from flask_socketio import SocketIO
 from flask import request, make_response, send_from_directory
 
