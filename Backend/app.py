@@ -1,9 +1,8 @@
-# Eventlet monkey-patch MUST happen before all other imports
-import os
-if os.getenv('SOCKETIO_ASYNC_MODE') == 'eventlet':
-    import eventlet
-    eventlet.monkey_patch()
+# Eventlet monkey-patch MUST happen before ALL other imports
+import eventlet
+eventlet.monkey_patch()
 
+import os
 from flask import Flask
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
