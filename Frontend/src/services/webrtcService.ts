@@ -8,6 +8,17 @@ const ICE_SERVERS = {
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun2.l.google.com:19302" },
+    // Free TURN relay for NAT traversal (LAN & cross-network)
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
   ],
 };
 
@@ -15,6 +26,7 @@ class WebRTCService {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private remoteStreams: Map<string, MediaStream> = new Map();
   private audioElements: Map<string, HTMLAudioElement> = new Map();
+  private pendingCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
 
   /**
    * Create a peer connection for a specific user (using username as identifier)
@@ -148,6 +160,9 @@ class WebRTCService {
       
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
       console.log(`[WebRTC] ✅ Remote description set for ${username}`);
+      
+      // Flush pending ICE candidates
+      await this.flushPendingCandidates(username);
 
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
@@ -185,6 +200,9 @@ class WebRTCService {
       if (peerConnection.signalingState === "have-local-offer") {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
         console.log(`[WebRTC] ✅ Answer set for ${username}`);
+        
+        // Flush pending ICE candidates
+        await this.flushPendingCandidates(username);
       } else {
         console.warn(`[WebRTC] ⚠️ Unexpected signaling state for ${username}: ${peerConnection.signalingState}, ignoring answer`);
       }
@@ -205,10 +223,12 @@ class WebRTCService {
         return;
       }
 
-      // Check if remote description is set
+      // Queue if remote description not set yet
       if (!peerConnection.remoteDescription) {
-        console.warn(`[WebRTC] ⚠️ Remote description not set for ${username}, queuing ICE candidate`);
-        // In production, you'd queue these candidates
+        console.log(`[WebRTC] ⏳ Queuing ICE candidate for ${username} (no remote description yet)`);
+        const pending = this.pendingCandidates.get(username) || [];
+        pending.push(candidate);
+        this.pendingCandidates.set(username, pending);
         return;
       }
 
@@ -218,6 +238,28 @@ class WebRTCService {
     } catch (error) {
       console.error(`[WebRTC] ❌ Error adding ICE candidate for ${username}:`, error);
     }
+  }
+
+  /**
+   * Flush queued ICE candidates after remote description is set
+   */
+  private async flushPendingCandidates(username: string): Promise<void> {
+    const pending = this.pendingCandidates.get(username);
+    if (!pending || pending.length === 0) return;
+    
+    console.log(`[WebRTC] 🧊 Flushing ${pending.length} queued ICE candidates for ${username}`);
+    const peerConnection = this.peerConnections.get(username);
+    if (!peerConnection) return;
+    
+    for (const candidate of pending) {
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn(`[WebRTC] ⚠️ Failed to add queued ICE candidate for ${username}:`, err);
+      }
+    }
+    this.pendingCandidates.delete(username);
+    console.log(`[WebRTC] ✅ Flushed all queued ICE candidates for ${username}`);
   }
 
   /**
@@ -361,6 +403,8 @@ class WebRTCService {
       console.log(`[WebRTC] ✅ Peer connection closed for ${username}`);
     }
 
+    this.pendingCandidates.delete(username);
+
     const audioElement = this.audioElements.get(username);
     if (audioElement) {
       audioElement.pause();
@@ -389,6 +433,7 @@ class WebRTCService {
     this.peerConnections.clear();
     this.audioElements.clear();
     this.remoteStreams.clear();
+    this.pendingCandidates.clear();
     
     console.log("[WebRTC] ✅ All connections closed");
   }

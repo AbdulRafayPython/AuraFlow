@@ -5,6 +5,7 @@ import { X, Camera, Trash2, Upload, Image as ImageIcon, Loader2, Check, AlertCir
 import { channelService } from "@/services/channelService";
 import { useNotifications } from "@/hooks/useNotifications";
 import { Community } from "@/types";
+import { API_SERVER } from "@/config/api";
 
 interface CommunitySettingsModalProps {
   isOpen: boolean;
@@ -12,8 +13,6 @@ interface CommunitySettingsModalProps {
   community: Community | null;
   onCommunityUpdated?: (community: Community) => void;
 }
-
-const API_BASE = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
 
 export default function CommunitySettingsModal({
   isOpen,
@@ -50,8 +49,8 @@ export default function CommunitySettingsModal({
       setDescription(community.description || "");
       setIcon(community.icon || "");
       setColor(community.color || "#8B5CF6");
-      setLogoPreview(community.logo_url ? `${API_BASE}${community.logo_url}` : null);
-      setBannerPreview(community.banner_url ? `${API_BASE}${community.banner_url}` : null);
+      setLogoPreview(community.logo_url ? `${API_SERVER}${community.logo_url}` : null);
+      setBannerPreview(community.banner_url ? `${API_SERVER}${community.banner_url}` : null);
       setLogoFile(null);
       setBannerFile(null);
     }
@@ -97,7 +96,7 @@ export default function CommunitySettingsModal({
       const result = await channelService.uploadCommunityLogo(community.id, logoFile);
       showSuccess({ title: "Logo uploaded successfully!" });
       setLogoFile(null);
-      setLogoPreview(`${API_BASE}${result.logo_url}`);
+      setLogoPreview(`${API_SERVER}${result.logo_url}`);
       onCommunityUpdated?.({ ...community, logo_url: result.logo_url });
     } catch (error: any) {
       showError({ title: error.message || "Failed to upload logo" });
@@ -131,7 +130,7 @@ export default function CommunitySettingsModal({
       const result = await channelService.uploadCommunityBanner(community.id, bannerFile);
       showSuccess({ title: "Banner uploaded successfully!" });
       setBannerFile(null);
-      setBannerPreview(`${API_BASE}${result.banner_url}`);
+      setBannerPreview(`${API_SERVER}${result.banner_url}`);
       onCommunityUpdated?.({ ...community, banner_url: result.banner_url });
     } catch (error: any) {
       showError({ title: error.message || "Failed to upload banner" });
@@ -187,7 +186,7 @@ export default function CommunitySettingsModal({
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
       <div className="w-full max-w-2xl rounded-2xl shadow-2xl border overflow-hidden bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl">
         {/* Banner Section */}
         <div className="relative h-40 overflow-hidden">

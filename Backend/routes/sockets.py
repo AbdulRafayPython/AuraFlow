@@ -21,6 +21,8 @@ user_socket_sessions = {}
 user_heartbeats = {}
 # Track user rooms: username -> list of rooms
 user_rooms = {}
+# Cache user IDs: username -> user_id  (avoids DB hit on every keystroke / event)
+user_id_cache = {}
 
 
 def handle_ai_command(content: str, username: str, user_id: int, channel_id: int, community_id: int = None):
@@ -186,9 +188,18 @@ def register_socket_events(socketio):
                 
                 user_id = user_row['id']
                 
+                # Cache user_id so typing / DM handlers skip the DB lookup
+                user_id_cache[username] = user_id
+                
                 # Join personal notification room
                 personal_room = f"user_{user_id}"
                 join_room(personal_room)
+
+                # Join username-based room for call signaling
+                # Both socket.ts and socketService.ts join this room,
+                # so call events reach CallContext regardless of which SID is stored
+                call_room = f"calluser_{username}"
+                join_room(call_room)
                 
                 # Track user's rooms
                 user_rooms[username] = rooms()
@@ -261,10 +272,16 @@ def register_socket_events(socketio):
                 log.warning(f"[SOCKET] Disconnect called but no username found for SID {sid}")
                 return
 
-            # Remove socket session mapping
-            if username in user_socket_sessions:
+            # Only remove socket session mapping if THIS socket's SID matches
+            # (prevents a second socket's disconnect from nuking the primary session)
+            if username in user_socket_sessions and user_socket_sessions[username] == sid:
                 del user_socket_sessions[username]
+                user_id_cache.pop(username, None)
                 log.info(f"[SOCKET] Removed session mapping for {username}")
+            elif username in user_socket_sessions:
+                log.info(f"[SOCKET] Skipping session removal for {username} - SID mismatch (disconnect: {sid}, stored: {user_socket_sessions[username]})")
+                # Another socket is still active for this user, don't mark offline
+                return
             
             # Remove heartbeat tracking
             if username in user_heartbeats:
@@ -307,7 +324,42 @@ def register_socket_events(socketio):
                                 WHERE user_id = %s AND channel_id = %s
                             """, (user_id, channel_id))
                             
-                            log.info(f"[VOICE] Cleaned up voice session for {username} from channel {channel_id}")
+                            # Broadcast user_left_voice to remaining participants
+                            voice_room = f"voice_{channel_id}"
+                            emit('user_left_voice', {
+                                'username': username,
+                                'channel_id': channel_id,
+                                'timestamp': datetime.now().isoformat()
+                            }, room=voice_room)
+                            
+                            # Get remaining members and broadcast updated list
+                            cur.execute("""
+                                SELECT u.id, u.username, u.display_name, u.avatar_url,
+                                       COALESCE(vs.is_muted, 0) as is_muted,
+                                       COALESCE(vs.is_deaf, 0) as is_deaf
+                                FROM voice_participants vp
+                                JOIN users u ON vp.user_id = u.id
+                                LEFT JOIN voice_sessions vs ON vs.channel_id = %s AND vs.user_id = u.id
+                                WHERE vp.voice_channel_id = %s AND vp.left_at IS NULL
+                                GROUP BY u.id, u.username, u.display_name, u.avatar_url, vs.is_muted, vs.is_deaf
+                            """, (channel_id, voice_channel_id))
+                            remaining = cur.fetchall()
+                            remaining_list = [{
+                                'id': m['id'],
+                                'username': m['username'],
+                                'display_name': m['display_name'],
+                                'avatar_url': m['avatar_url'],
+                                'is_muted': bool(m['is_muted']),
+                                'is_deaf': bool(m['is_deaf'])
+                            } for m in remaining] if remaining else []
+                            
+                            emit('voice_members_update', {
+                                'channel_id': channel_id,
+                                'members': remaining_list,
+                                'total_members': len(remaining_list)
+                            }, room=voice_room)
+                            
+                            log.info(f"[VOICE] Cleaned up voice session for {username} from channel {channel_id}, notified room")
                 
                 # Update user status to offline
                 cur.execute("""
@@ -321,6 +373,24 @@ def register_socket_events(socketio):
                 'username': username,
                 'status': 'offline'
             }, broadcast=True)
+
+            # Clean up any active 1-to-1 calls for this user
+            calls_to_remove = []
+            for cid, c in active_calls.items():
+                if username in (c['caller'], c['callee']):
+                    other = c['caller'] if username == c['callee'] else c['callee']
+                    other_sid = user_socket_sessions.get(other)
+                    if other_sid:
+                        emit('call:ended', {
+                            'callId': cid,
+                            'by': username,
+                            'reason': 'disconnected',
+                        }, room=other_sid)
+                    calls_to_remove.append(cid)
+            for cid in calls_to_remove:
+                del active_calls[cid]
+            if calls_to_remove:
+                log.info(f"[CALL] Cleaned up {len(calls_to_remove)} call(s) for disconnected user {username}")
 
             log.info(f"[SOCKET] {username} disconnected - offline and cleaned up voice sessions")
 
@@ -760,7 +830,6 @@ def register_socket_events(socketio):
     @socketio.on('typing_dm')
     def on_typing_dm(data):
         """Handle typing indicator in direct messages."""
-        conn = None
         try:
             username = get_user_from_socket()
             if not username:
@@ -770,14 +839,20 @@ def register_socket_events(socketio):
             user_id = data.get('user_id')
             is_typing = data.get('is_typing', True)
             
-            log.info(f"[SOCKET] 🔤 {username} typing_dm={is_typing} to user_id: {user_id}")
-            
-            # Get current user's ID
-            conn = get_db_connection()
-            with conn.cursor() as cur:
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                result = cur.fetchone()
-                current_user_id = result['id'] if result else None
+            # Use cached user ID (populated on connect) — avoids DB hit per keystroke
+            current_user_id = user_id_cache.get(username)
+            if not current_user_id:
+                # Fallback: fetch from DB and cache
+                conn = get_db_connection()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+                        result = cur.fetchone()
+                        current_user_id = result['id'] if result else None
+                        if current_user_id:
+                            user_id_cache[username] = current_user_id
+                finally:
+                    conn.close()
             
             if not current_user_id:
                 log.error(f"[SOCKET] Could not find user ID for {username}")
@@ -787,20 +862,14 @@ def register_socket_events(socketio):
             room = f"dm_{min(current_user_id, user_id)}_{max(current_user_id, user_id)}"
             
             # Emit typing indicator to all users in the room EXCEPT sender
-            log.info(f"[SOCKET] 🔤 Broadcasting typing indicator to room {room}")
             emit('user_typing_dm', {
                 'user_id': current_user_id,
                 'username': username,
                 'is_typing': is_typing
             }, room=room, include_self=False)
-            
-            log.debug(f"[SOCKET] 🔤 Typing indicator sent to room {room}")
 
         except Exception as e:
             log.error(f"[SOCKET] typing_dm error: {e}", exc_info=True)
-        finally:
-            if conn:
-                conn.close()
 
     @socketio.on('send_direct_message')
     def on_send_direct_message(data):
@@ -854,8 +923,9 @@ def register_socket_events(socketio):
             }
 
             # Broadcast to the DM room (for users actively in the conversation)
+            # Use include_self=False because sender already has it locally
             log.info(f"[SOCKET] 📤 Emitting receive_direct_message to room {room}")
-            emit('receive_direct_message', message_data, room=room, include_self=True)
+            emit('receive_direct_message', message_data, room=room, include_self=False)
             log.info(f"[SOCKET] 📤✅ Broadcasted message to DM room: {room}")
 
             # ALSO emit to receiver's personal room for notifications
@@ -863,7 +933,6 @@ def register_socket_events(socketio):
             receiver_room = f"user_{receiver_id}"
             log.info(f"[SOCKET] 🔔 Emitting receive_direct_message to receiver's personal room: {receiver_room}")
             socketio.emit('receive_direct_message', message_data, to=receiver_room, namespace='/')
-            log.info(f"[SOCKET] 🔔✅ Notification sent to receiver room: {receiver_room}")
 
         except Exception as e:
             log.error(f"[SOCKET] send_direct_message error: {e}", exc_info=True)
@@ -1231,7 +1300,7 @@ def register_socket_events(socketio):
 
     @socketio.on('send_offer')
     def on_send_offer(data):
-        """Send WebRTC offer to peer - FIXED."""
+        """Send WebRTC offer to target peer via the voice room."""
         try:
             username = get_user_from_socket()
             if not username:
@@ -1243,37 +1312,27 @@ def register_socket_events(socketio):
             offer = data.get('offer')
 
             log.info(f"[VOICE] 📤 Offer from {username} to {target_user}")
-            log.info(f"[VOICE] 📤 Current sessions: {list(user_socket_sessions.keys())}")
 
-            # Get target user's socket ID
-            target_sid = user_socket_sessions.get(target_user)
-            
-            if not target_sid:
-                log.error(f"[VOICE] ❌ No socket session for {target_user}")
-                log.error(f"[VOICE] ❌ Available sessions: {user_socket_sessions}")
-                emit('voice_error', {'message': f'User {target_user} not connected'})
-                return
-
-            # Send to specific socket ID
-            log.info(f"[VOICE] 📤 Sending offer to SID: {target_sid}")
-            
-            # Use room broadcast as fallback to ensure delivery
+            # Route through the voice room — guarantees delivery to the
+            # socketService socket that VoiceContext is listening on,
+            # regardless of which socket registered last in user_socket_sessions.
             voice_room = f"voice_{channel_id}"
+            log.info(f"[VOICE] 📤 Sending offer to {target_user} via room {voice_room}")
             emit('receive_offer', {
-                'from': username,  # Sender's username
+                'from': username,
                 'offer': offer,
                 'channel_id': channel_id,
-                'target': target_user  # Add explicit target
-            }, room=voice_room)
+                'target': target_user
+            }, room=voice_room, include_self=False)
 
-            log.info(f"[VOICE] ✅ Offer broadcasted from {username} to room {voice_room}")
+            log.info(f"[VOICE] ✅ Offer sent from {username} to {target_user}")
 
         except Exception as e:
             log.error(f"[VOICE] send_offer error: {e}", exc_info=True)
 
     @socketio.on('send_answer')
     def on_send_answer(data):
-        """Send WebRTC answer to peer - FIXED."""
+        """Send WebRTC answer to target peer via the voice room."""
         try:
             username = get_user_from_socket()
             if not username:
@@ -1285,34 +1344,24 @@ def register_socket_events(socketio):
             answer = data.get('answer')
 
             log.info(f"[VOICE] 📤 Answer from {username} to {target_user}")
-            log.info(f"[VOICE] 📤 Current sessions: {list(user_socket_sessions.keys())}")
 
-            target_sid = user_socket_sessions.get(target_user)
-            
-            if not target_sid:
-                log.error(f"[VOICE] ❌ No socket session for {target_user}")
-                log.error(f"[VOICE] ❌ Available sessions: {user_socket_sessions}")
-                return
-
-            log.info(f"[VOICE] 📤 Sending answer to SID: {target_sid}")
-            
-            # Use room broadcast to ensure delivery
             voice_room = f"voice_{channel_id}"
+            log.info(f"[VOICE] 📤 Sending answer to {target_user} via room {voice_room}")
             emit('receive_answer', {
                 'from': username,
                 'answer': answer,
                 'channel_id': channel_id,
                 'target': target_user
-            }, room=voice_room)
+            }, room=voice_room, include_self=False)
 
-            log.info(f"[VOICE] ✅ Answer broadcasted from {username} to room {voice_room}")
+            log.info(f"[VOICE] ✅ Answer sent from {username} to {target_user}")
 
         except Exception as e:
             log.error(f"[VOICE] send_answer error: {e}", exc_info=True)
 
     @socketio.on('send_ice_candidate')
     def on_send_ice_candidate(data):
-        """Send ICE candidate to peer - FIXED."""
+        """Send ICE candidate to target peer via the voice room."""
         try:
             username = get_user_from_socket()
             if not username:
@@ -1322,22 +1371,13 @@ def register_socket_events(socketio):
             target_user = data.get('target_user')
             candidate = data.get('candidate')
 
-            log.debug(f"[VOICE] 📤 ICE from {username} to {target_user}")
-
-            target_sid = user_socket_sessions.get(target_user)
-            
-            if not target_sid:
-                log.warning(f"[VOICE] ⚠️ No socket for {target_user} (ICE)")
-                return
-
-            # Use room broadcast for ICE candidates too
             voice_room = f"voice_{channel_id}"
             emit('receive_ice_candidate', {
                 'from': username,
                 'candidate': candidate,
                 'channel_id': channel_id,
                 'target': target_user
-            }, room=voice_room)
+            }, room=voice_room, include_self=False)
 
         except Exception as e:
             log.error(f"[VOICE] send_ice_candidate error: {e}")
@@ -1443,9 +1483,89 @@ def register_socket_events(socketio):
     # REACTION EVENTS
     # ============================================================================
 
+    @socketio.on('voice:speaking')
+    def on_voice_speaking(data):
+        """Relay speaking state to other voice channel participants."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            channel_id = data.get('channel_id')
+            is_speaking = data.get('is_speaking', False)
+
+            voice_room = f"voice_{channel_id}"
+            emit('voice:speaking', {
+                'username': username,
+                'channel_id': channel_id,
+                'is_speaking': is_speaking,
+            }, room=voice_room, include_self=False)
+
+        except Exception as e:
+            log.error(f"[VOICE] voice:speaking error: {e}")
+
+    @socketio.on('get_voice_participants')
+    def on_get_voice_participants(data):
+        """Get active voice participants for multiple channels (sidebar cards)."""
+        conn = None
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            channel_ids = data.get('channel_ids', [])
+            if not channel_ids:
+                emit('voice_participants_update', {'channels': {}})
+                return
+
+            conn = get_db_connection()
+            result = {}
+            with conn.cursor() as cur:
+                for ch_id in channel_ids:
+                    cur.execute("""
+                        SELECT u.id, u.username, u.display_name, u.avatar_url
+                        FROM voice_participants vp
+                        JOIN voice_channels vc ON vp.voice_channel_id = vc.id
+                        JOIN users u ON vp.user_id = u.id
+                        WHERE vc.channel_id = %s AND vp.left_at IS NULL
+                        ORDER BY vp.joined_at ASC
+                        LIMIT 5
+                    """, (ch_id,))
+                    members = cur.fetchall()
+                    
+                    # Also get total count
+                    cur.execute("""
+                        SELECT COUNT(*) as cnt
+                        FROM voice_participants vp
+                        JOIN voice_channels vc ON vp.voice_channel_id = vc.id
+                        WHERE vc.channel_id = %s AND vp.left_at IS NULL
+                    """, (ch_id,))
+                    count_row = cur.fetchone()
+                    
+                    result[str(ch_id)] = {
+                        'members': [{
+                            'id': m['id'],
+                            'username': m['username'],
+                            'display_name': m['display_name'],
+                            'avatar_url': m['avatar_url'],
+                        } for m in (members or [])],
+                        'total': count_row['cnt'] if count_row else 0
+                    }
+
+            emit('voice_participants_update', {'channels': result})
+
+        except Exception as e:
+            log.error(f"[VOICE] get_voice_participants error: {e}", exc_info=True)
+            emit('voice_error', {'message': 'Failed to get voice participants'})
+        finally:
+            if conn:
+                conn.close()
+
     @socketio.on('message_reaction_added')
     def handle_message_reaction_added(data):
-        """Handle real-time reaction addition to community messages"""
+        """Handle real-time reaction addition to community messages.
+        Broadcasts the full aggregated reactions so every client can replace
+        its local state without needing a follow-up GET."""
         try:
             username = get_user_from_socket()
             if not username:
@@ -1456,19 +1576,24 @@ def register_socket_events(socketio):
             channel_id = data.get('channel_id')
             emoji = data.get('emoji')
             user_id = data.get('user_id')
-            
-            log.info(f"[REACTION] {username} reacted to message {message_id} with {emoji}")
-            
-            # Broadcast reaction to all users in the channel
+
+            # Pull the fresh aggregation from cache (written by the HTTP
+            # toggle endpoint moments ago).  Every viewer stamps their own
+            # reacted_by_current_user flag client-side.
+            from services.reaction_cache import get_reactions
+            reactions = get_reactions("msg", message_id, username)
+
+            room = f"channel_{channel_id}"
             emit('message_reaction_update', {
                 'message_id': message_id,
                 'channel_id': channel_id,
                 'emoji': emoji,
                 'user_id': user_id,
                 'username': username,
-                'action': 'added'
-            }, broadcast=True, include_self=True)
-            
+                'action': 'added',
+                'reactions': reactions,
+            }, room=room, include_self=True)
+
         except Exception as e:
             log.error(f"[REACTION] Error handling message reaction: {e}")
             emit('error', {'message': 'Failed to add reaction'})
@@ -1486,19 +1611,21 @@ def register_socket_events(socketio):
             channel_id = data.get('channel_id')
             emoji = data.get('emoji')
             user_id = data.get('user_id')
-            
-            log.info(f"[REACTION] {username} removed reaction from message {message_id}")
-            
-            # Broadcast reaction removal to all users in the channel
+
+            from services.reaction_cache import get_reactions
+            reactions = get_reactions("msg", message_id, username)
+
+            room = f"channel_{channel_id}"
             emit('message_reaction_update', {
                 'message_id': message_id,
                 'channel_id': channel_id,
                 'emoji': emoji,
                 'user_id': user_id,
                 'username': username,
-                'action': 'removed'
-            }, broadcast=True, include_self=True)
-            
+                'action': 'removed',
+                'reactions': reactions,
+            }, room=room, include_self=True)
+
         except Exception as e:
             log.error(f"[REACTION] Error handling message reaction removal: {e}")
             emit('error', {'message': 'Failed to remove reaction'})
@@ -1515,19 +1642,25 @@ def register_socket_events(socketio):
             dm_id = data.get('dm_id')
             emoji = data.get('emoji')
             user_id = data.get('user_id')
-            other_user = data.get('other_user')  # The other person in the DM
-            
-            log.info(f"[DM_REACTION] {username} reacted to DM {dm_id} with {emoji}")
-            
-            # Send to both users in the DM
-            emit('dm_reaction_update', {
+            other_user_id = data.get('other_user_id')
+
+            from services.reaction_cache import get_reactions
+            reactions = get_reactions("dm", dm_id, username)
+
+            reaction_data = {
                 'dm_id': dm_id,
                 'emoji': emoji,
                 'user_id': user_id,
                 'username': username,
-                'action': 'added'
-            }, broadcast=True, include_self=True)
-            
+                'action': 'added',
+                'reactions': reactions,
+            }
+
+            if other_user_id:
+                socketio.emit('dm_reaction_update', reaction_data,
+                             to=f"user_{other_user_id}", namespace='/')
+            emit('dm_reaction_update', reaction_data)
+
         except Exception as e:
             log.error(f"[DM_REACTION] Error handling DM reaction: {e}")
             emit('error', {'message': 'Failed to add reaction'})
@@ -1544,22 +1677,346 @@ def register_socket_events(socketio):
             dm_id = data.get('dm_id')
             emoji = data.get('emoji')
             user_id = data.get('user_id')
-            
-            log.info(f"[DM_REACTION] {username} removed reaction from DM {dm_id}")
-            
-            # Send to both users in the DM
-            emit('dm_reaction_update', {
+            other_user_id = data.get('other_user_id')
+
+            from services.reaction_cache import get_reactions
+            reactions = get_reactions("dm", dm_id, username)
+
+            reaction_data = {
                 'dm_id': dm_id,
                 'emoji': emoji,
                 'user_id': user_id,
                 'username': username,
-                'action': 'removed'
-            }, broadcast=True, include_self=True)
-            
+                'action': 'removed',
+                'reactions': reactions,
+            }
+
+            if other_user_id:
+                socketio.emit('dm_reaction_update', reaction_data,
+                             to=f"user_{other_user_id}", namespace='/')
+            emit('dm_reaction_update', reaction_data)
+
         except Exception as e:
             log.error(f"[DM_REACTION] Error handling DM reaction removal: {e}")
             emit('error', {'message': 'Failed to remove reaction'})
     
+    # ============================================================================
+    # PIN / UNPIN EVENTS  
+    # ============================================================================
+
+    @socketio.on('pin_message')
+    def handle_pin_message(data):
+        """Broadcast pin event to channel members."""
+        try:
+            channel_id = data.get('channel_id')
+            message_id = data.get('message_id')
+            pinned_by = data.get('pinned_by')
+            
+            room = f"channel_{channel_id}"
+            emit('message_pinned', {
+                'channel_id': channel_id,
+                'message_id': message_id,
+                'pinned_by': pinned_by,
+            }, to=room, include_self=True)
+            log.info(f"[PIN] Message {message_id} pinned in channel {channel_id} by {pinned_by}")
+        except Exception as e:
+            log.error(f"[PIN] Error: {e}")
+
+    @socketio.on('unpin_message')
+    def handle_unpin_message(data):
+        """Broadcast unpin event to channel members."""
+        try:
+            channel_id = data.get('channel_id')
+            message_id = data.get('message_id')
+            
+            room = f"channel_{channel_id}"
+            emit('message_unpinned', {
+                'channel_id': channel_id,
+                'message_id': message_id,
+            }, to=room, include_self=True)
+            log.info(f"[UNPIN] Message {message_id} unpinned in channel {channel_id}")
+        except Exception as e:
+            log.error(f"[UNPIN] Error: {e}")
+
+    # ============================================================================
+    # CUSTOM STATUS BROADCAST  
+    # ============================================================================
+
+    @socketio.on('update_custom_status')
+    def handle_custom_status(data):
+        """Broadcast custom status change to all connected users."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+            
+            emit('user_custom_status', {
+                'username': username,
+                'custom_status': data.get('custom_status'),
+                'custom_status_emoji': data.get('custom_status_emoji'),
+            }, broadcast=True, include_self=False)
+            log.info(f"[STATUS] {username} updated custom status")
+        except Exception as e:
+            log.error(f"[STATUS] Error: {e}")
+
+    # ============================================================================
+    # 1-TO-1 AUDIO / VIDEO CALL SIGNALING
+    # ============================================================================
+    # Active calls: call_id -> { caller, callee, status, type, started_at }
+    active_calls = {}
+
+    def _get_user_id(username):
+        """Get user id from username."""
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+                row = cur.fetchone()
+                return row['id'] if row else None
+        except Exception:
+            return None
+        finally:
+            if conn:
+                conn.close()
+
+    @socketio.on('call:initiate')
+    def handle_call_initiate(data):
+        """Caller initiates an audio or video call."""
+        try:
+            caller = get_user_from_socket()
+            if not caller:
+                emit('call:error', {'message': 'Unauthorized'})
+                return
+
+            callee_username = data.get('callee')
+            call_type = data.get('type', 'audio')  # 'audio' | 'video'
+
+            if not callee_username:
+                emit('call:error', {'message': 'Missing callee'})
+                return
+
+            if callee_username == caller:
+                emit('call:error', {'message': 'Cannot call yourself'})
+                return
+
+            # Check callee is online
+            if callee_username not in user_socket_sessions:
+                emit('call:error', {'message': 'User is offline'})
+                return
+
+            # Prevent duplicate calls — check if either party is already in a call
+            for cid, c in active_calls.items():
+                if c['status'] in ('ringing', 'connected'):
+                    if caller in (c['caller'], c['callee']) or callee_username in (c['caller'], c['callee']):
+                        emit('call:error', {'message': 'Already in a call'})
+                        return
+
+            # Get caller profile info
+            conn = get_db_connection()
+            caller_info = {}
+            callee_info = {}
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, username, display_name, avatar_url FROM users WHERE username = %s", (caller,))
+                    row = cur.fetchone()
+                    if row:
+                        caller_info = {
+                            'id': row['id'],
+                            'username': row['username'],
+                            'display_name': row['display_name'] or row['username'],
+                            'avatar_url': row['avatar_url'],
+                        }
+                    cur.execute("SELECT id, username, display_name, avatar_url FROM users WHERE username = %s", (callee_username,))
+                    row2 = cur.fetchone()
+                    if row2:
+                        callee_info = {
+                            'id': row2['id'],
+                            'username': row2['username'],
+                            'display_name': row2['display_name'] or row2['username'],
+                            'avatar_url': row2['avatar_url'],
+                        }
+            finally:
+                conn.close()
+
+            import uuid
+            call_id = str(uuid.uuid4())
+
+            active_calls[call_id] = {
+                'caller': caller,
+                'callee': callee_username,
+                'type': call_type,
+                'status': 'ringing',
+                'started_at': datetime.utcnow().isoformat(),
+            }
+
+            # Notify callee via username room (reaches all sockets for that user)
+            emit('call:ringing', {
+                'callId': call_id,
+                'caller': caller_info,
+                'type': call_type,
+            }, room=f"calluser_{callee_username}")
+
+            # Confirm to caller
+            emit('call:initiated', {
+                'callId': call_id,
+                'callee': callee_info,
+                'type': call_type,
+            })
+
+            log.info(f"[CALL] {caller} initiated {call_type} call to {callee_username} (call_id={call_id})")
+
+        except Exception as e:
+            log.error(f"[CALL] initiate error: {e}", exc_info=True)
+            emit('call:error', {'message': 'Failed to initiate call'})
+
+    @socketio.on('call:accept')
+    def handle_call_accept(data):
+        """Callee accepts an incoming call."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            call_id = data.get('callId')
+            call = active_calls.get(call_id)
+            if not call or call['callee'] != username:
+                emit('call:error', {'message': 'Invalid call'})
+                return
+
+            if call['status'] != 'ringing':
+                emit('call:error', {'message': 'Call no longer ringing'})
+                return
+
+            call['status'] = 'connected'
+
+            emit('call:accepted', {'callId': call_id}, room=f"calluser_{call['caller']}")
+
+            log.info(f"[CALL] {username} accepted call {call_id}")
+
+        except Exception as e:
+            log.error(f"[CALL] accept error: {e}", exc_info=True)
+
+    @socketio.on('call:reject')
+    def handle_call_reject(data):
+        """Callee rejects an incoming call."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            call_id = data.get('callId')
+            call = active_calls.get(call_id)
+            if not call:
+                return
+
+            # Either party can reject/cancel
+            if username not in (call['caller'], call['callee']):
+                return
+
+            other = call['caller'] if username == call['callee'] else call['callee']
+            emit('call:rejected', {
+                'callId': call_id,
+                'by': username,
+            }, room=f"calluser_{other}")
+
+            del active_calls[call_id]
+            log.info(f"[CALL] {username} rejected call {call_id}")
+
+        except Exception as e:
+            log.error(f"[CALL] reject error: {e}", exc_info=True)
+
+    @socketio.on('call:end')
+    def handle_call_end(data):
+        """Either party ends an active call."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            call_id = data.get('callId')
+            call = active_calls.get(call_id)
+            if not call:
+                return
+
+            if username not in (call['caller'], call['callee']):
+                return
+
+            other = call['caller'] if username == call['callee'] else call['callee']
+            emit('call:ended', {
+                'callId': call_id,
+                'by': username,
+            }, room=f"calluser_{other}")
+
+            del active_calls[call_id]
+            log.info(f"[CALL] {username} ended call {call_id}")
+
+        except Exception as e:
+            log.error(f"[CALL] end error: {e}", exc_info=True)
+
+    @socketio.on('call:ice-candidate')
+    def handle_ice_candidate(data):
+        """Relay ICE candidate to the other party."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            call_id = data.get('callId')
+            call = active_calls.get(call_id)
+            if not call or username not in (call['caller'], call['callee']):
+                return
+
+            other = call['caller'] if username == call['callee'] else call['callee']
+            emit('call:ice-candidate', {
+                'callId': call_id,
+                'candidate': data.get('candidate'),
+            }, room=f"calluser_{other}")
+
+        except Exception as e:
+            log.error(f"[CALL] ICE error: {e}", exc_info=True)
+
+    @socketio.on('call:sdp-offer')
+    def handle_sdp_offer(data):
+        """Relay SDP offer from caller to callee."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            call_id = data.get('callId')
+            call = active_calls.get(call_id)
+            if not call or username != call['caller']:
+                return
+
+            emit('call:sdp-offer', {
+                'callId': call_id,
+                'sdp': data.get('sdp'),
+            }, room=f"calluser_{call['callee']}")
+
+        except Exception as e:
+            log.error(f"[CALL] SDP offer error: {e}", exc_info=True)
+
+    @socketio.on('call:sdp-answer')
+    def handle_sdp_answer(data):
+        """Relay SDP answer from callee to caller."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+
+            call_id = data.get('callId')
+            call = active_calls.get(call_id)
+            if not call or username != call['callee']:
+                return
+
+            emit('call:sdp-answer', {
+                'callId': call_id,
+                'sdp': data.get('sdp'),
+            }, room=f"calluser_{call['caller']}")
+
+        except Exception as e:
+            log.error(f"[CALL] SDP answer error: {e}", exc_info=True)
+
     # ============================================================================
     # ERROR HANDLERS
     # ============================================================================

@@ -4,6 +4,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { Settings, Users, Hash, ChevronDown, Crown, Shield } from "lucide-react";
 import { Community, Channel } from "@/types";
 import CommunitySettingsModal from "./modals/CommunitySettingsModal";
+import { API_SERVER } from "@/config/api";
 
 interface CommunityHeaderProps {
   community: Community;
@@ -13,8 +14,6 @@ interface CommunityHeaderProps {
   onChannelSelect?: (channel: Channel) => void;
   onCommunityUpdated?: (community: Community) => void;
 }
-
-const API_BASE = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
 
 export default function CommunityHeader({
   community,
@@ -29,8 +28,8 @@ export default function CommunityHeader({
   const [showChannels, setShowChannels] = useState(true);
 
   const isOwnerOrAdmin = community.role === 'owner' || community.role === 'admin';
-  const logoUrl = community.logo_url ? `${API_BASE}${community.logo_url}` : null;
-  const bannerUrl = community.banner_url ? `${API_BASE}${community.banner_url}` : null;
+  const logoUrl = community.logo_url ? `${API_SERVER}${community.logo_url}` : null;
+  const bannerUrl = community.banner_url ? `${API_SERVER}${community.banner_url}` : null;
 
   const getRoleBadge = () => {
     if (community.role === 'owner') {

@@ -29,7 +29,7 @@ interface DirectMessagesContextType {
 
   // Message operations
   getMessages: (userId: number, limit?: number, offset?: number) => Promise<void>;
-  sendMessage: (receiverId: number, content: string) => Promise<void>;
+  sendMessage: (receiverId: number, content: string, replyTo?: number) => Promise<void>;
   deleteMessage: (messageId: number) => Promise<void>;
   editMessage: (messageId: number, content: string) => Promise<void>;
   markAsRead: (messageId: number) => Promise<void>;
@@ -76,10 +76,6 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
         last_message: undefined
       }));
       setConversations(newConversations);
-      console.log('%c[✅ INITIALIZED CONVERSATIONS FROM FRIENDS]', 'color: #00ff00', {
-        count: newConversations.length,
-        friends: friends.map(f => f.display_name || f.username)
-      });
     }
   }, [friends]);
 
@@ -92,14 +88,9 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     messagesRef.current = messages;
   }, [messages]);
 
-  // Update current user ID from auth context - THIS FIXES THE ISSUE
+  // Update current user ID from auth context
   useEffect(() => {
     if (authUser?.id) {
-      console.log('%c[✅ CURRENT USER SET]', 'color: #00ff00', {
-        userId: authUser.id,
-        username: authUser.username,
-        timestamp: new Date().toLocaleTimeString(),
-      });
       currentUserIdRef.current = authUser.id;
     }
   }, [authUser?.id]);
@@ -122,23 +113,12 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     setLoading(true);
     setError(null);
     try {
-      console.log('%c[🚀 SELECT CONVERSATION START]', 'color: #00ff00; font-weight: bold', {
-        target_user_id: userId,
-        timestamp: new Date().toLocaleTimeString(),
-      });
-      
       // Set current conversation
       const conversation = conversations.find(c => c.user_id === userId);
       if (conversation) {
-        console.log('%c[✅ CONVERSATION FOUND]', 'color: #00ff00', {
-          user_id: userId,
-        });
         setCurrentConversation(conversation);
-        currentConversationRef.current = conversation; // Update ref immediately
+        currentConversationRef.current = conversation;
       } else {
-        console.log('%c[⚠️ CONVERSATION NOT FOUND]', 'color: #ff8800', {
-          user_id: userId,
-        });
         // Create a temporary conversation object for the ref
         currentConversationRef.current = {
           user_id: userId,
@@ -149,27 +129,12 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
       }
 
       // Fetch messages
-      console.log('%c[📥 FETCHING MESSAGES]', 'color: #0088ff', {
-        user_id: userId,
-      });
       const msgs = await directMessageService.getDirectMessages(userId);
-      console.log('%c[✅ MESSAGES FETCHED]', 'color: #00ff00', {
-        user_id: userId,
-        count: msgs.length,
-        timestamp: new Date().toLocaleTimeString(),
-      });
       setMessages(msgs);
-      messagesRef.current = msgs; // Update ref immediately
+      messagesRef.current = msgs;
 
       // Join DM socket room
-      console.log('%c[🚪 JOINING SOCKET ROOM]', 'color: #0088ff', {
-        user_id: userId,
-      });
       socketService.joinDMConversation(userId);
-      console.log('%c[✅ JOINED SOCKET ROOM]', 'color: #00ff00', {
-        user_id: userId,
-        timestamp: new Date().toLocaleTimeString(),
-      });
 
       // Mark all as read
       if (msgs.length > 0) {
@@ -231,43 +196,15 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
 
   // Send message
   const sendMessage = useCallback(
-    async (receiverId: number, content: string) => {
+    async (receiverId: number, content: string, replyTo?: number) => {
       setError(null);
       try {
-        console.log('%c[📤 SEND MESSAGE START]', 'color: #00ff00; font-weight: bold', {
-          receiverId,
-          content_len: content.length,
-          content_preview: content.substring(0, 50),
-          timestamp: new Date().toLocaleTimeString(),
-        });
-        
-        const message = await directMessageService.sendDirectMessage(receiverId, content);
-        
-        console.log('%c[📤 API RESPONSE RECEIVED]', 'color: #00ff00', {
-          msg_id: message.id,
-          from: message.sender_id,
-          to: message.receiver_id,
-          has_sender: !!message.sender,
-          has_receiver: !!message.receiver,
-          timestamp: new Date().toLocaleTimeString(),
-        });
+        const message = await directMessageService.sendDirectMessage(receiverId, content, 'text', replyTo);
         
         // Add to local state immediately
-        console.log('%c[➕ ADDING TO LOCAL STATE]', 'color: #0088ff', {
-          msg_id: message.id,
-        });
         addMessage(message);
-        console.log('%c[✅ ADDED TO LOCAL STATE]', 'color: #00ff00');
 
         // Broadcast via socket with full message data
-        console.log('%c[🔊 BROADCASTING VIA SOCKET]', 'color: #0088ff', {
-          msg_id: message.id,
-          receiver_id: receiverId,
-          has_sender: !!message.sender,
-          has_receiver: !!message.receiver,
-          timestamp: new Date().toLocaleTimeString(),
-        });
-        
         socketService.broadcastDirectMessage({
           id: message.id,
           sender_id: message.sender_id,
@@ -276,14 +213,11 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
           message_type: message.message_type,
           created_at: message.created_at,
           is_read: message.is_read,
+          reply_to: message.reply_to,
+          reply_to_preview: message.reply_to_preview,
           sender: message.sender,
           receiver: message.receiver,
           edited_at: message.edited_at,
-        });
-        
-        console.log('%c[✅ BROADCAST COMPLETE]', 'color: #00ff00; font-weight: bold', {
-          msg_id: message.id,
-          timestamp: new Date().toLocaleTimeString(),
         });
       } catch (err: any) {
         console.error('[DirectMessagesContext] Error sending message:', err);
@@ -345,35 +279,13 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
 
   // Local state updates
   const addMessage = useCallback((message: DirectMessage) => {
-    console.log('%c[📨 addMessage FUNCTION CALLED]', 'color: #0088ff; font-weight: bold', {
-      message_id: message.id,
-      from: message.sender_id,
-      to: message.receiver_id,
-      content_preview: message.content?.substring(0, 50),
-      timestamp: new Date().toLocaleTimeString(),
-    });
-    
     setMessages(prev => {
       // Check if exists using current ref
       const exists = messagesRef.current.some(m => m.id === message.id);
-      
-      if (exists) {
-        console.log('%c[⚠️ MESSAGE DUPLICATE]', 'color: #ff8800', {
-          message_id: message.id,
-          reason: 'Message already in state, skipping',
-        });
-        return prev;
-      }
+      if (exists) return prev;
       
       const newArray = [...prev, message];
-      messagesRef.current = newArray; // Update ref immediately
-      console.log('%c[✅ MESSAGE ADDED TO STATE]', 'color: #00ff00; font-weight: bold', {
-        message_id: message.id,
-        new_array_length: newArray.length,
-        prev_length: prev.length,
-        timestamp: new Date().toLocaleTimeString(),
-      });
-      
+      messagesRef.current = newArray;
       return newArray;
     });
     
@@ -405,56 +317,19 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     });
   }, []);
 
-  // GLOBAL SOCKET LISTENER - FIXED to use refs and simpler logic
+  // GLOBAL SOCKET LISTENER - uses refs to avoid stale closures
   useEffect(() => {
-    console.log('%c[🌍 LISTENER SETUP FIXED VERSION]', 'color: #00ff00; font-weight: bold', {
-      timestamp: new Date().toLocaleTimeString(),
-    });
-    
     const handleGlobalDirectMessage = (message: any) => {
-      const timestamp = new Date().toLocaleTimeString();
-      console.log('%c[🌍 NEW MESSAGE RECEIVED]', 'color: #ff00ff; font-weight: bold', {
-        timestamp,
-        msg_id: message.id,
-        sender_id: message.sender_id,
-        receiver_id: message.receiver_id,
-        content_preview: message.content?.substring(0, 50),
-      });
-      
-      // Get current user ID from ref
       const currentUserId = currentUserIdRef.current;
       
-      if (!currentUserId) {
-        console.log('%c[❌ NO CURRENT USER ID]', 'color: #ff0000', 'No current user ID found in ref - ignoring message');
-        return;
-      }
+      if (!currentUserId) return;
       
-      console.log('%c[🔍 CHECKING MESSAGE RELEVANCE]', 'color: #ffff00', {
-        currentUserId,
-        message_sender: message.sender_id,
-        message_receiver: message.receiver_id,
-        is_sender: message.sender_id === currentUserId,
-        is_receiver: message.receiver_id === currentUserId,
-      });
-      
-      // Check if message involves current user (either as sender or receiver)
+      // Check if message involves current user
       const isForCurrentUser = 
         message.sender_id === currentUserId || 
         message.receiver_id === currentUserId;
       
-      if (!isForCurrentUser) {
-        console.log('%c[⚠️ MESSAGE NOT FOR ME]', 'color: #ff8800', {
-          reason: 'Message does not involve current user',
-          message_users: `${message.sender_id} -> ${message.receiver_id}`,
-          currentUserId,
-        });
-        return;
-      }
-      
-      console.log('%c[✅ MESSAGE IS RELEVANT]', 'color: #00ff00', {
-        id: message.id,
-        for_current_user: true,
-      });
+      if (!isForCurrentUser) return;
       
       const newMessage: DirectMessage = {
         id: message.id,
@@ -467,11 +342,10 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
         sender: message.sender,
         receiver: message.receiver,
         edited_at: message.edited_at,
+        attachment: message.attachment,
       };
       
-      console.log('%c[📨 ADDING MESSAGE TO STATE]', 'color: #0088ff', newMessage);
       addMessage(newMessage);
-      console.log('%c[✅ MESSAGE PROCESSED SUCCESSFULLY]', 'color: #00ff00; font-weight: bold');
       
       // Emit notification event for new messages from others
       if (message.sender_id !== currentUserId && typeof window !== 'undefined') {
@@ -484,38 +358,13 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
           }
         });
         window.dispatchEvent(notificationEvent);
-        console.log('%c[🔔 MESSAGE NOTIFICATION EMITTED]', 'color: #00ff00', {
-          from: message.sender?.display_name || message.sender?.username,
-          content_preview: message.content?.substring(0, 30),
-        });
       }
     };
     
     // Register global listener
-    try {
-      console.log('%c[🔌 REGISTERING SOCKET LISTENER]', 'color: #0088ff', 'Attempting to register socket listener');
-      
-      if (socketService && typeof (socketService as any).onDirectMessage === 'function') {
-        const unsubscribe = (socketService as any).onDirectMessage(handleGlobalDirectMessage);
-        console.log('%c[✅ LISTENER REGISTERED SUCCESSFULLY]', 'color: #00ff00', {
-          has_unsubscribe: !!unsubscribe,
-          timestamp: new Date().toLocaleTimeString(),
-        });
-        return unsubscribe;
-      } else {
-        console.error('%c[❌ onDirectMessage NOT AVAILABLE]', 'color: #ff0000', {
-          type: typeof (socketService as any).onDirectMessage,
-          socketService_exists: !!socketService,
-        });
-      }
-    } catch (err) {
-      console.error('%c[❌ LISTENER REGISTRATION FAILED]', 'color: #ff0000', err);
-    }
-    
-    return () => {
-      console.log('%c[🗑️ CLEANING UP LISTENER]', 'color: #ff8800', 'Socket listener cleanup');
-    };
-  }, [addMessage]); // Only depend on addMessage
+    const unsubscribe = socketService.onDirectMessage(handleGlobalDirectMessage);
+    return unsubscribe;
+  }, [addMessage]);
 
   const removeMessage = useCallback((messageId: number) => {
     setMessages(prev => {

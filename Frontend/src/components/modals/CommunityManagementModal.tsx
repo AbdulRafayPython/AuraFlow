@@ -12,6 +12,7 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { ConfirmDialog } from "./ConfirmDialog";
 import CommunitySettingsModal from "./CommunitySettingsModal";
 import { Community } from "@/types";
+import { API_SERVER } from "@/config/api";
 
 interface CommunityManagementModalProps {
   isOpen: boolean;
@@ -22,8 +23,6 @@ interface CommunityManagementModalProps {
   onCommunityLeft?: () => void;
   onCommunityUpdated?: (community: Community) => void;
 }
-
-const API_BASE = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
 
 export default function CommunityManagementModal({
   isOpen,
@@ -97,8 +96,7 @@ export default function CommunityManagementModal({
     if (!community) return;
     localStorage.setItem('selectedDashboardCommunity', community.id.toString());
     onClose();
-    // Use window.location for reliable navigation from modal
-    window.location.href = '/admin';
+    navigate('/admin');
   };
 
   const handleCopyInviteLink = async () => {
@@ -141,11 +139,11 @@ export default function CommunityManagementModal({
 
   if (!isOpen || !community) return null;
 
-  const logoUrl = community.logo_url ? `${API_BASE}${community.logo_url}` : null;
-  const bannerUrl = community.banner_url ? `${API_BASE}${community.banner_url}` : null;
+  const logoUrl = community.logo_url ? `${API_SERVER}${community.logo_url}` : null;
+  const bannerUrl = community.banner_url ? `${API_SERVER}${community.banner_url}` : null;
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
       <div className="w-full max-w-lg rounded-2xl shadow-2xl border overflow-hidden bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]">
         
         {/* Banner & Header */}

@@ -1,12 +1,11 @@
 // pages/Dashboard.tsx - Professional Real-time Version with Theme Support
-import { useState, useRef, useEffect } from "react";
-import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus, Mic, SmilePlus, X, Palette } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus, Mic, SmilePlus, X, Palette, Reply, Pin, Radio } from "lucide-react";
 import { useTheme, THEMES } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
 import { getAvatarUrl } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import VoiceChannelView from "@/components/VoiceChannelView";
 import EmojiPickerButton from "@/components/EmojiPickerButton";
 import ReactionPicker from "@/components/ReactionPicker";
 import MessageReactions from "@/components/MessageReactions";
@@ -15,12 +14,25 @@ import NotificationButton from "@/components/NotificationButton";
 import { reactionService } from "@/services/reactionService";
 import { socket } from "@/socket";
 import { SocketDebugPanel } from "@/components/SocketDebugPanel";
+import FileAttachment from "@/components/chat/FileAttachment";
+import FileUploadPreview from "@/components/chat/FileUploadPreview";
+import ReplyPreview from "@/components/chat/ReplyPreview";
+import ReplyBar from "@/components/chat/ReplyBar";
+import VoiceRecorder from "@/components/chat/VoiceRecorder";
+import { uploadService, validateFile, type UploadProgress } from "@/services/uploadService";
+import SearchModal from "@/components/search/SearchModal";
+import UserProfilePopover from "@/components/profile/UserProfilePopover";
+import PinnedMessagesPanel from "@/components/pins/PinnedMessagesPanel";
+import { pinService } from "@/services/pinService";
+import { statusService } from "@/services/statusService";
+import { friendService } from "@/services/friendService";
+import type { Message } from "@/types";
+import type { SearchResult } from "@/services/searchService";
 
 interface DashboardProps {
-  toggleRightSidebar?: () => void;
 }
 
-export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
+export default function Dashboard({}: DashboardProps) {
   const { isDarkMode, toggleTheme, currentTheme, setTheme, themes } = useTheme();
   const {
     isConnected,
@@ -53,6 +65,21 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // File upload state
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
+  // Reply state
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+
+  // --- Search, Pins, Profile, Unread state ---
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [pinsOpen, setPinsOpen] = useState(false);
+  const [pinnedCount, setPinnedCount] = useState(0);
+  const [profilePopover, setProfilePopover] = useState<{ username: string; rect: DOMRect | null } | null>(null);
+  const [unreadCounts, setUnreadCounts] = useState<Record<number, number>>({});
 
   // Available commands
   const availableCommands = [
@@ -78,6 +105,7 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
     if (currentChannel && inputRef.current) {
       inputRef.current.focus();
     }
+    setReplyingTo(null);
   }, [currentChannel]);
 
   // Refocus input after sending completes
@@ -95,60 +123,50 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
     }
   }, [messages.length, currentChannel?.id]);
 
-  // Load reactions for messages - only when message IDs change
+  // Load reactions for messages — ONE bulk API call instead of N individual calls
   useEffect(() => {
     const loadReactions = async () => {
       if (messages.length === 0) return;
-      
-      const reactions: Record<number, any[]> = {};
-      
-      // Only load reactions for new messages
-      for (const msg of messages) {
-        // Skip if we already have reactions for this message
-        if (messageReactions[msg.id]) {
-          reactions[msg.id] = messageReactions[msg.id];
-          continue;
-        }
-        
-        try {
-          const { reactions: msgReactions } = await reactionService.getMessageReactions(msg.id);
-          if (msgReactions && msgReactions.length > 0) {
-            reactions[msg.id] = msgReactions;
-          }
-        } catch (error) {
-          console.error(`Failed to load reactions for message ${msg.id}:`, error);
-        }
+
+      // Only fetch reactions for messages we haven't cached yet
+      const newIds = messages
+        .map((m) => m.id)
+        .filter((id) => !(id in messageReactions));
+
+      if (newIds.length === 0) return;
+
+      try {
+        const bulk = await reactionService.getMessageReactionsBulk(newIds);
+        setMessageReactions((prev) => ({ ...prev, ...bulk }));
+      } catch (error) {
+        console.error('Failed to bulk-load reactions:', error);
       }
-      setMessageReactions(reactions);
     };
-    
+
     if (messages.length > 0) {
       loadReactions();
     }
   }, [messages.length]); // Only depend on length, not full array
 
-  // Socket.IO reaction listeners
+  // Socket.IO reaction listener — single event carries full aggregation
   useEffect(() => {
-    const handleReactionAdded = (data: any) => {
-      setMessageReactions(prev => ({
-        ...prev,
-        [data.message_id]: data.reactions
-      }));
+    const handleReactionUpdate = (data: any) => {
+      if (!data.message_id || !data.reactions) return;
+      setMessageReactions(prev => {
+        const next = { ...prev };
+        if (data.reactions.length > 0) {
+          next[data.message_id] = data.reactions;
+        } else {
+          delete next[data.message_id];
+        }
+        return next;
+      });
     };
 
-    const handleReactionRemoved = (data: any) => {
-      setMessageReactions(prev => ({
-        ...prev,
-        [data.message_id]: data.reactions
-      }));
-    };
-
-    socket.on('message_reaction_added', handleReactionAdded);
-    socket.on('message_reaction_removed', handleReactionRemoved);
+    socket.on('message_reaction_update', handleReactionUpdate);
 
     return () => {
-      socket.off('message_reaction_added', handleReactionAdded);
-      socket.off('message_reaction_removed', handleReactionRemoved);
+      socket.off('message_reaction_update', handleReactionUpdate);
     };
   }, []);
 
@@ -200,29 +218,156 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
     };
   }, [toast]);
 
+  // --- Fetch pinned count when channel changes ---
+  useEffect(() => {
+    if (!currentChannel) return;
+    let cancelled = false;
+    pinService.getPinnedMessages(currentChannel.id).then(data => {
+      if (!cancelled) setPinnedCount(data.count);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [currentChannel?.id]);
+
+  // --- Fetch unread counts on mount ---
+  useEffect(() => {
+    statusService.getUnreadCounts().then(data => {
+      const map: Record<number, number> = {};
+      Object.entries(data).forEach(([chId, info]) => {
+        map[Number(chId)] = (info as any).unread_count || 0;
+      });
+      setUnreadCounts(map);
+    }).catch(() => {});
+  }, []);
+
+  // --- Mark channel as read when switching ---
+  useEffect(() => {
+    if (!currentChannel || messages.length === 0) return;
+    const lastMsgId = messages[messages.length - 1]?.id;
+    if (!lastMsgId) return;
+    statusService.markChannelRead(currentChannel.id, lastMsgId).then(() => {
+      setUnreadCounts(prev => ({ ...prev, [currentChannel.id]: 0 }));
+    }).catch(() => {});
+  }, [currentChannel?.id, messages.length]);
+
+  // --- Socket listeners for pins ---
+  useEffect(() => {
+    const handlePinned = (data: any) => {
+      if (data.channel_id === currentChannel?.id) {
+        setPinnedCount(prev => prev + 1);
+      }
+    };
+    const handleUnpinned = (data: any) => {
+      if (data.channel_id === currentChannel?.id) {
+        setPinnedCount(prev => Math.max(0, prev - 1));
+      }
+    };
+    socket.on('message_pinned', handlePinned);
+    socket.on('message_unpinned', handleUnpinned);
+    return () => {
+      socket.off('message_pinned', handlePinned);
+      socket.off('message_unpinned', handleUnpinned);
+    };
+  }, [currentChannel?.id]);
+
+  // --- Ctrl+K global search shortcut ---
+  useEffect(() => {
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, []);
+
+  // --- Handlers for search, pins, profile ---
+  const handleSearchNavigate = useCallback((result: SearchResult) => {
+    setSearchOpen(false);
+
+    const tryScrollToMessage = (messageId: number, retriesLeft = 20) => {
+      const el = document.getElementById(`msg-${messageId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-1', 'ring-[hsl(var(--theme-accent-primary)/0.6)]', 'bg-[hsl(var(--theme-accent-primary)/0.08)]');
+        setTimeout(() => {
+          el.classList.remove('ring-1', 'ring-[hsl(var(--theme-accent-primary)/0.6)]', 'bg-[hsl(var(--theme-accent-primary)/0.08)]');
+        }, 2500);
+        return;
+      }
+      if (retriesLeft > 0) {
+        setTimeout(() => tryScrollToMessage(messageId, retriesLeft - 1), 150);
+      } else {
+        // Message not in current batch — show toast with info
+        toast({
+          title: 'Message not in view',
+          description: `This message is older than the currently loaded messages. Channel: #${result.channel_name || 'channel'}`,
+        });
+      }
+    };
+
+    if (result.type === 'channel' && result.channel_id) {
+      if (result.channel_id !== currentChannel?.id) {
+        selectChannel(result.channel_id);
+        // Wait for channel switch + message load, then scroll
+        setTimeout(() => tryScrollToMessage(result.id), 200);
+      } else {
+        // Same channel — try immediately
+        tryScrollToMessage(result.id);
+      }
+    }
+  }, [currentChannel?.id, selectChannel, toast]);
+
+  const handlePinMessage = useCallback(async (messageId: number) => {
+    if (!currentChannel) return;
+    try {
+      await pinService.pinMessage(currentChannel.id, messageId);
+      setPinnedCount(prev => prev + 1);
+      toast({ title: 'Message pinned' });
+    } catch (err: any) {
+      toast({ title: 'Failed to pin', description: err.message, variant: 'destructive' });
+    }
+  }, [currentChannel, toast]);
+
+  const handleUnpinMessage = useCallback(async (messageId: number) => {
+    if (!currentChannel) return;
+    try {
+      await pinService.unpinMessage(currentChannel.id, messageId);
+      setPinnedCount(prev => Math.max(0, prev - 1));
+      toast({ title: 'Message unpinned' });
+    } catch (err: any) {
+      toast({ title: 'Failed to unpin', description: err.message, variant: 'destructive' });
+    }
+  }, [currentChannel, toast]);
+
+  const handleProfileClick = useCallback((username: string, e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setProfilePopover({ username, rect });
+  }, []);
+
   const handleEmojiSelect = (emoji: string) => {
     setMessage(prev => prev + emoji);
   };
 
   const handleReactionToggle = async (messageId: number, emoji: string) => {
     try {
-      await reactionService.toggleMessageReaction(messageId, emoji);
-      
-      // Immediately reload reactions for this message to ensure consistency
-      const { reactions: updatedReactions } = await reactionService.getMessageReactions(messageId);
-      
-      // Update state with fresh data from server (prevents duplicates)
-      setMessageReactions(prev => {
-        const newState = { ...prev };
-        if (updatedReactions && updatedReactions.length > 0) {
-          newState[messageId] = updatedReactions;
-        } else {
-          // Remove from state if no reactions left
-          delete newState[messageId];
-        }
-        return newState;
-      });
-    } catch (error) {
+      // Server returns the full aggregated reactions — no follow-up GET needed
+      const result = await reactionService.toggleMessageReaction(messageId, emoji);
+
+      if (result.reactions) {
+        setMessageReactions(prev => {
+          const next = { ...prev };
+          if (result.reactions!.length > 0) {
+            next[messageId] = result.reactions!;
+          } else {
+            delete next[messageId];
+          }
+          return next;
+        });
+      }
+    } catch (error: any) {
+      // Debounce rejections are expected — silently ignore
+      if (error?.message === 'debounced') return;
       console.error('Failed to toggle reaction:', error);
     }
   };
@@ -235,15 +380,59 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
     }
   };
 
+  // Reply helpers
+  const handleReply = (msg: Message) => {
+    setReplyingTo(msg);
+    inputRef.current?.focus();
+  };
+
+  const scrollToMessage = (messageId: number) => {
+    const el = document.getElementById(`msg-${messageId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-1', 'ring-[hsl(var(--theme-accent-primary)/0.6)]', 'bg-[hsl(var(--theme-accent-primary)/0.08)]');
+      setTimeout(() => {
+        el.classList.remove('ring-1', 'ring-[hsl(var(--theme-accent-primary)/0.6)]', 'bg-[hsl(var(--theme-accent-primary)/0.08)]');
+      }, 2000);
+    }
+  };
+
   const handleSendMessage = async () => {
+    // If a file is staged, send as file upload
+    if (pendingFile && currentChannel) {
+      setUploadProgress(0);
+      try {
+        await uploadService.uploadChannelFile(
+          pendingFile,
+          currentChannel.id,
+          message.trim() || undefined,
+          (p: UploadProgress) => setUploadProgress(p.percent)
+        );
+        setPendingFile(null);
+        setMessage("");
+      } catch (error: any) {
+        console.error("File upload failed:", error);
+        toast({
+          title: "Upload failed",
+          description: error.message || "Could not upload file.",
+          variant: "destructive",
+        });
+      } finally {
+        setUploadProgress(null);
+      }
+      return;
+    }
+
     if (!message.trim() || isSending || !currentChannel) return;
 
     const messageToSend = message;
     setMessage("");
     setIsSending(true);
+    const replyToId = replyingTo?.id;
+    setReplyingTo(null);
 
     try {
-      const response = await sendMessage(messageToSend);
+      const response = await sendMessage(messageToSend, 'text', replyToId);
       const moderation = response?.moderation;
 
       if (moderation && moderation.action && !response?.message) {
@@ -270,6 +459,53 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
       setTimeout(() => {
         inputRef.current?.focus();
       }, 0);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset input so the same file can be re-selected
+    e.target.value = '';
+
+    const error = validateFile(file);
+    if (error) {
+      toast({ title: "Invalid file", description: error, variant: "destructive" });
+      return;
+    }
+    setPendingFile(file);
+  };
+
+  const handleVoiceSend = async (audioBlob: Blob, duration: number) => {
+    if (!currentChannel) return;
+
+    // Convert blob to file with proper extension
+    const extension = audioBlob.type.includes('webm') ? 'webm' : 
+                      audioBlob.type.includes('ogg') ? 'ogg' : 
+                      audioBlob.type.includes('mp4') ? 'm4a' : 'webm';
+    const fileName = `voice_message_${Date.now()}.${extension}`;
+    const audioFile = new File([audioBlob], fileName, { type: audioBlob.type });
+
+    setUploadProgress(0);
+    try {
+      await uploadService.uploadChannelFile(
+        audioFile,
+        currentChannel.id,
+        undefined, // No caption for voice messages
+        (p: UploadProgress) => setUploadProgress(p.percent),
+        duration
+      );
+      toast({ title: 'Voice message sent', description: `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}` });
+    } catch (error: any) {
+      console.error('Voice message upload failed:', error);
+      toast({
+        title: 'Failed to send voice message',
+        description: error.message || 'Could not upload voice message.',
+        variant: 'destructive',
+      });
+      throw error; // Re-throw so VoiceRecorder can handle it
+    } finally {
+      setUploadProgress(null);
     }
   };
 
@@ -421,20 +657,31 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
         />
       )}
       
-      {/* Voice Channel View */}
+      {/* Voice Channel — now handled by VoiceDock + VoiceRoomModal at App level */}
       {currentChannel?.type === 'voice' && (
-        <div className="absolute inset-0 z-50">
-          <VoiceChannelView
-            channelId={currentChannel.id}
-            channelName={currentChannel.name}
-            onClose={() => {
-              // Find first text channel and switch to it
-              const textChannel = channels.find(ch => ch.type === 'text');
-              if (textChannel) {
-                selectChannel(textChannel.id);
-              }
-            }}
-          />
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center" style={{ background: 'hsl(var(--theme-bg-primary))' }}>
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center bg-[hsl(var(--theme-accent-primary)/0.1)]">
+              <Radio className="w-8 h-8 text-[hsl(var(--theme-accent-primary))]" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))]">
+                {currentChannel.name}
+              </h2>
+              <p className="text-sm text-[hsl(var(--theme-text-muted))] mt-1">
+                Voice channel — use the sidebar to join
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                const textChannel = channels.find(ch => ch.type === 'text');
+                if (textChannel) selectChannel(textChannel.id);
+              }}
+              className="text-sm text-[hsl(var(--theme-accent-primary))] hover:underline"
+            >
+              Go to a text channel
+            </button>
+          </div>
         </div>
       )}
 
@@ -445,7 +692,7 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
       >
         <div className="flex items-center h-full">
           {/* Channel Info */}
-          <div className="flex items-center gap-2 px-4 h-full border-r border-[hsl(var(--theme-border-default)/0.4)]">
+          <div className="flex items-center gap-2 pl-14 md:pl-4 pr-4 h-full border-r border-[hsl(var(--theme-border-default)/0.4)]">
             <div className="flex items-center justify-center w-6 h-6 text-[hsl(var(--theme-text-secondary))]">
               {currentChannel?.type === 'voice' ? (
                 <Mic className="w-5 h-5" />
@@ -458,9 +705,9 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
             </h2>
           </div>
           
-          {/* Channel Description */}
+          {/* Channel Description - hidden on mobile */}
           {currentChannel?.description && (
-            <div className="flex items-center gap-3 px-4 h-full">
+            <div className="hidden sm:flex items-center gap-3 px-4 h-full">
               <div className="w-px h-6 bg-[hsl(var(--theme-border-default))]" />
               <p className="text-[13px] text-[hsl(var(--theme-text-secondary))]">
                 {currentChannel.description}
@@ -485,15 +732,36 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="hidden md:block relative">
-            <input
-              type="text"
-              placeholder="Search messages..."
-              className="pl-9 pr-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] w-56 border transition-all bg-[hsl(var(--theme-input-bg))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]"
-            />
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-[hsl(var(--theme-text-muted))]" />
-          </div>
+        <div className="flex items-center gap-1 sm:gap-2 pr-2 sm:pr-4">
+          {/* Search Button - Ctrl+K */}
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="hidden md:flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg text-sm border transition-all bg-[hsl(var(--theme-input-bg))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-muted))] hover:border-[hsl(var(--theme-accent-primary)/0.5)] hover:text-[hsl(var(--theme-text-secondary))] w-56"
+          >
+            <Search className="w-4 h-4 flex-shrink-0" />
+            <span className="flex-1 text-left text-[13px]">Search messages...</span>
+            <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--theme-bg-tertiary))] border border-[hsl(var(--theme-border-default))]">⌘K</kbd>
+          </button>
+
+          {/* Pinned Messages */}
+          {currentChannel && (
+            <button
+              onClick={() => setPinsOpen(prev => !prev)}
+              className={`p-2 rounded-lg transition-colors relative ${
+                pinsOpen
+                  ? 'bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-accent-primary))]'
+                  : 'hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]'
+              }`}
+              title="Pinned Messages"
+            >
+              <Pin className="w-4 h-4" />
+              {pinnedCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center rounded-full text-[10px] font-bold px-1 bg-[hsl(var(--theme-accent-primary))] text-white">
+                  {pinnedCount}
+                </span>
+              )}
+            </button>
+          )}
           
           {/* Notifications */}
           <NotificationButton />
@@ -505,17 +773,6 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
           >
             {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
-          
-          {/* Only show AI Agents button when a community is selected */}
-          {currentCommunity && toggleRightSidebar && (
-            <button
-              onClick={toggleRightSidebar}
-              className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]"
-              title="Toggle AI Agents"
-            >
-              <Bot className="w-4 h-4" />
-            </button>
-          )}
           
           {/* <button
             className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]"
@@ -548,9 +805,9 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
         )}
         {!currentChannel ? (
           <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-lg px-6">
-              <div className="w-[72px] h-[72px] rounded-full mx-auto mb-5 flex items-center justify-center bg-[hsl(var(--theme-bg-secondary))]">
-                <Hash className="w-10 h-10 text-[hsl(var(--theme-text-muted))]" />
+            <div className="text-center max-w-lg px-4 sm:px-6">
+              <div className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full mx-auto mb-5 flex items-center justify-center bg-[hsl(var(--theme-bg-secondary))]">
+                <Hash className="w-7 h-7 sm:w-10 sm:h-10 text-[hsl(var(--theme-text-muted))]" />
               </div>
               <h3 className="text-2xl font-bold mb-2 text-[hsl(var(--theme-text-primary))]">
                 Welcome to AuraFlow
@@ -566,10 +823,10 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
               <div className="w-[68px] h-[68px] rounded-full mb-4 flex items-center justify-center bg-[hsl(var(--theme-bg-secondary))]">
                 <Hash className="w-9 h-9 text-[hsl(var(--theme-text-secondary))]" />
               </div>
-              <h3 className="text-[32px] font-bold mb-2 text-[hsl(var(--theme-text-primary))]">
+              <h3 className="text-xl sm:text-[32px] font-bold mb-2 text-[hsl(var(--theme-text-primary))]">
                 Welcome to #{currentChannel.name}!
               </h3>
-              <p className="text-[15px] text-[hsl(var(--theme-text-secondary))]">
+              <p className="text-[13px] sm:text-[15px] text-[hsl(var(--theme-text-secondary))]">
                 This is the start of the <span className="font-semibold">#{currentChannel.name}</span> channel.
               </p>
             </div>
@@ -578,10 +835,10 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
           <div className="flex flex-col min-h-full">
             {/* Channel Welcome Header */}
             <div className="px-4 pt-6 pb-4">
-              <div className="w-[68px] h-[68px] rounded-full mb-4 flex items-center justify-center bg-[hsl(var(--theme-bg-secondary))]">
-                <Hash className="w-9 h-9 text-[hsl(var(--theme-text-secondary))]" />
+              <div className="w-12 h-12 sm:w-[68px] sm:h-[68px] rounded-full mb-4 flex items-center justify-center bg-[hsl(var(--theme-bg-secondary))]">
+                <Hash className="w-6 h-6 sm:w-9 sm:h-9 text-[hsl(var(--theme-text-secondary))]" />
               </div>
-              <h3 className="text-[32px] font-bold mb-2 text-[hsl(var(--theme-text-primary))]">
+              <h3 className="text-xl sm:text-[32px] font-bold mb-2 text-[hsl(var(--theme-text-primary))]">
                 Welcome to #{currentChannel?.name}!
               </h3>
               <p className="text-[15px] text-[hsl(var(--theme-text-secondary))]">
@@ -598,7 +855,7 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
 
             {/* Messages */}
             <div className="flex-1">
-              {messages.filter(msg => !msg.content.startsWith('/')).map((msg, index, filteredMessages) => {
+              {messages.filter(msg => msg.message_type !== 'text' || !msg.content.startsWith('/')).map((msg, index, filteredMessages) => {
                 const showDateDivider = index === 0 || !isSameDay(new Date(msg.created_at), new Date(filteredMessages[index - 1]?.created_at));
                 const showAuthor = index === 0 || filteredMessages[index - 1]?.sender_id !== msg.sender_id || showDateDivider;
                 const authorName = msg.author || "Unknown User";
@@ -631,29 +888,34 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
 
                     {/* Message - Discord Style */}
                     <div 
-                      className={`group relative flex py-0.5 pr-12 pl-[72px] ${
+                      id={`msg-${msg.id}`}
+                      className={`group relative flex py-0.5 pr-4 sm:pr-12 pl-14 sm:pl-[72px] ${
                         shouldShowHeader ? 'mt-[17px]' : 'mt-0'
-                      } hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-colors`}
+                      } hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-all duration-300`}
                       onMouseEnter={() => setHoveredMessageId(msg.id)}
                       onMouseLeave={() => setHoveredMessageId(null)}
                     >
                       {/* Avatar - Positioned absolutely */}
                       {shouldShowHeader ? (
-                        <div className="absolute left-4 mt-0.5">
+                        <div className="absolute left-2 sm:left-4 mt-0.5">
                           {msg.avatar_url ? (
                             <img
                               src={getAvatarUrl(msg.avatar_url, authorName)}
                               alt={authorName}
-                              className="w-10 h-10 rounded-full object-cover cursor-pointer hover:shadow-lg transition-shadow"
+                              className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover cursor-pointer hover:shadow-lg transition-shadow"
+                              onClick={(e) => handleProfileClick(msg.author || authorName, e)}
                             />
                           ) : (
-                            <div className={`w-10 h-10 rounded-full ${getAvatarColor(authorName)} flex items-center justify-center text-white font-medium text-sm cursor-pointer hover:shadow-lg transition-shadow`}>
+                            <div
+                              className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full ${getAvatarColor(authorName)} flex items-center justify-center text-white font-medium text-xs sm:text-sm cursor-pointer hover:shadow-lg transition-shadow`}
+                              onClick={(e) => handleProfileClick(msg.author || authorName, e)}
+                            >
                               {getAvatarInitials(authorName)}
                             </div>
                           )}
                         </div>
                       ) : (
-                        <span className="absolute left-4 w-10 text-[11px] text-right opacity-0 group-hover:opacity-100 transition-opacity select-none text-[hsl(var(--theme-text-muted))]">
+                        <span className="absolute left-2 sm:left-4 w-8 sm:w-10 text-[10px] sm:text-[11px] text-right opacity-0 group-hover:opacity-100 transition-opacity select-none text-[hsl(var(--theme-text-muted))]">
                           {new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
                         </span>
                       )}
@@ -662,7 +924,10 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                       <div className="flex-1 min-w-0 overflow-hidden">
                         {shouldShowHeader && (
                           <div className="flex items-center gap-1 mb-0.5">
-                            <span className="font-medium text-[15px] hover:underline cursor-pointer text-[hsl(var(--theme-text-primary))]">
+                            <span
+                              className="font-medium text-[15px] hover:underline cursor-pointer text-[hsl(var(--theme-text-primary))]"
+                              onClick={(e) => handleProfileClick(msg.author || authorName, e)}
+                            >
                               {authorName}
                             </span>
                             {/* Role badges could go here */}
@@ -683,6 +948,12 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                                 reasons={msg.moderation.reasons}
                               />
                             )}
+                            {/* Pinned indicator */}
+                            {msg.is_pinned && (
+                              <span className="ml-1 flex items-center gap-0.5 text-[hsl(var(--theme-accent-primary)/0.7)]" title="Pinned message">
+                                <Pin className="w-3 h-3" />
+                              </span>
+                            )}
                           </div>
                         )}
                         {/* Show Removed tag even when header is hidden */}
@@ -692,9 +963,39 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                           </span>
                         )}
                         <div className="text-[15px] leading-[1.375rem] break-words text-[hsl(var(--theme-text-primary))]">
-                          <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-[44px] leading-[54px]' : ''}>
-                            {msg.content}
-                          </span>
+                          {/* Reply-to preview */}
+                          {msg.reply_to_preview && (
+                            <ReplyPreview
+                              preview={msg.reply_to_preview}
+                              onClick={() => scrollToMessage(msg.reply_to_preview!.id)}
+                            />
+                          )}
+                          {/* File / Image / Audio / Video attachment */}
+                          {msg.attachment && (msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'voice' || msg.message_type === 'video') && (
+                            <FileAttachment
+                              fileName={msg.attachment.file_name}
+                              fileUrl={msg.attachment.file_url}
+                              fileSize={msg.attachment.file_size}
+                              mimeType={msg.attachment.mime_type}
+                              uploaderName={authorName}
+                              uploadedAt={msg.created_at}
+                              duration={msg.attachment.duration}
+                            />
+                          )}
+                          {/* Text content / caption */}
+                          {msg.content && (() => {
+                            // If there's an attachment, strip the file URL from content to show only caption
+                            let displayContent = msg.content;
+                            if (msg.attachment) {
+                              displayContent = displayContent.replace(msg.attachment.file_url, '').replace(/^\n+/, '').trim();
+                            }
+                            if (!displayContent) return null;
+                            return (
+                              <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(displayContent.trim()) ? 'text-[44px] leading-[54px]' : ''}>
+                                {displayContent}
+                              </span>
+                            );
+                          })()}
                         </div>
                         
                         {/* Reactions Display */}
@@ -711,7 +1012,7 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                       </div>
 
                       {/* Action Buttons - Floating on hover */}
-                      <div className="absolute -top-4 right-4 opacity-0 group-hover:opacity-100 transition-all">
+                      <div className="absolute -top-4 right-2 sm:right-4 opacity-0 group-hover:opacity-100 transition-all">
                         <div className="flex items-center rounded-md shadow-lg border bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]">
                           <button
                             onClick={(e) => {
@@ -722,6 +1023,34 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
                             title="Add Reaction"
                           >
                             <SmilePlus className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleReply(msg);
+                            }}
+                            className="p-1.5 transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]"
+                            title="Reply"
+                          >
+                            <Reply className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (msg.is_pinned) {
+                                handleUnpinMessage(msg.id);
+                              } else {
+                                handlePinMessage(msg.id);
+                              }
+                            }}
+                            className={`p-1.5 transition-colors rounded-r-md ${
+                              msg.is_pinned
+                                ? 'text-[hsl(var(--theme-accent-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
+                                : 'text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
+                            }`}
+                            title={msg.is_pinned ? "Unpin Message" : "Pin Message"}
+                          >
+                            <Pin className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
@@ -767,10 +1096,37 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
       {/* Input - Discord Style */}
       {currentChannel?.type !== 'voice' && (
       <footer 
-        className="px-4 pb-6 pt-0 relative transition-colors duration-300 backdrop-blur-sm"
+        className="px-4 pb-16 md:pb-6 pt-0 relative transition-colors duration-300 backdrop-blur-sm"
         
       >
         <div className="relative">
+          {/* Hidden file input */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            className="hidden"
+            accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.zip,.rar,.7z"
+          />
+
+          {/* Reply Bar */}
+          {replyingTo && (
+            <ReplyBar
+              message={replyingTo}
+              authorName={replyingTo.author || 'Unknown'}
+              onCancel={() => setReplyingTo(null)}
+            />
+          )}
+
+          {/* File Upload Preview */}
+          {pendingFile && (
+            <FileUploadPreview
+              file={pendingFile}
+              uploadProgress={uploadProgress}
+              onCancel={() => setPendingFile(null)}
+            />
+          )}
+
           {/* Command Suggestions Dropdown */}
           {showCommandSuggestions && (
             <div className="absolute bottom-full left-0 mb-2 w-full max-w-md rounded-lg shadow-2xl border overflow-hidden z-50 backdrop-blur-xl bg-[hsl(var(--theme-bg-elevated)/0.95)] border-[hsl(var(--theme-border-default))]">
@@ -832,10 +1188,12 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
               ? "bg-[hsl(var(--theme-accent-primary)/0.15)] ring-1 ring-[hsl(var(--theme-accent-primary)/0.5)] border-[hsl(var(--theme-accent-primary)/0.3)]"
               : "bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary)/0.6)] border-[hsl(var(--theme-border-default)/0.4)]"
           }`}>
-            {/* Plus Button */}
+            {/* Plus Button - File Upload */}
             <button
               className="flex-shrink-0 p-3 rounded-l-lg transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
               disabled={!currentChannel || !isConnected}
+              onClick={() => fileInputRef.current?.click()}
+              title="Upload a file"
             >
               <Plus className="w-5 h-5" />
             </button>
@@ -854,7 +1212,7 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               disabled={!currentChannel || isSending || !isConnected}
-              className={`flex-1 bg-transparent outline-none text-[15px] py-2.5 ${
+              className={`flex-1 bg-transparent outline-none text-sm sm:text-[15px] py-2.5 min-w-0 ${
                 message.startsWith('/')
                   ? "text-[hsl(var(--theme-accent-primary))] placeholder-[hsl(var(--theme-accent-primary)/0.6)]"
                   : "text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]"
@@ -865,12 +1223,18 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
               <button
                 className="p-2 rounded-md transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
                 disabled={!currentChannel || !isConnected}
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach a file"
               >
                 <Paperclip className="w-5 h-5" />
               </button>
               <EmojiPickerButton
                 onEmojiSelect={handleEmojiSelect}
                 pickerPosition="top"
+                disabled={!currentChannel || !isConnected}
+              />
+              <VoiceRecorder
+                onSend={handleVoiceSend}
                 disabled={!currentChannel || !isConnected}
               />
             </div>
@@ -888,7 +1252,7 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
 
       {/* AI Command Result Display */}
       {commandResult && commandResult.success && (
-        <div className="fixed bottom-20 right-4 max-w-md w-full max-h-[70vh] z-50 rounded-xl shadow-2xl border overflow-hidden flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]">
+        <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-4 max-w-md w-auto sm:w-full max-h-[60vh] sm:max-h-[70vh] z-50 rounded-xl shadow-2xl border overflow-hidden flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]">
           {/* Header - Fixed */}
           <div className="flex items-start justify-between gap-3 p-4 border-b border-[hsl(var(--theme-border-default))]">
             <div className="flex items-center gap-2">
@@ -927,6 +1291,49 @@ export default function Dashboard({ toggleRightSidebar }: DashboardProps) {
             {/* Hide Key Points - summary already contains everything */}
           </div>
         </div>
+      )}
+
+      {/* --- Search Modal --- */}
+      <SearchModal
+        isOpen={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onNavigate={handleSearchNavigate}
+        currentChannelId={currentChannel?.id}
+      />
+
+      {/* --- Pinned Messages Panel --- */}
+      {currentChannel && (
+        <PinnedMessagesPanel
+          channelId={currentChannel.id}
+          isOpen={pinsOpen}
+          onClose={() => setPinsOpen(false)}
+          onJumpToMessage={scrollToMessage}
+          onUnpin={handleUnpinMessage}
+          canManagePins={true}
+        />
+      )}
+
+      {/* --- User Profile Popover --- */}
+      {profilePopover && (
+        <UserProfilePopover
+          username={profilePopover.username}
+          anchorRect={profilePopover.rect}
+          onClose={() => setProfilePopover(null)}
+          onSendDM={(userId) => {
+            setProfilePopover(null);
+            window.dispatchEvent(new CustomEvent('auraflow:open-dm', { detail: { userId } }));
+          }}
+          onAddFriend={async (userId) => {
+            try {
+              await friendService.sendFriendRequest(profilePopover.username);
+              toast({ title: 'Friend request sent!' });
+              setProfilePopover(null);
+            } catch (err: any) {
+              const msg = err.response?.data?.message || err.message || 'Failed to send request';
+              toast({ title: 'Could not send request', description: msg, variant: 'destructive' });
+            }
+          }}
+        />
       )}
     </div>
   );

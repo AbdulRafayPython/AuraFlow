@@ -1,5 +1,6 @@
 // components/sidebar/ChannelSidebar.tsx - Real-time Version with Member Management
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { 
   ChevronDown, 
   ChevronRight, 
@@ -9,11 +10,18 @@ import {
   Plus, 
   Settings as SettingsIcon,
   Loader2,
-  MoreVertical
+  MoreVertical,
+  Radio,
+  PhoneCall
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
+import { useVoice } from "@/contexts/VoiceContext";
 import { channelService } from "@/services/channelService";
+import { statusService } from "@/services/statusService";
+import { voiceService } from "@/services/voiceService";
+import { socketService } from "@/services/socketService";
+import { getAvatarUrl } from "@/lib/utils";
 import CommunityMembersAddModal from "@/components/modals/CommunityMembersAddModal";
 import CreateChannelModal from "@/components/modals/CreateChannelModal";
 import ChannelManagementModal from "@/components/modals/ChannelManagementModal";
@@ -36,6 +44,7 @@ interface CommunityMember {
 }
 
 export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCommunityManagementModalChange }: ChannelSidebarProps) {
+  const navigate = useNavigate();
   const { isDarkMode, currentTheme } = useTheme();
   const {
     currentCommunity,
@@ -64,12 +73,91 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
   // Use role directly from currentCommunity (comes from API)
   const userRoleInCommunity = currentCommunity?.role || 'member';
 
+  // Filter channels by type (declared early so useEffects can reference them)
+  const textChannels = channels.filter((ch) => ch.type === "text");
+  const voiceChannels = channels.filter((ch) => ch.type === "voice");
+
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
     text: true,
     voice: true,
     friends: true,
   });
+
+  // Unread counts
+  const [unreadCounts, setUnreadCounts] = useState<Record<number, number>>({});
+  
+  // Voice participants for sidebar cards
+  const [voiceParticipants, setVoiceParticipants] = useState<Record<string, { members: Array<{ id: number; username: string; display_name: string; avatar_url?: string }>; total: number }>>({});
+  
+  const { isInVoiceChannel, currentVoiceChannel, joinVoiceChannel, leaveVoiceChannel, voiceUsers, setVoiceRoomModalOpen } = useVoice();
+
+  // Fetch unread counts when community changes
+  useEffect(() => {
+    if (!currentCommunity) return;
+    statusService.getUnreadCounts().then(data => {
+      const map: Record<number, number> = {};
+      data.forEach((c: any) => { map[c.channel_id] = c.unread_count; });
+      setUnreadCounts(map);
+    }).catch(() => {});
+  }, [currentCommunity?.id]);
+
+  // Clear unread when a channel is selected
+  useEffect(() => {
+    if (currentChannel?.id) {
+      setUnreadCounts(prev => ({ ...prev, [currentChannel.id]: 0 }));
+    }
+  }, [currentChannel?.id]);
+
+  // Socket: increment unread on new message for non-active channels
+  useEffect(() => {
+    const handleNewMessage = (data: any) => {
+      if (data.channel_id && data.channel_id !== currentChannel?.id) {
+        setUnreadCounts(prev => ({
+          ...prev,
+          [data.channel_id]: (prev[data.channel_id] || 0) + 1,
+        }));
+      }
+    };
+    socketService.getSocket()?.on('new_message', handleNewMessage);
+    return () => { socketService.getSocket()?.off('new_message', handleNewMessage); };
+  }, [currentChannel?.id]);
+
+  // Fetch voice participants for sidebar cards
+  useEffect(() => {
+    if (voiceChannels.length === 0) return;
+    
+    const fetchParticipants = () => {
+      const ids = voiceChannels.map(ch => ch.id);
+      voiceService.getVoiceParticipants(ids);
+    };
+    
+    // Initial fetch
+    fetchParticipants();
+    
+    // Poll every 10 seconds for live updates
+    const interval = setInterval(fetchParticipants, 10000);
+    
+    // Listen for updates
+    const handleUpdate = (data: any) => {
+      setVoiceParticipants(data.channels || {});
+    };
+    voiceService.onVoiceParticipantsUpdate(handleUpdate);
+    
+    // Also refresh on user_joined_voice / user_left_voice
+    const refreshOnChange = () => {
+      setTimeout(fetchParticipants, 500);
+    };
+    socketService.getSocket()?.on('user_joined_voice', refreshOnChange);
+    socketService.getSocket()?.on('user_left_voice', refreshOnChange);
+    
+    return () => {
+      clearInterval(interval);
+      socketService.getSocket()?.off('voice_participants_update', handleUpdate);
+      socketService.getSocket()?.off('user_joined_voice', refreshOnChange);
+      socketService.getSocket()?.off('user_left_voice', refreshOnChange);
+    };
+  }, [voiceChannels.length]);
 
   // Fetch community members when current community changes
   useEffect(() => {
@@ -102,13 +190,14 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
   };
 
   const handleChannelClick = (channelId: number) => {
-    selectChannel(channelId);
-    onNavigate?.("dashboard");
+    if (currentCommunity) {
+      navigate(`/community/${currentCommunity.id}/channel/${channelId}`);
+    }
   };
 
   const handleFriendClick = (friendId: number) => {
     selectFriend(friendId);
-    onNavigate?.("dashboard");
+    navigate(`/dm/${friendId}`);
   };
 
   const handleChannelContextMenu = (e: React.MouseEvent, channelId: number) => {
@@ -136,7 +225,9 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
       
       // Automatically select the newly created channel
       setTimeout(() => {
-        selectChannel(newChannel.id);
+        if (currentCommunity) {
+          navigate(`/community/${currentCommunity.id}/channel/${newChannel.id}`);
+        }
       }, 100); // Small delay to ensure state is updated
     }
   };
@@ -153,7 +244,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
     await reloadCommunities();
     
     // Navigate to home (empty communities = Home page)
-    onNavigate?.("home");
+    navigate('/');
   };
 
   const handleCommunityLeft = async () => {
@@ -164,7 +255,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
     await reloadCommunities();
     
     // Navigate to home (socket listener will handle state cleanup)
-    onNavigate?.("home");
+    navigate('/');
   };
 
   const getStatusColor = (status: string) => {
@@ -202,10 +293,6 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
       .toUpperCase()
       .slice(0, 2);
   };
-
-  // Filter channels by type
-  const textChannels = channels.filter((ch) => ch.type === "text");
-  const voiceChannels = channels.filter((ch) => ch.type === "voice");
 
   // Count online friends
   const onlineFriendsCount = friends.filter((f) => {
@@ -322,8 +409,13 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
                           }`}
                         >
                           <Hash className="w-4 h-4 flex-shrink-0" />
-                          <span className="truncate flex-1">{channel.name}</span>
-                          {channel.description && (
+                          <span className={`truncate flex-1 ${unreadCounts[channel.id] > 0 ? 'font-semibold text-[hsl(var(--theme-text-primary))]' : ''}`}>{channel.name}</span>
+                          {unreadCounts[channel.id] > 0 && (
+                            <span className="min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold px-1 bg-[hsl(var(--theme-accent-primary))] text-white">
+                              {unreadCounts[channel.id] > 99 ? '99+' : unreadCounts[channel.id]}
+                            </span>
+                          )}
+                          {channel.description && !unreadCounts[channel.id] && (
                             <span className="text-xs opacity-0 group-hover:opacity-100 transition-opacity">
                               ℹ️
                             </span>
@@ -335,7 +427,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
                 </div>
               )}
 
-              {/* Voice Channels */}
+              {/* Voice Channels — Live Room Cards */}
               {voiceChannels.length > 0 && (
                 <div className="mb-3">
                   <div className="flex items-center justify-between w-full px-2 py-1 text-xs font-semibold uppercase tracking-wide rounded transition-colors">
@@ -351,7 +443,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
                       Voice Channels
                     </button>
                     <div
-                      className={`p-0.5 rounded hover:bg-slate-700/50 cursor-pointer`}
+                      className="p-0.5 rounded hover:bg-[hsl(var(--theme-bg-hover))] cursor-pointer text-[hsl(var(--theme-text-muted))]"
                       title="Create Voice Channel"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -362,22 +454,105 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
                     </div>
                   </div>
                   {expandedSections.voice && (
-                    <div className="mt-1 space-y-0.5">
-                      {voiceChannels.map((channel) => (
-                        <button
-                          key={channel.id}
-                          onClick={() => handleChannelClick(channel.id)}
-                          onContextMenu={(e) => handleChannelContextMenu(e, channel.id)}
-                          className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 transition-colors ${
-                            currentChannel?.id === channel.id
-                              ? "bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]"
-                              : "text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]"
-                          }`}
-                        >
-                          <Volume2 className="w-4 h-4 flex-shrink-0" />
-                          <span className="truncate">{channel.name}</span>
-                        </button>
-                      ))}
+                    <div className="mt-1 space-y-1.5">
+                      {voiceChannels.map((channel) => {
+                        const participants = voiceParticipants[String(channel.id)];
+                        const memberCount = participants?.total || 0;
+                        const memberPreviews = participants?.members || [];
+                        const isActive = memberCount > 0;
+                        const isCurrentChannel = isInVoiceChannel && currentVoiceChannel === channel.id;
+
+                        return (
+                          <div
+                            key={channel.id}
+                            className={`rounded-lg transition-all duration-200 overflow-hidden ${
+                              isCurrentChannel
+                                ? "bg-[hsl(var(--theme-accent-primary)/0.12)] ring-1 ring-[hsl(var(--theme-accent-primary)/0.3)]"
+                                : isActive
+                                  ? "bg-[hsl(var(--theme-bg-tertiary)/0.5)]"
+                                  : ""
+                            }`}
+                          >
+                            {/* Channel header row */}
+                            <button
+                              onClick={() => {
+                                if (isCurrentChannel) {
+                                  setVoiceRoomModalOpen(true);
+                                } else {
+                                  joinVoiceChannel(channel.id, channel.name);
+                                }
+                              }}
+                              onContextMenu={(e) => handleChannelContextMenu(e, channel.id)}
+                              className={`w-full text-left px-2.5 py-2 text-sm flex items-center gap-2 transition-colors group ${
+                                isCurrentChannel
+                                  ? "text-[hsl(var(--theme-accent-primary))]"
+                                  : "text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]"
+                              }`}
+                            >
+                              {/* Icon */}
+                              <div className="relative flex-shrink-0">
+                                {isActive ? (
+                                  <Radio className={`w-4 h-4 ${isCurrentChannel ? 'text-[hsl(var(--theme-accent-primary))]' : 'text-green-400'}`} />
+                                ) : (
+                                  <Volume2 className="w-4 h-4" />
+                                )}
+                                {isActive && !isCurrentChannel && (
+                                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500" />
+                                )}
+                              </div>
+
+                              <span className="truncate flex-1 font-medium">{channel.name}</span>
+
+                              {/* Participant count badge */}
+                              {isActive && (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                  isCurrentChannel
+                                    ? "bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-accent-primary))]"
+                                    : "bg-green-500/15 text-green-400"
+                                }`}>
+                                  {memberCount}
+                                </span>
+                              )}
+
+                              {/* Join hint on hover (only if not already in it) */}
+                              {!isCurrentChannel && (
+                                <PhoneCall className="w-3.5 h-3.5 opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0" />
+                              )}
+                            </button>
+
+                            {/* Live participant preview (stacked avatars) */}
+                            {isActive && memberPreviews.length > 0 && (
+                              <div className="px-2.5 pb-2 flex items-center gap-1.5">
+                                <div className="flex -space-x-1.5">
+                                  {memberPreviews.slice(0, 3).map((m) => (
+                                    <div
+                                      key={m.id}
+                                      className="w-5 h-5 rounded-full overflow-hidden ring-1 ring-[hsl(var(--theme-bg-secondary))]"
+                                      title={m.display_name}
+                                    >
+                                      {m.avatar_url ? (
+                                        <img
+                                          src={getAvatarUrl(m.avatar_url, m.username)}
+                                          alt={m.display_name}
+                                          className="w-full h-full object-cover"
+                                        />
+                                      ) : (
+                                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white text-[7px] font-bold">
+                                          {m.display_name?.[0]?.toUpperCase() || "?"}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                                <span className="text-[10px] text-[hsl(var(--theme-text-muted))]">
+                                  {memberPreviews.slice(0, 3).map(m => m.display_name.split(' ')[0]).join(', ')}
+                                  {memberCount > 3 && ` +${memberCount - 3}`}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

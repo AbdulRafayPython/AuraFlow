@@ -66,11 +66,19 @@ def get_communities():
                 SELECT 
                     c.id, c.name, c.description, c.icon, c.color, 
                     c.logo_url, c.banner_url, cm.role, c.created_at,
-                    (SELECT COUNT(*) FROM community_members WHERE community_id = c.id) as member_count,
-                    (SELECT COUNT(*) FROM channels WHERE community_id = c.id) as channel_count
+                    COALESCE(mc.member_count, 0) as member_count,
+                    COALESCE(cc.channel_count, 0) as channel_count
                 FROM communities c
                 JOIN community_members cm ON c.id = cm.community_id
                 LEFT JOIN blocked_users bu ON c.id = bu.community_id AND bu.user_id = %s
+                LEFT JOIN (
+                    SELECT community_id, COUNT(*) as member_count
+                    FROM community_members GROUP BY community_id
+                ) mc ON mc.community_id = c.id
+                LEFT JOIN (
+                    SELECT community_id, COUNT(*) as channel_count
+                    FROM channels GROUP BY community_id
+                ) cc ON cc.community_id = c.id
                 WHERE cm.user_id = %s AND bu.user_id IS NULL
                 ORDER BY c.created_at ASC
             """, (user_id, user_id))

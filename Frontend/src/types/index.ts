@@ -13,19 +13,38 @@ export interface Reaction {
   reacted_by_current_user: boolean;
 }
 
+export interface Attachment {
+  id?: number;
+  file_name: string;
+  file_url: string;
+  file_size: number;
+  mime_type: string;
+  duration?: number;
+}
+
+export interface ReplyToPreview {
+  id: number;
+  content: string;
+  author: string;
+  message_type: string;
+}
+
 export interface Message {
   id: number;
   channel_id: number;
   sender_id: number;
   content: string;
-  message_type: 'text' | 'image' | 'file' | 'system' | 'ai';
+  message_type: 'text' | 'image' | 'file' | 'system' | 'ai' | 'voice' | 'video';
   created_at: string;
   author: string;
-  avatar_url?: string;   // ← CHANGE THIS LINE
+  avatar_url?: string;
   edited_at?: string | null;
   reply_to?: number | null;
+  reply_to_preview?: ReplyToPreview;
   reactions?: Reaction[];
+  attachment?: Attachment;
   is_blocked?: boolean;
+  is_pinned?: boolean;
   moderation?: {
     action: 'allow' | 'warn' | 'flag' | 'block' | 'remove_message' | 'remove_user' | 'block_user';
     severity: 'none' | 'low' | 'medium' | 'high';
@@ -44,11 +63,14 @@ export interface DirectMessage {
   sender_id: number;
   receiver_id: number;
   content: string;
-  message_type: 'text' | 'image' | 'file' | 'ai';
+  message_type: 'text' | 'image' | 'file' | 'ai' | 'voice' | 'video';
   created_at: string;
   is_read: boolean;
   edited_at?: string | null;
+  reply_to?: number | null;
+  reply_to_preview?: ReplyToPreview;
   reactions?: Reaction[];
+  attachment?: Attachment;
   sender?: {
     id: number;
     username: string;
@@ -66,7 +88,7 @@ export interface DirectMessage {
 export interface SendMessageData {
   channel_id: number;
   content: string;
-  message_type?: 'text' | 'image' | 'file';
+  message_type?: 'text' | 'image' | 'file' | 'voice' | 'video';
   reply_to?: number;
 }
 

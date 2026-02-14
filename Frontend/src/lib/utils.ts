@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { API_SERVER } from "@/config/api";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -22,11 +23,10 @@ export function getAvatarUrl(avatarUrl: string | null | undefined, username: str
   }
   
   // Otherwise, prepend the API base URL (remove /api suffix for static file serving)
-  const API_BASE_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
   
   // If the path starts with /, use it as is, otherwise add /
   const path = avatarUrl.startsWith('/') ? avatarUrl : `/${avatarUrl}`;
   
-  return `${API_BASE_URL}${path}`;
+  return `${API_SERVER}${path}`;
 }
 

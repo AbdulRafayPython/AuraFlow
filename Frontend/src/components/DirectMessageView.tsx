@@ -1,16 +1,27 @@
 // components/DirectMessageView.tsx - DM conversation view
-import React, { useState, useEffect, useRef } from 'react';
-import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video } from 'lucide-react';
 import { useDirectMessages } from '@/contexts/DirectMessagesContext';
 import { useFriends } from '@/contexts/FriendsContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getAvatarUrl } from '@/lib/utils';
+import { useCall } from '@/contexts/CallContext';
+import type { CallPeer } from '@/contexts/CallContext';
 import EmojiPickerButton from '@/components/EmojiPickerButton';
 import ReactionPicker from '@/components/ReactionPicker';
 import MessageReactions from '@/components/MessageReactions';
 import { reactionService } from '@/services/reactionService';
 import { socket } from '@/socket';
+import FileAttachment from '@/components/chat/FileAttachment';
+import FileUploadPreview from '@/components/chat/FileUploadPreview';
+import ReplyPreview from '@/components/chat/ReplyPreview';
+import ReplyBar from '@/components/chat/ReplyBar';
+import VoiceRecorder from '@/components/chat/VoiceRecorder';
+import { uploadService, validateFile, type UploadProgress } from '@/services/uploadService';
+import { useToast } from '@/hooks/use-toast';
+import UserProfilePopover from '@/components/profile/UserProfilePopover';
+import { friendService } from '@/services/friendService';
 import type { DirectMessage } from '@/types';
 
 interface DirectMessageViewProps {
@@ -38,6 +49,37 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const [menuOpen, setMenuOpen] = useState<number | null>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const prevMessagesLengthRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [replyingTo, setReplyingTo] = useState<DirectMessage | null>(null);
+  const { toast } = useToast();
+
+  // Profile popover state
+  const [profilePopover, setProfilePopover] = useState<{ username: string; rect: DOMRect | null } | null>(null);
+  const handleProfileClick = useCallback((uname: string, e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setProfilePopover({ username: uname, rect });
+  }, []);
+
+  // Call
+  const { initiateCall, callState } = useCall();
+  const calleePeer: CallPeer = {
+    id: userId,
+    username,
+    display_name: displayName || username,
+    avatar_url: avatar || null,
+  };
+
+  const handleAudioCall = useCallback(() => {
+    if (callState !== 'idle') return;
+    initiateCall(calleePeer, 'audio');
+  }, [callState, initiateCall, calleePeer]);
+
+  const handleVideoCall = useCallback(() => {
+    if (callState !== 'idle') return;
+    initiateCall(calleePeer, 'video');
+  }, [callState, initiateCall, calleePeer]);
 
   // Get current user's actual ID
   const currentUserId = currentUser?.id;
@@ -135,68 +177,48 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
     });
   }, [enrichedMessages, currentUserId, markAsRead]);
 
-  // Load reactions for all messages - only when message IDs change
+  // Load reactions for all DMs — ONE bulk API call instead of N individual calls
   useEffect(() => {
     const loadReactions = async () => {
       if (enrichedMessages.length === 0) return;
-      
-      const messageIds = enrichedMessages.map(m => m.id).join(',');
-      const currentIds = Object.keys(dmReactions).join(',');
-      
-      // Only load if message IDs have actually changed
-      if (messageIds === currentIds) return;
-      
-      const reactionsMap: Record<number, any[]> = {};
-      
-      // Only load reactions for new messages
-      for (const msg of enrichedMessages) {
-        // Skip if we already have reactions for this message
-        if (dmReactions[msg.id]) {
-          reactionsMap[msg.id] = dmReactions[msg.id];
-          continue;
-        }
-        
-        try {
-          const { reactions } = await reactionService.getDMReactions(msg.id);
-          // Only store if there are reactions
-          if (reactions && reactions.length > 0) {
-            reactionsMap[msg.id] = reactions;
-          }
-        } catch (error) {
-          console.error(`Failed to load reactions for DM ${msg.id}:`, error);
-        }
+
+      // Only fetch reactions for messages we haven't cached yet
+      const newIds = enrichedMessages
+        .map((m) => m.id)
+        .filter((id) => !(id in dmReactions));
+
+      if (newIds.length === 0) return;
+
+      try {
+        const bulk = await reactionService.getDMReactionsBulk(newIds);
+        setDmReactions((prev) => ({ ...prev, ...bulk }));
+      } catch (error) {
+        console.error('Failed to bulk-load DM reactions:', error);
       }
-      
-      setDmReactions(reactionsMap);
     };
 
     loadReactions();
   }, [enrichedMessages.length]); // Only depend on length, not full array
 
-  // Socket.IO listeners for real-time reaction updates
+  // Socket.IO listener — single event carries full aggregation
   useEffect(() => {
-    const handleDMReactionAdded = (data: any) => {
-      console.log('[DirectMessageView] Reaction added:', data);
-      setDmReactions(prev => ({
-        ...prev,
-        [data.dm_id]: data.reactions
-      }));
+    const handleDMReactionUpdate = (data: any) => {
+      if (!data.dm_id) return;
+      setDmReactions(prev => {
+        const next = { ...prev };
+        if (data.reactions && data.reactions.length > 0) {
+          next[data.dm_id] = data.reactions;
+        } else {
+          delete next[data.dm_id];
+        }
+        return next;
+      });
     };
 
-    const handleDMReactionRemoved = (data: any) => {
-      console.log('[DirectMessageView] Reaction removed:', data);
-      setDmReactions(prev => ({
-        ...prev,
-        [data.dm_id]: data.reactions
-      }));
-    };
-
-    socket.on('dm_reaction_added', handleDMReactionAdded);
-    socket.on('dm_reaction_removed', handleDMReactionRemoved);
+    socket.on('dm_reaction_update', handleDMReactionUpdate);
 
     return () => {
-      socket.off('dm_reaction_added', handleDMReactionAdded);
-      socket.off('dm_reaction_removed', handleDMReactionRemoved);
+      socket.off('dm_reaction_update', handleDMReactionUpdate);
     };
   }, []);
 
@@ -244,18 +266,106 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
     setShouldAutoScroll(isNearBottom);
   };
 
+  // Reply helpers
+  const handleReply = (msg: DirectMessage) => {
+    setReplyingTo(msg);
+  };
+
+  const scrollToMessage = (messageId: number) => {
+    const el = document.getElementById(`dm-msg-${messageId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-1', 'ring-[hsl(var(--theme-accent-primary)/0.6)]', 'bg-[hsl(var(--theme-accent-primary)/0.08)]');
+      setTimeout(() => {
+        el.classList.remove('ring-1', 'ring-[hsl(var(--theme-accent-primary)/0.6)]', 'bg-[hsl(var(--theme-accent-primary)/0.08)]');
+      }, 2000);
+    }
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // File upload flow
+    if (pendingFile) {
+      setUploadProgress(0);
+      try {
+        await uploadService.uploadDMFile(
+          pendingFile,
+          userId,
+          message.trim() || undefined,
+          (p: UploadProgress) => setUploadProgress(p.percent)
+        );
+        setPendingFile(null);
+        setMessage('');
+      } catch (error: any) {
+        console.error('DM file upload failed:', error);
+        toast({
+          title: 'Upload failed',
+          description: error.message || 'Could not upload file.',
+          variant: 'destructive',
+        });
+      } finally {
+        setUploadProgress(null);
+      }
+      return;
+    }
+
     if (!message.trim() || isSending) return;
 
     setIsSending(true);
+    const replyToId = replyingTo?.id;
+    setReplyingTo(null);
     try {
-      await sendMessage(userId, message);
+      await sendMessage(userId, message, replyToId);
       setMessage('');
     } catch (err) {
       console.error('Error sending message:', err);
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    const error = validateFile(file);
+    if (error) {
+      toast({ title: 'Invalid file', description: error, variant: 'destructive' });
+      return;
+    }
+    setPendingFile(file);
+  };
+
+  const handleVoiceSend = async (audioBlob: Blob, duration: number) => {
+    // Convert blob to file with proper extension
+    const extension = audioBlob.type.includes('webm') ? 'webm' : 
+                      audioBlob.type.includes('ogg') ? 'ogg' : 
+                      audioBlob.type.includes('mp4') ? 'm4a' : 'webm';
+    const fileName = `voice_message_${Date.now()}.${extension}`;
+    const audioFile = new File([audioBlob], fileName, { type: audioBlob.type });
+
+    setUploadProgress(0);
+    try {
+      await uploadService.uploadDMFile(
+        audioFile,
+        userId,
+        undefined, // No caption for voice messages
+        (p: UploadProgress) => setUploadProgress(p.percent),
+        duration
+      );
+      toast({ title: 'Voice message sent', description: `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}` });
+    } catch (error: any) {
+      console.error('Voice message upload failed:', error);
+      toast({
+        title: 'Failed to send voice message',
+        description: error.message || 'Could not upload voice message.',
+        variant: 'destructive',
+      });
+      throw error; // Re-throw so VoiceRecorder can handle it
+    } finally {
+      setUploadProgress(null);
     }
   };
 
@@ -286,23 +396,22 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
   const handleReactionToggle = async (dmId: number, emoji: string) => {
     try {
+      // Server returns full aggregated reactions — no follow-up GET needed
       const result = await reactionService.toggleDMReaction(dmId, emoji);
-      
-      // Immediately reload reactions for this message to ensure consistency
-      const { reactions: updatedReactions } = await reactionService.getDMReactions(dmId);
-      
-      // Update state with fresh data from server (prevents duplicates)
-      setDmReactions(prev => {
-        const newState = { ...prev };
-        if (updatedReactions && updatedReactions.length > 0) {
-          newState[dmId] = updatedReactions;
-        } else {
-          // Remove from state if no reactions left
-          delete newState[dmId];
-        }
-        return newState;
-      });
-    } catch (error) {
+
+      if (result.reactions) {
+        setDmReactions(prev => {
+          const next = { ...prev };
+          if (result.reactions!.length > 0) {
+            next[dmId] = result.reactions!;
+          } else {
+            delete next[dmId];
+          }
+          return next;
+        });
+      }
+    } catch (error: any) {
+      if (error?.message === 'debounced') return;
       console.error('Failed to toggle DM reaction:', error);
     }
   };
@@ -356,6 +465,26 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
               Online
             </p>
           </div>
+
+          {/* Call buttons */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleAudioCall}
+              disabled={callState !== 'idle'}
+              className="p-2.5 rounded-lg transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Audio Call"
+            >
+              <Phone className="w-5 h-5" />
+            </button>
+            <button
+              onClick={handleVideoCall}
+              disabled={callState !== 'idle'}
+              className="p-2.5 rounded-lg transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Video Call"
+            >
+              <Video className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -393,6 +522,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                 {/* Receiver message (left) */}
                 {!isSent ? (
                   <div 
+                    id={`dm-msg-${msg.id}`}
                     className="flex gap-2 group px-2 py-0.5 rounded-lg transition-all duration-300 justify-start relative hover:bg-[hsl(var(--theme-bg-hover)/0.5)]"
                     onMouseEnter={() => setHoveredMessageId(msg.id)}
                     onMouseLeave={() => setHoveredMessageId(null)}
@@ -402,7 +532,8 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                         <img
                           src={getAvatarUrl(msg.sender?.avatar_url, msg.sender?.username || 'unknown')}
                           alt={msg.sender?.username || 'Unknown'}
-                          className="w-7 h-7 rounded-full object-cover"
+                          className="w-7 h-7 rounded-full object-cover cursor-pointer hover:shadow-lg transition-shadow"
+                          onClick={(e) => handleProfileClick(msg.sender?.username || 'unknown', e)}
                         />
                       ) : (
                         <div className="w-7 h-7" />
@@ -412,7 +543,10 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                     <div className="flex-1 min-w-0 max-w-lg">
                       {showAvatar && (
                         <div className="flex items-baseline gap-2 mb-0.5">
-                          <span className="font-medium text-sm text-[hsl(var(--theme-text-primary))]">
+                          <span
+                            className="font-medium text-sm text-[hsl(var(--theme-text-primary))] hover:underline cursor-pointer"
+                            onClick={(e) => handleProfileClick(msg.sender?.username || 'unknown', e)}
+                          >
                             {msg.sender?.display_name || msg.sender?.username || 'Unknown'}
                           </span>
                           <span className="text-xs text-[hsl(var(--theme-text-muted))]">{formatTime(msg.created_at)}</span>
@@ -443,7 +577,31 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                         </div>
                       ) : (
                         <>
+                          {/* Reply-to preview (received) */}
+                          {msg.reply_to_preview && (
+                            <ReplyPreview
+                              preview={msg.reply_to_preview}
+                              onClick={() => scrollToMessage(msg.reply_to_preview!.id)}
+                            />
+                          )}
                           <div className="flex items-start gap-2">
+                            {/* File attachment (received message) */}
+                            {msg.attachment && (msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'voice' || msg.message_type === 'video') ? (
+                              <div className="w-fit max-w-md">
+                                <FileAttachment
+                                  fileName={msg.attachment.file_name}
+                                  fileUrl={msg.attachment.file_url}
+                                  fileSize={msg.attachment.file_size}
+                                  mimeType={msg.attachment.mime_type}
+                                  uploaderName={displayName || username}
+                                  uploadedAt={msg.created_at}
+                                  duration={msg.attachment.duration}
+                                />
+                                {msg.content && msg.content !== msg.attachment.file_url && (
+                                  <p className="text-sm mt-1 px-4 text-[hsl(var(--theme-text-primary))]">{msg.content}</p>
+                                )}
+                              </div>
+                            ) : (
                             <p className="text-sm leading-relaxed break-words rounded-2xl px-4 py-2.5 w-fit max-w-md text-[hsl(var(--theme-text-primary))] bg-[hsl(var(--theme-message-other))] transition-colors duration-300">
                               <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-normal' : ''}>
                                 {msg.content}
@@ -454,6 +612,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                                 </span>
                               )}
                             </p>
+                            )}
                             {msg.edited_at && (
                               <span className="text-xs mt-3 text-[hsl(var(--theme-text-muted)/0.7)]">(edited)</span>
                             )}
@@ -479,6 +638,17 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                             >
                               <SmilePlus className="w-3 h-3" />
                             </button>
+                            {/* Reply Button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleReply(msg);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-all duration-300 px-1.5 py-0.5 rounded text-xs flex items-center gap-1 text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]"
+                              title="Reply"
+                            >
+                              <Reply className="w-3 h-3" />
+                            </button>
                           </div>
                         </>
                       )}
@@ -499,6 +669,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                 ) : (
                   /* Sender message (right) */
                   <div 
+                    id={`dm-msg-${msg.id}`}
                     className="flex gap-2.5 group px-2 py-1 rounded-md transition-all duration-300 justify-end relative hover:bg-[hsl(var(--theme-bg-hover)/0.5)]"
                     onMouseEnter={() => setHoveredMessageId(msg.id)}
                     onMouseLeave={() => setHoveredMessageId(null)}
@@ -566,10 +737,38 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                         </div>
                       ) : (
                         <>
+                          {/* Reply-to preview (sent) */}
+                          {msg.reply_to_preview && (
+                            <div className="flex justify-end">
+                              <ReplyPreview
+                                preview={msg.reply_to_preview}
+                                variant="accent"
+                                onClick={() => scrollToMessage(msg.reply_to_preview!.id)}
+                              />
+                            </div>
+                          )}
                           <div className="flex items-start gap-2 justify-end">
                             {msg.edited_at && (
                               <span className="text-xs mt-3 text-[hsl(var(--theme-text-muted)/0.7)]">(edited)</span>
                             )}
+                            {/* File attachment (sent message) */}
+                            {msg.attachment && (msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'voice' || msg.message_type === 'video') ? (
+                              <div className="w-fit max-w-md">
+                                <FileAttachment
+                                  fileName={msg.attachment.file_name}
+                                  fileUrl={msg.attachment.file_url}
+                                  fileSize={msg.attachment.file_size}
+                                  mimeType={msg.attachment.mime_type}
+                                  variant="accent"
+                                  uploaderName={currentUser?.display_name || currentUser?.username || 'You'}
+                                  uploadedAt={msg.created_at}
+                                  duration={msg.attachment.duration}
+                                />
+                                {msg.content && msg.content !== msg.attachment.file_url && (
+                                  <p className="text-sm mt-1 px-4 text-right text-[hsl(var(--theme-text-primary))]">{msg.content}</p>
+                                )}
+                              </div>
+                            ) : (
                             <p className="text-sm leading-relaxed break-words text-white bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] rounded-2xl px-4 py-2.5 w-fit max-w-md shadow-lg hover:shadow-[var(--theme-glow-secondary)] transition-all duration-300">
                               <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-normal' : ''}>
                                 {msg.content}
@@ -580,6 +779,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                                 </span>
                               )}
                             </p>
+                            )}
                           </div>
                           
                           {/* Reactions Display */}
@@ -601,6 +801,17 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                               title="Add reaction"
                             >
                               <SmilePlus className="w-3.5 h-3.5" />
+                            </button>
+                            {/* Reply Button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleReply(msg);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-all duration-300 px-2 py-1 rounded-lg text-xs flex items-center gap-1 text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]"
+                              title="Reply"
+                            >
+                              <Reply className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </>
@@ -641,8 +852,49 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
       {/* Input - Professional */}
       <footer className="border-t backdrop-blur flex-shrink-0 bg-[hsl(var(--theme-bg-primary)/0.95)] border-[hsl(var(--theme-border-default)/0.5)] transition-colors duration-300">
+        {/* Reply Bar */}
+        {replyingTo && (
+          <ReplyBar
+            message={replyingTo}
+            authorName={
+              replyingTo.sender_id === currentUserId
+                ? (currentUser?.display_name || currentUser?.username || 'You')
+                : (replyingTo.sender?.display_name || replyingTo.sender?.username || displayName || username)
+            }
+            onCancel={() => setReplyingTo(null)}
+          />
+        )}
+
+        {/* Hidden file input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileSelect}
+          className="hidden"
+          accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.zip,.rar,.7z"
+        />
+
+        {/* File Upload Preview */}
+        {pendingFile && (
+          <div className="px-6 pt-3">
+            <FileUploadPreview
+              file={pendingFile}
+              uploadProgress={uploadProgress}
+              onCancel={() => setPendingFile(null)}
+            />
+          </div>
+        )}
+
         <form onSubmit={handleSend} className="px-6 py-4">
           <div className="flex items-center gap-3 rounded-2xl px-4 py-3 border focus-within:border-[hsl(var(--theme-accent-primary))] focus-within:ring-1 focus-within:ring-[hsl(var(--theme-accent-primary)/0.3)] focus-within:shadow-[var(--theme-glow-secondary)] transition-all duration-300 border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-input-bg))] hover:border-[hsl(var(--theme-border-hover))]">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-1.5 rounded-md transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]"
+              title="Attach a file"
+            >
+              <Paperclip className="w-5 h-5" />
+            </button>
             <input
               type="text"
               placeholder={`Message ${displayName || username}...`}
@@ -662,9 +914,13 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
               pickerPosition="top"
               disabled={isSending}
             />
+            <VoiceRecorder
+              onSend={handleVoiceSend}
+              disabled={isSending}
+            />
             <button
               type="submit"
-              disabled={!message.trim() || isSending}
+              disabled={(!message.trim() && !pendingFile) || isSending}
               className="p-2 text-[hsl(var(--theme-accent-primary))] rounded-lg disabled:opacity-40 disabled:hover:text-[hsl(var(--theme-accent-primary))] disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all duration-300 flex-shrink-0 hover:text-[hsl(var(--theme-accent-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:shadow-[var(--theme-glow-secondary)]"
               title="Send message (Enter)"
             >
@@ -673,6 +929,29 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
           </div>
         </form>
       </footer>
+
+      {/* Profile Popover */}
+      {profilePopover && (
+        <UserProfilePopover
+          username={profilePopover.username}
+          anchorRect={profilePopover.rect}
+          onClose={() => setProfilePopover(null)}
+          onSendDM={(userId) => {
+            setProfilePopover(null);
+            window.dispatchEvent(new CustomEvent('auraflow:open-dm', { detail: { userId } }));
+          }}
+          onAddFriend={async (userId) => {
+            try {
+              await friendService.sendFriendRequest(profilePopover.username);
+              toast({ title: 'Friend request sent!' });
+              setProfilePopover(null);
+            } catch (err: any) {
+              const msg = err.response?.data?.message || err.message || 'Failed to send request';
+              toast({ title: 'Could not send request', description: msg, variant: 'destructive' });
+            }
+          }}
+        />
+      )}
     </div>
   );
 };

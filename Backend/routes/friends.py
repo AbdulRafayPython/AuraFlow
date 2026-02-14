@@ -30,7 +30,7 @@ def send_friend_request():
             sender_id = sender_row['id']
 
             # Get receiver ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (target_username,))
+            cur.execute("SELECT id, username, display_name, avatar_url FROM users WHERE username = %s", (target_username,))
             receiver_row = cur.fetchone()
             if not receiver_row:
                 return jsonify({'error': 'Target user not found'}), 404
@@ -95,6 +95,19 @@ def send_friend_request():
 
         conn.commit()
         
+        # Build full response data (matches FriendRequest shape for frontend)
+        response_data = {
+            'id': request_id,
+            'sender_id': sender_id,
+            'receiver_id': receiver_id,
+            'status': 'pending',
+            'created_at': datetime.now().isoformat(),
+            'username': target_username,
+            'display_name': receiver_row.get('display_name', target_username) if isinstance(receiver_row, dict) else target_username,
+            'avatar_url': receiver_row.get('avatar_url') if isinstance(receiver_row, dict) else None,
+            'message': 'Friend request sent'
+        }
+        
         # Emit socket event to notify receiver in real-time
         try:
             from app import socketio
@@ -105,7 +118,7 @@ def send_friend_request():
                 'sender_id': sender_id,
                 'receiver_id': receiver_id,
                 'status': 'pending',
-                'created_at': datetime.now().isoformat(),
+                'created_at': response_data['created_at'],
                 'sender': {
                     'username': sender_info['username'],
                     'display_name': sender_info['display_name'] or sender_info['username'],
@@ -115,34 +128,21 @@ def send_friend_request():
             
             receiver_room = f"user_{receiver_id}"
             
-            print(f"[FRIEND_REQUEST] 📤 Sending to room: {receiver_room}")
-            print(f"[FRIEND_REQUEST] 📦 Payload: {notification_data}")
-            print(f"[FRIEND_REQUEST] 👥 Active sessions: {list(user_socket_sessions.keys())}")
-            
-            # Try room-based emit first
+            # Room-based emit (reaches all sockets in the personal room)
             socketio.emit('friend_request_received', notification_data, 
                          to=receiver_room, namespace='/')
             print(f"[FRIEND_REQUEST] ✅ Event emitted to room {receiver_room}")
             
-            # Also emit directly to the user's socket ID
+            # Also emit directly to the user's socket ID as fallback
             if receiver_username and receiver_username in user_socket_sessions:
                 receiver_sid = user_socket_sessions[receiver_username]
-                print(f"[FRIEND_REQUEST] 🎯 Direct emit to {receiver_username} (SID: {receiver_sid})")
                 socketio.emit('friend_request_received', notification_data,
                              to=receiver_sid, namespace='/')
-                print(f"[FRIEND_REQUEST] ✅ Direct emit completed")
-            else:
-                print(f"[FRIEND_REQUEST] ⚠️ Receiver {receiver_username} not in active sessions")
             
         except Exception as socket_error:
             print(f"[FRIEND_REQUEST] ❌ Failed to emit event: {socket_error}")
-            import traceback
-            traceback.print_exc()
         
-        return jsonify({
-            'message': 'Friend request sent',
-            'request_id': request_id
-        }), 201
+        return jsonify(response_data), 201
 
     except Exception as e:
         print(f"[ERROR] send_friend_request: {e}")

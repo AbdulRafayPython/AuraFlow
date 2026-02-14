@@ -4,6 +4,7 @@ import { Bell, X, Check, MessageSquare, UserPlus, Users, CheckCheck, Trash2 } fr
 import { useNotificationsContext, type Notification } from '@/contexts/NotificationsContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getAvatarUrl } from '@/lib/utils';
+import { API_SERVER } from '@/config/api';
 
 interface NotificationButtonProps {
   onNavigate?: (view: string) => void;
@@ -242,7 +243,7 @@ export function NotificationButton({ onNavigate }: NotificationButtonProps) {
                             // Show community logo for removal notifications
                             <div className="w-10 h-10 rounded-full overflow-hidden ring-2 ring-red-500">
                               <img
-                                src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${notification.data.community_logo}`}
+                                src={`${API_SERVER}${notification.data.community_logo}`}
                                 alt={notification.data.community_name}
                                 className="w-full h-full object-cover"
                                 onError={(e) => {

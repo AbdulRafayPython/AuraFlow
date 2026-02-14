@@ -1,4 +1,5 @@
-import { socket } from "@/socket";
+import { socketService } from "@/services/socketService";
+import type { Socket } from "socket.io-client";
 
 export interface VoiceUser {
   id: number;
@@ -17,41 +18,46 @@ export interface VoiceMembersUpdate {
 
 class VoiceService {
   /**
+   * Get the real socket from socketService (the one the backend tracks)
+   */
+  private getSocket(): Socket {
+    const sock = socketService.getSocket();
+    if (!sock) {
+      throw new Error("Socket not available — socketService not connected");
+    }
+    return sock;
+  }
+
+  /**
    * Wait for socket to be connected
    */
   private waitForSocketConnection(timeout: number = 30000): Promise<void> {
     return new Promise((resolve, reject) => {
-      if (socket.connected) {
-        console.log("[VOICE SERVICE] Socket already connected");
+      const sock = socketService.getSocket();
+      if (sock?.connected) {
+        console.log("[VOICE SERVICE] Socket already connected, SID:", sock.id);
         resolve();
         return;
       }
 
       console.log("[VOICE SERVICE] Waiting for socket connection...");
-      console.log("[VOICE SERVICE] Socket ID:", socket.id);
-      console.log("[VOICE SERVICE] Socket disconnected:", !socket.connected);
       
-      const onConnect = () => {
-        console.log("[VOICE SERVICE] Socket connected!");
-        socket.off("connect", onConnect);
-        socket.off("connect_error", onConnectError);
-        clearTimeout(timeoutId);
-        resolve();
-      };
-
-      const onConnectError = (error: any) => {
-        console.error("[VOICE SERVICE] Socket connection error:", error);
-      };
-
-      const timeoutId = setTimeout(() => {
-        socket.off("connect", onConnect);
-        socket.off("connect_error", onConnectError);
-        console.error("[VOICE SERVICE] Socket connection timeout after", timeout, "ms");
-        reject(new Error("Socket connection timeout - unable to connect to server"));
-      }, timeout);
-
-      socket.on("connect", onConnect);
-      socket.on("connect_error", onConnectError);
+      // Poll for socketService readiness
+      const startTime = Date.now();
+      const pollInterval = setInterval(() => {
+        const s = socketService.getSocket();
+        if (s?.connected) {
+          clearInterval(pollInterval);
+          console.log("[VOICE SERVICE] Socket connected! SID:", s.id);
+          resolve();
+          return;
+        }
+        if (Date.now() - startTime > timeout) {
+          clearInterval(pollInterval);
+          console.error("[VOICE SERVICE] Socket connection timeout after", timeout, "ms");
+          reject(new Error("Socket connection timeout - unable to connect to server"));
+        }
+      }, 200);
     });
   }
 
@@ -65,37 +71,39 @@ class VoiceService {
       // Wait for socket connection first
       await this.waitForSocketConnection();
 
+      const sock = this.getSocket();
+
       // Emit join event
-      socket.emit("join_voice_channel", { channel_id: channelId });
-      console.log("[VOICE SERVICE] Emitted join_voice_channel event");
+      sock.emit("join_voice_channel", { channel_id: channelId });
+      console.log("[VOICE SERVICE] Emitted join_voice_channel event via SID:", sock.id);
 
       // Wait for response
       return new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
           console.error("[VOICE SERVICE] Join timeout - no response received");
-          socket.off("voice_members_update", onMembersUpdate);
-          socket.off("voice_error", onError);
+          sock.off("voice_members_update", onMembersUpdate);
+          sock.off("voice_error", onError);
           reject(new Error("Join voice channel timeout - server did not respond within 20 seconds"));
         }, 20000);
 
         const onMembersUpdate = (data: any) => {
           clearTimeout(timeout);
           console.log("[VOICE SERVICE] Received voice_members_update:", data);
-          socket.off("voice_members_update", onMembersUpdate);
-          socket.off("voice_error", onError);
+          sock.off("voice_members_update", onMembersUpdate);
+          sock.off("voice_error", onError);
           resolve();
         };
 
         const onError = (data: { message: string }) => {
           clearTimeout(timeout);
           console.error("[VOICE SERVICE] Received voice_error:", data.message);
-          socket.off("voice_members_update", onMembersUpdate);
-          socket.off("voice_error", onError);
+          sock.off("voice_members_update", onMembersUpdate);
+          sock.off("voice_error", onError);
           reject(new Error(data.message));
         };
 
-        socket.on("voice_members_update", onMembersUpdate);
-        socket.on("voice_error", onError);
+        sock.on("voice_members_update", onMembersUpdate);
+        sock.on("voice_error", onError);
       });
     } catch (error) {
       console.error("[VOICE SERVICE] Join error:", error);
@@ -108,7 +116,7 @@ class VoiceService {
    */
   leaveVoiceChannel(channelId: number): void {
     console.log(`[VOICE SERVICE] Leaving channel ${channelId}`);
-    socket.emit("leave_voice_channel", { channel_id: channelId });
+    this.getSocket().emit("leave_voice_channel", { channel_id: channelId });
   }
 
   /**
@@ -116,7 +124,7 @@ class VoiceService {
    */
   toggleMicrophone(channelId: number, isMuted: boolean): void {
     console.log(`[VOICE SERVICE] Setting muted=${isMuted}`);
-    socket.emit("voice_state_changed", {
+    this.getSocket().emit("voice_state_changed", {
       channel_id: channelId,
       is_muted: isMuted,
       is_deaf: false,
@@ -128,7 +136,7 @@ class VoiceService {
    */
   toggleDeafen(channelId: number, isDeaf: boolean, isMuted: boolean): void {
     console.log(`[VOICE SERVICE] Setting deafened=${isDeaf}`);
-    socket.emit("voice_state_changed", {
+    this.getSocket().emit("voice_state_changed", {
       channel_id: channelId,
       is_muted: isMuted || isDeaf,
       is_deaf: isDeaf,
@@ -141,20 +149,21 @@ class VoiceService {
   getChannelMembers(channelId: number): Promise<VoiceUser[]> {
     return new Promise((resolve, reject) => {
       try {
+        const sock = this.getSocket();
         console.log(`[VOICE SERVICE] Fetching members for channel ${channelId}`);
-        socket.emit("get_voice_channel_members", { channel_id: channelId });
+        sock.emit("get_voice_channel_members", { channel_id: channelId });
 
         const timeout = setTimeout(() => {
           reject(new Error("Get members timeout"));
         }, 5000);
 
-        socket.once("voice_channel_members", (data) => {
+        sock.once("voice_channel_members", (data) => {
           clearTimeout(timeout);
           console.log("[VOICE SERVICE] Received members:", data.members);
           resolve(data.members || []);
         });
 
-        socket.once("voice_error", (data: { message: string }) => {
+        sock.once("voice_error", (data: { message: string }) => {
           clearTimeout(timeout);
           reject(new Error(data.message));
         });
@@ -169,7 +178,7 @@ class VoiceService {
    */
   sendOffer(channelId: number, targetUser: string, offer: RTCSessionDescriptionInit): void {
     console.log(`[VOICE SERVICE] Sending offer to ${targetUser}`);
-    socket.emit("send_offer", {
+    this.getSocket().emit("send_offer", {
       channel_id: channelId,
       target_user: targetUser,
       offer: offer,
@@ -181,7 +190,7 @@ class VoiceService {
    */
   sendAnswer(channelId: number, targetUser: string, answer: RTCSessionDescriptionInit): void {
     console.log(`[VOICE SERVICE] Sending answer to ${targetUser}`);
-    socket.emit("send_answer", {
+    this.getSocket().emit("send_answer", {
       channel_id: channelId,
       target_user: targetUser,
       answer: answer,
@@ -193,7 +202,7 @@ class VoiceService {
    */
   sendIceCandidate(channelId: number, targetUser: string, candidate: RTCIceCandidateInit): void {
     console.log(`[VOICE SERVICE] Sending ICE candidate to ${targetUser}`);
-    socket.emit("send_ice_candidate", {
+    this.getSocket().emit("send_ice_candidate", {
       channel_id: channelId,
       target_user: targetUser,
       candidate: candidate,
@@ -207,13 +216,11 @@ class VoiceService {
     try {
       console.log("[VOICE SERVICE] Requesting microphone access");
       
-      // IMPORTANT: For testing on the same device with different browsers,
-      // we DISABLE echo cancellation to allow audio to pass through.
-      // In production with real devices, you'd want echoCancellation: true
+      // Audio constraints for voice chat
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: false,  // ⚠️ Disabled for same-device testing
-          noiseSuppression: false,   // ⚠️ Disabled for same-device testing
+          echoCancellation: true,
+          noiseSuppression: true,
           autoGainControl: true,
           sampleRate: 48000,
           channelCount: 1,
@@ -223,8 +230,8 @@ class VoiceService {
       
       console.log("[VOICE SERVICE] ✅ Microphone access granted");
       console.log("[VOICE SERVICE] 🎤 Audio constraints applied:", {
-        echoCancellation: false,
-        noiseSuppression: false,
+        echoCancellation: true,
+        noiseSuppression: true,
         autoGainControl: true,
       });
       
@@ -255,7 +262,7 @@ class VoiceService {
    * Listen to voice members updates
    */
   onMembersUpdate(callback: (data: VoiceMembersUpdate) => void): void {
-    socket.on("voice_members_update", callback);
+    socketService.getSocket()?.on("voice_members_update", callback);
   }
 
   /**
@@ -271,7 +278,7 @@ class VoiceService {
       timestamp: string;
     }) => void
   ): void {
-    socket.on("user_joined_voice", callback);
+    socketService.getSocket()?.on("user_joined_voice", callback);
   }
 
   /**
@@ -280,7 +287,7 @@ class VoiceService {
   onUserLeft(
     callback: (data: { username: string; channel_id: number; timestamp: string }) => void
   ): void {
-    socket.on("user_left_voice", callback);
+    socketService.getSocket()?.on("user_left_voice", callback);
   }
 
   /**
@@ -295,7 +302,7 @@ class VoiceService {
       timestamp: string;
     }) => void
   ): void {
-    socket.on("voice_state_update", callback);
+    socketService.getSocket()?.on("voice_state_update", callback);
   }
 
   /**
@@ -304,7 +311,7 @@ class VoiceService {
   onReceiveOffer(
     callback: (data: { from: string; offer: RTCSessionDescriptionInit; channel_id: number }) => void
   ): void {
-    socket.on("receive_offer", callback);
+    socketService.getSocket()?.on("receive_offer", callback);
   }
 
   /**
@@ -313,7 +320,7 @@ class VoiceService {
   onReceiveAnswer(
     callback: (data: { from: string; answer: RTCSessionDescriptionInit; channel_id: number }) => void
   ): void {
-    socket.on("receive_answer", callback);
+    socketService.getSocket()?.on("receive_answer", callback);
   }
 
   /**
@@ -322,28 +329,67 @@ class VoiceService {
   onReceiveIceCandidate(
     callback: (data: { from: string; candidate: RTCIceCandidateInit; channel_id: number }) => void
   ): void {
-    socket.on("receive_ice_candidate", callback);
+    socketService.getSocket()?.on("receive_ice_candidate", callback);
   }
 
   /**
    * Listen to voice errors
    */
   onVoiceError(callback: (data: { message: string }) => void): void {
-    socket.on("voice_error", callback);
+    socketService.getSocket()?.on("voice_error", callback);
+  }
+
+  /**
+   * Emit speaking state to server
+   */
+  emitSpeaking(channelId: number, isSpeaking: boolean): void {
+    socketService.getSocket()?.emit("voice:speaking", {
+      channel_id: channelId,
+      is_speaking: isSpeaking,
+    });
+  }
+
+  /**
+   * Listen for speaking state updates from other users
+   */
+  onSpeaking(callback: (data: { username: string; channel_id: number; is_speaking: boolean }) => void): void {
+    socketService.getSocket()?.on("voice:speaking", callback);
+  }
+
+  /**
+   * Request voice participants for sidebar cards
+   */
+  getVoiceParticipants(channelIds: number[]): void {
+    socketService.getSocket()?.emit("get_voice_participants", { channel_ids: channelIds });
+  }
+
+  /**
+   * Listen for voice participants update (sidebar)
+   */
+  onVoiceParticipantsUpdate(callback: (data: { channels: Record<string, { members: Array<{ id: number; username: string; display_name: string; avatar_url?: string }>; total: number }> }) => void): void {
+    socketService.getSocket()?.on("voice_participants_update", callback);
   }
 
   /**
    * Remove all voice-related event listeners
    */
   removeAllListeners(): void {
-    socket.off("voice_members_update");
-    socket.off("user_joined_voice");
-    socket.off("user_left_voice");
-    socket.off("voice_state_update");
-    socket.off("receive_offer");
-    socket.off("receive_answer");
-    socket.off("receive_ice_candidate");
-    socket.off("voice_error");
+    try {
+      const sock = socketService.getSocket();
+      if (!sock) return;
+      sock.off("voice_members_update");
+      sock.off("user_joined_voice");
+      sock.off("user_left_voice");
+      sock.off("voice_state_update");
+      sock.off("receive_offer");
+      sock.off("receive_answer");
+      sock.off("receive_ice_candidate");
+      sock.off("voice_error");
+      sock.off("voice:speaking");
+      sock.off("voice_participants_update");
+    } catch {
+      // Socket may not be available during cleanup
+    }
   }
 }
 

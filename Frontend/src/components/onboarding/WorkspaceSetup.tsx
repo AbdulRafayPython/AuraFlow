@@ -4,6 +4,7 @@ import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { Plus, Users, ArrowRight, Loader, ArrowLeft, Building2, Search, UserPlus, Hash } from "lucide-react";
 import { useNotifications } from "@/hooks/useNotifications";
 import type { Community } from "@/types";
+import { API_SERVER } from "@/config/api";
 
 interface WorkspaceSetupProps {
   onContinue: () => void;
@@ -73,12 +74,12 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
 
   const getCommunityLogoUrl = (community: Community) => {
     if (!community.logo_url) return null;
-    return `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.logo_url}`;
+    return `${API_SERVER}${community.logo_url}`;
   };
 
   const getCommunityBannerUrl = (community: Community) => {
     if (!community.banner_url) return null;
-    return `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.banner_url}`;
+    return `${API_SERVER}${community.banner_url}`;
   };
 
   const generateIcon = (name: string) => {

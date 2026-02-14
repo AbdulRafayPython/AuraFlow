@@ -1,11 +1,14 @@
 // src/socket.ts
 import { io, Socket } from 'socket.io-client';
 
-// Frontend is HTTPS, but backend API is HTTP (local network)
-const hostname = window.location.hostname;
-const API_BASE = `http://${hostname}:5000`;
+// In dev, connect to same origin (Vite proxies /socket.io to backend).
+// In production, use VITE_BACKEND_URL env var or fallback to port 5000.
+const isDev = import.meta.env?.DEV ?? false;
+const API_BASE = isDev
+  ? ''
+  : (import.meta.env?.VITE_BACKEND_URL || `http://${window.location.hostname}:5000`);
 
-console.log('[SOCKET] Socket module loaded, API base:', API_BASE);
+console.log('[SOCKET] Socket module loaded, API base:', API_BASE || '(same origin via proxy)');
 
 // Create socket instance but don't auto-connect
 export const socket: Socket = io(API_BASE, {
@@ -96,4 +99,13 @@ socket.on('disconnect', (reason) => {
 
 socket.on('error', (error) => {
   console.error('[SOCKET] 🔴 Socket error:', error);
+});
+
+// ─── Reconnect with fresh token after silent refresh ─────────────────
+window.addEventListener('auth:token-refreshed', () => {
+  if (socket.connected) {
+    console.log('[SOCKET] Token refreshed, reconnecting with new token...');
+    disconnectSocket();
+    setTimeout(() => connectSocket(), 300);
+  }
 });

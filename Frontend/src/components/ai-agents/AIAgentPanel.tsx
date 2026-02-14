@@ -30,8 +30,9 @@ export default function AIAgentPanel({ isOpen, onClose }: AIAgentPanelProps) {
   });
   const [moderationCount, setModerationCount] = useState(0);
 
-  // Check if user is owner
+  // Check if user is owner or admin
   const isOwner = currentCommunity?.role === 'owner';
+  const isAdmin = currentCommunity?.role === 'owner' || currentCommunity?.role === 'admin';
 
   // Fetch moderation stats when community changes
   useEffect(() => {
@@ -182,6 +183,7 @@ export default function AIAgentPanel({ isOpen, onClose }: AIAgentPanelProps) {
             enabled={agent.enabled}
             color={agent.color}
             alerts={agent.alerts}
+            isAdmin={isAdmin}
             onToggle={handleToggle}
             onConfigure={handleConfigure}
           />

@@ -1,8 +1,7 @@
 // services/messageService.ts - Uses shared types ONLY
 import axios from 'axios';
 import type { Message, DirectMessage, SendMessageData, SendMessageResponse } from '@/types';
-
-const API_URL = 'http://localhost:5000/api';
+import { API_URL } from '@/config/api';
 
 class MessageService {
   private getAuthHeaders() {
@@ -34,6 +33,10 @@ class MessageService {
         avatar_url: msg.avatar || msg.avatar_url || '',
         edited_at: msg.edited_at || null,
         reply_to: msg.reply_to || null,
+        reply_to_preview: msg.reply_to_preview || undefined,
+        is_blocked: msg.is_blocked || false,
+        moderation: msg.moderation || undefined,
+        attachment: msg.attachment || undefined,
       }));
     } catch (error) {
       console.error('Error fetching channel messages:', error);
@@ -64,6 +67,7 @@ class MessageService {
           avatar_url: rawMessage.avatar || rawMessage.avatar_url || '',
           edited_at: rawMessage.edited_at || null,
           reply_to: rawMessage.reply_to || null,
+          reply_to_preview: rawMessage.reply_to_preview || undefined,
           moderation: rawMessage.moderation,
         } as Message;
       }
@@ -96,7 +100,7 @@ class MessageService {
     }
   }
 
-  async sendDirectMessage(receiverId: number, content: string, messageType = 'text'): Promise<DirectMessage> {
+  async sendDirectMessage(receiverId: number, content: string, messageType = 'text', replyTo?: number): Promise<DirectMessage> {
     try {
       const response = await axios.post<DirectMessage>(
         `${API_URL}/messages/direct/send`,
@@ -104,6 +108,7 @@ class MessageService {
           receiver_id: receiverId,
           content,
           message_type: messageType,
+          ...(replyTo ? { reply_to: replyTo } : {}),
         },
         this.getAuthHeaders()
       );

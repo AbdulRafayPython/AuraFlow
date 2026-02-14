@@ -335,6 +335,49 @@
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--muted)) transparent;
   }
+
+  /* Modal Scrollbar - Ultra Minimal & Modern */
+  .modal-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .modal-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 4px 0;
+  }
+
+  .modal-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted) / 0.3);
+    border-radius: 10px;
+    transition: background 0.2s ease;
+  }
+
+  .modal-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted) / 0.5);
+  }
+
+  .modal-scrollbar::-webkit-scrollbar-thumb:active {
+    background: hsl(var(--muted) / 0.6);
+  }
+
+  /* Firefox */
+  .modal-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted) / 0.3) transparent;
+  }
+
+  /* Hide scrollbar by default, show on hover for modal */
+  .modal-scrollbar {
+    overflow-y: auto;
+  }
+
+  .modal-scrollbar::-webkit-scrollbar-thumb {
+    opacity: 0;
+  }
+
+  .modal-scrollbar:hover::-webkit-scrollbar-thumb {
+    opacity: 1;
+  }
 }
 
 /* Discover Page Hero Animation */

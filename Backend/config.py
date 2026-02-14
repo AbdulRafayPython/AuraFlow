@@ -12,7 +12,11 @@ IS_PRODUCTION = FLASK_ENV == 'production'
 DB_HOST = os.getenv('DB_HOST')
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
-DB_NAME = os.getenv('DB_NAME') 
+DB_NAME = os.getenv('DB_NAME')
+DB_PORT = int(os.getenv('DB_PORT', '3306'))
+
+# Frontend URL for CORS (set in production)
+FRONTEND_URL = os.getenv('FRONTEND_URL', '')
 
 # SMTP configuration with defaults
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
@@ -27,6 +31,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.urandom(32).hex() if not IS_PRODUCTION else None)
 if IS_PRODUCTION and not JWT_SECRET_KEY:
     raise RuntimeError("JWT_SECRET_KEY must be set in production environment")
+
+# Session management
+JWT_REFRESH_TOKEN_EXPIRES_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "7"))
 
 # Rate limiting
 RATE_LIMIT_DEFAULT = os.getenv("RATE_LIMIT_DEFAULT", "100 per minute")

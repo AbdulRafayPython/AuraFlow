@@ -11,6 +11,7 @@ import re
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 import math
+import warnings
 from collections import Counter
 from dotenv import load_dotenv
 import os
@@ -23,7 +24,9 @@ load_dotenv()
 
 # Gemini API integration
 try:
-    import google.generativeai as genai
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        import google.generativeai as genai
     from config import GEMINI_API_KEY
     GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
     if GEMINI_AVAILABLE:
@@ -51,50 +54,9 @@ class SummarizerAgent:
         # Initialize Gemini model if available
         if self.gemini_available:
             try:
-                # First, list available models to find the correct one
-                print("[SUMMARIZER] Checking available Gemini models...")
-                available_models = []
-                try:
-                    for m in genai.list_models():
-                        if 'generateContent' in m.supported_generation_methods:
-                            available_models.append(m.name)
-                            print(f"[SUMMARIZER]   Found model: {m.name}")
-                except Exception as list_err:
-                    print(f"[SUMMARIZER] Could not list models: {list_err}")
-                
-                # Try models in order of preference (without 'models/' prefix for v1beta)
-                model_names = [
-                    'gemini-1.5-pro-latest',
-                    'gemini-1.5-pro',
-                    'gemini-pro-latest', 
-                    'gemini-pro',
-                    'gemini-1.0-pro-latest',
-                    'gemini-1.0-pro'
-                ]
-                
-                # If we got available models, prioritize those
-                if available_models:
-                    # Extract just the model name without 'models/' prefix
-                    clean_models = [m.replace('models/', '') for m in available_models]
-                    model_names = clean_models + model_names
-                
-                self.gemini_model = None
-                for model_name in model_names:
-                    try:
-                        self.gemini_model = genai.GenerativeModel(model_name)
-                        # Try a test generation to verify it actually works
-                        test_response = self.gemini_model.generate_content("Test")
-                        if test_response:
-                            print(f"[SUMMARIZER] ✅ Successfully verified model: {model_name}")
-                            break
-                    except Exception as model_err:
-                        print(f"[SUMMARIZER] ❌ Model {model_name} failed: {str(model_err)[:100]}")
-                        continue
-                
-                if not self.gemini_model:
-                    self.gemini_available = False
-                    print("[SUMMARIZER] ⚠️ No compatible Gemini model found")
-                    
+                # Use gemini-2.0-flash directly — fast, reliable, free tier friendly
+                self.gemini_model = genai.GenerativeModel('gemini-2.0-flash')
+                print("[SUMMARIZER] ✅ Gemini model initialized (gemini-2.0-flash)")
             except Exception as e:
                 print(f"[SUMMARIZER] Failed to initialize Gemini: {e}")
                 self.gemini_available = False

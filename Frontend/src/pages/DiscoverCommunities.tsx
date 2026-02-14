@@ -3,12 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import {
   Search, Users, Compass, Gamepad2, Music, Film, FlaskConical, GraduationCap,
   Sparkles, TrendingUp, Loader2, Plus, ChevronRight, Home, Verified,
-  ArrowLeft, Hash, MessageSquare
+  ArrowLeft, Hash, MessageSquare, Bot, Brain, Shield, Heart, BookOpen,
+  Focus, Activity, Zap, Eye, Settings, ChevronDown, CheckCircle, Power
 } from 'lucide-react';
 import { channelService } from '@/services/channelService';
 import { getAvatarUrl } from '@/lib/utils';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useRealtime } from '@/hooks/useRealtime';
+import { useAIAgents } from '@/contexts/AIAgentContext';
 import type { Community } from '@/types';
+import { API_SERVER } from '@/config/api';
 
 interface DiscoverCommunitiesProps {
   onClose?: () => void;
@@ -25,12 +29,17 @@ const CATEGORIES = [
 ];
 
 const SIDEBAR_ITEMS = [
-  { id: 'servers', label: 'Servers', icon: Hash, active: true },
+  { id: 'servers', label: 'Servers', icon: Hash, active: false },
+  { id: 'agents', label: 'AI Agents', icon: Bot, active: false },
 ];
 
 export default function DiscoverCommunities({ onClose, onJoinCommunity }: DiscoverCommunitiesProps) {
   const navigate = useNavigate();
   const { isDarkMode } = useTheme();
+  const { currentCommunity } = useRealtime();
+  const { agentStatus } = useAIAgents();
+  const [activeSection, setActiveSection] = useState<'servers' | 'agents'>('servers');
+  const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [featuredCommunities, setFeaturedCommunities] = useState<Community[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -130,12 +139,12 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
 
   const getCommunityLogoUrl = (community: Community) => {
     if (!community.logo_url) return null;
-    return `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.logo_url}`;
+    return `${API_SERVER}${community.logo_url}`;
   };
 
   const getCommunityBannerUrl = (community: Community) => {
     if (!community.banner_url) return null;
-    return `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.banner_url}`;
+    return `${API_SERVER}${community.banner_url}`;
   };
 
   const getInitials = (name: string) => {
@@ -150,8 +159,8 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
 
   return (
     <div className="h-full flex" style={{ background: 'var(--theme-bg-gradient)' }}>
-      {/* Left Sidebar */}
-      <div className="w-60 flex-shrink-0 border-r border-[hsl(var(--theme-border-default)/0.3)] flex flex-col bg-[hsl(var(--theme-bg-secondary)/0.3)]">
+      {/* Left Sidebar - Hidden on mobile */}
+      <div className="hidden md:flex w-60 flex-shrink-0 border-r border-[hsl(var(--theme-border-default)/0.3)] flex-col bg-[hsl(var(--theme-bg-secondary)/0.3)]">
         {/* Sidebar Header */}
         <div className="p-4 border-b border-[hsl(var(--theme-border-default)/0.3)]">
           <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
@@ -165,8 +174,9 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
           {SIDEBAR_ITEMS.map(item => (
             <button
               key={item.id}
+              onClick={() => setActiveSection(item.id as 'servers' | 'agents')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                item.active
+                activeSection === item.id
                   ? 'bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))]'
                   : 'text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]'
               }`}
@@ -180,6 +190,412 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'hsl(var(--theme-bg-primary))' }}>
+        {activeSection === 'agents' ? (
+          /* AI Agents Section — full page matching Servers layout */
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Sticky Navigation Bar */}
+            <div className={`sticky top-0 z-30 transition-all duration-300 ${
+              isScrolled
+                ? 'bg-[hsl(var(--theme-bg-primary))] shadow-lg border-b border-[hsl(var(--theme-border-default)/0.3)]'
+                : !isDarkMode
+                  ? 'bg-[hsl(var(--theme-bg-primary)/0.85)] backdrop-blur-sm shadow-sm'
+                  : 'bg-transparent'
+            }`}>
+              <div className={`h-12 flex items-center justify-center border-b transition-colors duration-300 ${
+                isScrolled
+                  ? 'border-[hsl(var(--theme-border-default)/0.3)]'
+                  : !isDarkMode
+                    ? 'border-[hsl(var(--theme-border-default)/0.2)]'
+                    : 'border-white/5'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <Bot className={`w-5 h-5 transition-colors duration-300 ${
+                    isScrolled
+                      ? 'text-[hsl(var(--theme-text-secondary))]'
+                      : !isDarkMode
+                        ? 'text-[hsl(var(--theme-text-primary))]'
+                        : 'text-white/80'
+                  }`} />
+                  <span className={`text-sm font-semibold ${
+                    isScrolled
+                      ? 'text-[hsl(var(--theme-text-primary))]'
+                      : !isDarkMode
+                        ? 'text-[hsl(var(--theme-text-primary))]'
+                        : 'text-white'
+                  }`}>AI Agents</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Scrollable Content */}
+            <div
+              className="flex-1 overflow-y-auto"
+              style={{ background: 'hsl(var(--theme-bg-primary))', scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}
+              onScroll={(e) => {
+                const scrollTop = (e.target as HTMLDivElement).scrollTop;
+                setIsScrolled(scrollTop > 10);
+              }}
+            >
+              {/* Hero Section */}
+              <div className="relative">
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background: 'linear-gradient(140deg, #1a1a2e 0%, #16213e 20%, #0f3460 45%, #533483 70%, #7b2d8e 85%, #e94560 100%)',
+                  }}
+                />
+                <div className="absolute inset-0 overflow-hidden">
+                  <div className="absolute right-0 top-0 w-[500px] h-[500px] bg-purple-500/10 rounded-full blur-[100px]" />
+                  <div className="absolute -left-20 bottom-0 w-[400px] h-[400px] bg-blue-600/15 rounded-full blur-[80px]" />
+                  {/* Subtle grid pattern */}
+                  <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+                </div>
+
+                <div className="relative z-10 px-4 sm:px-8 pt-6 sm:pt-8 pb-8 sm:pb-12">
+                  <h1
+                    className="text-2xl sm:text-4xl lg:text-[48px] font-extrabold text-white mb-3 leading-[1.1] tracking-tight"
+                    style={{
+                      fontFamily: "'Ginto', 'Helvetica Neue', Helvetica, Arial, sans-serif",
+                      fontStyle: 'italic',
+                      fontWeight: 900,
+                      letterSpacing: '-0.5px',
+                    }}
+                  >
+                    BUILT-IN INTELLIGENCE<br />FOR YOUR COMMUNITY
+                  </h1>
+                  <p className="text-white/70 text-[15px] max-w-lg">
+                    Seven specialized agents that work behind the scenes — moderating, summarizing, and keeping your community healthy.
+                  </p>
+                </div>
+              </div>
+
+              {/* Content Below Hero */}
+              <div style={{ background: 'hsl(var(--theme-bg-primary))' }}>
+                <div className="p-6">
+
+                  {/* Overview Stats */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-10">
+                    {[
+                      { label: 'Total Agents', value: '7', icon: Bot, accent: 'text-violet-400' },
+                      { label: 'Categories', value: '4', icon: Activity, accent: 'text-blue-400' },
+                      { label: 'Always On', value: '24/7', icon: Zap, accent: 'text-amber-400' },
+                      { label: 'Zero Config', value: 'Ready', icon: CheckCircle, accent: 'text-emerald-400' },
+                    ].map((stat, i) => (
+                      <div key={i} className="p-4 rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.5)] border-[hsl(var(--theme-border-default)/0.5)]">
+                        <stat.icon className={`w-5 h-5 mb-2 ${stat.accent}`} />
+                        <p className="text-xl font-bold text-[hsl(var(--theme-text-primary))]">{stat.value}</p>
+                        <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">{stat.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Core Agents Section */}
+                  <div className="mb-10">
+                    <h2 className="text-base font-semibold text-[hsl(var(--theme-text-primary))] mb-4 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[hsl(var(--theme-accent-primary))]" />
+                      Core Agents
+                    </h2>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {/* Summarizer */}
+                      <div
+                        onClick={() => navigate('/agent/summarizer')}
+                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-blue-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
+                      >
+                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #1e3a5f 0%, #2563eb 60%, #3b82f6 100%)' }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
+                            <Brain className="w-32 h-32" />
+                          </div>
+                        </div>
+                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                          <Brain className="w-7 h-7 text-white" />
+                        </div>
+                        <div className="pt-8 pb-4 px-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Summarizer</h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">Core</span>
+                          </div>
+                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
+                            Condenses long conversations into clear, actionable recaps. Never miss what happened while you were away.
+                          </p>
+                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                            <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-400" /> Auto-runs</span>
+                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Per-channel</span>
+                          </div>
+                        </div>
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
+                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
+                            <Eye className="w-4 h-4" /> View Details
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Mood Tracker */}
+                      <div
+                        onClick={() => navigate('/agent/mood')}
+                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-pink-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
+                      >
+                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #831843 0%, #ec4899 60%, #f472b6 100%)' }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
+                            <Heart className="w-32 h-32" />
+                          </div>
+                        </div>
+                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-pink-500 to-pink-600 flex items-center justify-center">
+                          <Heart className="w-7 h-7 text-white" />
+                        </div>
+                        <div className="pt-8 pb-4 px-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Mood Tracker</h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20">Core</span>
+                          </div>
+                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
+                            Reads the room in real time. Tracks sentiment shifts across conversations so you can stay ahead of issues.
+                          </p>
+                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                            <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-400" /> Real-time</span>
+                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Sentiment</span>
+                          </div>
+                        </div>
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
+                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-pink-500 to-pink-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
+                            <Eye className="w-4 h-4" /> View Details
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Moderation */}
+                      <div
+                        onClick={() => navigate('/agent/moderation')}
+                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-red-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
+                      >
+                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #7f1d1d 0%, #ef4444 60%, #f87171 100%)' }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
+                            <Shield className="w-32 h-32" />
+                          </div>
+                        </div>
+                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
+                          <Shield className="w-7 h-7 text-white" />
+                        </div>
+                        <div className="pt-8 pb-4 px-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Moderation</h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-red-500/10 text-red-400 border border-red-500/20">Safety</span>
+                          </div>
+                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
+                            Filters harmful content, detects spam, and enforces community guidelines automatically. Owner-only controls.
+                          </p>
+                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                            <span className="flex items-center gap-1"><Shield className="w-3 h-3 text-red-400" /> Auto-filter</span>
+                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Logs</span>
+                          </div>
+                        </div>
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
+                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-red-500 to-red-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
+                            <Eye className="w-4 h-4" /> View Details
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Insight & Growth Agents */}
+                  <div className="mb-10">
+                    <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] mb-5 flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
+                      Insight & Growth
+                    </h2>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {/* Engagement */}
+                      <div
+                        onClick={() => navigate('/agent/engagement')}
+                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-emerald-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
+                      >
+                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #064e3b 0%, #10b981 60%, #34d399 100%)' }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
+                            <TrendingUp className="w-32 h-32" />
+                          </div>
+                        </div>
+                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center">
+                          <TrendingUp className="w-7 h-7 text-white" />
+                        </div>
+                        <div className="pt-8 pb-4 px-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Engagement</h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Growth</span>
+                          </div>
+                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
+                            Surfaces activity trends, peak hours, and top contributors. Know what drives your community forward.
+                          </p>
+                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                            <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3 text-emerald-400" /> Analytics</span>
+                            <span className="flex items-center gap-1"><Users className="w-3 h-3" /> Leaderboard</span>
+                          </div>
+                        </div>
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
+                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
+                            <Eye className="w-4 h-4" /> View Details
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Wellness */}
+                      <div
+                        onClick={() => navigate('/agent/wellness')}
+                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-purple-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
+                      >
+                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #4c1d95 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
+                            <Heart className="w-32 h-32" />
+                          </div>
+                        </div>
+                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
+                          <Heart className="w-7 h-7 text-white" />
+                        </div>
+                        <div className="pt-8 pb-4 px-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Wellness</h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">Wellbeing</span>
+                          </div>
+                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
+                            Tracks community wellbeing and surfaces patterns that may need attention. Proactive, not reactive.
+                          </p>
+                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                            <span className="flex items-center gap-1"><Heart className="w-3 h-3 text-purple-400" /> Wellness</span>
+                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Trends</span>
+                          </div>
+                        </div>
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
+                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-purple-500 to-purple-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
+                            <Eye className="w-4 h-4" /> View Details
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Knowledge Builder */}
+                      <div
+                        onClick={() => navigate('/agent/knowledge')}
+                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-indigo-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
+                      >
+                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #312e81 0%, #6366f1 60%, #818cf8 100%)' }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
+                            <BookOpen className="w-32 h-32" />
+                          </div>
+                        </div>
+                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center">
+                          <BookOpen className="w-7 h-7 text-white" />
+                        </div>
+                        <div className="pt-8 pb-4 px-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Knowledge Builder</h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Learn</span>
+                          </div>
+                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
+                            Extracts Q&A pairs and builds a searchable knowledge base from your conversations over time.
+                          </p>
+                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                            <span className="flex items-center gap-1"><BookOpen className="w-3 h-3 text-indigo-400" /> Q&A</span>
+                            <span className="flex items-center gap-1"><Search className="w-3 h-3" /> Searchable</span>
+                          </div>
+                        </div>
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
+                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-indigo-500 to-indigo-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
+                            <Eye className="w-4 h-4" /> View Details
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Focus */}
+                      <div
+                        onClick={() => navigate('/agent/focus')}
+                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-orange-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
+                      >
+                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #7c2d12 0%, #f97316 60%, #fb923c 100%)' }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
+                            <Focus className="w-32 h-32" />
+                          </div>
+                        </div>
+                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center">
+                          <Focus className="w-7 h-7 text-white" />
+                        </div>
+                        <div className="pt-8 pb-4 px-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Focus</h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">Productivity</span>
+                          </div>
+                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
+                            Helps members stay on track with productivity insights. Tracks focus sessions and distraction patterns.
+                          </p>
+                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                            <span className="flex items-center gap-1"><Focus className="w-3 h-3 text-orange-400" /> Sessions</span>
+                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Tracking</span>
+                          </div>
+                        </div>
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
+                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-orange-500 to-orange-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
+                            <Eye className="w-4 h-4" /> View Details
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* How It Works Section */}
+                  <div className="mb-10">
+                    <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] mb-5 flex items-center gap-2">
+                      <Settings className="w-5 h-5 text-[hsl(var(--theme-text-muted))]" />
+                      How It Works
+                    </h2>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="p-5 rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.4)]">
+                        <div className="w-8 h-8 rounded-lg bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))] flex items-center justify-center font-bold text-sm mb-3">1</div>
+                        <h3 className="font-semibold text-sm text-[hsl(var(--theme-text-primary))] mb-1">Select a Community</h3>
+                        <p className="text-xs text-[hsl(var(--theme-text-muted))] leading-relaxed">
+                          Pick any community you own or admin from the sidebar. Agents are scoped per community.
+                        </p>
+                      </div>
+                      <div className="p-5 rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.4)]">
+                        <div className="w-8 h-8 rounded-lg bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))] flex items-center justify-center font-bold text-sm mb-3">2</div>
+                        <h3 className="font-semibold text-sm text-[hsl(var(--theme-text-primary))] mb-1">Enable & Configure</h3>
+                        <p className="text-xs text-[hsl(var(--theme-text-muted))] leading-relaxed">
+                          Toggle agents on or off, adjust sensitivity thresholds, and set notification preferences.
+                        </p>
+                      </div>
+                      <div className="p-5 rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.4)]">
+                        <div className="w-8 h-8 rounded-lg bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))] flex items-center justify-center font-bold text-sm mb-3">3</div>
+                        <h3 className="font-semibold text-sm text-[hsl(var(--theme-text-primary))] mb-1">Sit Back & Monitor</h3>
+                        <p className="text-xs text-[hsl(var(--theme-text-muted))] leading-relaxed">
+                          Agents run automatically. Check dashboards for insights, summaries, and moderation logs anytime.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CTA - Select Community */}
+                  {!currentCommunity && (
+                    <div className="mb-8 p-6 rounded-2xl border bg-[hsl(var(--theme-bg-secondary)/0.4)] border-[hsl(var(--theme-border-default)/0.5)] text-center">
+                      <Bot className="w-10 h-10 mx-auto mb-3 text-[hsl(var(--theme-accent-primary))]" />
+                      <h3 className="font-bold text-[hsl(var(--theme-text-primary))] mb-1">Ready to get started?</h3>
+                      <p className="text-sm text-[hsl(var(--theme-text-secondary))] mb-4 max-w-md mx-auto">
+                        Select a community from the sidebar to activate and configure agents for your channels.
+                      </p>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+        <>
         {/* Sticky Navigation Bar */}
         <div 
           className={`sticky top-0 z-30 transition-all duration-300 ${
@@ -217,9 +633,9 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
           </div>
 
           {/* Category Navigation */}
-          <div className="px-6 py-2 flex items-center justify-between">
-            <div className="flex items-center gap-0.5">
-              <Home className={`w-5 h-5 mr-3 transition-colors duration-300 ${
+          <div className="px-3 sm:px-6 py-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-none flex-1 min-w-0">
+              <Home className={`w-5 h-5 mr-2 sm:mr-3 flex-shrink-0 transition-colors duration-300 ${
                 isScrolled 
                   ? 'text-[hsl(var(--theme-text-secondary))]' 
                   : !isDarkMode 
@@ -230,7 +646,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                  className={`flex-shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
                     selectedCategory === cat.id
                       ? isScrolled 
                         ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]' 
@@ -250,7 +666,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
             </div>
 
             {/* Search */}
-            <div className="relative w-48">
+            <div className="relative w-36 sm:w-48 flex-shrink-0">
               <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors duration-300 ${
                 isScrolled 
                   ? 'text-[hsl(var(--theme-text-muted))]' 
@@ -277,7 +693,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
         <div 
           ref={scrollContainerRef}
           className="flex-1 overflow-y-auto" 
-          style={{ background: 'hsl(var(--theme-bg-primary))' }}
+          style={{ background: 'hsl(var(--theme-bg-primary))', scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}
           onScroll={(e) => {
             const scrollTop = (e.target as HTMLDivElement).scrollTop;
             setIsScrolled(scrollTop > 10);
@@ -300,9 +716,9 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
             </div>
 
             {/* Hero Content - Reduced height */}
-            <div className="relative z-10 px-8 pt-8 pb-12">
+            <div className="relative z-10 px-4 sm:px-8 pt-6 sm:pt-8 pb-8 sm:pb-12">
               <h1 
-                className="text-[48px] font-extrabold text-white mb-3 leading-[1.1] tracking-tight"
+                className="text-2xl sm:text-4xl lg:text-[48px] font-extrabold text-white mb-3 leading-[1.1] tracking-tight"
                 style={{ 
                   fontFamily: "'Ginto', 'Helvetica Neue', Helvetica, Arial, sans-serif",
                   fontStyle: 'italic',
@@ -553,6 +969,8 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
             )}
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

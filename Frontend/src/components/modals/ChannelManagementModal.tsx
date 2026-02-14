@@ -118,7 +118,7 @@ export default function ChannelManagementModal({
   if (!isOpen || !channel) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
       <div className="w-full max-w-md rounded-2xl shadow-2xl border max-h-[90vh] overflow-y-auto bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b sticky top-0 border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))]">

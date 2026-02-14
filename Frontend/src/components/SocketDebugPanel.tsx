@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { socketService } from '@/services/socketService';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Wifi, WifiOff } from 'lucide-react';
+import { API_URL } from '@/config/api';
 
 export function SocketDebugPanel() {
   const { isDarkMode } = useTheme();
@@ -19,7 +20,7 @@ export function SocketDebugPanel() {
 
   const testFriendRequest = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/debug/test-friend-request/2', {
+      const response = await fetch(`${API_URL}/debug/test-friend-request/2`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`

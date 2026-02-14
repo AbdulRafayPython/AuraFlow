@@ -1,0 +1,41 @@
+# AuraFlow Backend — Render.com Blueprint
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: auraflow-backend
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: chmod +x build.sh && ./build.sh
+    startCommand: gunicorn -k eventlet -w 1 --bind 0.0.0.0:$PORT --timeout 120 app:app
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: SOCKETIO_ASYNC_MODE
+        value: eventlet
+      - key: DB_HOST
+        sync: false    # set manually
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_SSL
+        value: "true"
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false    # e.g. https://auraflow.vercel.app
+      - key: SMTP_SERVER
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_EMAIL
+        sync: false
+      - key: SMTP_APP_PASSWORD
+        sync: false

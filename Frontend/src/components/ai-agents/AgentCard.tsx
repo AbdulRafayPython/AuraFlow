@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Power, AlertCircle, CheckCircle, Loader2, ChevronRight, Zap } from 'lucide-react';
+import { Settings, Power, AlertCircle, CheckCircle, Loader2, ChevronRight, Zap, ShieldCheck } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 
 interface AgentCardProps {
@@ -11,6 +11,7 @@ interface AgentCardProps {
   enabled: boolean;
   color: string;
   alerts?: number;
+  isAdmin?: boolean;
   onToggle: (id: string, enabled: boolean) => void;
   onConfigure: (id: string) => void;
 }
@@ -24,6 +25,7 @@ export default function AgentCard({
   enabled,
   color,
   alerts,
+  isAdmin,
   onToggle,
   onConfigure
 }: AgentCardProps) {
@@ -164,6 +166,14 @@ export default function AgentCard({
 
       {/* Controls: Toggle + Configure */}
       <div className="relative flex items-center gap-2">
+        {/* Admin Badge */}
+        {isAdmin && (
+          <div className="absolute -top-7 right-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))] border border-[hsl(var(--theme-accent-primary)/0.3)]">
+            <ShieldCheck className="w-3 h-3" />
+            Admin
+          </div>
+        )}
+        
         {/* Enable/Disable Toggle */}
         <button
           onClick={() => onToggle(id, !enabled)}
@@ -176,7 +186,7 @@ export default function AgentCard({
           }`}
         >
           <Power className="w-3.5 h-3.5" />
-          {enabled ? 'Enabled' : 'Disabled'}
+          {enabled ? (isAdmin ? 'Activated' : 'Enabled') : (isAdmin ? 'Deactivated' : 'Disabled')}
         </button>
 
         {/* Configure Button */}

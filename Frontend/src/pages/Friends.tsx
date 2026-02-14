@@ -3,6 +3,8 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useFriends } from "@/contexts/FriendsContext";
 import type { Friend, FriendRequest } from "@/types";
 import { useDirectMessages } from "@/contexts/DirectMessagesContext";
+import { useCall } from "@/contexts/CallContext";
+import type { CallPeer } from "@/contexts/CallContext";
 import { getAvatarUrl } from "@/lib/utils";
 import AddFriendModal from "@/components/modals/AddFriendModal";
 import FriendProfileModal from "@/components/modals/FriendProfileModal";
@@ -49,6 +51,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
   const isBasicTheme = currentTheme === 'basic';
   const { friends, pendingRequests = [], sentRequests = [], blockedUsers, addFriend, acceptFriendRequest, rejectFriendRequest, removeFriend, blockUser, unblockUser, cancelFriendRequest, sendFriendRequest } = useFriends();
   const { selectConversation } = useDirectMessages();
+  const { initiateCall, callState } = useCall();
   const [activeTab, setActiveTab] = useState<Tab>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [addFriendInput, setAddFriendInput] = useState("");
@@ -202,30 +205,50 @@ export default function Friends({ onOpenDM }: FriendsProps) {
         >
           <MessageCircle className="w-5 h-5" />
         </button>
-        <div className="relative group/call">
-          <button 
-            className="p-2 rounded-lg transition-colors bg-[hsl(var(--theme-bg-tertiary)/0.5)] text-[hsl(var(--theme-text-muted))] cursor-not-allowed opacity-60"
-            disabled
-            title="Coming in FYP 2"
-          >
-            <Phone className="w-5 h-5" />
-          </button>
-          <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-[hsl(var(--theme-bg-elevated))] text-[10px] text-[hsl(var(--theme-text-muted))] rounded whitespace-nowrap opacity-0 group-hover/call:opacity-100 transition-opacity border border-[hsl(var(--theme-border-default)/0.5)]">
-            FYP 2
-          </div>
-        </div>
-        <div className="relative group/video">
-          <button 
-            className="p-2 rounded-lg transition-colors bg-[hsl(var(--theme-bg-tertiary)/0.5)] text-[hsl(var(--theme-text-muted))] cursor-not-allowed opacity-60"
-            disabled
-            title="Coming in FYP 2"
-          >
-            <Video className="w-5 h-5" />
-          </button>
-          <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-[hsl(var(--theme-bg-elevated))] text-[10px] text-[hsl(var(--theme-text-muted))] rounded whitespace-nowrap opacity-0 group-hover/video:opacity-100 transition-opacity border border-[hsl(var(--theme-border-default)/0.5)]">
-            FYP 2
-          </div>
-        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (callState !== 'idle') return;
+            const peer: CallPeer = {
+              id: friend.id,
+              username: friend.username,
+              display_name: friend.display_name,
+              avatar_url: friend.avatar_url || friend.avatar || null,
+            };
+            initiateCall(peer, 'audio');
+          }}
+          disabled={callState !== 'idle'}
+          className={`p-2 rounded-lg transition-colors ${
+            callState !== 'idle'
+              ? 'bg-[hsl(var(--theme-bg-tertiary)/0.5)] text-[hsl(var(--theme-text-muted))] cursor-not-allowed opacity-60'
+              : 'hover:bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))] hover:text-green-500'
+          }`}
+          title="Audio Call"
+        >
+          <Phone className="w-5 h-5" />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (callState !== 'idle') return;
+            const peer: CallPeer = {
+              id: friend.id,
+              username: friend.username,
+              display_name: friend.display_name,
+              avatar_url: friend.avatar_url || friend.avatar || null,
+            };
+            initiateCall(peer, 'video');
+          }}
+          disabled={callState !== 'idle'}
+          className={`p-2 rounded-lg transition-colors ${
+            callState !== 'idle'
+              ? 'bg-[hsl(var(--theme-bg-tertiary)/0.5)] text-[hsl(var(--theme-text-muted))] cursor-not-allowed opacity-60'
+              : 'hover:bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))] hover:text-blue-500'
+          }`}
+          title="Video Call"
+        >
+          <Video className="w-5 h-5" />
+        </button>
         
         {/* More Menu */}
         <div className="relative">

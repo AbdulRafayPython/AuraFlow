@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import authService from '../services/authService';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, X, Eye, EyeOff, CheckCircle2, XCircle, Info, Mail } from 'lucide-react';
 
 type Mode = 'login' | 'signup';
 
@@ -377,12 +377,31 @@ const Login: React.FC<{
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
+
+  const handleResendVerification = async () => {
+    if (!unverifiedEmail || resending) return;
+    setResending(true);
+    setResendSuccess(false);
+    try {
+      await authService.resendVerification(unverifiedEmail);
+      setResendSuccess(true);
+    } catch {
+      setErrors({ general: 'Failed to resend verification email.' });
+    } finally {
+      setResending(false);
+    }
+  };
 
   const handleSubmit = () => {
     setErrors({});
+    setUnverifiedEmail(null);
+    setResendSuccess(false);
 
     const newErrors: Record<string, string> = {};
-    if (!email) newErrors.email = 'Email is required';
+    if (!email) newErrors.email = 'Email or username is required';
     if (!password) newErrors.password = 'Password is required';
 
     if (Object.keys(newErrors).length > 0) {
@@ -401,6 +420,16 @@ const Login: React.FC<{
       .catch((err: any) => {
         setLoading(false);
         onLoadingChange(false);
+
+        // Handle email-not-verified case specifically
+        const code = err?.data?.code;
+        const errEmail = err?.data?.email;
+        if (code === 'EMAIL_NOT_VERIFIED' && errEmail) {
+          setUnverifiedEmail(errEmail);
+          setErrors({ general: err?.data?.error || 'Please verify your email before logging in.' });
+          return;
+        }
+
         const message = err?.data?.error || err?.message || 'Login failed';
         setErrors({ general: String(message) });
       });
@@ -434,13 +463,23 @@ const Login: React.FC<{
 
         <div className="space-y-2">
           <label className="block text-xs font-semibold text-gray-300 uppercase">Password <span className="text-red-400">*</span></label>
-          <input
-            type={showPassword ? 'text' : 'password'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.password ? 'border-red-500' : 'border-slate-900'
-              } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={`w-full px-3 py-2.5 pr-10 bg-slate-900/80 border ${errors.password ? 'border-red-500' : 'border-slate-900'
+                } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+              tabIndex={-1}
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
           {errors.password && <p className="text-xs text-red-400">{errors.password}</p>}
         </div>
 
@@ -461,7 +500,34 @@ const Login: React.FC<{
           {loading ? 'Logging in...' : 'Log In'}
         </button>
 
-        {errors.general && <p className="text-sm text-red-400 mt-2">{errors.general}</p>}
+        {errors.general && (
+          <div className={`text-sm mt-2 p-3 rounded border ${unverifiedEmail ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+            <div className="flex items-start gap-2">
+              {unverifiedEmail ? <Mail className="w-4 h-4 mt-0.5 flex-shrink-0" /> : <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />}
+              <div className="flex-1">
+                <p>{errors.general}</p>
+                {unverifiedEmail && (
+                  <div className="mt-2">
+                    {resendSuccess ? (
+                      <p className="text-emerald-400 text-xs flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> Verification email sent! Check your inbox.
+                      </p>
+                    ) : (
+                      <button
+                        onClick={handleResendVerification}
+                        disabled={resending}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 underline flex items-center gap-1"
+                      >
+                        {resending && <Loader2 className="w-3 h-3 animate-spin" />}
+                        {resending ? 'Sending…' : 'Resend verification email'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <p className="text-sm text-gray-400">
           Need an account?{' '}
@@ -474,6 +540,27 @@ const Login: React.FC<{
   );
 };
 
+// ── Password strength helpers ──────────────────────────────────────
+const passwordRules = [
+  { key: 'length', label: 'At least 8 characters', test: (p: string) => p.length >= 8 },
+  { key: 'upper', label: 'One uppercase letter', test: (p: string) => /[A-Z]/.test(p) },
+  { key: 'lower', label: 'One lowercase letter', test: (p: string) => /[a-z]/.test(p) },
+  { key: 'digit', label: 'One digit', test: (p: string) => /\d/.test(p) },
+  { key: 'special', label: 'One special character (!@#$…)', test: (p: string) => /[!@#$%^&*()\-_=+\[\]{}|;:'",.<>?/`~\\]/.test(p) },
+];
+
+const getStrengthLevel = (password: string) => {
+  const passed = passwordRules.filter((r) => r.test(password)).length;
+  if (passed <= 1) return { level: 0, label: 'Very Weak', color: 'bg-red-500' };
+  if (passed === 2) return { level: 1, label: 'Weak', color: 'bg-orange-500' };
+  if (passed === 3) return { level: 2, label: 'Fair', color: 'bg-amber-500' };
+  if (passed === 4) return { level: 3, label: 'Strong', color: 'bg-emerald-400' };
+  return { level: 4, label: 'Very Strong', color: 'bg-emerald-500' };
+};
+
+const emailRegex = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+const usernameRegex = /^[a-zA-Z0-9_]+$/;
+
 // Signup Component
 const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth: () => void }> = ({ onSwitchToLogin, darkMode, onAuth }) => {
   const [formData, setFormData] = useState({ email: '', displayName: '', username: '', password: '' });
@@ -481,6 +568,12 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [verificationPending, setVerificationPending] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState('');
+  const [resending, setResending] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
+
+  const strength = useMemo(() => getStrengthLevel(formData.password), [formData.password]);
 
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -489,15 +582,46 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
     }
   };
 
+  const validate = (): Record<string, string> => {
+    const newErrors: Record<string, string> = {};
+
+    // Email
+    if (!formData.email) {
+      newErrors.email = 'Email is required';
+    } else if (!emailRegex.test(formData.email.trim())) {
+      newErrors.email = 'Please enter a valid email address';
+    }
+
+    // Display name
+    if (!formData.displayName) newErrors.displayName = 'Display name is required';
+
+    // Username
+    if (!formData.username) {
+      newErrors.username = 'Username is required';
+    } else if (formData.username.length < 3) {
+      newErrors.username = 'Username must be at least 3 characters';
+    } else if (formData.username.length > 32) {
+      newErrors.username = 'Username must be less than 32 characters';
+    } else if (!usernameRegex.test(formData.username)) {
+      newErrors.username = 'Only letters, numbers, and underscores allowed';
+    }
+
+    // Password
+    if (!formData.password) {
+      newErrors.password = 'Password is required';
+    } else if (strength.level < 4) {
+      newErrors.password = 'Password does not meet all requirements';
+    }
+
+    // Terms
+    if (!agreedToTerms) newErrors.terms = 'You must agree to the terms';
+
+    return newErrors;
+  };
+
   const handleSubmit = () => {
     setErrors({});
-
-    const newErrors: Record<string, string> = {};
-    if (!formData.email) newErrors.email = 'Email is required';
-    if (!formData.displayName) newErrors.displayName = 'Display name is required';
-    if (!formData.username) newErrors.username = 'Username is required';
-    if (!formData.password) newErrors.password = 'Password is required';
-    if (!agreedToTerms) newErrors.terms = 'You must agree to the terms';
+    const newErrors = validate();
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -512,9 +636,14 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
         email: formData.email,
         displayName: formData.displayName
       })
-      .then(() => {
+      .then((data: any) => {
         setLoading(false);
-        onSwitchToLogin();
+        if (data?.requiresVerification) {
+          setVerificationEmail(formData.email);
+          setVerificationPending(true);
+        } else {
+          onSwitchToLogin();
+        }
       })
       .catch((err: any) => {
         setLoading(false);
@@ -523,12 +652,68 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
       });
   };
 
+  const handleResend = async () => {
+    if (resending) return;
+    setResending(true);
+    setResendSuccess(false);
+    try {
+      await authService.resendVerification(verificationEmail);
+      setResendSuccess(true);
+    } catch {
+      // silent
+    } finally {
+      setResending(false);
+    }
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleSubmit();
     }
   };
 
+  // ── Verification pending screen ─────────────────────────────────
+  if (verificationPending) {
+    return (
+      <div className="w-full animate-fade-in flex flex-col items-center justify-center h-[520px] text-center px-4">
+        <div className="w-16 h-16 rounded-full bg-indigo-500/20 flex items-center justify-center mb-4">
+          <Mail className="w-8 h-8 text-indigo-400" />
+        </div>
+        <h2 className="text-xl font-semibold text-white mb-2">Check Your Email</h2>
+        <p className="text-gray-400 text-sm mb-1">
+          We've sent a verification link to
+        </p>
+        <p className="text-indigo-300 font-medium text-sm mb-6">{verificationEmail}</p>
+        <p className="text-gray-500 text-xs mb-6 max-w-xs">
+          Click the link in the email to verify your account. The link expires in 24 hours.
+        </p>
+
+        {resendSuccess ? (
+          <p className="text-emerald-400 text-sm flex items-center gap-1 mb-4">
+            <CheckCircle2 className="w-4 h-4" /> Verification email resent!
+          </p>
+        ) : (
+          <button
+            onClick={handleResend}
+            disabled={resending}
+            className="text-sm text-indigo-400 hover:text-indigo-300 underline mb-4 flex items-center gap-1"
+          >
+            {resending && <Loader2 className="w-3 h-3 animate-spin" />}
+            {resending ? 'Sending…' : "Didn't get it? Resend email"}
+          </button>
+        )}
+
+        <button
+          onClick={onSwitchToLogin}
+          className="w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded transition-colors"
+        >
+          Go to Login
+        </button>
+      </div>
+    );
+  }
+
+  // ── Signup form ──────────────────────────────────────────────────
   return (
     <div className="w-full animate-fade-in h-[520px] flex flex-col">
       <div className="text-center mb-6">
@@ -543,6 +728,7 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
               type="email"
               value={formData.email}
               onChange={(e) => handleChange('email', e.target.value)}
+              placeholder="you@example.com"
               className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.email ? 'border-red-500' : 'border-slate-900'
                 } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
             />
@@ -567,6 +753,7 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
               type="text"
               value={formData.username}
               onChange={(e) => handleChange('username', e.target.value)}
+              placeholder="letters, numbers, underscores"
               className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.username ? 'border-red-500' : 'border-slate-900'
                 } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
             />
@@ -575,14 +762,60 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
 
           <div className="space-y-2">
             <label className="block text-xs font-semibold text-gray-300 uppercase">Password <span className="text-red-400">*</span></label>
-            <input
-              type={showPassword ? 'text' : 'password'}
-              value={formData.password}
-              onChange={(e) => handleChange('password', e.target.value)}
-              className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.password ? 'border-red-500' : 'border-slate-900'
-                } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={formData.password}
+                onChange={(e) => handleChange('password', e.target.value)}
+                className={`w-full px-3 py-2.5 pr-10 bg-slate-900/80 border ${errors.password ? 'border-red-500' : 'border-slate-900'
+                  } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
             {errors.password && <p className="text-xs text-red-400">{errors.password}</p>}
+
+            {/* Password strength meter */}
+            {formData.password.length > 0 && (
+              <div className="space-y-2 mt-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 flex gap-1">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <div
+                        key={i}
+                        className={`h-1 flex-1 rounded-full transition-colors duration-200 ${
+                          i <= strength.level ? strength.color : 'bg-slate-700'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <span className={`text-[10px] font-medium ${
+                    strength.level <= 1 ? 'text-red-400' :
+                    strength.level === 2 ? 'text-amber-400' :
+                    'text-emerald-400'
+                  }`}>{strength.label}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                  {passwordRules.map((rule) => {
+                    const passed = rule.test(formData.password);
+                    return (
+                      <div key={rule.key} className="flex items-center gap-1">
+                        {passed
+                          ? <CheckCircle2 className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                          : <XCircle className="w-3 h-3 text-gray-600 flex-shrink-0" />}
+                        <span className={`text-[10px] ${passed ? 'text-emerald-400' : 'text-gray-500'}`}>{rule.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -612,7 +845,11 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
           <button onClick={onSwitchToLogin} className="text-indigo-400 hover:underline text-sm">
             Already have an account?
           </button>
-          {errors.general && <p className="text-sm text-red-400 mt-2">{errors.general}</p>}
+          {errors.general && (
+            <div className="text-sm text-red-400 mt-2 p-3 bg-red-500/10 border border-red-500/30 rounded">
+              {errors.general}
+            </div>
+          )}
         </div>
       </div>
     </div>

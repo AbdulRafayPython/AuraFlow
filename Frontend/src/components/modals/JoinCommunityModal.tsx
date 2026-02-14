@@ -4,6 +4,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { getAvatarUrl } from "@/lib/utils";
 import { X, Search, Users, Plus, Loader, AlertCircle } from "lucide-react";
 import type { Community } from "@/types";
+import { API_SERVER } from "@/config/api";
 
 interface JoinCommunityModalProps {
   isOpen: boolean;
@@ -119,7 +120,7 @@ export default function JoinCommunityModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
       {/* Premium Modal Container */}
       <div
         className="w-full max-w-2xl rounded-3xl shadow-2xl border max-h-[85vh] overflow-y-auto flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl"
@@ -196,7 +197,7 @@ export default function JoinCommunityModal({
             <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
               {communities.map((community) => {
                 const logoUrl = community.logo_url 
-                  ? `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.logo_url}` 
+                  ? `${API_SERVER}${community.logo_url}` 
                   : null;
                 
                 return (

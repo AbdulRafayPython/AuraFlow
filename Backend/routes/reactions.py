@@ -1,14 +1,69 @@
 # ============================================================================
-# routes/reactions.py - Message Reactions API
-# Handles emoji reactions for both community messages and direct messages
+# routes/reactions.py - Optimized Message Reactions API
+#
+# Changes from original:
+#   1.  All reads go through reaction_cache (in-memory, thread-safe, TTL).
+#   2.  Toggle writes through reaction_cache.toggle_reaction() which does
+#       one DB round-trip, rebuilds aggregation, and updates cache — the
+#       response already contains the full grouped reactions so the frontend
+#       never needs a follow-up GET.
+#   3.  NEW bulk endpoint: POST /api/messages/reactions/bulk  — accepts a
+#       list of message IDs and returns all their reactions in ONE query,
+#       eliminating the N+1 waterfall on page load.
+#   4.  Per-user rate limiting: max 10 toggles / 5 seconds (in-memory).
+#   5.  username→user_id is resolved once per request via JWT + single query.
 # ============================================================================
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import logging
+import time
+import threading
 from database import get_db_connection
+from services.reaction_cache import (
+    get_reactions,
+    get_reactions_bulk,
+    toggle_reaction,
+)
 
 reactions_bp = Blueprint('reactions', __name__)
+log = logging.getLogger(__name__)
+
+# ── Per-user rate limiter (in-memory) ──────────────────────────────────
+_rate_lock = threading.Lock()
+_rate_buckets: dict = {}          # username -> [timestamps]
+RATE_WINDOW = 5                   # seconds
+RATE_MAX = 10                     # max toggles per window
+
+
+def _check_rate(username: str) -> bool:
+    """Return True if within limits."""
+    now = time.time()
+    with _rate_lock:
+        bucket = _rate_buckets.setdefault(username, [])
+        # Prune old entries
+        _rate_buckets[username] = bucket = [
+            t for t in bucket if now - t < RATE_WINDOW
+        ]
+        if len(bucket) >= RATE_MAX:
+            return False
+        bucket.append(now)
+        return True
+
+
+def _resolve_user(username: str):
+    """Resolve username to user_id.  Returns (user_id, error_response)."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            row = cur.fetchone()
+            if not row:
+                return None, (jsonify({'error': 'User not found'}), 404)
+            return row['id'], None
+    finally:
+        conn.close()
+
 
 # ============================================================================
 # COMMUNITY MESSAGE REACTIONS
@@ -17,164 +72,109 @@ reactions_bp = Blueprint('reactions', __name__)
 @reactions_bp.route('/api/messages/<int:message_id>/reactions', methods=['GET'])
 @jwt_required()
 def get_message_reactions(message_id):
-    """Get all reactions for a community message"""
-    conn = None
+    """Get grouped reactions for a community message (cached)."""
     try:
         current_user = get_jwt_identity()
-        conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT 
-                    mr.id,
-                    mr.emoji,
-                    mr.user_id,
-                    u.username,
-                    u.display_name,
-                    u.avatar_url,
-                    mr.created_at
-                FROM message_reactions mr
-                JOIN users u ON mr.user_id = u.id
-                WHERE mr.message_id = %s
-                ORDER BY mr.created_at ASC
-            """, (message_id,))
-            
-            reactions = cur.fetchall()
-            
-            # Group reactions by emoji
-            reactions_grouped = {}
-            for reaction in reactions:
-                emoji = reaction['emoji']
-                if emoji not in reactions_grouped:
-                    reactions_grouped[emoji] = {
-                        'emoji': emoji,
-                        'count': 0,
-                        'users': [],
-                        'reacted_by_current_user': False
-                    }
-                
-                reactions_grouped[emoji]['count'] += 1
-                reactions_grouped[emoji]['users'].append({
-                    'user_id': reaction['user_id'],
-                    'username': reaction['username'],
-                    'display_name': reaction['display_name'],
-                    'avatar_url': reaction['avatar_url']
-                })
-                
-                if reaction['username'] == current_user:
-                    reactions_grouped[emoji]['reacted_by_current_user'] = True
-            
-            return jsonify({
-                'reactions': list(reactions_grouped.values())
-            }), 200
-            
+        reactions = get_reactions("msg", message_id, current_user)
+        return jsonify({'reactions': reactions}), 200
     except Exception as e:
-        logging.error(f"Error fetching message reactions: {str(e)}")
+        log.error(f"Error fetching message reactions: {e}")
         return jsonify({'error': 'Failed to fetch reactions'}), 500
-    finally:
-        if conn:
-            conn.close()
+
+
+@reactions_bp.route('/api/messages/reactions/bulk', methods=['POST'])
+@jwt_required()
+def get_message_reactions_bulk():
+    """
+    Bulk-fetch reactions for multiple messages in ONE query.
+    Body: { "message_ids": [1, 2, 3, ...] }
+    Response: { "reactions": { "1": [...], "2": [...] } }
+    """
+    try:
+        current_user = get_jwt_identity()
+        data = request.get_json() or {}
+        message_ids = data.get('message_ids', [])
+
+        if not message_ids or not isinstance(message_ids, list):
+            return jsonify({'reactions': {}}), 200
+
+        # Cap to prevent abuse
+        message_ids = message_ids[:200]
+
+        bulk = get_reactions_bulk("msg", message_ids, current_user)
+        # JSON keys must be strings
+        return jsonify({
+            'reactions': {str(k): v for k, v in bulk.items()}
+        }), 200
+    except Exception as e:
+        log.error(f"Error bulk-fetching message reactions: {e}")
+        return jsonify({'error': 'Failed to fetch reactions'}), 500
+
 
 @reactions_bp.route('/api/messages/<int:message_id>/reactions', methods=['POST'])
 @jwt_required()
 def add_message_reaction(message_id):
-    """Add a reaction to a community message"""
-    conn = None
+    """Toggle a reaction on a community message.  Returns fresh aggregation."""
     try:
         current_user = get_jwt_identity()
+
+        if not _check_rate(current_user):
+            return jsonify({'error': 'Too many reactions, slow down'}), 429
+
         data = request.json
-        emoji = data.get('emoji')
-        
+        emoji = data.get('emoji') if data else None
         if not emoji:
             return jsonify({'error': 'Emoji is required'}), 400
-        
-        conn = get_db_connection()
-        
-        # Get user_id
-        with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user = cur.fetchone()
-            if not user:
-                return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
-            
-            # Check if reaction already exists
-            cur.execute("""
-                SELECT id FROM message_reactions 
-                WHERE message_id = %s AND user_id = %s AND emoji = %s
-            """, (message_id, user_id, emoji))
-            
-            existing_reaction = cur.fetchone()
-            
-            if existing_reaction:
-                # Remove reaction (toggle off)
-                cur.execute("""
-                    DELETE FROM message_reactions 
-                    WHERE message_id = %s AND user_id = %s AND emoji = %s
-                """, (message_id, user_id, emoji))
-                conn.commit()
-                return jsonify({
-                    'message': 'Reaction removed',
-                    'action': 'removed'
-                }), 200
-            else:
-                # Add reaction
-                cur.execute("""
-                    INSERT INTO message_reactions (message_id, user_id, emoji)
-                    VALUES (%s, %s, %s)
-                """, (message_id, user_id, emoji))
-                conn.commit()
-                
-                return jsonify({
-                    'message': 'Reaction added',
-                    'action': 'added',
-                    'reaction': {
-                        'emoji': emoji,
-                        'user_id': user_id,
-                        'username': current_user
-                    }
-                }), 201
-            
+
+        user_id, err = _resolve_user(current_user)
+        if err:
+            return err
+
+        result = toggle_reaction("msg", message_id, user_id, emoji, current_user)
+
+        status = 200 if result['action'] == 'removed' else 201
+        return jsonify({
+            'message': f"Reaction {result['action']}",
+            'action': result['action'],
+            'reactions': result['reactions'],
+            'reaction': {
+                'emoji': emoji,
+                'user_id': user_id,
+                'username': current_user,
+            },
+        }), status
+
     except Exception as e:
-        logging.error(f"Error adding message reaction: {str(e)}")
-        return jsonify({'error': 'Failed to add reaction'}), 500
-    finally:
-        if conn:
-            conn.close()
+        log.error(f"Error toggling message reaction: {e}")
+        return jsonify({'error': 'Failed to toggle reaction'}), 500
+
 
 @reactions_bp.route('/api/messages/<int:message_id>/reactions/<emoji>', methods=['DELETE'])
 @jwt_required()
 def remove_message_reaction(message_id, emoji):
-    """Remove a reaction from a community message"""
-    conn = None
+    """Explicitly remove a reaction from a community message."""
     try:
         current_user = get_jwt_identity()
-        conn = get_db_connection()
-        
-        with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user = cur.fetchone()
-            if not user:
-                return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
-            
-            cur.execute("""
-                DELETE FROM message_reactions 
-                WHERE message_id = %s AND user_id = %s AND emoji = %s
-            """, (message_id, user_id, emoji))
-            
-            conn.commit()
-            
-            if cur.rowcount == 0:
-                return jsonify({'error': 'Reaction not found'}), 404
-            
-            return jsonify({'message': 'Reaction removed'}), 200
-            
+        user_id, err = _resolve_user(current_user)
+        if err:
+            return err
+
+        # Use toggle which checks existence first
+        result = toggle_reaction("msg", message_id, user_id, emoji, current_user)
+        if result['action'] == 'added':
+            # Was not present, toggle added it — undo
+            toggle_reaction("msg", message_id, user_id, emoji, current_user)
+            return jsonify({'error': 'Reaction not found'}), 404
+
+        return jsonify({
+            'message': 'Reaction removed',
+            'reactions': result['reactions'],
+        }), 200
+
     except Exception as e:
-        logging.error(f"Error removing message reaction: {str(e)}")
+        log.error(f"Error removing message reaction: {e}")
         return jsonify({'error': 'Failed to remove reaction'}), 500
-    finally:
-        if conn:
-            conn.close()
+
 
 # ============================================================================
 # DIRECT MESSAGE REACTIONS
@@ -183,160 +183,100 @@ def remove_message_reaction(message_id, emoji):
 @reactions_bp.route('/api/direct-messages/<int:dm_id>/reactions', methods=['GET'])
 @jwt_required()
 def get_dm_reactions(dm_id):
-    """Get all reactions for a direct message"""
-    conn = None
+    """Get grouped reactions for a direct message (cached)."""
     try:
         current_user = get_jwt_identity()
-        conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT 
-                    dmr.id,
-                    dmr.emoji,
-                    dmr.user_id,
-                    u.username,
-                    u.display_name,
-                    u.avatar_url,
-                    dmr.created_at
-                FROM direct_message_reactions dmr
-                JOIN users u ON dmr.user_id = u.id
-                WHERE dmr.direct_message_id = %s
-                ORDER BY dmr.created_at ASC
-            """, (dm_id,))
-            
-            reactions = cur.fetchall()
-            
-            # Group reactions by emoji
-            reactions_grouped = {}
-            for reaction in reactions:
-                emoji = reaction['emoji']
-                if emoji not in reactions_grouped:
-                    reactions_grouped[emoji] = {
-                        'emoji': emoji,
-                        'count': 0,
-                        'users': [],
-                        'reacted_by_current_user': False
-                    }
-                
-                reactions_grouped[emoji]['count'] += 1
-                reactions_grouped[emoji]['users'].append({
-                    'user_id': reaction['user_id'],
-                    'username': reaction['username'],
-                    'display_name': reaction['display_name'],
-                    'avatar_url': reaction['avatar_url']
-                })
-                
-                if reaction['username'] == current_user:
-                    reactions_grouped[emoji]['reacted_by_current_user'] = True
-            
-            return jsonify({
-                'reactions': list(reactions_grouped.values())
-            }), 200
-            
+        reactions = get_reactions("dm", dm_id, current_user)
+        return jsonify({'reactions': reactions}), 200
     except Exception as e:
-        logging.error(f"Error fetching DM reactions: {str(e)}")
+        log.error(f"Error fetching DM reactions: {e}")
         return jsonify({'error': 'Failed to fetch reactions'}), 500
-    finally:
-        if conn:
-            conn.close()
+
+
+@reactions_bp.route('/api/direct-messages/reactions/bulk', methods=['POST'])
+@jwt_required()
+def get_dm_reactions_bulk():
+    """
+    Bulk-fetch reactions for multiple DMs in ONE query.
+    Body: { "message_ids": [1, 2, 3, ...] }
+    """
+    try:
+        current_user = get_jwt_identity()
+        data = request.get_json() or {}
+        message_ids = data.get('message_ids', [])
+
+        if not message_ids or not isinstance(message_ids, list):
+            return jsonify({'reactions': {}}), 200
+
+        message_ids = message_ids[:200]
+
+        bulk = get_reactions_bulk("dm", message_ids, current_user)
+        return jsonify({
+            'reactions': {str(k): v for k, v in bulk.items()}
+        }), 200
+    except Exception as e:
+        log.error(f"Error bulk-fetching DM reactions: {e}")
+        return jsonify({'error': 'Failed to fetch reactions'}), 500
+
 
 @reactions_bp.route('/api/direct-messages/<int:dm_id>/reactions', methods=['POST'])
 @jwt_required()
 def add_dm_reaction(dm_id):
-    """Add a reaction to a direct message"""
-    conn = None
+    """Toggle a reaction on a direct message.  Returns fresh aggregation."""
     try:
         current_user = get_jwt_identity()
+
+        if not _check_rate(current_user):
+            return jsonify({'error': 'Too many reactions, slow down'}), 429
+
         data = request.json
-        emoji = data.get('emoji')
-        
+        emoji = data.get('emoji') if data else None
         if not emoji:
             return jsonify({'error': 'Emoji is required'}), 400
-        
-        conn = get_db_connection()
-        
-        with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user = cur.fetchone()
-            if not user:
-                return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
-            
-            # Check if reaction already exists
-            cur.execute("""
-                SELECT id FROM direct_message_reactions 
-                WHERE direct_message_id = %s AND user_id = %s AND emoji = %s
-            """, (dm_id, user_id, emoji))
-            
-            existing_reaction = cur.fetchone()
-            
-            if existing_reaction:
-                # Remove reaction (toggle off)
-                cur.execute("""
-                    DELETE FROM direct_message_reactions 
-                    WHERE direct_message_id = %s AND user_id = %s AND emoji = %s
-                """, (dm_id, user_id, emoji))
-                conn.commit()
-                return jsonify({
-                    'message': 'Reaction removed',
-                    'action': 'removed'
-                }), 200
-            else:
-                # Add reaction
-                cur.execute("""
-                    INSERT INTO direct_message_reactions (direct_message_id, user_id, emoji)
-                    VALUES (%s, %s, %s)
-                """, (dm_id, user_id, emoji))
-                conn.commit()
-                
-                return jsonify({
-                    'message': 'Reaction added',
-                    'action': 'added',
-                    'reaction': {
-                        'emoji': emoji,
-                        'user_id': user_id,
-                        'username': current_user
-                    }
-                }), 201
-            
+
+        user_id, err = _resolve_user(current_user)
+        if err:
+            return err
+
+        result = toggle_reaction("dm", dm_id, user_id, emoji, current_user)
+
+        status = 200 if result['action'] == 'removed' else 201
+        return jsonify({
+            'message': f"Reaction {result['action']}",
+            'action': result['action'],
+            'reactions': result['reactions'],
+            'reaction': {
+                'emoji': emoji,
+                'user_id': user_id,
+                'username': current_user,
+            },
+        }), status
+
     except Exception as e:
-        logging.error(f"Error adding DM reaction: {str(e)}")
-        return jsonify({'error': 'Failed to add reaction'}), 500
-    finally:
-        if conn:
-            conn.close()
+        log.error(f"Error toggling DM reaction: {e}")
+        return jsonify({'error': 'Failed to toggle reaction'}), 500
+
 
 @reactions_bp.route('/api/direct-messages/<int:dm_id>/reactions/<emoji>', methods=['DELETE'])
 @jwt_required()
 def remove_dm_reaction(dm_id, emoji):
-    """Remove a reaction from a direct message"""
-    conn = None
+    """Explicitly remove a reaction from a direct message."""
     try:
         current_user = get_jwt_identity()
-        conn = get_db_connection()
-        
-        with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user = cur.fetchone()
-            if not user:
-                return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
-            
-            cur.execute("""
-                DELETE FROM direct_message_reactions 
-                WHERE direct_message_id = %s AND user_id = %s AND emoji = %s
-            """, (dm_id, user_id, emoji))
-            
-            conn.commit()
-            
-            if cur.rowcount == 0:
-                return jsonify({'error': 'Reaction not found'}), 404
-            
-            return jsonify({'message': 'Reaction removed'}), 200
-            
+        user_id, err = _resolve_user(current_user)
+        if err:
+            return err
+
+        result = toggle_reaction("dm", dm_id, user_id, emoji, current_user)
+        if result['action'] == 'added':
+            toggle_reaction("dm", dm_id, user_id, emoji, current_user)
+            return jsonify({'error': 'Reaction not found'}), 404
+
+        return jsonify({
+            'message': 'Reaction removed',
+            'reactions': result['reactions'],
+        }), 200
+
     except Exception as e:
-        logging.error(f"Error removing DM reaction: {str(e)}")
+        log.error(f"Error removing DM reaction: {e}")
         return jsonify({'error': 'Failed to remove reaction'}), 500
-    finally:
-        if conn:
-            conn.close()

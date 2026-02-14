@@ -1,12 +1,22 @@
 
 import logging
 from flask import  request, jsonify
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import (
+    create_access_token, create_refresh_token,
+    jwt_required, get_jwt_identity, get_jwt, decode_token
+)
 from database import get_db_connection
 from services.otp_service import verify_otp
+from services.session_manager import (
+    create_session, rotate_refresh_token, revoke_session,
+    revoke_all_sessions, get_active_sessions, revoke_session_by_id,
+    blocklist_access_token, check_refresh_rate_limit
+)
+from config import JWT_REFRESH_TOKEN_EXPIRES_DAYS
 import secrets
 from datetime import datetime, timedelta
 from utils import get_avatar_url, format_user_data
+from utils.validators import validate_email, validate_password_strength, validate_username
 import bcrypt
 import uuid
 
@@ -26,6 +36,23 @@ def signup():
     if not username or not password:
         return jsonify({'error': 'username and password are required'}), 400
 
+    # ── NEW: Input validation ──────────────────────────────────────
+    valid, msg = validate_username(username)
+    if not valid:
+        return jsonify({'error': msg}), 400
+
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+
+    valid, msg = validate_email(email)
+    if not valid:
+        return jsonify({'error': msg}), 400
+
+    valid, msg = validate_password_strength(password)
+    if not valid:
+        return jsonify({'error': msg}), 400
+    # ── END validation ─────────────────────────────────────────────
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -43,20 +70,40 @@ def signup():
             # 🔥 FIX: Generate proper avatar URL
             avatar_url = get_avatar_url(username)
             print("[DEBUG] Generated avatar URL during signup:", avatar_url)
+
+            # ── NEW: Generate email-verification token ─────────────
+            verification_token = secrets.token_urlsafe(48)
+            verification_expires = datetime.utcnow() + timedelta(hours=24)
+            # ── END ────────────────────────────────────────────────
             
             cur.execute(
                 """
-                INSERT INTO users (email, display_name, username, password, avatar_url, is_first_login)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO users (email, display_name, username, password, avatar_url, is_first_login,
+                                   email_verified, email_verification_token, email_verification_expires)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (email, display_name or username, username, hashed, avatar_url, 1)
+                (email, display_name or username, username, hashed, avatar_url, 1,
+                 0, verification_token, verification_expires)
             )
         conn.commit()
         print(f"[INFO] User registered: {username} with avatar: {avatar_url}")
+
+        # ── NEW: Send verification email (non-blocking on failure) ─
+        try:
+            from services.email_service import send_verification_email
+            frontend_url = request.headers.get('Origin', 'http://localhost:5173')
+            send_verification_email(email, verification_token, frontend_url)
+        except Exception as mail_err:
+            logging.warning(f"[SIGNUP] Verification email failed for {email}: {mail_err}")
+        # ── END ────────────────────────────────────────────────────
+
     finally:
         conn.close()
 
-    return jsonify({'message': 'User registered successfully'}), 201
+    return jsonify({
+        'message': 'Account created! Please check your email to verify your account.',
+        'requiresVerification': True
+    }), 201
 
 # ----------------------------------------------------------------------
 # LOGIN
@@ -75,7 +122,8 @@ def login():
             cur.execute(
                 """
                 SELECT id, username, email, display_name, bio, avatar_url, 
-                       status, custom_status, is_first_login, password
+                       status, custom_status, is_first_login, password,
+                       email_verified
                 FROM users 
                 WHERE username = %s OR email = %s
                 """,
@@ -88,6 +136,15 @@ def login():
             stored_hash = row['password']
             if not bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8')):
                 return jsonify({'error': 'Invalid credentials'}), 401
+
+            # ── NEW: Block login if email is not verified ──────────
+            if not row.get('email_verified', 1):
+                return jsonify({
+                    'error': 'Please verify your email before logging in. Check your inbox for a verification link.',
+                    'code': 'EMAIL_NOT_VERIFIED',
+                    'email': row.get('email', '')
+                }), 403
+            # ── END ────────────────────────────────────────────────
 
             token = create_access_token(identity=row['username'])
             cur.execute("UPDATE users SET token = %s WHERE username = %s", (token, row['username']))
@@ -102,6 +159,25 @@ def login():
     finally:
         conn.close()
 
+    # ── Create refresh token & session ─────────────────────────────
+    refresh_token = create_refresh_token(identity=row['username'])
+    refresh_decoded = decode_token(refresh_token)
+    refresh_jti = refresh_decoded['jti']
+
+    device_info = request.headers.get('User-Agent', 'Unknown')[:500]
+    ip_address = request.remote_addr
+    refresh_expires = datetime.utcnow() + timedelta(days=JWT_REFRESH_TOKEN_EXPIRES_DAYS)
+
+    create_session(
+        user_id=row['id'],
+        username=row['username'],
+        refresh_jti=refresh_jti,
+        refresh_expires=refresh_expires,
+        device_info=device_info,
+        ip_address=ip_address
+    )
+    # ── END ────────────────────────────────────────────────────────
+
     # 🔥 FIX: Use format_user_data helper for consistent avatar URL
     user_data = format_user_data(row)
     user_data['is_first_login'] = bool(row.get('is_first_login', False))
@@ -111,6 +187,7 @@ def login():
 
     return jsonify({
         "token": token,
+        "refresh_token": refresh_token,
         "user": user_data
     }), 200
 
@@ -138,13 +215,41 @@ def update_first_login():
 @jwt_required()
 def logout():
     current_user = get_jwt_identity()
+    jwt_data = get_jwt()
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
+            # Get user ID for session operations
+            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
+            user_row = cur.fetchone()
+            user_id = user_row['id'] if user_row else None
+
+            # Clear stored token (backward compat)
             cur.execute("UPDATE users SET token = NULL WHERE username = %s", (current_user,))
         conn.commit()
     finally:
         conn.close()
+
+    if user_id:
+        # Blocklist the current access token so it can't be reused
+        access_jti = jwt_data.get('jti')
+        if access_jti:
+            access_exp = datetime.utcfromtimestamp(jwt_data.get('exp', 0))
+            blocklist_access_token(access_jti, user_id, access_exp)
+
+        # Revoke the refresh token if the client sends it
+        body = request.get_json(silent=True) or {}
+        refresh_token_raw = body.get('refresh_token')
+        if refresh_token_raw:
+            try:
+                refresh_decoded = decode_token(refresh_token_raw)
+                refresh_jti = refresh_decoded.get('jti')
+                if refresh_jti:
+                    revoke_session(refresh_jti, user_id)
+            except Exception:
+                pass  # Invalid/expired refresh token — still complete logout
+
     return jsonify({'message': 'Logged out successfully'}), 200
 
 # ----------------------------------------------------------------------
@@ -403,3 +508,256 @@ def update_profile():
         'message': 'Profile updated successfully',
         'avatar_url': get_avatar_url(current_user, avatar_url) if avatar_url else None
     }), 200
+
+
+# ----------------------------------------------------------------------
+# EMAIL VERIFICATION
+# ----------------------------------------------------------------------
+def verify_email():
+    """
+    Verify a user's email via the token sent during signup.
+    Query params: token, email
+    """
+    token = request.args.get('token') or (request.get_json() or {}).get('token')
+    email = request.args.get('email') or (request.get_json() or {}).get('email')
+
+    if not token or not email:
+        return jsonify({'error': 'Verification token and email are required'}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, email_verified, email_verification_token, email_verification_expires
+                FROM users WHERE email = %s
+                """,
+                (email,)
+            )
+            user = cur.fetchone()
+
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+
+            if user['email_verified']:
+                return jsonify({'message': 'Email is already verified. You can log in.', 'alreadyVerified': True}), 200
+
+            if user['email_verification_token'] != token:
+                return jsonify({'error': 'Invalid verification token'}), 400
+
+            if user['email_verification_expires'] and datetime.utcnow() > user['email_verification_expires']:
+                return jsonify({
+                    'error': 'Verification link has expired. Please request a new one.',
+                    'code': 'TOKEN_EXPIRED'
+                }), 400
+
+            # Mark as verified
+            cur.execute(
+                """
+                UPDATE users
+                SET email_verified = 1,
+                    email_verification_token = NULL,
+                    email_verification_expires = NULL
+                WHERE id = %s
+                """,
+                (user['id'],)
+            )
+        conn.commit()
+        logging.info(f"[VERIFY] Email verified for {email}")
+    finally:
+        conn.close()
+
+    return jsonify({'message': 'Email verified successfully! You can now log in.'}), 200
+
+
+def resend_verification():
+    """
+    Resend the verification email for a user whose email is not yet verified.
+    Body: { email }
+    """
+    data = request.get_json() or {}
+    email = data.get('email')
+
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, email_verified FROM users WHERE email = %s",
+                (email,)
+            )
+            user = cur.fetchone()
+            if not user:
+                # Don't reveal whether user exists
+                return jsonify({'message': 'If that email is registered, a new verification link has been sent.'}), 200
+
+            if user['email_verified']:
+                return jsonify({'message': 'Email is already verified.'}), 200
+
+            # Generate new token
+            new_token = secrets.token_urlsafe(48)
+            new_expires = datetime.utcnow() + timedelta(hours=24)
+            cur.execute(
+                """
+                UPDATE users
+                SET email_verification_token = %s, email_verification_expires = %s
+                WHERE id = %s
+                """,
+                (new_token, new_expires, user['id'])
+            )
+        conn.commit()
+
+        # Send email
+        try:
+            from services.email_service import send_verification_email
+            frontend_url = request.headers.get('Origin', 'http://localhost:5173')
+            send_verification_email(email, new_token, frontend_url)
+        except Exception as mail_err:
+            logging.warning(f"[RESEND] Verification email failed for {email}: {mail_err}")
+
+    finally:
+        conn.close()
+
+    return jsonify({'message': 'If that email is registered, a new verification link has been sent.'}), 200
+
+
+# ======================================================================
+# SESSION MANAGEMENT ENDPOINTS
+# ======================================================================
+
+# ----------------------------------------------------------------------
+# REFRESH TOKEN  (POST /api/token/refresh)
+# ----------------------------------------------------------------------
+@jwt_required(refresh=True)
+def refresh():
+    """
+    Rotate the refresh token and issue a fresh access token.
+    The client sends the refresh token in the Authorization header.
+    Token rotation + reuse detection is handled by session_manager.
+    """
+    current_user = get_jwt_identity()
+    old_jwt = get_jwt()
+    old_jti = old_jwt['jti']
+
+    # Rate limit
+    if check_refresh_rate_limit(current_user):
+        return jsonify({'error': 'Too many refresh attempts. Try again later.'}), 429
+
+    # Resolve user_id
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            user_id = user_row['id']
+    finally:
+        conn.close()
+
+    # Create new token pair
+    new_access_token = create_access_token(identity=current_user)
+    new_refresh_token = create_refresh_token(identity=current_user)
+    new_refresh_jti = decode_token(new_refresh_token)['jti']
+    new_expires = datetime.utcnow() + timedelta(days=JWT_REFRESH_TOKEN_EXPIRES_DAYS)
+
+    # Rotate: revoke old refresh, store new (with reuse detection)
+    result = rotate_refresh_token(old_jti, new_refresh_jti, new_expires, user_id)
+
+    if not result['success']:
+        if result['reason'] == 'reuse_detected':
+            return jsonify({
+                'error': 'Session compromised. Please log in again.',
+                'code': 'SESSION_COMPROMISED'
+            }), 401
+        return jsonify({'error': 'Invalid refresh token'}), 401
+
+    # Update users.token for backward compat
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE users SET token = %s WHERE username = %s",
+                        (new_access_token, current_user))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({
+        'token': new_access_token,
+        'refresh_token': new_refresh_token,
+    }), 200
+
+
+# ----------------------------------------------------------------------
+# GET ACTIVE SESSIONS  (GET /api/sessions)
+# ----------------------------------------------------------------------
+@jwt_required()
+def get_sessions():
+    """List all active sessions for the current user (multi-device view)."""
+    current_user = get_jwt_identity()
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            sessions = get_active_sessions(user_row['id'])
+    finally:
+        conn.close()
+
+    return jsonify({'sessions': sessions}), 200
+
+
+# ----------------------------------------------------------------------
+# REVOKE A SESSION  (POST /api/sessions/revoke)
+# ----------------------------------------------------------------------
+@jwt_required()
+def revoke_session_endpoint():
+    """Revoke a specific session by its database row ID."""
+    current_user = get_jwt_identity()
+    data = request.get_json() or {}
+    session_id = data.get('session_id')
+
+    if not session_id:
+        return jsonify({'error': 'session_id is required'}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+    finally:
+        conn.close()
+
+    success = revoke_session_by_id(session_id, user_row['id'])
+    if success:
+        return jsonify({'message': 'Session revoked'}), 200
+    return jsonify({'error': 'Session not found or already revoked'}), 404
+
+
+# ----------------------------------------------------------------------
+# REVOKE ALL SESSIONS  (POST /api/sessions/revoke-all)
+# ----------------------------------------------------------------------
+@jwt_required()
+def revoke_all_sessions_endpoint():
+    """Revoke ALL sessions for the current user. Forces re-login on every device."""
+    current_user = get_jwt_identity()
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+    finally:
+        conn.close()
+
+    count = revoke_all_sessions(user_row['id'])
+    return jsonify({'message': f'Revoked {count} sessions', 'revoked_count': count}), 200

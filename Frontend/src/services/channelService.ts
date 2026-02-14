@@ -9,7 +9,8 @@ import type {
   CreateCommunityPayload 
 } from '@/types';
 
-const API_SERVER = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
+import { API_SERVER } from '@/config/api';
+
 const API_URL = `${API_SERVER}/api/channels`;
 
 class ChannelService {

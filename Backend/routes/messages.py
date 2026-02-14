@@ -116,36 +116,30 @@ def get_channel_messages(channel_id):
             if not cur.fetchone():
                 return jsonify({'error': 'Access denied'}), 403
 
-            # Fetch messages
+            # Fetch messages with reply-to preview
             cur.execute("""
                 SELECT 
                     m.id, m.sender_id, m.content, m.message_type, m.reply_to, m.created_at,
+                    m.is_pinned,
                     u.username, u.display_name, u.avatar_url,
-                    CASE WHEN bu.user_id IS NOT NULL THEN 1 ELSE 0 END as is_blocked
+                    CASE WHEN bu.user_id IS NOT NULL THEN 1 ELSE 0 END as is_blocked,
+                    a.file_name AS att_file_name, a.file_path AS att_file_url,
+                    a.file_size AS att_file_size, a.mime_type AS att_mime_type,
+                    a.duration AS att_duration,
+                    rm.content AS reply_content, rm.message_type AS reply_message_type,
+                    ru.username AS reply_author
                 FROM messages m
                 JOIN users u ON m.sender_id = u.id
                 JOIN channels ch ON m.channel_id = ch.id
                 LEFT JOIN blocked_users bu ON ch.community_id = bu.community_id AND m.sender_id = bu.user_id
+                LEFT JOIN attachments a ON a.message_id = m.id
+                LEFT JOIN messages rm ON m.reply_to = rm.id
+                LEFT JOIN users ru ON rm.sender_id = ru.id
                 WHERE m.channel_id = %s
                 ORDER BY m.created_at DESC
                 LIMIT %s OFFSET %s
             """, (channel_id, limit, offset))
             rows = cur.fetchall()
-            
-            # Debug: Check blocked_users table
-            cur.execute("SELECT id FROM channels WHERE id = %s", (channel_id,))
-            channel_info = cur.fetchone()
-            if channel_info:
-                cur.execute("SELECT community_id FROM channels WHERE id = %s", (channel_id,))
-                comm_row = cur.fetchone()
-                if comm_row:
-                    community_id_check = comm_row['community_id']
-                    cur.execute("SELECT user_id, blocked_at FROM blocked_users WHERE community_id = %s", (community_id_check,))
-                    blocked_list = cur.fetchall()
-                    if blocked_list:
-                        print(f"[DEBUG] Blocked users in community {community_id_check}: {[(b['user_id'], b['blocked_at']) for b in blocked_list]}")
-                    else:
-                        print(f"[DEBUG] No blocked users in community {community_id_check}")
 
         result = [{
             'id': m['id'],
@@ -158,17 +152,23 @@ def get_channel_messages(channel_id):
             'author': m['username'],
             'display_name': m['display_name'] or m['username'],
             'avatar_url': get_avatar_url(m['username'], m['avatar_url']),
-            'is_blocked': bool(m['is_blocked'])
+            'is_blocked': bool(m['is_blocked']),
+            'is_pinned': bool(m.get('is_pinned')),
+            **({'attachment': {
+                'file_name': m['att_file_name'],
+                'file_url': m['att_file_url'],
+                'file_size': m['att_file_size'],
+                'mime_type': m['att_mime_type'],
+                'duration': m.get('att_duration'),
+            }} if m.get('att_file_name') else {}),
+            **({'reply_to_preview': {
+                'id': m['reply_to'],
+                'content': (m['reply_content'] or '')[:150],
+                'author': m['reply_author'],
+                'message_type': m['reply_message_type'],
+            }} if m.get('reply_to') and m.get('reply_author') else {}),
         } for m in rows]
         
-        # Debug: Log blocked users
-        blocked_messages = [msg for msg in result if msg['is_blocked']]
-        if blocked_messages:
-            print(f"[DEBUG] Found {len(blocked_messages)} messages from blocked users in channel {channel_id}")
-            for msg in blocked_messages:
-                print(f"  - Message {msg['id']} from {msg['author']} (user {msg['sender_id']}) is_blocked: True")
-        
-        print("[DEBUG] Fetched channel messages:", result)
         return jsonify(result), 200
 
     except Exception as e:
@@ -182,6 +182,26 @@ def get_channel_messages(channel_id):
 # =====================================
 # SEND MESSAGE TO CHANNEL
 # =====================================
+
+def _get_channel_reply_preview(cur, reply_to_id):
+    """Fetch parent message preview for reply_to display."""
+    if not reply_to_id:
+        return None
+    cur.execute("""
+        SELECT m.content, m.message_type, u.username
+        FROM messages m JOIN users u ON m.sender_id = u.id
+        WHERE m.id = %s
+    """, (reply_to_id,))
+    parent = cur.fetchone()
+    if parent:
+        return {
+            'id': reply_to_id,
+            'content': (parent['content'] or '')[:150],
+            'author': parent['username'],
+            'message_type': parent['message_type'],
+        }
+    return None
+
 @jwt_required()
 def send_message():
     conn = None
@@ -235,21 +255,14 @@ def send_message():
                 }), 403
 
             cur.execute(
-                "SELECT violation_count FROM community_members WHERE community_id = %s AND user_id = %s",
+                "SELECT role, violation_count FROM community_members WHERE community_id = %s AND user_id = %s",
                 (community_id, user_id)
             )
             membership_row = cur.fetchone()
             if not membership_row:
                 return jsonify({'error': 'Access denied'}), 403
             violation_count = membership_row.get('violation_count') or 0
-
-            # Get user role in community
-            cur.execute(
-                "SELECT role FROM community_members WHERE community_id = %s AND user_id = %s",
-                (community_id, user_id)
-            )
-            role_row = cur.fetchone()
-            user_role = role_row['role'] if role_row else 'member'
+            user_role = membership_row['role'] if membership_row else 'member'
 
             # 🤖 AI COMMAND DETECTION - Check before any processing
             if content.strip().startswith('/'):
@@ -366,6 +379,7 @@ def send_message():
                 from flask import current_app
                 socketio = current_app.extensions.get('socketio')
                 if socketio:
+                    rtp = _get_channel_reply_preview(cur, msg['reply_to'])
                     payload = {
                         'id': msg['id'],
                         'channel_id': msg['channel_id'],
@@ -377,7 +391,8 @@ def send_message():
                         'author': msg['username'],
                         'avatar': get_avatar_url(msg['username'], msg['avatar_url']),
                         'is_blocked': False,
-                        'moderation': None
+                        'moderation': None,
+                        **(({'reply_to_preview': rtp}) if rtp else {}),
                     }
                     socketio.emit('message_received', payload, room=f"channel_{channel_id}", namespace='/')
                     socketio.emit('message_received', payload, room=f"community_{community_id}", namespace='/')
@@ -441,19 +456,13 @@ def send_message():
                 """, (message_id,))
                 msg = cur.fetchone()
                 
-                # Check if user is blocked
-                cur.execute("""
-                    SELECT 1 FROM blocked_users 
-                    WHERE community_id = %s AND user_id = %s
-                """, (community_id, user_id))
-                is_blocked = cur.fetchone() is not None
-
                 conn.commit()
 
                 # Broadcast over socket so all channel members receive instantly
                 from flask import current_app
                 socketio = current_app.extensions.get('socketio')
                 if socketio:
+                    rtp = _get_channel_reply_preview(cur, msg['reply_to'])
                     payload = {
                         'id': msg['id'],
                         'channel_id': msg['channel_id'],
@@ -464,14 +473,15 @@ def send_message():
                         'created_at': msg['created_at'].isoformat(),
                         'author': msg['username'],
                         'avatar': get_avatar_url(msg['username'], msg['avatar_url']),
-                        'is_blocked': is_blocked,
+                        'is_blocked': False,
                         'moderation': {
                             'action': final_action,
                             'severity': moderation_result['severity'],
                             'flagged': final_action == 'warn',
                             'reasons': moderation_result.get('reasons', []),
                             'violation_count': violation_count
-                        }
+                        },
+                        **(({'reply_to_preview': rtp}) if rtp else {}),
                     }
                     socketio.emit('message_received', payload, room=f"channel_{channel_id}", namespace='/')
                     socketio.emit('message_received', payload, room=f"community_{community_id}", namespace='/')
@@ -496,7 +506,7 @@ def send_message():
                         'author': msg['username'],
                         'display_name': msg['display_name'] or msg['username'],
                         'avatar_url': avatar_url,
-                        'is_blocked': is_blocked,
+                        'is_blocked': False,
                         'moderation': {
                             'action': final_action,
                             'severity': moderation_result['severity'],
@@ -720,10 +730,18 @@ def get_direct_messages(user_id):
             cur.execute("""
                 SELECT 
                     dm.id, dm.sender_id, dm.receiver_id, dm.content, dm.message_type,
-                    dm.created_at, dm.is_read, dm.read_at,
-                    u.username, u.display_name, u.avatar_url
+                    dm.reply_to, dm.created_at, dm.is_read, dm.read_at,
+                    u.username, u.display_name, u.avatar_url,
+                    a.file_name AS att_file_name, a.file_path AS att_file_url,
+                    a.file_size AS att_file_size, a.mime_type AS att_mime_type,
+                    a.duration AS att_duration,
+                    rdm.content AS reply_content, rdm.message_type AS reply_message_type,
+                    ru.username AS reply_author
                 FROM direct_messages dm
                 JOIN users u ON dm.sender_id = u.id
+                LEFT JOIN attachments a ON a.direct_message_id = dm.id
+                LEFT JOIN direct_messages rdm ON dm.reply_to = rdm.id
+                LEFT JOIN users ru ON rdm.sender_id = ru.id
                 WHERE (dm.sender_id = %s AND dm.receiver_id = %s)
                    OR (dm.sender_id = %s AND dm.receiver_id = %s)
                 ORDER BY dm.created_at DESC
@@ -737,6 +755,7 @@ def get_direct_messages(user_id):
             'receiver_id': m['receiver_id'],
             'content': m['content'],
             'message_type': m['message_type'],
+            'reply_to': m.get('reply_to'),
             'created_at': m['created_at'].isoformat() if m['created_at'] else None,
             'is_read': bool(m['is_read']),
             'read_at': m['read_at'].isoformat() if m['read_at'] else None,
@@ -745,10 +764,22 @@ def get_direct_messages(user_id):
                 'username': m['username'],
                 'display_name': m['display_name'] or m['username'],
                 'avatar_url': get_avatar_url(m['username'], m['avatar_url'])
-            }
+            },
+            **({'attachment': {
+                'file_name': m['att_file_name'],
+                'file_url': m['att_file_url'],
+                'file_size': m['att_file_size'],
+                'mime_type': m['att_mime_type'],
+                'duration': m.get('att_duration'),
+            }} if m.get('att_file_name') else {}),
+            **({'reply_to_preview': {
+                'id': m['reply_to'],
+                'content': (m['reply_content'] or '')[:150],
+                'author': m['reply_author'],
+                'message_type': m['reply_message_type'],
+            }} if m.get('reply_to') and m.get('reply_author') else {}),
         } for m in rows]
 
-        print("[DEBUG] GET DM Response:", result)
         return jsonify(result), 200
 
     except Exception as e:
@@ -771,6 +802,7 @@ def send_direct_message():
         receiver_id = data.get('receiver_id')
         content = data.get('content')
         message_type = data.get('message_type', 'text')
+        reply_to = data.get('reply_to')
 
         if not receiver_id or not content:
             return jsonify({'error': 'receiver_id and content required'}), 400
@@ -788,9 +820,9 @@ def send_direct_message():
                 return jsonify({'error': 'Receiver not found'}), 404
 
             cur.execute("""
-                INSERT INTO direct_messages (sender_id, receiver_id, content, message_type)
-                VALUES (%s, %s, %s, %s)
-            """, (sender_id, receiver_id, content, message_type))
+                INSERT INTO direct_messages (sender_id, receiver_id, content, message_type, reply_to)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (sender_id, receiver_id, content, message_type, reply_to or None))
             message_id = cur.lastrowid
 
             cur.execute("""
@@ -812,12 +844,32 @@ def send_direct_message():
             receiver_row = cur.fetchone()
             receiver_avatar = get_avatar_url(receiver_row['username'], receiver_row['avatar_url']) if receiver_row else None
         
+        # Build reply_to_preview if replying to a message
+        reply_to_preview = None
+        if reply_to:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT dm.content, dm.message_type, u.username
+                    FROM direct_messages dm
+                    JOIN users u ON dm.sender_id = u.id
+                    WHERE dm.id = %s
+                """, (reply_to,))
+                parent = cur.fetchone()
+                if parent:
+                    reply_to_preview = {
+                        'id': reply_to,
+                        'content': (parent['content'] or '')[:150],
+                        'author': parent['username'],
+                        'message_type': parent['message_type'],
+                    }
+
         return jsonify({
             'id': msg['id'],
             'sender_id': msg['sender_id'],
             'receiver_id': msg['receiver_id'],
             'content': msg['content'],
             'message_type': msg['message_type'],
+            'reply_to': reply_to,
             'created_at': msg['created_at'].isoformat(),
             'is_read': bool(msg['is_read']),
             'edited_at': None,
@@ -832,7 +884,8 @@ def send_direct_message():
                 'username': receiver_row['username'],
                 'display_name': receiver_row['display_name'] or receiver_row['username'],
                 'avatar_url': receiver_avatar
-            } if receiver_row else None
+            } if receiver_row else None,
+            **(({'reply_to_preview': reply_to_preview}) if reply_to_preview else {}),
         }), 201
 
     except Exception as e:

@@ -13,14 +13,14 @@ interface RealtimeContextType {
   currentCommunity: Community | null;
   channels: Channel[];
   currentChannel: Channel | null;
-  selectCommunity: (communityId: number) => void;
+  selectCommunity: (communityId: number | null) => void;
   selectChannel: (channelId: number) => void;
   addChannel: (channel: Channel) => void;
   friends: Friend[];
   currentFriend: Friend | null;
   selectFriend: (friendId: number) => void;
   messages: Message[];
-  sendMessage: (content: string, messageType?: 'text' | 'image' | 'file') => Promise<SendMessageResponse | undefined>;
+  sendMessage: (content: string, messageType?: 'text' | 'image' | 'file', replyTo?: number) => Promise<SendMessageResponse | undefined>;
   loadMoreMessages: () => Promise<void>;
   typingUsers: TypingUser[];
   sendTyping: () => void;
@@ -91,10 +91,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       console.log('[REALTIME] Loaded communities:', data);
       console.log('[REALTIME] Community roles:', data.map(c => ({ id: c.id, name: c.name, role: c.role })));
       setCommunities(data);
-      if (data.length > 0 && !currentCommunity) {
-        console.log('[REALTIME] Setting first community as current:', data[0]);
-        setCurrentCommunity(data[0]);
-      }
     } catch (error) {
       console.error('[REALTIME] Failed to load communities:', error);
     } finally {
@@ -321,7 +317,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         messageIdsRef.current.clear();
         
         // Navigate to home page (empty communities = Home display)
-        window.location.href = '/';
+        window.dispatchEvent(new CustomEvent('auraflow:navigate-home'));
       }
       
       // Leave all rooms for this community
@@ -349,7 +345,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
           messageIdsRef.current.clear();
           
           // Navigate to home page
-          window.location.href = '/';
+          window.dispatchEvent(new CustomEvent('auraflow:navigate-home'));
         }
         
         // Leave all rooms for this community
@@ -397,7 +393,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         messageIdsRef.current.clear();
         
         // Navigate to home page
-        window.location.href = '/';
+        window.dispatchEvent(new CustomEvent('auraflow:navigate-home'));
       }
       
       // Leave all rooms for this community
@@ -590,7 +586,19 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentChannel, isLoadingMessages, messageOffset, loadMessages]);
 
-  const selectCommunity = useCallback((communityId: number) => {
+  const selectCommunity = useCallback((communityId: number | null) => {
+    if (communityId === null) {
+      console.log('[REALTIME] Clearing community selection');
+      setCurrentCommunity(null);
+      currentCommunityRef.current = null;
+      setCurrentChannel(null);
+      currentChannelRef.current = null;
+      setChannels([]);
+      setMessages([]);
+      setMessageOffset(0);
+      messageIdsRef.current.clear();
+      return;
+    }
     const community = communities.find((c) => c.id === communityId);
     if (community) {
       console.log('[REALTIME] Selected community:', community.name);
@@ -634,7 +642,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     await loadCommunities();
   }, [loadCommunities]);
 
-  const sendMessage = useCallback(async (content: string, messageType: 'text' | 'image' | 'file' = 'text') => {
+  const sendMessage = useCallback(async (content: string, messageType: 'text' | 'image' | 'file' = 'text', replyTo?: number) => {
     if (!currentChannel || !content.trim()) {
       console.warn('[REALTIME] Cannot send message: no channel or empty content');
       return;
@@ -647,6 +655,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         channel_id: currentChannel.id,
         content,
         message_type: messageType,
+        ...(replyTo ? { reply_to: replyTo } : {}),
       });
 
       if (response?.message) {

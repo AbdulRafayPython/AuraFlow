@@ -5,7 +5,7 @@ import { useFriends } from "../../contexts/FriendsContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { getAvatarUrl } from "@/lib/utils";
 import { 
-  Users, Plus, Home, ChevronLeft, ChevronRight, LogOut, Moon, Sun, Settings, 
+  Users, Plus, Home, ChevronRight, LogOut, Moon, Sun, Settings, 
   User, Bell, Shield, Palette, HelpCircle, MessageSquare, ChevronDown, 
   Search, Sparkles, Hash, Volume2, Compass
 } from "lucide-react";
@@ -13,10 +13,13 @@ import CreateCommunityModal from "../modals/CreateCommunityModal";
 import FriendProfileModal from "../modals/FriendProfileModal";
 import { channelService } from "../../services/channelService";
 import { socketService } from "../../services/socketService";
+import { statusService } from "@/services/statusService";
+import { socket } from "@/socket";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDirectMessages } from "@/contexts/DirectMessagesContext";
 import authService from "@/services/authService";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
+import { API_SERVER } from "@/config/api";
 
 export interface CommunityFormData {
   name: string;
@@ -79,7 +82,6 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     friends: true,
     communities: true,
   });
-  const [showDetailPanel, setShowDetailPanel] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -122,11 +124,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   const handleCommunityClick = (communityId: string) => {
     const community = communities.find(c => c.id.toString() === communityId);
     if (community) {
-      selectCommunity(community.id);
-      if (isDiscoverPage) {
-        navigate('/');
-      }
-      onNavigate("dashboard", communityId);
+      navigate(`/community/${communityId}`);
     }
   };
 
@@ -144,8 +142,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     try {
       await channelService.joinCommunity(communityId);
       await reloadCommunities();
-      await selectCommunity(communityId);
-      onNavigate("dashboard", communityId.toString());
+      navigate(`/community/${communityId}`);
     } catch (error) {
       console.error("Failed to join community:", error);
       throw error;
@@ -183,7 +180,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     const friend = friends.find(f => f.id === friendId);
     if (friend) {
       selectFriend(friend.id);
-      onNavigate("dashboard");
+      navigate(`/dm/${friend.id}`);
     }
   };
 
@@ -207,8 +204,14 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     );
   };
 
-  const handleStatusChange = (status: 'online' | 'idle' | 'dnd' | 'offline') => {
+  const handleStatusChange = async (status: 'online' | 'idle' | 'dnd' | 'offline') => {
     setUserStatus(status);
+    try {
+      await statusService.updateMyStatus({ status });
+      socket.emit('update_custom_status', { status });
+    } catch (err) {
+      console.error('Failed to update status:', err);
+    }
   };
 
   const toggleSection = (section: keyof typeof expandedSections) => {
@@ -233,7 +236,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   // Get community logo URL
   const getCommunityLogoUrl = (community: any) => {
     if (!community.logo_url) return null;
-    return `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${community.logo_url}`;
+    return `${API_SERVER}${community.logo_url}`;
   };
 
   return (
@@ -265,23 +268,10 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         {/* Toggle Button */}
         <div className="relative group">
           <button
-            onClick={() => {
-              const newCollapsed = !isCollapsed;
-              setIsCollapsed(newCollapsed);
-              if (newCollapsed) {
-                setShowDetailPanel(false);
-              } else {
-                onNavigate("friends");
-                setShowDetailPanel(true);
-              }
-            }}
+            onClick={() => setIsCollapsed(prev => !prev)}
             className="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:scale-105"
           >
-            {isCollapsed ? (
-              <ChevronRight className="w-5 h-5 transition-transform duration-300" />
-            ) : (
-              <ChevronLeft className="w-5 h-5 transition-transform duration-300" />
-            )}
+            <ChevronRight className={`w-5 h-5 transition-transform duration-300 ${isCollapsed ? '' : 'rotate-180'}`} />
           </button>
           {isCollapsed && (
             <div className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-xl whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 z-[9999] bg-[hsl(var(--theme-bg-elevated))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))] shadow-xl backdrop-blur-xl">
@@ -294,20 +284,15 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
 
         {/* Home Button */}
         <div className="relative group w-full flex justify-center transition-all duration-300">
-          {currentView === "dashboard" && !selectedCommunity && (
+          {currentView === "home" && (
             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] rounded-r-full transition-all duration-300" />
           )}
           <button
-            onClick={() => {
-              if (isDiscoverPage) {
-                navigate('/');
-              }
-              onNavigate("dashboard");
-            }}
+            onClick={() => navigate('/')}
             onMouseEnter={() => setHoveredItem('home')}
             onMouseLeave={() => setHoveredItem(null)}
             className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 ${
-              currentView === "dashboard" && !selectedCommunity && !isDiscoverPage
+              currentView === "home" && !isDiscoverPage
                 ? "bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.4)] scale-105" 
                 : "bg-[hsl(var(--theme-bg-secondary))] hover:bg-gradient-to-br hover:from-[hsl(var(--theme-accent-primary))] hover:to-[hsl(var(--theme-accent-secondary))] text-[hsl(var(--theme-text-muted))] hover:text-white hover:scale-105 hover:shadow-lg"
             }`}
@@ -327,7 +312,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-emerald-400 to-emerald-600 rounded-r-full transition-all duration-300" />
           )}
           <button
-            onClick={() => onNavigate("friends")}
+            onClick={() => navigate('/friends')}
             onMouseEnter={() => setHoveredItem('friends')}
             onMouseLeave={() => setHoveredItem(null)}
             className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 ${
@@ -475,7 +460,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
             {/* Profile Menu */}
             {showProfileMenu && currentUser && (
               <div 
-                className={`${isCollapsed ? 'absolute' : 'fixed'} w-80 ${isBasicTheme ? 'rounded-lg shadow-lg' : 'rounded-2xl shadow-2xl'} border overflow-hidden z-[9999] bg-[hsl(var(--theme-bg-elevated))/0.95] border-[hsl(var(--theme-border-default))] ${isBasicTheme ? '' : 'backdrop-blur-xl'} animate-in fade-in slide-in-from-bottom-2 duration-200`}
+                className={`${isCollapsed ? 'absolute' : 'fixed'} w-80 ${isBasicTheme ? 'rounded-lg shadow-lg' : 'rounded-2xl shadow-2xl'} border overflow-hidden z-[9999] bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] ${isBasicTheme ? '' : 'backdrop-blur-xl'} animate-in fade-in slide-in-from-bottom-2 duration-200`}
                 style={isCollapsed 
                   ? { left: 'calc(100% + 12px)', bottom: '0', transform: 'translateY(0)' } 
                   : { left: '84px', bottom: '1rem', transform: 'translateY(0)' }
@@ -527,7 +512,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                 {/* Menu Items */}
                 <div className="p-2 max-h-72 overflow-y-auto scrollbar scrollbar-thumb-[hsl(var(--theme-border-default))] scrollbar-track-transparent">
                   <button 
-                    onClick={() => { setShowProfileMenu(false); onNavigate("profile"); }} 
+                    onClick={() => { setShowProfileMenu(false); navigate('/settings'); }} 
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] group"
                   >
                     <div className="p-2 rounded-lg bg-[hsl(var(--theme-bg-secondary))] group-hover:bg-[hsl(var(--theme-accent-primary)/0.2)] transition-colors">
@@ -536,7 +521,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                     <span>My Profile</span>
                   </button>
                   <button 
-                    onClick={() => { setShowProfileMenu(false); onNavigate("settings"); }} 
+                    onClick={() => { setShowProfileMenu(false); navigate('/settings'); }} 
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] group"
                   >
                     <div className="p-2 rounded-lg bg-[hsl(var(--theme-bg-secondary))] group-hover:bg-[hsl(var(--theme-accent-primary)/0.2)] transition-colors">
@@ -582,11 +567,12 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
       </div>
 
       {/* Detail Panel */}
-      {showDetailPanel && (
-        <div 
-          className="flex-1 flex flex-col h-full border-l w-72 border-[hsl(var(--theme-border-default)/0.3)] backdrop-blur-sm animate-in slide-in-from-left-2 duration-300 relative"
-          style={{ background: 'hsl(var(--theme-bg-secondary) / 0.3)' }}
-        >
+      <div 
+        className={`flex flex-col h-full border-l border-[hsl(var(--theme-border-default)/0.3)] backdrop-blur-sm relative transition-all duration-300 ease-in-out ${
+          isCollapsed ? 'w-0 opacity-0 overflow-hidden border-l-0' : 'w-72 opacity-100'
+        }`}
+        style={{ background: isCollapsed ? 'transparent' : 'hsl(var(--theme-bg-secondary) / 0.3)' }}
+      >
           {/* Right edge gradient that blends with next panel */}
           <div 
             className="absolute right-0 top-0 w-8 h-full pointer-events-none z-10"
@@ -649,7 +635,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                             key={conv.user_id}
                             onClick={() => {
                               selectFriend(conv.user_id);
-                              onNavigate("direct-message", conv.user_id.toString());
+                              navigate(`/dm/${conv.user_id}`);
                             }}
                             className={`w-full text-left px-3 py-2.5 rounded-xl text-sm flex items-center gap-3 transition-all duration-200 group ${
                               isActive
@@ -836,8 +822,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
             </div>
           </div>
         </div>
-      )}
-    </div>
+      </div>
 
       {/* Modals - Outside of blurred container */}
       <CreateCommunityModal 
@@ -854,7 +839,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         friend={selectedFriendForModal}
         onMessage={(friendId) => {
           selectFriend(friendId);
-          onNavigate("direct-message", friendId.toString());
+          navigate(`/dm/${friendId}`);
           setShowFriendProfileModal(false);
         }}
       />

@@ -1,8 +1,8 @@
 // services/directMessageService.ts - Direct messaging service
 import axios from 'axios';
 import type { DirectMessage } from '@/types';
+import { API_SERVER } from '@/config/api';
 
-const API_SERVER = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
 const API_BASE = `${API_SERVER}/api`;
 
 class DirectMessageService {
@@ -42,16 +42,18 @@ class DirectMessageService {
   async sendDirectMessage(
     receiverId: number,
     content: string,
-    messageType: 'text' | 'image' | 'file' = 'text'
+    messageType: 'text' | 'image' | 'file' = 'text',
+    replyTo?: number
   ): Promise<DirectMessage> {
     try {
-      console.log('[directMessageService] Sending DM to user:', receiverId, { content, messageType });
+      console.log('[directMessageService] Sending DM to user:', receiverId, { content, messageType, replyTo });
       const response = await axios.post<DirectMessage>(
         `${API_BASE}/messages/direct/send`,
         {
           receiver_id: receiverId,
           content,
           message_type: messageType,
+          ...(replyTo ? { reply_to: replyTo } : {}),
         },
         this.getAuthHeaders()
       );

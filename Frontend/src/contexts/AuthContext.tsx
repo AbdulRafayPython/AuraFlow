@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import authService from '../services/authService';
 import { connectSocket, disconnectSocket } from '../socket';
+import { API_URL } from '@/config/api';
 
 interface User {
   id?: number;  // Add user ID
@@ -49,6 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         })
         .catch(() => {
           localStorage.removeItem('token');
+          localStorage.removeItem('refresh_token');
           setIsAuthenticated(false);
           setUser(null);
           
@@ -62,6 +64,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     }
   }, []);
+
+  // ── Session expiry listener (fired by appService when refresh fails) ──
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      disconnectSocket();
+      localStorage.removeItem('token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('auraflow_user');
+      setUser(null);
+      setIsAuthenticated(false);
+    };
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+    return () => window.removeEventListener('auth:session-expired', handleSessionExpired);
+  }, []);
+
+  // ── Proactive silent refresh: refresh access token before it expires ──
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleRefresh = () => {
+      if (timer) clearTimeout(timer);
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const expiresAt = payload.exp * 1000;
+        // Refresh 2 minutes before expiry, minimum 10 seconds
+        const refreshIn = Math.max(expiresAt - Date.now() - 120_000, 10_000);
+
+        timer = setTimeout(async () => {
+          const refreshToken = localStorage.getItem('refresh_token');
+          if (!refreshToken) return;
+
+          try {
+            const res = await fetch(`${API_URL}/token/refresh`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${refreshToken}` },
+            });
+
+            if (res.ok) {
+              const data = await res.json();
+              if (data.token) localStorage.setItem('token', data.token);
+              if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
+              window.dispatchEvent(new CustomEvent('auth:token-refreshed'));
+              // Re-schedule for the new token
+              scheduleRefresh();
+            }
+          } catch {
+            // Will be caught by appService interceptor on next API call
+          }
+        }, refreshIn);
+      } catch {
+        // Invalid token format
+      }
+    };
+
+    scheduleRefresh();
+
+    // Also re-schedule when token is refreshed elsewhere (e.g., by appService interceptor)
+    const onRefreshed = () => scheduleRefresh();
+    window.addEventListener('auth:token-refreshed', onRefreshed);
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('auth:token-refreshed', onRefreshed);
+    };
+  }, [isAuthenticated]);
 
   const login = async (identifier: string, password: string) => {
     const data = await authService.login({ username: identifier, password });
@@ -90,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       // Clear all local auth data
       localStorage.removeItem('token');
+      localStorage.removeItem('refresh_token');
       localStorage.removeItem('auraflow_user');
       setUser(null);
       setIsAuthenticated(false);

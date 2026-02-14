@@ -18,9 +18,25 @@ interface DirectMessageEvent {
   sender_id: number;
   receiver_id: number;
   content: string;
-  message_type: 'text' | 'image' | 'file' | 'ai';
+  message_type: 'text' | 'image' | 'file' | 'ai' | 'voice' | 'video';
   created_at: string;
   is_read: boolean;
+  reply_to?: number | null;
+  reply_to_preview?: {
+    id: number;
+    content: string;
+    author: string;
+    message_type: string;
+  };
+  attachment?: {
+    file_name: string;
+    file_url: string;
+    file_size: number;
+    mime_type: string;
+  };
+  sender?: any;
+  receiver?: any;
+  edited_at?: string;
 }
 
 interface FriendRequestEvent {
@@ -77,27 +93,24 @@ class SocketService {
   
   // Global DM listener tracker
   private dmListenerRegistered: boolean = false;
+  // Dedup set for DM messages (receiver gets message from both DM room & personal room)
+  private recentDMIds: Set<number> = new Set();
 
   connect(token: string) {
     if (this.socket?.connected) {
-      console.log('%c[✅ ALREADY CONNECTED]', 'color: #00ff00', {
-        timestamp: new Date().toLocaleTimeString(),
-      });
       return;
     }
 
     this.token = token;
     
-    console.log('%c[🔌 SOCKET CONNECT START]', 'color: #00ff00; font-weight: bold', {
-      timestamp: new Date().toLocaleTimeString(),
-    });
+    // In dev, connect to same origin (Vite proxies /socket.io to backend).
+    // In production, use VITE_BACKEND_URL env var.
+    const isDev = import.meta.env.DEV;
+    const serverUrl = isDev
+      ? ''
+      : (import.meta.env.VITE_BACKEND_URL || `http://${window.location.hostname}:5000`);
     
-    // Determine the server URL based on current location
-    const serverUrl = window.location.hostname === 'localhost' 
-      ? 'http://localhost:5000'
-      : `http://${window.location.hostname}:5000`;
-    
-    console.log('[SOCKET] Connecting to:', serverUrl);
+    console.log('[SOCKET] Connecting to:', serverUrl || '(same origin via proxy)');
     
     // FIXED: Pass token in query string for Socket.IO handshake
     this.socket = io(serverUrl, {
@@ -119,20 +132,23 @@ class SocketService {
 
     // Connection events
     this.socket.on('connect', () => {
-      console.log('%c[SOCKET] ✅ Connected successfully', 'color: #00ff00; font-weight: bold', {
-        id: this.socket?.id,
-        timestamp: new Date().toLocaleTimeString()
-      });
+      console.log('[SOCKET] ✅ Connected, id:', this.socket?.id);
       this.reconnectAttempts = 0;
       
       // Start heartbeat to track active status
       this.startHeartbeat();
       
-      // Rejoin current channel if reconnecting
+      // Rejoin all active rooms after reconnect
       if (this.currentChannel) {
-        console.log(`[SOCKET] Rejoining channel ${this.currentChannel} after reconnect`);
-        this.joinChannel(this.currentChannel);
+        console.log(`[SOCKET] Rejoining channel ${this.currentChannel}`);
+        this.socket?.emit('join_channel', { channel_id: this.currentChannel });
       }
+      if (this.currentDMUser) {
+        console.log(`[SOCKET] Rejoining DM room with user ${this.currentDMUser}`);
+        this.socket?.emit('join_dm', { user_id: this.currentDMUser });
+      }
+      // Always rejoin friend status room for presence tracking
+      this.socket?.emit('join_friend_status');
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -148,18 +164,13 @@ class SocketService {
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('[SOCKET] ❌ Connection error:', error);
+      console.error('[SOCKET] Connection error:', error.message);
       this.reconnectAttempts++;
       
       if (this.reconnectAttempts >= this.maxReconnectAttempts) {
         console.error('[SOCKET] Max reconnection attempts reached');
         this.disconnect();
       }
-    });
-
-    // Debug: Listen for ALL events to see what's coming through
-    this.socket.onAny((eventName, ...args) => {
-      console.log('%c[SOCKET] 📨 EVENT RECEIVED:', 'color: #ff9900; font-weight: bold', eventName, args);
     });
 
     // User status updates
@@ -184,8 +195,11 @@ class SocketService {
         created_at: data.created_at || new Date().toISOString(),
         author: data.author,
         avatar_url: data.avatar || '',
+        reply_to: data.reply_to || null,
+        reply_to_preview: data.reply_to_preview || undefined,
         is_blocked: data.is_blocked || false,
         moderation: data.moderation || undefined,
+        attachment: data.attachment || undefined,
       };
       
       if (message.is_blocked) {
@@ -242,13 +256,8 @@ class SocketService {
 
     // AI command result event (for chat commands like /summarize)
     this.socket.on('command_result', (data: { type: string; success: boolean; summary?: string; key_points?: string[]; method?: string; error?: string }) => {
-      console.log('[SOCKET] ✅ ✅ ✅ AI Command result received from server:', data);
-      console.log('[SOCKET] ✅ Number of registered handlers:', this.commandResultHandlers.length);
-      this.commandResultHandlers.forEach((handler, index) => {
-        console.log(`[SOCKET] ✅ Calling handler ${index + 1}/${this.commandResultHandlers.length}`);
-        handler(data);
-      });
-      console.log('[SOCKET] ✅ All command result handlers called');
+      console.log('[SOCKET] AI Command result received');
+      this.commandResultHandlers.forEach(handler => handler(data));
     });
 
     // Channel operation events
@@ -285,31 +294,18 @@ class SocketService {
     });
 
     // Direct message events
-    console.log('%c[🔌 SETTING UP receive_direct_message LISTENER]', 'color: #00ff00; font-weight: bold');
     this.socket.on('receive_direct_message', (data: DirectMessageEvent) => {
-      const timestamp = new Date().toLocaleTimeString();
-      console.log('%c[📡 SOCKET: receive_direct_message FIRED]', 'color: #ff00ff; font-weight: bold', {
-        timestamp,
-        event: 'receive_direct_message',
-        msg_id: data.id,
-        sender_id: data.sender_id,
-        receiver_id: data.receiver_id,
-        content_preview: data.content?.substring(0, 50),
-        full_data: data,
-        handlers_count: this.directMessageHandlers.length,
-      });
+      // Deduplicate: receiver may be in both the DM room and their personal room
+      if (this.recentDMIds.has(data.id)) {
+        return;
+      }
+      this.recentDMIds.add(data.id);
+      // Clean up old IDs after 10 seconds to prevent memory leak
+      setTimeout(() => this.recentDMIds.delete(data.id), 10000);
       
-      console.log(`%c[🔄 CALLING ${this.directMessageHandlers.length} HANDLER(S)]`, 'color: #0088ff', {
-        handler_count: this.directMessageHandlers.length,
-      });
+      console.log('[SOCKET] DM received:', { id: data.id, from: data.sender_id, to: data.receiver_id });
       
-      this.directMessageHandlers.forEach((handler, index) => {
-        console.log(`%c[📞 CALLING HANDLER ${index + 1}/${this.directMessageHandlers.length}]`, 'color: #0088ff');
-        handler(data);
-        console.log(`%c[✅ HANDLER ${index + 1} COMPLETED]`, 'color: #00ff00');
-      });
-      
-      console.log('%c[✅ ALL HANDLERS CALLED SUCCESSFULLY]', 'color: #00ff00; font-weight: bold');
+      this.directMessageHandlers.forEach(handler => handler(data));
     });
 
     this.socket.on('direct_message_read', (data: { message_id: number; read_by: number }) => {
@@ -330,38 +326,42 @@ class SocketService {
 
     // Friend request events
     this.socket.on('friend_request_received', (data: FriendRequestEvent) => {
-      console.log('%c[SOCKET] 👋 FRIEND REQUEST RECEIVED', 'color: #00ff00; font-weight: bold', {
-        data,
-        handlers: this.friendRequestHandlers.length,
-        timestamp: new Date().toLocaleTimeString()
-      });
-      
-      if (this.friendRequestHandlers.length === 0) {
-        console.warn('[SOCKET] ⚠️ No friend request handlers registered!');
-      }
-      
+      console.log('[SOCKET] Friend request received:', data.id);
       this.friendRequestHandlers.forEach(handler => {
         try {
           handler(data);
-          console.log('[SOCKET] ✅ Friend request handler executed successfully');
         } catch (error) {
-          console.error('[SOCKET] ❌ Friend request handler error:', error);
+          console.error('[SOCKET] Friend request handler error:', error);
         }
       });
     });
 
-    this.socket.on('friend_request_accepted', (data: FriendRequestEvent) => {
-      console.log('[SOCKET] ✓ Friend request accepted:', data);
-      this.friendRequestHandlers.forEach(handler => handler(data));
+    this.socket.on('friend_request_accepted', (data: any) => {
+      console.log('[SOCKET] Friend request accepted:', data);
+      // Route to friendStatus handlers (not friendRequest handlers) so friends list refreshes
+      this.friendStatusHandlers.forEach(handler => handler({ 
+        friend_id: data.acceptor_id || data.sender_id, 
+        status: 'accepted' 
+      }));
     });
 
-    this.socket.on('friend_request_rejected', (data: FriendRequestEvent) => {
-      console.log('[SOCKET] ✗ Friend request rejected:', data);
-      this.friendRequestHandlers.forEach(handler => handler(data));
+    this.socket.on('friend_request_rejected', (data: any) => {
+      console.log('[SOCKET] Friend request rejected:', data);
+      // Notify friend status handlers to clean up sentRequests
+      this.friendStatusHandlers.forEach(handler => handler({ 
+        friend_id: data.rejector_id || data.receiver_id, 
+        status: 'rejected' 
+      }));
     });
 
     this.socket.on('friend_status_changed', (data: { friend_id: number; status: 'online' | 'offline' | 'idle' | 'dnd' }) => {
-      console.log('[SOCKET] 👤 Friend status changed:', data);
+      console.log('[SOCKET] Friend status changed:', data);
+      this.friendStatusHandlers.forEach(handler => handler(data));
+    });
+
+    // Also listen for 'friend_status' (emitted by backend on accept/remove/block)
+    this.socket.on('friend_status', (data: { friend_id: number; status: string }) => {
+      console.log('[SOCKET] Friend status update:', data);
       this.friendStatusHandlers.forEach(handler => handler(data));
     });
 
@@ -383,32 +383,14 @@ class SocketService {
 
   // Join a direct message conversation
   joinDMConversation(userId: number) {
-    const timestamp = new Date().toLocaleTimeString();
-    console.log('%c[🚪 JOIN DM ROOM START]', 'color: #0088ff; font-weight: bold', {
-      timestamp,
-      user_id: userId,
-      is_connected: this.socket?.connected,
-    });
-    
     if (!this.socket?.connected) {
-      console.error('%c[❌ NOT CONNECTED - CANNOT JOIN]', 'color: #ff0000', {
-        timestamp,
-        user_id: userId,
-      });
+      console.warn('[SOCKET] Not connected, cannot join DM room');
       return;
     }
 
     this.currentDMUser = userId;
-    console.log('%c[📤 EMITTING join_dm]', 'color: #0088ff', {
-      user_id: userId,
-    });
-    
     this.socket.emit('join_dm', { user_id: userId });
-    
-    console.log('%c[✅ EMITTED join_dm]', 'color: #00ff00; font-weight: bold', {
-      user_id: userId,
-      timestamp,
-    });
+    console.log(`[SOCKET] Joined DM room with user ${userId}`);
   }
 
   // Leave DM conversation
@@ -444,38 +426,13 @@ class SocketService {
 
   // Broadcast direct message
   broadcastDirectMessage(message: any) {
-    const timestamp = new Date().toLocaleTimeString();
-    console.log('%c[🔊 BROADCAST MESSAGE START]', 'color: #ff00ff; font-weight: bold', {
-      timestamp,
-      msg_id: message.id,
-      from: message.sender_id,
-      to: message.receiver_id,
-      is_connected: this.socket?.connected,
-    });
-    
     if (!this.socket?.connected) {
-      console.error('%c[❌ NOT CONNECTED]', 'color: #ff0000; font-weight: bold', {
-        connected: false,
-        timestamp,
-      });
+      console.warn('[SOCKET] Not connected, cannot broadcast DM');
       return;
     }
 
-    console.log('%c[📤 EMITTING send_direct_message]', 'color: #0088ff', {
-      msg_id: message.id,
-      receiver_id: message.receiver_id,
-      has_sender: !!message.sender,
-      has_receiver: !!message.receiver,
-    });
-    
     this.socket.emit('send_direct_message', message);
-    
-    console.log('%c[✅ EMITTED send_direct_message]', 'color: #00ff00; font-weight: bold', {
-      msg_id: message.id,
-      receiver_id: message.receiver_id,
-      content_preview: message.content?.substring(0, 30),
-      timestamp,
-    });
+    console.log(`[SOCKET] DM broadcast: msg ${message.id} to user ${message.receiver_id}`);
   }
 
   // Broadcast friend request sent
@@ -753,28 +710,9 @@ class SocketService {
   }
 
   onDirectMessage(handler: DirectMessageHandler) {
-    // SIMPLIFIED: Just add handler to the array
-    // The listener is already registered in setupEventListeners
-    console.log('%c[📞 onDirectMessage HANDLER REGISTRATION]', 'color: #0088ff; font-weight: bold', {
-      timestamp: new Date().toLocaleTimeString(),
-      handler_count_before: this.directMessageHandlers.length,
-    });
-    
     this.directMessageHandlers.push(handler);
-    
-    console.log('%c[✅ HANDLER REGISTERED]', 'color: #00ff00', {
-      handler_count_after: this.directMessageHandlers.length,
-      timestamp: new Date().toLocaleTimeString(),
-    });
-    
     return () => {
-      console.log('%c[🗑️ HANDLER UNSUBSCRIBE]', 'color: #ff8800', {
-        timestamp: new Date().toLocaleTimeString(),
-      });
       this.directMessageHandlers = this.directMessageHandlers.filter(h => h !== handler);
-      console.log('%c[✅ HANDLER REMOVED]', 'color: #00ff00', {
-        handler_count_after: this.directMessageHandlers.length,
-      });
     };
   }
 
@@ -855,9 +793,23 @@ class SocketService {
     return this.socket?.connected ?? false;
   }
 
+  getSocket(): Socket | null {
+    return this.socket;
+  }
+
   getCurrentChannel(): number | null {
     return this.currentChannel;
   }
 }
 
 export const socketService = new SocketService();
+
+// ─── Reconnect socketService when token refreshes ────────────────────
+window.addEventListener('auth:token-refreshed', () => {
+  const token = localStorage.getItem('token');
+  if (token && socketService.isConnected()) {
+    console.log('[SOCKET-SVC] Token refreshed, reconnecting with new token...');
+    socketService.disconnect();
+    setTimeout(() => socketService.connect(token), 300);
+  }
+});

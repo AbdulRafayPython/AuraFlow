@@ -1,12 +1,18 @@
 Flask
 Flask-JWT-Extended
 Flask-Cors
+Flask-Compress
 python-dotenv
 PyMySQL
 bcrypt
 Werkzeug
 flask_socketio
 Pillow
+DBUtils
+
+# Production server
+gunicorn
+eventlet
 
 # AI Agent Dependencies
 nltk
@@ -15,8 +21,9 @@ spacy
 textblob
 google-generativeai
 googletrans==4.0.0-rc1
+deep-translator
 
-# NLP Processing
+# NLP Processing (optional — skipped if RAM is limited)
 transformers
-torch
+torch --extra-index-url https://download.pytorch.org/whl/cpu
 sentencepiece

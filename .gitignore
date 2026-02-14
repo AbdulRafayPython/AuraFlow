@@ -1,19 +1,94 @@
-Backend/.env
-Backend/node_modules/
-Backend/dist/
-Frontend/node_modules/
-Frontend/dist/
+# ==========================================
+# AuraFlow Root .gitignore
+# Covers Backend/ Frontend/ and docs/
+# ==========================================
+
+# ---------- OS junk ----------
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- IDE / Editor ----------
 .vscode/
-Backend/.vscode/
-Frontend/.vscode/
-Backend/.env.local
+.idea/
+*.swp
+*.swo
+*~
+
+# ==========================================
+# BACKEND (Python / Flask)
+# ==========================================
+
+# Virtual environment
+Backend/venv/
+Backend/.venv/
+Backend/env/
+Backend/ENV/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+Backend/.env
+Backend/.env.*
+
+# Logs
+Backend/*.log
+Backend/startup.log
+
+# Uploads (user-generated, not in repo)
+Backend/uploads/
+
+# ML models (too large for git)
+Backend/models/
+
+# Python packaging
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+
+# Test / Coverage
+htmlcov/
+.coverage
+.coverage.*
+.pytest_cache/
+.tox/
+.nox/
+
+# SQLite (if any)
+*.db
+*.sqlite3
+
+# ==========================================
+# FRONTEND (React / Vite / Node)
+# ==========================================
+
+# Dependencies
+Frontend/node_modules/
+
+# Build output
+Frontend/dist/
+
+# Environment variables
+Frontend/.env
 Frontend/.env.local
-Backend/.env.development
-Backend/.env.production
-Backend/.env.test
-Backend/.env.development.local
-Backend/.env.production.local
-Backend/models
-Backend/migrations
 Frontend/.env.development
+Frontend/.env.development.local
+Frontend/.env.test.local
+Frontend/.env.production.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Cache
+.cache/
+.next/
+.nuxt/

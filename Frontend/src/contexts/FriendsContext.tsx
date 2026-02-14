@@ -118,12 +118,16 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     try {
       const request = await friendService.sendFriendRequest(username);
-      setSentRequests([...sentRequests, request]);
+      // Use functional setState to avoid stale closure
+      setSentRequests(prev => {
+        if (prev.some(r => r.id === request.id)) return prev;
+        return [...prev, request];
+      });
     } catch (err: any) {
       setError(err.response?.data?.message || "Failed to send friend request");
       throw err;
     }
-  }, [sentRequests]);
+  }, []);
 
   // Accept friend request
   const acceptFriendRequest = useCallback(async (requestId: number) => {
@@ -263,28 +267,16 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
     loadInitialData();
   }, [isAuthenticated, getFriends, getPendingRequests, getSentRequests]);
 
-  // Setup socket listeners (wait for connection)
+  // Setup socket listeners - register handlers immediately
+  // (handlers are just array pushes that work regardless of connection state)
   useEffect(() => {
-    console.log('[FriendsContext] 🔧 Setting up socket listeners');
-    console.log('[FriendsContext] 🔌 Socket connected:', socketService.isConnected());
-    
-    // Function to setup listeners
-    const setupListeners = () => {
-      console.log('[FriendsContext] ✅ Socket is connected, registering event handlers');
+    // Friend request received (receiver side)
+    const unsubscribeFriendRequest = socketService.onFriendRequest((request) => {
+      console.log('[FriendsContext] Friend request received:', request.id);
       
-      // Friend request received
-      const unsubscribeFriendRequest = socketService.onFriendRequest((request) => {
-        console.log('%c[FriendsContext] 📬 FRIEND REQUEST RECEIVED', 'color: #00ff00; font-weight: bold', request);
-        console.log('[FriendsContext] 🕐 Timestamp:', new Date().toLocaleTimeString());
-        
-        // Check for duplicates before adding
-        setPendingRequests(prev => {
-          console.log('[FriendsContext] 🔍 Current state has', prev.length, 'pending requests');
-          const isDuplicate = prev.some(r => r.id === request.id);
-        if (isDuplicate) {
-          console.log('[FriendsContext] ⚠️ Duplicate request detected, skipping:', request.id);
-          return prev;
-        }
+      setPendingRequests(prev => {
+        const isDuplicate = prev.some(r => r.id === request.id);
+        if (isDuplicate) return prev;
         
         const friendRequest: FriendRequest = {
           id: request.id,
@@ -298,94 +290,54 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
           sender: request.sender,
         };
         
-        console.log('[FriendsContext] ✅ Adding new request to state:', friendRequest);
-        console.log('[FriendsContext] 📈 New count will be:', prev.length + 1);
-        
         // Show notification
         if (typeof window !== 'undefined') {
-          console.log('[FriendsContext] 🔔 Dispatching notification event');
-          const notificationEvent = new CustomEvent('friendRequestReceived', {
+          window.dispatchEvent(new CustomEvent('friendRequestReceived', {
             detail: friendRequest
-          });
-          window.dispatchEvent(notificationEvent);
+          }));
         }
         
         return [...prev, friendRequest];
       });
     });
 
-    // Friend status changed
+    // Friend status changed (online/offline/accepted/rejected/removed/blocked)
     const unsubscribeFriendStatus = socketService.onFriendStatus((data) => {
       console.log('[FriendsContext] Friend status changed:', data);
       if (data.status === "online" || data.status === "offline" || data.status === "idle" || data.status === "dnd") {
-        // Update friend status
         setFriends(prev => prev.map(f => 
           f.id === data.friend_id ? { ...f, status: data.status as any } : f
         ));
       } else if (data.status === "removed") {
-        // Remove friend from list
         setFriends(prev => prev.filter(f => f.id !== data.friend_id));
       } else if (data.status === "blocked") {
-        // Friend blocked - remove from friends
         setFriends(prev => prev.filter(f => f.id !== data.friend_id));
-        // Reload blocked users
         getBlockedUsers();
       } else if (data.status === "unblocked") {
-        // Friend unblocked - reload blocked users
         getBlockedUsers();
       } else if (data.status === "accepted") {
-        // Friend request accepted - reload friends list
-        console.log('[FriendsContext] Friend request accepted, reloading friends');
+        console.log('[FriendsContext] Friend request accepted, reloading friends & sentRequests');
         getFriends();
+        getSentRequests();
+        setPendingRequests(prev => prev.filter(r => r.sender_id !== data.friend_id));
+      } else if (data.status === "rejected") {
+        console.log('[FriendsContext] Friend request rejected, refreshing sentRequests');
+        getSentRequests();
       }
     });
 
-    // Join friend status room for live updates
-    socketService.joinFriendStatusRoom();
-    
-    return { unsubscribeFriendRequest, unsubscribeFriendStatus };
-  };
-    
-    // If already connected, setup immediately
+    // Join friend status room when socket is ready
     if (socketService.isConnected()) {
-      const cleanup = setupListeners();
-      return () => {
-        console.log('[FriendsContext] Cleaning up socket listeners');
-        cleanup?.unsubscribeFriendRequest();
-        cleanup?.unsubscribeFriendStatus();
-        socketService.leaveFriendStatusRoom();
-      };
+      socketService.joinFriendStatusRoom();
     }
+    // The reconnect handler in socketService already emits join_friend_status on every connect
     
-    // Otherwise, wait for connection with polling
-    console.log('[FriendsContext] ⏳ Waiting for socket connection...');
-    let cleanup: ReturnType<typeof setupListeners> | null = null;
-    
-    const checkConnection = setInterval(() => {
-      if (socketService.isConnected()) {
-        console.log('[FriendsContext] 🔌 Socket now connected, setting up listeners');
-        clearInterval(checkConnection);
-        cleanup = setupListeners();
-      }
-    }, 100);
-    
-    // Also setup after a delay to catch late connections
-    const delayedSetup = setTimeout(() => {
-      if (!cleanup && socketService.isConnected()) {
-        console.log('[FriendsContext] 🔌 Delayed setup - socket connected');
-        cleanup = setupListeners();
-      }
-    }, 1000);
-
     return () => {
-      console.log('[FriendsContext] Cleaning up socket listeners');
-      clearInterval(checkConnection);
-      clearTimeout(delayedSetup);
-      cleanup?.unsubscribeFriendRequest();
-      cleanup?.unsubscribeFriendStatus();
+      unsubscribeFriendRequest();
+      unsubscribeFriendStatus();
       socketService.leaveFriendStatusRoom();
     };
-  }, []); // Empty dependency - only set up once
+  }, [getFriends, getSentRequests, getBlockedUsers]);
 
   const value: FriendsContextType = {
     friends,

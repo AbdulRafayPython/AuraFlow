@@ -1,24 +1,30 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
 import { voiceService, VoiceUser } from "@/services/voiceService";
 import { webrtcService } from "@/services/webrtcService";
+import { socketService } from "@/services/socketService";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface VoiceContextType {
   isInVoiceChannel: boolean;
   currentVoiceChannel: number | null;
+  currentVoiceChannelName: string | null;
   voiceUsers: VoiceUser[];
   isAudioEnabled: boolean;
   isDeafened: boolean;
   localStream: MediaStream | null;
   isLoading: boolean;
   error: string | null;
+  speakingUsers: Set<string>;
+  isVoiceRoomModalOpen: boolean;
   
-  joinVoiceChannel: (channelId: number) => Promise<void>;
+  joinVoiceChannel: (channelId: number, channelName?: string) => Promise<void>;
   leaveVoiceChannel: () => Promise<void>;
   toggleAudio: () => Promise<void>;
   toggleDeaf: () => Promise<void>;
   muteUser: (userId: number) => void;
   unmuteUser: (userId: number) => void;
   getChannelMembers: (channelId: number) => Promise<VoiceUser[]>;
+  setVoiceRoomModalOpen: (open: boolean) => void;
 }
 
 const VoiceContext = createContext<VoiceContextType | undefined>(undefined);
@@ -36,19 +42,61 @@ interface VoiceProviderProps {
 }
 
 export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
+  const { user } = useAuth();
   const [isInVoiceChannel, setIsInVoiceChannel] = useState(false);
   const [currentVoiceChannel, setCurrentVoiceChannel] = useState<number | null>(null);
+  const [currentVoiceChannelName, setCurrentVoiceChannelName] = useState<string | null>(null);
   const [voiceUsers, setVoiceUsers] = useState<VoiceUser[]>([]);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [isDeafened, setIsDeafened] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [speakingUsers, setSpeakingUsers] = useState<Set<string>>(new Set());
+  const [isVoiceRoomModalOpen, setVoiceRoomModalOpen] = useState(false);
   
   const localStreamRef = useRef<MediaStream | null>(null);
+  const currentVoiceChannelRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const speakingIntervalRef = useRef<number | null>(null);
+  const wasSpeakingRef = useRef(false);
+
+  // Keep ref in sync with state so socket closures always read current value
+  useEffect(() => {
+    currentVoiceChannelRef.current = currentVoiceChannel;
+  }, [currentVoiceChannel]);
+
+  // Track socket availability — same pattern as the working CallContext
+  const [socketReady, setSocketReady] = useState(!!socketService.getSocket()?.connected);
+
+  useEffect(() => {
+    const s = socketService.getSocket();
+    if (s?.connected) setSocketReady(true);
+    const onConnect = () => setSocketReady(true);
+    const onDisconnect = () => setSocketReady(false);
+    s?.on("connect", onConnect);
+    s?.on("disconnect", onDisconnect);
+
+    // Poll briefly in case socket connects after mount but before listeners
+    const poll = setInterval(() => {
+      const sock = socketService.getSocket();
+      if (sock?.connected && !socketReady) {
+        setSocketReady(true);
+        sock.on("connect", onConnect);
+        sock.on("disconnect", onDisconnect);
+      }
+    }, 500);
+
+    return () => {
+      clearInterval(poll);
+      s?.off("connect", onConnect);
+      s?.off("disconnect", onDisconnect);
+    };
+  }, []);
 
   const joinVoiceChannel = useCallback(
-    async (channelId: number) => {
+    async (channelId: number, channelName?: string) => {
       setIsLoading(true);
       setError(null);
       try {
@@ -83,17 +131,21 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
         const members = await voiceService.getChannelMembers(channelId);
         console.log(`[VOICE] Got ${members.length} members, setting up WebRTC`);
         
-        // Get current user info
-        const currentUsername = localStorage.getItem("username");
+        // Get current user info from AuthContext
+        const currentUsername = user?.username;
+        const currentUserId = user?.id || 0;
         
         // Create peer connections for all existing members (excluding self)
+        // COLLISION DETECTION: Only send offer if OUR ID is higher than the peer's.
+        // The peer's onUserJoined handler uses the same rule, so exactly ONE side offers.
         for (const member of members) {
           if (member.username !== currentUsername) {
             // IMPORTANT: Use username as the peer identifier
             const peerUsername = member.username;
+            const shouldSendOffer = currentUserId > member.id;
             
             if (!webrtcService.hasPeerConnection(peerUsername)) {
-              console.log(`[VOICE] 🔗 Creating peer connection for ${peerUsername}`);
+              console.log(`[VOICE] 🔗 Creating peer connection for ${peerUsername} (shouldSendOffer=${shouldSendOffer}, me=${currentUserId} vs them=${member.id})`);
               const pc = webrtcService.createPeerConnection(peerUsername, (candidate) => {
                 // Send ICE candidate to remote peer
                 voiceService.sendIceCandidate(channelId, peerUsername, candidate);
@@ -105,39 +157,39 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
                 console.log(`[VOICE] 🎵 Adding ${audioTracks.length} audio tracks to ${peerUsername}`);
                 
                 audioTracks.forEach((track, idx) => {
-                  console.log(`[VOICE] 🎵 Track ${idx} before adding:`, {
-                    id: track.id,
+                  const sender = pc.addTrack(track, localStreamRef.current!);
+                  console.log(`[VOICE] ✅ Track ${idx} added to ${peerUsername}`, {
                     enabled: track.enabled,
                     readyState: track.readyState,
-                  });
-                  
-                  const sender = pc.addTrack(track, localStreamRef.current!);
-                  console.log(`[VOICE] ✅ Track ${idx} added to ${peerUsername}`);
-                  
-                  // Verify sender
-                  console.log(`[VOICE] 📡 Sender details:`, {
-                    trackId: sender.track?.id,
-                    enabled: sender.track?.enabled,
                   });
                 });
               }
 
-              // Create and send offer
-              try {
-                console.log(`[VOICE] 📤 Creating offer for ${peerUsername}`);
-                const offer = await webrtcService.createOffer(peerUsername);
-                console.log(`[VOICE] 📤 Sending offer to ${peerUsername}`);
-                voiceService.sendOffer(channelId, peerUsername, offer);
-              } catch (error) {
-                console.error(`[VOICE] ❌ Error creating offer for ${peerUsername}:`, error);
+              // Only create offer if our ID is higher (collision avoidance)
+              if (shouldSendOffer) {
+                try {
+                  console.log(`[VOICE] 📤 Creating offer for ${peerUsername}`);
+                  const offer = await webrtcService.createOffer(peerUsername);
+                  console.log(`[VOICE] 📤 Sending offer to ${peerUsername}`);
+                  voiceService.sendOffer(channelId, peerUsername, offer);
+                } catch (error) {
+                  console.error(`[VOICE] ❌ Error creating offer for ${peerUsername}:`, error);
+                }
+              } else {
+                console.log(`[VOICE] ⏳ Waiting for offer from ${peerUsername} (they have higher ID: ${member.id} > ${currentUserId})`);
               }
             }
           }
         }
 
         setCurrentVoiceChannel(channelId);
+        currentVoiceChannelRef.current = channelId; // Update ref immediately for socket closures
+        setCurrentVoiceChannelName(channelName || null);
         setIsInVoiceChannel(true);
         setVoiceUsers(members);
+        
+        // Start speaking detection
+        startSpeakingDetection(stream, channelId);
 
         console.log(`[VOICE] ✅ Successfully joined channel ${channelId}`);
       } catch (err) {
@@ -159,13 +211,16 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
         setIsLoading(false);
       }
     },
-    []
+    [user]
   );
 
   const leaveVoiceChannel = useCallback(async () => {
     try {
       if (currentVoiceChannel) {
         console.log(`[VOICE] Leaving voice channel ${currentVoiceChannel}`);
+        
+        // Stop speaking detection
+        stopSpeakingDetection();
         
         // Close all peer connections
         webrtcService.closeAllConnections();
@@ -181,9 +236,12 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
         voiceService.leaveVoiceChannel(currentVoiceChannel);
 
         setCurrentVoiceChannel(null);
+        setCurrentVoiceChannelName(null);
         setIsInVoiceChannel(false);
         setVoiceUsers([]);
+        setSpeakingUsers(new Set());
         setError(null);
+        setVoiceRoomModalOpen(false);
 
         console.log("[VOICE] ✅ Left voice channel");
       }
@@ -265,67 +323,127 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
     []
   );
 
-  // Setup socket listeners
-  useEffect(() => {
-    console.log("[VOICE] Setting up socket listeners");
+  // Speaking detection via AudioContext/AnalyserNode
+  const startSpeakingDetection = useCallback((stream: MediaStream, channelId: number) => {
+    try {
+      const audioCtx = new AudioContext();
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.4;
+      
+      const source = audioCtx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      
+      audioContextRef.current = audioCtx;
+      analyserRef.current = analyser;
+      
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const SPEAKING_THRESHOLD = 15; // Adjust sensitivity
+      
+      speakingIntervalRef.current = window.setInterval(() => {
+        analyser.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((sum, v) => sum + v, 0) / dataArray.length;
+        const isSpeaking = average > SPEAKING_THRESHOLD;
+        
+        if (isSpeaking !== wasSpeakingRef.current) {
+          wasSpeakingRef.current = isSpeaking;
+          const myUsername = user?.username;
+          
+          // Update local speaking state
+          setSpeakingUsers(prev => {
+            const next = new Set(prev);
+            if (isSpeaking && myUsername) next.add(myUsername);
+            else if (myUsername) next.delete(myUsername);
+            return next;
+          });
+          
+          // Emit to server
+          voiceService.emitSpeaking(channelId, isSpeaking);
+        }
+      }, 100);
+    } catch (err) {
+      console.error("[VOICE] Speaking detection init error:", err);
+    }
+  }, []);
 
-    voiceService.onMembersUpdate((data) => {
-      console.log("[VOICE] 👥 Members updated:", data.members.length);
-      const members = data.members.map((m) => ({
+  const stopSpeakingDetection = useCallback(() => {
+    if (speakingIntervalRef.current) {
+      clearInterval(speakingIntervalRef.current);
+      speakingIntervalRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+    wasSpeakingRef.current = false;
+  }, []);
+
+  // ── Socket event listeners — only register when socket is ready ──
+  useEffect(() => {
+    if (!socketReady) return;
+    const sock = socketService.getSocket();
+    if (!sock) return;
+
+    const currentUsername = user?.username || null;
+    const currentUserId = user?.id || 0;
+
+    console.log("[VOICE] Setting up socket listeners (socketReady=true)");
+
+    // ── Presence events ──
+
+    const onMembersUpdate = (data: any) => {
+      console.log("[VOICE] 👥 Members updated:", data.members?.length);
+      const members = (data.members || []).map((m: any) => ({
         ...m,
         is_muted: m.is_muted || false,
         is_deaf: m.is_deaf || false,
       }));
       setVoiceUsers(members);
-    });
+    };
 
-    voiceService.onUserJoined((data) => {
-      console.log("[VOICE] 🆕 User joined:", data.username, "ID:", data.user_id);
-      
-      // Get current user ID
-      const currentUserId = parseInt(localStorage.getItem("user_id") || "0");
-      const newUserId = data.user_id;
-      const peerUsername = data.username;
-      
-      console.log(`[VOICE] Current user ID: ${currentUserId}, New user ID: ${newUserId}`);
-      
-      // Collision detection: only the user with HIGHER ID sends offer
-      const shouldSendOffer = currentUserId > newUserId;
-      console.log(`[VOICE] Should send offer: ${shouldSendOffer} (current > new)`);
-      
-      if (!webrtcService.hasPeerConnection(peerUsername)) {
-        console.log(`[VOICE] 🔗 Creating peer for new user ${peerUsername}`);
-        
-        const pc = webrtcService.createPeerConnection(peerUsername, (candidate) => {
-          if (currentVoiceChannel) {
-            voiceService.sendIceCandidate(currentVoiceChannel, peerUsername, candidate);
-          }
-        });
+    const onUserJoined = (data: any) => {
+      const channelId = currentVoiceChannelRef.current;
+      console.log("[VOICE] 🆕 User joined:", data.username, "ID:", data.user_id, "| my channel:", channelId);
 
-        // Add local stream to peer connection
-        if (localStreamRef.current) {
-          const audioTracks = localStreamRef.current.getAudioTracks();
-          console.log(`[VOICE] 🎵 Adding ${audioTracks.length} tracks to new user ${peerUsername}`);
-          
-          audioTracks.forEach((track) => {
-            pc.addTrack(track, localStreamRef.current!);
+      // Only set up WebRTC if WE are currently in a voice channel
+      if (channelId && data.username !== currentUsername) {
+        const peerUsername = data.username;
+        const newUserId = data.user_id;
+
+        // Collision detection: only the user with HIGHER ID sends offer
+        const shouldSendOffer = currentUserId > newUserId;
+        console.log(`[VOICE] Should send offer: ${shouldSendOffer} (${currentUserId} > ${newUserId})`);
+
+        if (!webrtcService.hasPeerConnection(peerUsername)) {
+          console.log(`[VOICE] 🔗 Creating peer for new user ${peerUsername}`);
+
+          const pc = webrtcService.createPeerConnection(peerUsername, (candidate) => {
+            const ch = currentVoiceChannelRef.current;
+            if (ch) voiceService.sendIceCandidate(ch, peerUsername, candidate);
           });
-        }
 
-        // Only send offer if we have higher ID (collision detection)
-        if (shouldSendOffer) {
-          (async () => {
-            try {
-              const offer = await webrtcService.createOffer(peerUsername);
-              if (currentVoiceChannel) {
-                voiceService.sendOffer(currentVoiceChannel, peerUsername, offer);
+          // Add local stream to peer connection
+          if (localStreamRef.current) {
+            localStreamRef.current.getAudioTracks().forEach((track) => {
+              pc.addTrack(track, localStreamRef.current!);
+            });
+            console.log(`[VOICE] 🎵 Added audio tracks to ${peerUsername}`);
+          }
+
+          if (shouldSendOffer) {
+            (async () => {
+              try {
+                const offer = await webrtcService.createOffer(peerUsername);
+                const ch = currentVoiceChannelRef.current;
+                if (ch) voiceService.sendOffer(ch, peerUsername, offer);
+              } catch (error) {
+                console.error(`[VOICE] ❌ Error creating offer for ${peerUsername}:`, error);
               }
-            } catch (error) {
-              console.error(`[VOICE] ❌ Error creating offer for ${peerUsername}:`, error);
-            }
-          })();
-        } else {
-          console.log(`[VOICE] ⏳ Waiting for offer from ${peerUsername} (they have higher ID)`);
+            })();
+          } else {
+            console.log(`[VOICE] ⏳ Waiting for offer from ${peerUsername} (they have higher ID)`);
+          }
         }
       }
 
@@ -342,109 +460,149 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
         }
         return prev;
       });
-    });
+    };
 
-    voiceService.onUserLeft((data) => {
+    const onUserLeft = (data: any) => {
       console.log("[VOICE] 👋 User left:", data.username);
       setVoiceUsers((prev) => prev.filter((u) => u.username !== data.username));
-
-      // Clean up peer connection using username
       webrtcService.closePeerConnection(data.username);
-    });
+    };
 
-    voiceService.onVoiceStateUpdate((data) => {
+    const onVoiceStateUpdate = (data: any) => {
       console.log("[VOICE] 🔄 State update:", data.username);
       setVoiceUsers((prev) =>
         prev.map((user) =>
           user.username === data.username
-            ? {
-                ...user,
-                is_muted: data.is_muted,
-                is_deaf: data.is_deaf,
-              }
+            ? { ...user, is_muted: data.is_muted, is_deaf: data.is_deaf }
             : user
         )
       );
-    });
+    };
 
-    voiceService.onVoiceError((data) => {
+    const onVoiceError = (data: { message: string }) => {
       console.error("[VOICE] ❌ Error:", data.message);
       setError(data.message);
-    });
+    };
 
-    // Listen for WebRTC signaling - FIXED: Use username as identifier
-    voiceService.onReceiveOffer(async (data) => {
+    const onSpeaking = (data: { username: string; is_speaking: boolean }) => {
+      setSpeakingUsers((prev) => {
+        const next = new Set(prev);
+        if (data.is_speaking) next.add(data.username);
+        else next.delete(data.username);
+        return next;
+      });
+    };
+
+    // ── WebRTC signaling events ──
+    // CRITICAL: Filter by `target` field so we only process messages meant for us
+
+    const onReceiveOffer = async (data: { from: string; offer: RTCSessionDescriptionInit; channel_id: number; target?: string }) => {
+      // Ignore if not targeted at us
+      if (data.target && data.target !== currentUsername) return;
+      const channelId = currentVoiceChannelRef.current;
+      if (!channelId) return;
+
       console.log("[VOICE] 📥 Received offer from:", data.from);
       try {
-        const peerUsername = data.from; // Use username as identifier
-        
-        // Create peer connection if doesn't exist
+        const peerUsername = data.from;
+
         if (!webrtcService.hasPeerConnection(peerUsername)) {
           console.log(`[VOICE] 🔗 Creating peer for offer from ${peerUsername}`);
           const pc = webrtcService.createPeerConnection(peerUsername, (candidate) => {
-            if (currentVoiceChannel) {
-              voiceService.sendIceCandidate(currentVoiceChannel, peerUsername, candidate);
-            }
+            const ch = currentVoiceChannelRef.current;
+            if (ch) voiceService.sendIceCandidate(ch, peerUsername, candidate);
           });
 
-          // Add local stream
           if (localStreamRef.current) {
-            const audioTracks = localStreamRef.current.getAudioTracks();
-            console.log(`[VOICE] 🎵 Adding ${audioTracks.length} tracks for ${peerUsername}`);
-            
-            audioTracks.forEach((track) => {
+            localStreamRef.current.getAudioTracks().forEach((track) => {
               pc.addTrack(track, localStreamRef.current!);
             });
+            console.log(`[VOICE] 🎵 Added audio tracks for ${peerUsername}`);
           }
         }
 
-        // Handle offer and send answer
-        console.log(`[VOICE] 📤 Creating answer for ${peerUsername}`);
         const answer = await webrtcService.handleOffer(peerUsername, data.offer);
-        if (currentVoiceChannel) {
-          console.log(`[VOICE] 📤 Sending answer to ${peerUsername}`);
-          voiceService.sendAnswer(currentVoiceChannel, peerUsername, answer);
-        }
+        console.log(`[VOICE] 📤 Sending answer to ${peerUsername}`);
+        voiceService.sendAnswer(channelId, peerUsername, answer);
       } catch (error) {
         console.error("[VOICE] ❌ Error handling offer:", error);
       }
-    });
+    };
 
-    voiceService.onReceiveAnswer(async (data) => {
+    const onReceiveAnswer = async (data: { from: string; answer: RTCSessionDescriptionInit; target?: string }) => {
+      if (data.target && data.target !== currentUsername) return;
       console.log("[VOICE] 📥 Received answer from:", data.from);
       try {
-        const peerUsername = data.from;
-        await webrtcService.handleAnswer(peerUsername, data.answer);
-        console.log(`[VOICE] ✅ Answer handled from ${peerUsername}`);
+        await webrtcService.handleAnswer(data.from, data.answer);
+        console.log(`[VOICE] ✅ Answer handled from ${data.from}`);
       } catch (error) {
         console.error("[VOICE] ❌ Error handling answer:", error);
       }
-    });
+    };
 
-    voiceService.onReceiveIceCandidate(async (data) => {
-      console.log("[VOICE] 📥 Received ICE from:", data.from);
+    const onReceiveIceCandidate = async (data: { from: string; candidate: RTCIceCandidateInit; target?: string }) => {
+      if (data.target && data.target !== currentUsername) return;
       try {
-        const peerUsername = data.from;
-        await webrtcService.addIceCandidate(peerUsername, data.candidate);
+        await webrtcService.addIceCandidate(data.from, data.candidate);
       } catch (error) {
         console.error("[VOICE] ❌ Error adding ICE candidate:", error);
       }
-    });
+    };
+
+    // Register all listeners directly on the socket
+    sock.on("voice_members_update", onMembersUpdate);
+    sock.on("user_joined_voice", onUserJoined);
+    sock.on("user_left_voice", onUserLeft);
+    sock.on("voice_state_update", onVoiceStateUpdate);
+    sock.on("voice_error", onVoiceError);
+    sock.on("voice:speaking", onSpeaking);
+    sock.on("receive_offer", onReceiveOffer);
+    sock.on("receive_answer", onReceiveAnswer);
+    sock.on("receive_ice_candidate", onReceiveIceCandidate);
 
     return () => {
-      voiceService.removeAllListeners();
+      sock.off("voice_members_update", onMembersUpdate);
+      sock.off("user_joined_voice", onUserJoined);
+      sock.off("user_left_voice", onUserLeft);
+      sock.off("voice_state_update", onVoiceStateUpdate);
+      sock.off("voice_error", onVoiceError);
+      sock.off("voice:speaking", onSpeaking);
+      sock.off("receive_offer", onReceiveOffer);
+      sock.off("receive_answer", onReceiveAnswer);
+      sock.off("receive_ice_candidate", onReceiveIceCandidate);
     };
-  }, [currentVoiceChannel]);
+  }, [socketReady, user]);
+
+  // ── Cleanup on tab close / refresh ──
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const ch = currentVoiceChannelRef.current;
+      if (ch) {
+        socketService.getSocket()?.emit("leave_voice_channel", { channel_id: ch });
+      }
+      webrtcService.closeAllConnections();
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
 
   const value: VoiceContextType = {
     isInVoiceChannel,
     currentVoiceChannel,
+    currentVoiceChannelName,
     voiceUsers,
     isAudioEnabled,
     isDeafened,
     localStream,
     isLoading,
     error,
+    speakingUsers,
+    isVoiceRoomModalOpen,
     joinVoiceChannel,
     leaveVoiceChannel,
     toggleAudio,
@@ -452,6 +610,7 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
     muteUser,
     unmuteUser,
     getChannelMembers,
+    setVoiceRoomModalOpen,
   };
 
   return (

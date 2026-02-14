@@ -6,9 +6,12 @@ import { FriendsProvider } from './contexts/FriendsContext';
 import { DirectMessagesProvider } from './contexts/DirectMessagesContext';
 import { RealtimeProvider } from './contexts/RealtimeContext';
 import { VoiceProvider } from './contexts/VoiceContext';
+import { CallProvider } from './contexts/CallContext';
 import { NotificationsProvider } from './contexts/NotificationsContext';
 import { AIAgentProvider } from './contexts/AIAgentContext';
 import { CommunityDashboardProvider } from './contexts/CommunityDashboardContext';
+import { MediaViewerProvider } from './contexts/MediaViewerContext';
+import MediaViewer from './components/media/MediaViewer';
 import { useRealtime } from './hooks/useRealtime';
 import AuthPageWrapper from '@/pages/AuthPageWrapper';
 import Welcome from './components/onboarding/Welcome';
@@ -19,12 +22,20 @@ import Dashboard from '@/pages/Dashboard';
 import AgentDetails from '@/pages/AgentDetails';
 import DiscoverCommunities from '@/pages/DiscoverCommunities';
 import Home from '@/pages/Home';
+import NotFound from '@/pages/NotFound';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import ForgotPassword from './pages/ForgotPassword';
 import OtpVerification from './pages/OtpVerification';
 import ResetPassword from './pages/ResetPassword';
+import VerifyEmail from './pages/VerifyEmail';
 import { Toaster } from './components/ui/toaster';
 import { ModerationToastListener } from './components/ModerationToast';
+import IncomingCallOverlay from './components/call/IncomingCallOverlay';
+import OutgoingCallOverlay from './components/call/OutgoingCallOverlay';
+import CallScreen from './components/call/CallScreen';
+import { CallAudioRenderer } from './components/call/CallScreen';
+import VoiceDock from './components/voice/VoiceDock';
+import VoiceRoomModal from './components/voice/VoiceRoomModal';
 // Admin Dashboard Pages
 import {
   AdminLayout,
@@ -101,6 +112,18 @@ function AppRouter() {
   // Returning user or onboarding complete - show main app with real-time support
   return (
     <Routes>
+      {/* Community routes with dynamic segments */}
+      <Route path="/community/:communityId/channel/:channelId" element={
+        <MainLayout>
+          <Dashboard />
+        </MainLayout>
+      } />
+      <Route path="/community/:communityId" element={
+        <MainLayout>
+          <Dashboard />
+        </MainLayout>
+      } />
+      {/* Standalone pages */}
       <Route path="/discover" element={
         <MainLayout>
           <DiscoverCommunities />
@@ -111,9 +134,15 @@ function AppRouter() {
           <AgentDetails />
         </MainLayout>
       } />
-      <Route path="/*" element={
+      {/* Views handled internally by MainLayout */}
+      <Route path="/friends" element={<MainLayout>{null}</MainLayout>} />
+      <Route path="/settings" element={<MainLayout>{null}</MainLayout>} />
+      <Route path="/dm/:userId" element={<MainLayout>{null}</MainLayout>} />
+      <Route path="/" element={<MainLayout>{null}</MainLayout>} />
+      {/* 404 fallback */}
+      <Route path="*" element={
         <MainLayout>
-          {communities.length === 0 ? <Home /> : <Dashboard />}
+          <NotFound />
         </MainLayout>
       } />
     </Routes>
@@ -131,37 +160,49 @@ export default function App() {
               <FriendsProvider>
                 <DirectMessagesProvider>
                   <VoiceProvider>
+                    <CallProvider>
                     <AIAgentProvider>
-                      <BrowserRouter>
-                        <ModerationToastListener />
-                        <Routes>
-                          <Route path="/forgot-password" element={<ForgotPassword />} />
-                          <Route path="/otp-verification" element={<OtpVerification />} />
-                          <Route path="/reset-password" element={<ResetPassword />} />
-                          {/* Admin Dashboard Routes (wrapped with CommunityDashboardProvider) */}
-                          <Route path="/admin" element={
-                            <CommunityDashboardProvider>
-                              <AdminLayout />
-                            </CommunityDashboardProvider>
-                          }>
-                            <Route index element={<AdminOverview />} />
-                            <Route path="moderation">
-                              <Route path="flagged" element={<FlaggedContent />} />
-                              <Route path="blocked" element={<BlockedUsers />} />
+                      <MediaViewerProvider>
+                        <BrowserRouter>
+                          <ModerationToastListener />
+                          <Routes>
+                            <Route path="/forgot-password" element={<ForgotPassword />} />
+                            <Route path="/otp-verification" element={<OtpVerification />} />
+                            <Route path="/reset-password" element={<ResetPassword />} />
+                            <Route path="/verify-email" element={<VerifyEmail />} />
+                            {/* Admin Dashboard Routes (wrapped with CommunityDashboardProvider) */}
+                            <Route path="/admin" element={
+                              <CommunityDashboardProvider>
+                                <AdminLayout />
+                              </CommunityDashboardProvider>
+                            }>
+                              <Route index element={<AdminOverview />} />
+                              <Route path="moderation">
+                                <Route path="flagged" element={<FlaggedContent />} />
+                                <Route path="blocked" element={<BlockedUsers />} />
+                              </Route>
+                              <Route path="users" element={<UserManagement />} />
+                              <Route path="analytics">
+                                <Route path="health" element={<CommunityHealth />} />
+                                <Route path="engagement" element={<EngagementAnalytics />} />
+                                <Route path="mood" element={<MoodTrends />} />
+                              </Route>
+                              <Route path="reports" element={<Reports />} />
                             </Route>
-                            <Route path="users" element={<UserManagement />} />
-                            <Route path="analytics">
-                              <Route path="health" element={<CommunityHealth />} />
-                              <Route path="engagement" element={<EngagementAnalytics />} />
-                              <Route path="mood" element={<MoodTrends />} />
-                            </Route>
-                            <Route path="reports" element={<Reports />} />
-                          </Route>
-                          <Route path="/*" element={<AppRouter />} />
-                        </Routes>
-                        <Toaster />
-                      </BrowserRouter>
+                            <Route path="/*" element={<AppRouter />} />
+                          </Routes>
+                          <MediaViewer />
+                          <VoiceDock />
+                          <VoiceRoomModal />
+                          <IncomingCallOverlay />
+                          <OutgoingCallOverlay />
+                          <CallScreen />
+                          <CallAudioRenderer />
+                          <Toaster />
+                        </BrowserRouter>
+                      </MediaViewerProvider>
                     </AIAgentProvider>
+                    </CallProvider>
                   </VoiceProvider>
                 </DirectMessagesProvider>
               </FriendsProvider>

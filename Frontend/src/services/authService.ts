@@ -13,7 +13,9 @@ type LoginPayload = {
   password: string;
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { API_SERVER } from '@/config/api';
+
+const API_BASE_URL = API_SERVER;
 const AUTH_PREFIX = '/api';
 
 interface ApiResponse {
@@ -30,16 +32,19 @@ export async function signup(payload: SignupPayload) {
 export async function login(payload: LoginPayload) {
   const data: any = await api.post(`${AUTH_PREFIX}/login`, payload, { noAuth: true });
   if (data?.token) localStorage.setItem('token', data.token);
+  if (data?.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
   return data;
 }
 
 export async function logout() {
   try {
-    await api.post(`${AUTH_PREFIX}/logout`);
+    const refreshToken = localStorage.getItem('refresh_token');
+    await api.post(`${AUTH_PREFIX}/logout`, refreshToken ? { refresh_token: refreshToken } : undefined);
   } catch (e) {
     console.error('Logout failed:', e);
   } finally {
     localStorage.removeItem('token');
+    localStorage.removeItem('refresh_token');
   }
 }
 
@@ -94,6 +99,30 @@ export async function resetPassword(email: string, otp: string, new_password: st
   return data;
 }
 
+// Verify email via token (called from verification link)
+export async function verifyEmail(token: string, email: string): Promise<ApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`, {
+    method: 'GET',
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Verification failed');
+  return data;
+}
+
+// Resend verification email
+export async function resendVerification(email: string): Promise<ApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/resend-verification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Failed to resend verification');
+  return data;
+}
+
 export async function updateProfile(data: { display_name?: string; bio?: string; avatar_url?: string; avatar?: File; remove_avatar?: boolean }) {
   // If avatar file is provided, use FormData
   if (data.avatar || data.remove_avatar) {
@@ -105,7 +134,7 @@ export async function updateProfile(data: { display_name?: string; bio?: string;
     if (data.remove_avatar) formData.append('remove_avatar', 'true');
     
     const token = localStorage.getItem('token');
-    const response = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:5000'}${AUTH_PREFIX}/user/profile`, {
+    const response = await fetch(`${API_SERVER}${AUTH_PREFIX}/user/profile`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -136,6 +165,25 @@ export const authService = {
   requestPasswordReset,
   verifyOtp,
   resetPassword,
+  verifyEmail,
+  resendVerification,
+  getSessions,
+  revokeSession,
+  revokeAllSessions,
 };
 
 export default authService;
+
+// ─── Session Management ───────────────────────────────────────────
+
+export async function getSessions() {
+  return await api.get(`${AUTH_PREFIX}/sessions`);
+}
+
+export async function revokeSession(sessionId: number) {
+  return await api.post(`${AUTH_PREFIX}/sessions/revoke`, { session_id: sessionId });
+}
+
+export async function revokeAllSessions() {
+  return await api.post(`${AUTH_PREFIX}/sessions/revoke-all`);
+}
