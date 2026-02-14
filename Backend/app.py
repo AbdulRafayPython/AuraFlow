@@ -1,6 +1,12 @@
-# Eventlet monkey-patch MUST happen before all other imports
-import eventlet
-eventlet.monkey_patch()
+# Eventlet monkey-patch — only when running directly (wsgi.py handles production)
+import os
+if os.getenv('RENDER') is None:
+    # Local dev: patch here; Production: wsgi.py patches before importing this module
+    try:
+        import eventlet
+        eventlet.monkey_patch()
+    except ImportError:
+        pass
 
 import os
 from flask import Flask
