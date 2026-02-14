@@ -1,4 +1,4 @@
-# Eventlet monkey-patch MUST happen before ALL other imports
+# Eventlet monkey-patch MUST happen before all other imports
 import eventlet
 eventlet.monkey_patch()
 

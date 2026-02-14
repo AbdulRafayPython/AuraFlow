@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import authService from "@/services/authService";
 import { useAuth } from "@/contexts/AuthContext";
 import AuthPage from "./AuthPage";
@@ -30,6 +31,7 @@ function isMeResponse(data: unknown): data is MeResponse {
 
 export default function AuthPageWrapper() {
   const { setUser, setIsAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
   const syncUserFromServer = useCallback(async () => {
     try {
@@ -66,9 +68,10 @@ export default function AuthPageWrapper() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [syncUserFromServer]);
 
-  const handleAuth = () => {
-    // After login/signup, sync fresh data
-    syncUserFromServer();
+  const handleAuth = async () => {
+    // After login/signup, sync fresh data then always navigate to home
+    await syncUserFromServer();
+    navigate('/', { replace: true });
   };
 
   return <AuthPage onAuth={handleAuth} />;
