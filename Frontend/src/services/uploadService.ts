@@ -85,6 +85,7 @@ class UploadService {
       if (token) {
         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       }
+      xhr.setRequestHeader('ngrok-skip-browser-warning', 'true');
 
       // Track upload progress
       if (onProgress) {

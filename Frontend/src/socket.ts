@@ -20,7 +20,10 @@ export const socket: Socket = io(API_BASE, {
   transports: ['websocket', 'polling'],
   forceNew: false,
   rejectUnauthorized: false,
-  timeout: 20000
+  timeout: 20000,
+  extraHeaders: {
+    'ngrok-skip-browser-warning': 'true',
+  },
 });
 
 // Function to connect with token

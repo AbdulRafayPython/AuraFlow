@@ -74,7 +74,7 @@ CORS(app,
         r"/*": {
             "origins": cors_origins,
             "supports_credentials": True,
-            "allow_headers": ["Content-Type", "Authorization"],
+            "allow_headers": ["Content-Type", "Authorization", "ngrok-skip-browser-warning"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "max_age": 3600
         }

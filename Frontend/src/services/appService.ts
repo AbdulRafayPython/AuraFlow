@@ -24,6 +24,7 @@ async function refreshAccessToken(): Promise<string | null> {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${refreshToken}`,
+        'ngrok-skip-browser-warning': 'true',
       },
     });
 
@@ -63,7 +64,9 @@ function tryRefresh(): Promise<string | null> {
 
 async function request(path: string, opts: { method?: string; body?: any; noAuth?: boolean; _retry?: boolean } = {}) {
   const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    'ngrok-skip-browser-warning': 'true',
+  };
 
   let body = undefined as undefined | string | FormData;
   if (opts.body !== undefined && opts.body !== null) {
