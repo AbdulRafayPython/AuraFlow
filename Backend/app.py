@@ -59,9 +59,15 @@ app = Flask(__name__)
 Compress(app)
 
 # CORS Configuration
-# In production: restrict to FRONTEND_URL; in dev: allow all
+# In production: restrict to FRONTEND_URL; in dev: allow all + ngrok + Vercel
 FRONTEND_URL = os.getenv('FRONTEND_URL', '')
-cors_origins = [FRONTEND_URL] if FRONTEND_URL else "*"
+if FRONTEND_URL:
+    cors_origins = [
+        FRONTEND_URL,
+        "https://auraflow-ai.vercel.app",
+    ]
+else:
+    cors_origins = "*"
 
 CORS(app, 
      resources={
