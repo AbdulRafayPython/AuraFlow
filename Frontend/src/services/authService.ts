@@ -64,7 +64,7 @@ export async function updateFirstLogin() {
 export async function requestPasswordReset(email: string): Promise<ApiResponse> {
   const response = await fetch(`${API_BASE_URL}/api/forgot-password`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
     body: JSON.stringify({ email }),
   });
 
@@ -77,7 +77,7 @@ export async function requestPasswordReset(email: string): Promise<ApiResponse> 
 export async function verifyOtp(email: string, otp: string): Promise<ApiResponse> {
   const response = await fetch(`${API_BASE_URL}/api/verify-otp`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
     body: JSON.stringify({ email, otp }),
   });
 
@@ -90,7 +90,7 @@ export async function verifyOtp(email: string, otp: string): Promise<ApiResponse
 export async function resetPassword(email: string, otp: string, new_password: string): Promise<ApiResponse> {
   const response = await fetch(`${API_BASE_URL}/api/reset-password`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
     body: JSON.stringify({ email, otp, new_password }),
   });
 
@@ -103,6 +103,7 @@ export async function resetPassword(email: string, otp: string, new_password: st
 export async function verifyEmail(token: string, email: string): Promise<ApiResponse> {
   const response = await fetch(`${API_BASE_URL}/api/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`, {
     method: 'GET',
+    headers: { 'ngrok-skip-browser-warning': 'true' },
   });
 
   const data = await response.json();
@@ -114,7 +115,7 @@ export async function verifyEmail(token: string, email: string): Promise<ApiResp
 export async function resendVerification(email: string): Promise<ApiResponse> {
   const response = await fetch(`${API_BASE_URL}/api/resend-verification`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
     body: JSON.stringify({ email }),
   });
 
