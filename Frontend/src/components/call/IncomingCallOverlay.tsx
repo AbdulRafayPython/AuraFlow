@@ -1,7 +1,7 @@
 // components/call/IncomingCallOverlay.tsx — Premium incoming call notification
 // Full-screen overlay with blur, animated ring pulse, elegant accept/reject
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Phone, PhoneOff, Video } from 'lucide-react';
 import { useCall } from '@/contexts/CallContext';
 import { getAvatarUrl } from '@/lib/utils';
@@ -9,33 +9,37 @@ import { getAvatarUrl } from '@/lib/utils';
 const IncomingCallOverlay: React.FC = () => {
   const { callState, callType, remotePeer, acceptCall, rejectCall } = useCall();
   const [visible, setVisible] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Animate in
+  // Animate in (sound is handled by CallContext)
   useEffect(() => {
     if (callState === 'ringing') {
       requestAnimationFrame(() => setVisible(true));
-      // Play ringtone
-      try {
-        audioRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQ==');
-        audioRef.current.loop = true;
-        audioRef.current.volume = 0.4;
-        audioRef.current.play().catch(() => {});
-      } catch {}
+      // Request browser notification permission for future calls
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+      // Show browser notification when tab is not focused
+      if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+        try {
+          const n = new Notification(`Incoming ${callType === 'video' ? 'Video' : 'Audio'} Call`, {
+            body: `${remotePeer?.display_name || remotePeer?.username || 'Someone'} is calling you`,
+            icon: remotePeer?.avatar_url || '/AuraflowLogo.png',
+            tag: 'incoming-call',
+            requireInteraction: true,
+          });
+          // Focus window on click
+          n.onclick = () => { window.focus(); n.close(); };
+          // Auto-close when call state changes
+          const check = setInterval(() => {
+            if (callState !== 'ringing') { n.close(); clearInterval(check); }
+          }, 500);
+          setTimeout(() => { n.close(); clearInterval(check); }, 30000);
+        } catch {}
+      }
     } else {
       setVisible(false);
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
     }
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-    };
-  }, [callState]);
+  }, [callState, callType, remotePeer]);
 
   if (callState !== 'ringing' || !remotePeer) return null;
 

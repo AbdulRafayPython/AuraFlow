@@ -7,16 +7,17 @@ import {
   Settings as SettingsIcon, Shield, Lock, Bell, Palette, Moon, Sun, Volume2, 
   Download, Ban, Trash2, AlertCircle, User as UserIcon, Camera, X, Save, Mail, 
   Check, Sparkles, ChevronRight, Edit3, Globe, Eye, EyeOff, Key, Smartphone,
-  MessageSquare, Users, Zap, Monitor, VolumeX, Volume1, ArrowRight, RefreshCw
+  MessageSquare, Users, Zap, Monitor, VolumeX, Volume1, ArrowRight, RefreshCw, Bot
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
+import PersonalAgentsPanel from "@/components/ai-agents/PersonalAgentsPanel";
 
 export default function Settings() {
   const { isDarkMode, toggleTheme, currentTheme, setTheme, themes } = useTheme();
   const isBasicTheme = currentTheme === 'basic';
   const { blockedUsers, getBlockedUsers, unblockUser } = useFriends();
   const { user, updateProfile } = useAuth();
-  const [activeTab, setActiveTab] = useState<"profile" | "appearance" | "general" | "privacy" | "notifications" | "blocked">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "appearance" | "general" | "privacy" | "notifications" | "blocked" | "agents">("profile");
   const [isLoadingBlocked, setIsLoadingBlocked] = useState(false);
   const [showUnblockConfirm, setShowUnblockConfirm] = useState(false);
   const [selectedBlockedUserId, setSelectedBlockedUserId] = useState<number | null>(null);
@@ -156,6 +157,7 @@ export default function Settings() {
     { id: "general" as const, label: "General", icon: SettingsIcon, description: "Language & accessibility" },
     { id: "privacy" as const, label: "Privacy", icon: Shield, description: "Control your privacy" },
     { id: "notifications" as const, label: "Notifications", icon: Bell, description: "Manage alerts" },
+    { id: "agents" as const, label: "AI Agents", icon: Bot, description: "Personal AI assistants" },
     { id: "blocked" as const, label: "Blocked", icon: Ban, count: blockedUsers.length, description: "Blocked users" },
   ];
 
@@ -939,6 +941,7 @@ export default function Settings() {
           {activeTab === "general" && <GeneralSettings />}
           {activeTab === "privacy" && <PrivacySettings />}
           {activeTab === "notifications" && <NotificationSettings />}
+          {activeTab === "agents" && <PersonalAgentsPanel />}
           {activeTab === "blocked" && <BlockedUsersSettings />}
         </div>
       </div>

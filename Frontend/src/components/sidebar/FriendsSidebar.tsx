@@ -17,6 +17,7 @@ import { statusService } from "@/services/statusService";
 import { socket } from "@/socket";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDirectMessages } from "@/contexts/DirectMessagesContext";
+import { useUnreadCounts } from "@/hooks/useUnreadCounts";
 import authService from "@/services/authService";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 import { API_SERVER } from "@/config/api";
@@ -67,6 +68,10 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     userStatuses,
   } = useRealtime();
   const { conversations } = useDirectMessages();
+  const { dms: dmUnreads, communities: communityUnreads, markDMRead, getDMUnread, getCommunityUnread } = useUnreadCounts();
+
+  // Bulk presence from socket (friend_id -> status string)
+  const [bulkPresence, setBulkPresence] = useState<Record<number, string>>({});
 
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -106,6 +111,20 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showProfileMenu]);
+
+  // Subscribe to bulk friend presence snapshots
+  useEffect(() => {
+    const unsub = socketService.onFriendsBulkStatus((data: Record<number, string>) => {
+      setBulkPresence(data);
+    });
+    return unsub;
+  }, []);
+
+  // Helper: resolve friend presence (prefer bulk socket data, fallback to userStatuses map)
+  const getFriendPresence = (username: string, friendId?: number): string => {
+    if (friendId && bulkPresence[friendId]) return bulkPresence[friendId];
+    return userStatuses.get(username) || 'offline';
+  };
 
   const handleLogout = async () => {
     setShowProfileMenu(false); // Close the menu first
@@ -361,11 +380,19 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
             const isSelected = selectedCommunity === communityId;
             const logoUrl = getCommunityLogoUrl(community);
             const initials = community.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+            const iconUnread = getCommunityUnread(community.id);
+            console.log(`[SIDEBAR] 🏘️ Rendering community ${community.id} (${community.name}): iconUnread=${iconUnread}, isSelected=${isSelected}`);
 
             return (
               <div key={community.id} className="relative group w-full flex justify-center transition-all duration-300">
                 {isSelected && (
                   <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded-r-full transition-all duration-300" />
+                )}
+                {/* Unread badge on community icon */}
+                {iconUnread > 0 && !isSelected && (
+                  <div className="absolute -top-1 right-1 min-w-[18px] h-[18px] flex items-center justify-center px-1 rounded-full text-[9px] font-bold bg-red-500 text-white border-2 border-[hsl(var(--theme-sidebar-bg))] z-10 pointer-events-none">
+                    {iconUnread > 99 ? '99+' : iconUnread}
+                  </div>
                 )}
                 <button
                   onClick={() => handleCommunityClick(communityId)}
@@ -628,13 +655,15 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                       })
                       .slice(0, 5)
                       .map((conv) => {
-                        const status = userStatuses.get(conv.user.username) || 'offline';
+                        const status = getFriendPresence(conv.user.username, conv.user_id);
                         const isActive = currentFriend?.id === conv.user_id;
+                        const dmUnread = getDMUnread(conv.user_id);
                         return (
                           <button
                             key={conv.user_id}
                             onClick={() => {
                               selectFriend(conv.user_id);
+                              markDMRead(conv.user_id);
                               navigate(`/dm/${conv.user_id}`);
                             }}
                             className={`w-full text-left px-3 py-2.5 rounded-xl text-sm flex items-center gap-3 transition-all duration-200 group ${
@@ -663,15 +692,21 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                               <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[hsl(var(--theme-bg-secondary))] ${getStatusColor(status)} ${isBasicTheme ? '' : (statusGlow[status as keyof typeof statusGlow] || '')}`} />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="truncate font-semibold text-sm text-[hsl(var(--theme-text-primary))]">
+                              <div className={`truncate font-semibold text-sm ${dmUnread > 0 ? 'text-[hsl(var(--theme-text-primary))]' : 'text-[hsl(var(--theme-text-primary))]'}`}>
                                 {conv.user.display_name || conv.user.username}
                               </div>
                               {conv.last_message && (
-                                <div className="text-xs truncate text-[hsl(var(--theme-text-muted))]">
+                                <div className={`text-xs truncate ${dmUnread > 0 ? 'font-semibold text-[hsl(var(--theme-text-secondary))]' : 'text-[hsl(var(--theme-text-muted))]'}`}>
                                   {conv.last_message.sender_id === currentUser?.id ? 'You: ' : ''}{conv.last_message.content}
                                 </div>
                               )}
                             </div>
+                            {/* DM unread badge */}
+                            {dmUnread > 0 && (
+                              <span className="flex-shrink-0 min-w-[20px] h-5 flex items-center justify-center px-1.5 rounded-full text-[10px] font-bold bg-[hsl(var(--theme-accent-primary))] text-white">
+                                {dmUnread > 99 ? '99+' : dmUnread}
+                              </span>
+                            )}
                           </button>
                         );
                       })
@@ -702,7 +737,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                     </p>
                   ) : (
                     filteredFriends.map((friend) => {
-                      const status = userStatuses.get(friend.username) || friend.status;
+                      const status = getFriendPresence(friend.username, friend.id);
                       return (
                         <button
                           key={friend.id}
@@ -778,6 +813,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                     filteredCommunities.map((community, index) => {
                       const isSelected = selectedCommunity === community.id.toString();
                       const logoUrl = getCommunityLogoUrl(community);
+                      const communityUnread = getCommunityUnread(community.id);
                       return (
                         <button 
                           key={community.id} 
@@ -813,6 +849,12 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                               </div>
                             )}
                           </div>
+                          {/* Community unread badge */}
+                          {communityUnread > 0 && !isSelected && (
+                            <span className="flex-shrink-0 min-w-[20px] h-5 flex items-center justify-center px-1.5 rounded-full text-[10px] font-bold bg-[hsl(var(--theme-accent-primary))] text-white">
+                              {communityUnread > 99 ? '99+' : communityUnread}
+                            </span>
+                          )}
                         </button>
                       );
                     })

@@ -147,7 +147,6 @@ def login():
             # ── END ────────────────────────────────────────────────
 
             token = create_access_token(identity=row['username'])
-            cur.execute("UPDATE users SET token = %s WHERE username = %s", (token, row['username']))
             
             # Check if user is admin (owner of any community)
             cur.execute(
@@ -225,8 +224,6 @@ def logout():
             user_row = cur.fetchone()
             user_id = user_row['id'] if user_row else None
 
-            # Clear stored token (backward compat)
-            cur.execute("UPDATE users SET token = NULL WHERE username = %s", (current_user,))
         conn.commit()
     finally:
         conn.close()
@@ -673,16 +670,6 @@ def refresh():
                 'code': 'SESSION_COMPROMISED'
             }), 401
         return jsonify({'error': 'Invalid refresh token'}), 401
-
-    # Update users.token for backward compat
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE users SET token = %s WHERE username = %s",
-                        (new_access_token, current_user))
-        conn.commit()
-    finally:
-        conn.close()
 
     return jsonify({
         'token': new_access_token,

@@ -21,6 +21,7 @@ interface RealtimeContextType {
   selectFriend: (friendId: number) => void;
   messages: Message[];
   sendMessage: (content: string, messageType?: 'text' | 'image' | 'file', replyTo?: number) => Promise<SendMessageResponse | undefined>;
+  updateMessageField: (messageId: number, fields: Partial<Message>) => void;
   loadMoreMessages: () => Promise<void>;
   typingUsers: TypingUser[];
   sendTyping: () => void;
@@ -221,6 +222,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       messageIdsRef.current.add(messageId);
       setMessages((prev) => [...prev, incomingMessage]);
     });
+
+    // No cleanup needed for updateMessageField – it's defined below
 
     const unsubscribeStatus = socketService.onUserStatus((status) => {
       console.log('[REALTIME] User status update:', status);
@@ -471,6 +474,17 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       console.log('[REALTIME] ✅ Custom event dispatched');
     });
 
+    // Listen for ephemeral summary events (private to sender)
+    const unsubscribeSummaryGenerating = socketService.onSummaryGenerating((data) => {
+      console.log('[REALTIME] 🤖 Summary generating for channel:', data.channel_id);
+      window.dispatchEvent(new CustomEvent('summary_generating', { detail: data }));
+    });
+
+    const unsubscribeSummaryResult = socketService.onSummaryResult((data) => {
+      console.log('[REALTIME] 📋 Summary result for channel:', data.channel_id);
+      window.dispatchEvent(new CustomEvent('summary_result', { detail: data }));
+    });
+
     return () => {
       console.log('[REALTIME] Cleaning up socket connection');
       clearInterval(checkConnection);
@@ -485,6 +499,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       unsubscribeChannel();
       unsubscribeUserBlocked();
       unsubscribeCommandResult();
+      unsubscribeSummaryGenerating();
+      unsubscribeSummaryResult();
 
       typingTimeoutRefs.current.forEach(timeout => clearTimeout(timeout));
       typingTimeoutRefs.current.clear();
@@ -702,6 +718,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Granular message field updater — avoids full refetch
+  const updateMessageField = useCallback((messageId: number, fields: Partial<Message>) => {
+    setMessages(prev => prev.map(m => m.id === messageId ? { ...m, ...fields } : m));
+  }, []);
+
   const value: RealtimeContextType = {
     isConnected,
     communities,
@@ -716,6 +737,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     selectFriend,
     messages,
     sendMessage,
+    updateMessageField,
     loadMoreMessages,
     typingUsers,
     sendTyping,

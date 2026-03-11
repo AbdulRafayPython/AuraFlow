@@ -59,34 +59,33 @@ app = Flask(__name__)
 Compress(app)
 
 # CORS Configuration
-# In production: restrict to FRONTEND_URL; in dev: allow all + ngrok + Vercel
-FRONTEND_URL = os.getenv('FRONTEND_URL', '')
-if FRONTEND_URL:
-    cors_origins = [
-        FRONTEND_URL,
-        "https://auraflow-ai.vercel.app",
-    ]
-else:
-    cors_origins = "*"
-
+# Allow all origins (ngrok, Vercel, localhost, etc.)
 CORS(app, 
-     resources={
-        r"/*": {
-            "origins": cors_origins,
-            "supports_credentials": True,
-            "allow_headers": ["Content-Type", "Authorization", "ngrok-skip-browser-warning"],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "max_age": 3600
-        }
-    },
-    expose_headers=["Content-Type", "Authorization"]
+     resources={r"/*": {"origins": "*"}},
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization", "ngrok-skip-browser-warning"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     expose_headers=["Content-Type", "Authorization"],
+     max_age=3600
 )
 
-# Handle OPTIONS requests (preflight)
+# Ensure CORS headers are on EVERY response (including errors, 404s, preflight)
+@app.after_request
+def add_cors_headers(response):
+    origin = request.headers.get('Origin', '*')
+    response.headers['Access-Control-Allow-Origin'] = origin
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, ngrok-skip-browser-warning'
+    response.headers['Access-Control-Max-Age'] = '3600'
+    return response
+
+# Handle OPTIONS preflight requests
 @app.before_request
 def handle_preflight():
     if request.method == 'OPTIONS':
-        return {}, 200
+        response = app.make_default_options_response()
+        return response
 
 # JWT Configuration
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "super-secret-key")
@@ -270,7 +269,12 @@ def internal_error(error):
 # ======================================================================
 @app.route("/api/health", methods=["GET"])
 def health():
-    return {"status": "ok"}, 200
+    from services.redis_client import redis_health
+    redis_status = redis_health()
+    return {
+        "status": "ok",
+        "redis": redis_status,
+    }, 200
 
 # ======================================================================
 # DEBUG: Socket Room Test
@@ -402,6 +406,28 @@ monitor_thread = threading.Thread(target=monitor_inactive_users, daemon=True)
 monitor_thread.start()
 print("[MONITOR] Started inactive user monitoring thread")
 
+# ── Initialize messaging enhancement services ────────────────────────
+try:
+    from services.pin_timer import init as init_pin_timer
+    init_pin_timer(socketio)
+    print("[PIN_TIMER] Pin timer service initialized")
+except Exception as e:
+    print(f"[PIN_TIMER] Failed to initialize: {e}")
+
+try:
+    from services.unread_tracker import init as init_unread_tracker
+    init_unread_tracker(socketio)
+    print("[UNREAD] Unread tracker service initialized")
+except Exception as e:
+    print(f"[UNREAD] Failed to initialize: {e}")
+
+try:
+    from services.presence import init as init_presence
+    init_presence(socketio)
+    print("[PRESENCE] Presence service initialized")
+except Exception as e:
+    print(f"[PRESENCE] Failed to initialize: {e}")
+
 # ── Session cleanup thread ───────────────────────────────────────────
 def session_cleanup_job():
     """Periodically clean up expired refresh tokens and blocklist entries."""
@@ -417,6 +443,139 @@ def session_cleanup_job():
 session_thread = threading.Thread(target=session_cleanup_job, daemon=True)
 session_thread.start()
 print("[SESSION] Started session cleanup thread")
+
+# ── User summary schedule checker (runs every 60s, no Celery needed) ─
+def user_schedule_checker():
+    """Check for due user summary schedules and generate summaries."""
+    import time as _time
+    _time.sleep(30)  # Wait for full server startup
+    while True:
+        try:
+            _time.sleep(60)  # Check every minute
+            from datetime import datetime as dt, timezone as tz
+            from zoneinfo import ZoneInfo
+            now_utc = dt.now(tz.utc)
+
+            conn = None
+            try:
+                conn = get_db_connection()
+                with conn.cursor() as cur:
+                    # Fetch ALL active schedules with their timezone
+                    cur.execute("""
+                        SELECT s.id, s.user_id, s.channel_id, s.community_id,
+                               s.schedule_time, s.timezone,
+                               s.last_triggered_at,
+                               c.name AS channel_name
+                        FROM user_summary_schedules s
+                        JOIN channels c ON c.id = s.channel_id
+                        WHERE s.is_active = TRUE
+                    """)
+                    all_schedules = cur.fetchall()
+
+                # Filter in Python using proper timezone conversion
+                due = []
+                for sched in all_schedules:
+                    try:
+                        user_tz = ZoneInfo(sched['timezone'] or 'UTC')
+                    except Exception:
+                        user_tz = ZoneInfo('UTC')
+
+                    # Convert current UTC time to the user's local timezone
+                    user_now = now_utc.astimezone(user_tz)
+                    user_current_time = user_now.strftime('%H:%M')
+
+                    # Parse stored schedule_time (timedelta from MySQL TIME)
+                    sched_time = sched['schedule_time']
+                    if hasattr(sched_time, 'total_seconds'):
+                        # MySQL TIME comes as timedelta
+                        total_secs = int(sched_time.total_seconds())
+                        sched_hh_mm = f"{total_secs // 3600:02d}:{(total_secs % 3600) // 60:02d}"
+                    else:
+                        sched_hh_mm = str(sched_time)[:5]
+
+                    if user_current_time != sched_hh_mm:
+                        continue
+
+                    # Check if already triggered today in the user's local date
+                    last = sched['last_triggered_at']
+                    if last:
+                        if hasattr(last, 'replace'):
+                            last_aware = last.replace(tzinfo=tz.utc)
+                        else:
+                            last_aware = dt.fromisoformat(str(last)).replace(tzinfo=tz.utc)
+                        last_local = last_aware.astimezone(user_tz).date()
+                        if last_local >= user_now.date():
+                            continue
+
+                    due.append(sched)
+
+                if not due:
+                    continue
+
+                print(f"[USER_SCHEDULES] Found {len(due)} due schedule(s) at {now_utc.strftime('%H:%M')} UTC")
+
+                for schedule in due:
+                    try:
+                        from agents.summarizer import SummarizerAgent
+                        from tasks.agent_tasks import _format_summary_as_bot_message
+                        summarizer = SummarizerAgent()
+                        result = summarizer.summarize_channel(
+                            channel_id=schedule['channel_id'],
+                            message_count=100,
+                            user_id=schedule['user_id']
+                        )
+                        if not result.get('success'):
+                            continue
+
+                        content = _format_summary_as_bot_message(result, schedule['channel_name'])
+
+                        conn2 = get_db_connection()
+                        try:
+                            with conn2.cursor() as cur2:
+                                cur2.execute("""
+                                    INSERT INTO scheduled_summaries
+                                        (schedule_id, user_id, channel_id, community_id, content, method, message_count)
+                                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                """, (
+                                    schedule['id'], schedule['user_id'], schedule['channel_id'],
+                                    schedule['community_id'], content,
+                                    result.get('method', 'extractive'), result.get('message_count', 0)
+                                ))
+                                cur2.execute("UPDATE user_summary_schedules SET last_triggered_at = NOW() WHERE id = %s", (schedule['id'],))
+                                conn2.commit()
+
+                            # Deliver via socket if online
+                            from routes.sockets import user_socket_sessions
+                            with conn2.cursor() as cur2:
+                                cur2.execute("SELECT username FROM users WHERE id = %s", (schedule['user_id'],))
+                                u = cur2.fetchone()
+                            if u:
+                                user_sid = user_socket_sessions.get(u['username'])
+                                if user_sid:
+                                    socketio.emit('summary_result', {
+                                        'channel_id': schedule['channel_id'],
+                                        'content': content,
+                                        'method': result.get('method', 'extractive'),
+                                        'message_count': result.get('message_count', 0),
+                                        'created_at': now_utc.isoformat(),
+                                        'scheduled': True,
+                                    }, room=user_sid, namespace='/')
+                                    print(f"[USER_SCHEDULES] ✅ Delivered to {u['username']}")
+                        finally:
+                            conn2.close()
+
+                        print(f"[USER_SCHEDULES] ✅ Summary for user {schedule['user_id']}, #{schedule['channel_name']}")
+                    except Exception as sched_err:
+                        print(f"[USER_SCHEDULES] ❌ Error: {sched_err}")
+            finally:
+                if conn:
+                    conn.close()
+        except Exception as e:
+            print(f"[USER_SCHEDULES] Loop error: {e}")
+
+schedule_thread = threading.Thread(target=user_schedule_checker, daemon=True)
+schedule_thread.start()
+print("[USER_SCHEDULES] Started schedule checker thread")
 
 # ======================================================================
 # RUN APPLICATION

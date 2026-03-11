@@ -9,6 +9,7 @@ import { VoiceProvider } from './contexts/VoiceContext';
 import { CallProvider } from './contexts/CallContext';
 import { NotificationsProvider } from './contexts/NotificationsContext';
 import { AIAgentProvider } from './contexts/AIAgentContext';
+import { AgentModalsProvider } from './contexts/AgentModalsContext';
 import { CommunityDashboardProvider } from './contexts/CommunityDashboardContext';
 import { MediaViewerProvider } from './contexts/MediaViewerContext';
 import MediaViewer from './components/media/MediaViewer';
@@ -21,7 +22,6 @@ import MainLayout from './components/layout/MainLayout';
 import Dashboard from '@/pages/Dashboard';
 import AgentDetails from '@/pages/AgentDetails';
 import DiscoverCommunities from '@/pages/DiscoverCommunities';
-import Home from '@/pages/Home';
 import NotFound from '@/pages/NotFound';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import ForgotPassword from './pages/ForgotPassword';
@@ -36,6 +36,7 @@ import CallScreen from './components/call/CallScreen';
 import { CallAudioRenderer } from './components/call/CallScreen';
 import VoiceDock from './components/voice/VoiceDock';
 import VoiceRoomModal from './components/voice/VoiceRoomModal';
+import FaviconBadge from './components/FaviconBadge';
 // Admin Dashboard Pages
 import {
   AdminLayout,
@@ -162,6 +163,7 @@ export default function App() {
                   <VoiceProvider>
                     <CallProvider>
                     <AIAgentProvider>
+                      <AgentModalsProvider>
                       <MediaViewerProvider>
                         <BrowserRouter>
                           <ModerationToastListener />
@@ -192,6 +194,7 @@ export default function App() {
                             <Route path="/*" element={<AppRouter />} />
                           </Routes>
                           <MediaViewer />
+                          <FaviconBadge />
                           <VoiceDock />
                           <VoiceRoomModal />
                           <IncomingCallOverlay />
@@ -201,6 +204,7 @@ export default function App() {
                           <Toaster />
                         </BrowserRouter>
                       </MediaViewerProvider>
+                      </AgentModalsProvider>
                     </AIAgentProvider>
                     </CallProvider>
                   </VoiceProvider>

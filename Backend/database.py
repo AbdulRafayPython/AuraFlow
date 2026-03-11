@@ -25,6 +25,9 @@ _pool_kwargs = dict(
     cursorclass=DictCursor,
     charset='utf8mb4',
     autocommit=False,
+    connect_timeout=30,
+    read_timeout=60,
+    write_timeout=60,
 )
 
 if DB_SSL:

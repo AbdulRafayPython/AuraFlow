@@ -520,17 +520,16 @@ def run_seed():
     # Disable FK checks for clean truncation
     cur.execute("SET FOREIGN_KEY_CHECKS = 0")
     tables = [
-        "engagement_metrics", "moderation_log", "moderation_logs",
+        "engagement_metrics", "moderation_log",
         "wellness_tracking", "mood_tracking", "user_moods",
-        "user_mood_history", "knowledge_base", "conversation_summaries",
-        "notifications", "ai_agent_logs",
+        "knowledge_base", "conversation_summaries",
+        "ai_agent_logs",
         "attachments", "direct_message_reactions", "direct_messages",
         "message_reactions", "pinned_messages", "messages",
         "voice_participants", "voice_sessions", "voice_channels",
         "channel_members", "channels",
         "blocked_users", "community_members", "communities",
         "friends", "friend_requests",
-        "user_roles", "roles",
         "otp_codes",
         "users",
     ]
@@ -553,7 +552,7 @@ def run_seed():
         bio = f"Hey! I'm {display_name}. Love tech and connecting with people on AuraFlow."
         cur.execute("""
             INSERT INTO users (username, display_name, email, password, bio, avatar_url, 
-                             status, is_first_login, email_verified, created_at)
+                             status, is_first_login, otp_verified, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, 'offline', 0, 1, %s)
         """, (
             username, display_name, email, HASHED_PW, bio,

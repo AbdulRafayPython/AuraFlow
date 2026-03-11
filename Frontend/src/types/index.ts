@@ -63,7 +63,7 @@ export interface DirectMessage {
   sender_id: number;
   receiver_id: number;
   content: string;
-  message_type: 'text' | 'image' | 'file' | 'ai' | 'voice' | 'video';
+  message_type: 'text' | 'image' | 'file' | 'ai' | 'voice' | 'video' | 'call';
   created_at: string;
   is_read: boolean;
   edited_at?: string | null;

@@ -27,6 +27,9 @@ SMTP_APP_PASSWORD = os.getenv("SMTP_APP_PASSWORD", "")
 # AI API Keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# Redis Configuration
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+
 # Security - JWT
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.urandom(32).hex() if not IS_PRODUCTION else None)
 if IS_PRODUCTION and not JWT_SECRET_KEY:

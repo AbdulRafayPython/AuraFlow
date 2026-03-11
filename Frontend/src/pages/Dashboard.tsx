@@ -1,6 +1,6 @@
 // pages/Dashboard.tsx - Professional Real-time Version with Theme Support
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus, Mic, SmilePlus, X, Palette, Reply, Pin, Radio } from "lucide-react";
+import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus, Mic, SmilePlus, X, Palette, Reply, Pin, PinOff, Radio, BookOpen, Trash2 } from "lucide-react";
 import { useTheme, THEMES } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
@@ -23,9 +23,15 @@ import { uploadService, validateFile, type UploadProgress } from "@/services/upl
 import SearchModal from "@/components/search/SearchModal";
 import UserProfilePopover from "@/components/profile/UserProfilePopover";
 import PinnedMessagesPanel from "@/components/pins/PinnedMessagesPanel";
-import { pinService } from "@/services/pinService";
+import PinDurationModal from "@/components/pins/PinDurationModal";
+import type { PinModalContext } from "@/components/pins/PinDurationModal";
+import PinnedMessageBanner, { type ActivePinData } from "@/components/pins/PinnedMessageBanner";
+import { pinService, type PinDurationMinutes } from "@/services/pinService";
+import { useAuth } from "@/contexts/AuthContext";
 import { statusService } from "@/services/statusService";
 import { friendService } from "@/services/friendService";
+import { useUnreadCounts } from "@/hooks/useUnreadCounts";
+import { aiAgentService } from "@/services/aiAgentService";
 import type { Message } from "@/types";
 import type { SearchResult } from "@/services/searchService";
 
@@ -34,6 +40,7 @@ interface DashboardProps {
 
 export default function Dashboard({}: DashboardProps) {
   const { isDarkMode, toggleTheme, currentTheme, setTheme, themes } = useTheme();
+  const { user: authUser } = useAuth();
   const {
     isConnected,
     currentChannel,
@@ -46,6 +53,7 @@ export default function Dashboard({}: DashboardProps) {
     isLoadingMessages,
     loadMoreMessages,
     selectChannel,
+    updateMessageField,
   } = useRealtime();
 
   const { isInVoiceChannel } = useVoice();
@@ -58,7 +66,6 @@ export default function Dashboard({}: DashboardProps) {
   const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<number, any[]>>({});
-  const [commandResult, setCommandResult] = useState<{ type: string; success: boolean; summary?: string; key_points?: string[]; method?: string; error?: string } | null>(null);
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -79,11 +86,34 @@ export default function Dashboard({}: DashboardProps) {
   const [pinsOpen, setPinsOpen] = useState(false);
   const [pinnedCount, setPinnedCount] = useState(0);
   const [profilePopover, setProfilePopover] = useState<{ username: string; rect: DOMRect | null } | null>(null);
-  const [unreadCounts, setUnreadCounts] = useState<Record<number, number>>({});
+
+  // Pin Duration Modal state
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pinModalMessageId, setPinModalMessageId] = useState<number | null>(null);
+  const [pinModalPreview, setPinModalPreview] = useState<string | undefined>(undefined);
+
+  // Active pinned message banner state
+  const [activePin, setActivePin] = useState<ActivePinData | null>(null);
+
+  // Pin modal context — carries pin metadata for the modal
+  const [pinModalContext, setPinModalContext] = useState<PinModalContext | undefined>(undefined);
+
+  // Centralised unread tracking (socket-driven, no HTTP polling)
+  const { markChannelRead: markChRead } = useUnreadCounts();
+
+  // Ephemeral summary state (private /summarize results)
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [ephemeralSummary, setEphemeralSummary] = useState<{ content: string; method: string; message_count: number; created_at: string } | null>(null);
+  const [displayedSummaryText, setDisplayedSummaryText] = useState('');
+  const [pendingScheduledSummaries, setPendingScheduledSummaries] = useState<any[]>([]);
+  const [savedSummaries, setSavedSummaries] = useState<any[]>([]);
+  const [summaryHistoryOpen, setSummaryHistoryOpen] = useState(false);
 
   // Available commands
   const availableCommands = [
-    { command: '/summarize', description: 'Summarize last 20 messages', usage: '/summarize [count]' },
+    { command: '/summarize', description: 'Summarize recent messages', usage: '/summarize [count]' },
+    { command: '/mood', description: 'Analyze your mood and sentiment', usage: '/mood [hours]' },
+    { command: '/wellness', description: 'Check your wellness score', usage: '/wellness' },
     { command: '/help', description: 'Show available commands', usage: '/help' },
   ];
 
@@ -122,6 +152,13 @@ export default function Dashboard({}: DashboardProps) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, [messages.length, currentChannel?.id]);
+
+  // Scroll to bottom when skeleton/ephemeral summary appears
+  useEffect(() => {
+    if ((isGeneratingSummary || ephemeralSummary) && messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  }, [isGeneratingSummary, ephemeralSummary]);
 
   // Load reactions for messages — ONE bulk API call instead of N individual calls
   useEffect(() => {
@@ -186,17 +223,11 @@ export default function Dashboard({}: DashboardProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [reactionPickerMessageId]);
 
-  // Listen for AI command results
+  // Listen for AI command errors (summary itself is posted as a bot message in chat)
   useEffect(() => {
     const handleCommandResult = (event: CustomEvent) => {
       const data = event.detail;
-      console.log('[DASHBOARD] ✅ AI Command result received from custom event:', data);
-      
-      setCommandResult(data);
-      
-      // Only show toast for errors (success is shown in floating card)
       if (!data.success) {
-        console.log('[DASHBOARD] ⚠️ Showing error toast');
         toast({
           title: '❌ Command Failed',
           description: data.error || 'Failed to execute command.',
@@ -204,68 +235,153 @@ export default function Dashboard({}: DashboardProps) {
           duration: 5000,
         });
       }
-      
-      // Auto-clear after 30 seconds
-      setTimeout(() => setCommandResult(null), 30000);
     };
 
-    console.log('[DASHBOARD] 📡 Setting up ai_command_result event listener');
     window.addEventListener('ai_command_result', handleCommandResult as EventListener);
-
     return () => {
-      console.log('[DASHBOARD] 🔌 Removing ai_command_result event listener');
       window.removeEventListener('ai_command_result', handleCommandResult as EventListener);
     };
   }, [toast]);
 
-  // --- Fetch pinned count when channel changes ---
+  // Listen for ephemeral summary events (private to sender)
+  useEffect(() => {
+    const handleSummaryGenerating = (event: CustomEvent) => {
+      const data = event.detail;
+      if (currentChannel && data.channel_id === currentChannel.id) {
+        setIsGeneratingSummary(true);
+        setEphemeralSummary(null);
+        setDisplayedSummaryText('');
+      }
+    };
+
+    const handleSummaryResult = (event: CustomEvent) => {
+      const data = event.detail;
+      if (currentChannel && data.channel_id === currentChannel.id) {
+        setIsGeneratingSummary(false);
+        setEphemeralSummary(data);
+        // Refresh saved summaries list (new one was just saved server-side)
+        aiAgentService.getMySummaries(currentChannel.id, 10).then(s => setSavedSummaries(s)).catch(() => {});
+      }
+    };
+
+    window.addEventListener('summary_generating', handleSummaryGenerating as EventListener);
+    window.addEventListener('summary_result', handleSummaryResult as EventListener);
+    return () => {
+      window.removeEventListener('summary_generating', handleSummaryGenerating as EventListener);
+      window.removeEventListener('summary_result', handleSummaryResult as EventListener);
+    };
+  }, [currentChannel]);
+
+  // Typewriter animation for ephemeral summary
+  useEffect(() => {
+    if (!ephemeralSummary) {
+      setDisplayedSummaryText('');
+      return;
+    }
+    const text = ephemeralSummary.content;
+    let index = 0;
+    setDisplayedSummaryText('');
+    const interval = setInterval(() => {
+      index += 3;
+      setDisplayedSummaryText(text.slice(0, index));
+      if (index >= text.length) {
+        setDisplayedSummaryText(text);
+        clearInterval(interval);
+      }
+    }, 8);
+    return () => clearInterval(interval);
+  }, [ephemeralSummary]);
+
+  // Clear ephemeral summary when switching channels
+  useEffect(() => {
+    setEphemeralSummary(null);
+    setIsGeneratingSummary(false);
+    setDisplayedSummaryText('');
+    setPendingScheduledSummaries([]);
+    setSavedSummaries([]);
+    setSummaryHistoryOpen(false);
+  }, [currentChannel?.id]);
+
+  // Fetch pending scheduled summaries + saved summaries when entering a channel
+  useEffect(() => {
+    if (!currentChannel) return;
+    let cancelled = false;
+    aiAgentService.getPendingSummaries(currentChannel.id).then(summaries => {
+      if (!cancelled && summaries.length > 0) {
+        setPendingScheduledSummaries(summaries);
+      }
+    }).catch(() => {});
+    aiAgentService.getMySummaries(currentChannel.id, 10).then(summaries => {
+      if (!cancelled) setSavedSummaries(summaries);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [currentChannel?.id]);
+
+  // --- Fetch pinned count + active pin when channel changes ---
   useEffect(() => {
     if (!currentChannel) return;
     let cancelled = false;
     pinService.getPinnedMessages(currentChannel.id).then(data => {
       if (!cancelled) setPinnedCount(data.count);
     }).catch(() => {});
+    pinService.getActivePin(currentChannel.id).then(pin => {
+      if (!cancelled) setActivePin(pin);
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [currentChannel?.id]);
 
-  // --- Fetch unread counts on mount ---
-  useEffect(() => {
-    statusService.getUnreadCounts().then(data => {
-      const map: Record<number, number> = {};
-      Object.entries(data).forEach(([chId, info]) => {
-        map[Number(chId)] = (info as any).unread_count || 0;
-      });
-      setUnreadCounts(map);
-    }).catch(() => {});
-  }, []);
-
-  // --- Mark channel as read when switching ---
+  // --- Mark channel as read when switching (socket-driven, replaces HTTP) ---
   useEffect(() => {
     if (!currentChannel || messages.length === 0) return;
-    const lastMsgId = messages[messages.length - 1]?.id;
-    if (!lastMsgId) return;
-    statusService.markChannelRead(currentChannel.id, lastMsgId).then(() => {
-      setUnreadCounts(prev => ({ ...prev, [currentChannel.id]: 0 }));
-    }).catch(() => {});
-  }, [currentChannel?.id, messages.length]);
+    markChRead(currentChannel.id, currentCommunity?.id ? Number(currentCommunity.id) : undefined);
+  }, [currentChannel?.id, messages.length, markChRead, currentCommunity?.id]);
 
-  // --- Socket listeners for pins ---
+  // --- Socket listeners for pins (banner + count + is_pinned sync) ---
   useEffect(() => {
     const handlePinned = (data: any) => {
       if (data.channel_id === currentChannel?.id) {
         setPinnedCount(prev => prev + 1);
+        // Sync is_pinned flag on the message so pin icon updates instantly
+        if (data.message_id) updateMessageField(data.message_id, { is_pinned: true });
+        // Update banner with new active pin data from socket event
+        if (currentChannel) {
+          pinService.getActivePin(currentChannel.id).then(pin => {
+            setActivePin(pin);
+          }).catch(() => {});
+        }
       }
     };
     const handleUnpinned = (data: any) => {
       if (data.channel_id === currentChannel?.id) {
         setPinnedCount(prev => Math.max(0, prev - 1));
+        // Sync is_pinned flag
+        if (data.message_id) updateMessageField(data.message_id, { is_pinned: false });
+        // Refresh active pin — it may have been the one unpinned
+        if (currentChannel) {
+          pinService.getActivePin(currentChannel.id).then(pin => {
+            setActivePin(pin);
+          }).catch(() => {});
+        }
+      }
+    };
+    const handlePinExpired = (data: any) => {
+      if (data.channel_id === currentChannel?.id) {
+        setPinnedCount(prev => Math.max(0, prev - 1));
+        // Sync is_pinned flag
+        if (data.message_id) updateMessageField(data.message_id, { is_pinned: false });
+        setActivePin(prev => {
+          if (prev && prev.message.id === data.message_id) return null;
+          return prev;
+        });
       }
     };
     socket.on('message_pinned', handlePinned);
     socket.on('message_unpinned', handleUnpinned);
+    socket.on('pin_expired', handlePinExpired);
     return () => {
       socket.off('message_pinned', handlePinned);
       socket.off('message_unpinned', handleUnpinned);
+      socket.off('pin_expired', handlePinExpired);
     };
   }, [currentChannel?.id]);
 
@@ -318,27 +434,73 @@ export default function Dashboard({}: DashboardProps) {
     }
   }, [currentChannel?.id, selectChannel, toast]);
 
-  const handlePinMessage = useCallback(async (messageId: number) => {
+  // Opens the pin modal — shows duration picker (new pin) or pin info + unpin (already pinned)
+  const handlePinMessage = useCallback((messageId: number) => {
     if (!currentChannel) return;
-    try {
-      await pinService.pinMessage(currentChannel.id, messageId);
-      setPinnedCount(prev => prev + 1);
-      toast({ title: 'Message pinned' });
-    } catch (err: any) {
-      toast({ title: 'Failed to pin', description: err.message, variant: 'destructive' });
+    const msg = messages.find(m => m.id === messageId);
+    setPinModalMessageId(messageId);
+    setPinModalPreview(msg?.content || undefined);
+
+    // Build context: is this message already pinned?
+    if (msg?.is_pinned && activePin && activePin.message.id === messageId) {
+      // We have rich data from the active pin banner
+      setPinModalContext({
+        isPinned: true,
+        pinnedByUserId: activePin.pinned_by.user_id,
+        pinnedByUsername: activePin.pinned_by.display_name || activePin.pinned_by.username,
+        expiresAt: activePin.expires_at,
+      });
+    } else if (msg?.is_pinned) {
+      // Pinned but not the active pin — we only know it's pinned
+      setPinModalContext({
+        isPinned: true,
+        pinnedByUserId: null,
+        pinnedByUsername: null,
+        expiresAt: null,
+      });
+    } else {
+      // Not pinned — normal duration selection flow
+      setPinModalContext(undefined);
     }
-  }, [currentChannel, toast]);
+    setPinModalOpen(true);
+  }, [currentChannel, messages, activePin]);
+
+  // Called from PinDurationModal after user selects a duration
+  const handleConfirmPin = useCallback(async (durationMinutes: PinDurationMinutes) => {
+    if (!currentChannel || !pinModalMessageId) return;
+    await pinService.pinMessage(currentChannel.id, pinModalMessageId, durationMinutes);
+    setPinnedCount(prev => prev + 1);
+    // Sync local is_pinned flag immediately
+    updateMessageField(pinModalMessageId, { is_pinned: true });
+    // Refresh the active pin banner
+    pinService.getActivePin(currentChannel.id).then(pin => setActivePin(pin)).catch(() => {});
+    toast({ title: 'Message pinned' });
+  }, [currentChannel, pinModalMessageId, toast, updateMessageField]);
+
+  // Called from PinDurationModal's unpin button (for already-pinned messages)
+  const handleModalUnpin = useCallback(async () => {
+    if (!currentChannel || !pinModalMessageId) return;
+    await pinService.unpinMessage(currentChannel.id, pinModalMessageId);
+    setPinnedCount(prev => Math.max(0, prev - 1));
+    updateMessageField(pinModalMessageId, { is_pinned: false });
+    setActivePin(prev => (prev && prev.message.id === pinModalMessageId) ? null : prev);
+    toast({ title: 'Message unpinned' });
+  }, [currentChannel, pinModalMessageId, toast, updateMessageField]);
 
   const handleUnpinMessage = useCallback(async (messageId: number) => {
     if (!currentChannel) return;
     try {
       await pinService.unpinMessage(currentChannel.id, messageId);
       setPinnedCount(prev => Math.max(0, prev - 1));
+      updateMessageField(messageId, { is_pinned: false });
+      // Clear banner if it was this pin
+      setActivePin(prev => (prev && prev.message.id === messageId) ? null : prev);
       toast({ title: 'Message unpinned' });
     } catch (err: any) {
-      toast({ title: 'Failed to unpin', description: err.message, variant: 'destructive' });
+      const msg = err?.response?.data?.error || err.message;
+      toast({ title: 'Cannot unpin', description: msg, variant: 'destructive' });
     }
-  }, [currentChannel, toast]);
+  }, [currentChannel, toast, updateMessageField]);
 
   const handleProfileClick = useCallback((username: string, e: React.MouseEvent) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -430,6 +592,13 @@ export default function Dashboard({}: DashboardProps) {
     setIsSending(true);
     const replyToId = replyingTo?.id;
     setReplyingTo(null);
+
+    // Show skeleton instantly for /summarize
+    if (messageToSend.trim().toLowerCase().startsWith('/summarize')) {
+      setIsGeneratingSummary(true);
+      setEphemeralSummary(null);
+      setDisplayedSummaryText('');
+    }
 
     try {
       const response = await sendMessage(messageToSend, 'text', replyToId);
@@ -743,6 +912,26 @@ export default function Dashboard({}: DashboardProps) {
             <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--theme-bg-tertiary))] border border-[hsl(var(--theme-border-default))]">⌘K</kbd>
           </button>
 
+          {/* Summary History */}
+          {currentChannel && (
+            <button
+              onClick={() => setSummaryHistoryOpen(prev => !prev)}
+              className={`p-2 rounded-lg transition-colors relative ${
+                summaryHistoryOpen
+                  ? 'bg-purple-500/20 text-purple-400'
+                  : 'hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]'
+              }`}
+              title="Summary History"
+            >
+              <BookOpen className="w-4 h-4" />
+              {savedSummaries.length > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center rounded-full text-[10px] font-bold px-1 bg-purple-500 text-white">
+                  {savedSummaries.length}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Pinned Messages */}
           {currentChannel && (
             <button
@@ -781,6 +970,14 @@ export default function Dashboard({}: DashboardProps) {
           </button> */}
         </div>
       </header>
+
+      {/* Pinned Message Banner — fixed below header */}
+      <PinnedMessageBanner
+        pin={activePin}
+        currentUserId={authUser?.id ?? null}
+        onUnpin={handleUnpinMessage}
+        onJumpToMessage={scrollToMessage}
+      />
 
       {/* Messages */}
       <main
@@ -886,12 +1083,57 @@ export default function Dashboard({}: DashboardProps) {
                       </div>
                     )}
 
-                    {/* Message - Discord Style */}
+                    {/* ── Bot / AI Agent Message ────────────────── */}
+                    {msg.message_type === 'ai' ? (
+                      <div
+                        id={`msg-${msg.id}`}
+                        className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-all duration-300"
+                        onMouseEnter={() => setHoveredMessageId(msg.id)}
+                        onMouseLeave={() => setHoveredMessageId(null)}
+                      >
+                        {/* Bot Avatar */}
+                        <div className="absolute left-2 sm:left-4 mt-0.5">
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-500/80 to-blue-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(168,85,247,0.3)]">
+                            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 13 22h-2a7 7 0 0 1-6.73-3H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
+                              <circle cx="10" cy="15" r="1" fill="currentColor" />
+                              <circle cx="14" cy="15" r="1" fill="currentColor" />
+                            </svg>
+                          </div>
+                        </div>
+
+                        {/* Bot Content */}
+                        <div className="flex-1 min-w-0 overflow-hidden">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-semibold text-[15px] text-purple-400">
+                              Summarizer Agent
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                              BOT
+                            </span>
+                            <span className="text-[11px] ml-1 text-[hsl(var(--theme-text-muted))]">
+                              {formatMessageTime(msg.created_at)}
+                            </span>
+                          </div>
+                          <div className="p-4 rounded-xl border-l-[3px] border-l-purple-500/60 bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default))]">
+                            <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+                              {msg.content}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+
+                    /* ── Regular User Message ────────────────── */
                     <div 
                       id={`msg-${msg.id}`}
                       className={`group relative flex py-0.5 pr-4 sm:pr-12 pl-14 sm:pl-[72px] ${
                         shouldShowHeader ? 'mt-[17px]' : 'mt-0'
-                      } hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-all duration-300`}
+                      } ${
+                        msg.is_pinned
+                          ? 'bg-[hsl(var(--theme-accent-primary)/0.04)] border-l-2 border-l-[hsl(var(--theme-accent-primary)/0.5)] hover:bg-[hsl(var(--theme-accent-primary)/0.07)]'
+                          : 'hover:bg-[hsl(var(--theme-bg-hover)/0.3)]'
+                      } transition-all duration-300`}
                       onMouseEnter={() => setHoveredMessageId(msg.id)}
                       onMouseLeave={() => setHoveredMessageId(null)}
                     >
@@ -950,8 +1192,9 @@ export default function Dashboard({}: DashboardProps) {
                             )}
                             {/* Pinned indicator */}
                             {msg.is_pinned && (
-                              <span className="ml-1 flex items-center gap-0.5 text-[hsl(var(--theme-accent-primary)/0.7)]" title="Pinned message">
+                              <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[hsl(var(--theme-accent-primary)/0.1)] text-[hsl(var(--theme-accent-primary))]" title="Pinned message">
                                 <Pin className="w-3 h-3" />
+                                <span className="text-[10px] font-medium leading-none">Pinned</span>
                               </span>
                             )}
                           </div>
@@ -1037,20 +1280,19 @@ export default function Dashboard({}: DashboardProps) {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (msg.is_pinned) {
-                                handleUnpinMessage(msg.id);
-                              } else {
-                                handlePinMessage(msg.id);
-                              }
+                              handlePinMessage(msg.id);
                             }}
                             className={`p-1.5 transition-colors rounded-r-md ${
                               msg.is_pinned
-                                ? 'text-[hsl(var(--theme-accent-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
+                                ? 'text-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-accent-primary)/0.08)] hover:bg-[hsl(var(--theme-accent-primary)/0.15)]'
                                 : 'text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
                             }`}
-                            title={msg.is_pinned ? "Unpin Message" : "Pin Message"}
+                            title={msg.is_pinned ? "View / Unpin" : "Pin Message"}
                           >
-                            <Pin className="w-4 h-4" />
+                            {msg.is_pinned
+                              ? <PinOff className="w-4 h-4" />
+                              : <Pin className="w-4 h-4" />
+                            }
                           </button>
                         </div>
                       </div>
@@ -1067,6 +1309,7 @@ export default function Dashboard({}: DashboardProps) {
                         </div>
                       )}
                     </div>
+                    )}
                   </div>
                 );
               })}
@@ -1087,6 +1330,151 @@ export default function Dashboard({}: DashboardProps) {
                 </span>
               </div>
             )}
+
+            {/* Summary Skeleton Screen - Shows immediately when generating */}
+            {isGeneratingSummary && (
+              <div className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] animate-in fade-in slide-in-from-bottom-2 duration-300">
+                {/* Bot Avatar — pulsing */}
+                <div className="absolute left-2 sm:left-4 mt-0.5">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-500/80 to-blue-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(168,85,247,0.3)] animate-pulse">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 13 22h-2a7 7 0 0 1-6.73-3H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
+                      <circle cx="10" cy="15" r="1" fill="currentColor" />
+                      <circle cx="14" cy="15" r="1" fill="currentColor" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Skeleton Content */}
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  {/* Header row — real name + badges */}
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-semibold text-[15px] text-purple-400">Summarizer Agent</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-400 border border-purple-500/30">BOT</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Only visible to you</span>
+                  </div>
+
+                  {/* Skeleton card — same shape as the real summary card */}
+                  <div className="p-4 rounded-xl border-l-[3px] border-l-purple-500/40 bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default))]">
+                    {/* Shimmer text lines */}
+                    <div className="space-y-2.5">
+                      <div className="h-3.5 w-[90%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" />
+                      <div className="h-3.5 w-[75%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" style={{ animationDelay: '150ms' }} />
+                      <div className="h-3.5 w-[82%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" style={{ animationDelay: '300ms' }} />
+                      <div className="h-3.5 w-[60%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" style={{ animationDelay: '450ms' }} />
+                      <div className="h-3.5 w-[70%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" style={{ animationDelay: '600ms' }} />
+                    </div>
+
+                    {/* Shimmer footer row */}
+                    <div className="mt-4 flex items-center gap-3">
+                      <div className="h-2.5 w-20 rounded bg-[hsl(var(--theme-text-muted)/0.08)] animate-pulse" />
+                      <div className="h-2.5 w-2 rounded bg-[hsl(var(--theme-text-muted)/0.08)]" />
+                      <div className="h-2.5 w-28 rounded bg-[hsl(var(--theme-text-muted)/0.08)] animate-pulse" style={{ animationDelay: '200ms' }} />
+                    </div>
+                  </div>
+
+                  {/* Status line with animated dots */}
+                  <div className="mt-2 flex items-center gap-2 text-[12px] text-purple-400/70">
+                    <span>Generating summary</span>
+                    <div className="flex items-center gap-0.5">
+                      <div className="w-1 h-1 rounded-full animate-bounce bg-purple-400" style={{ animationDelay: "0ms", animationDuration: "1s" }}></div>
+                      <div className="w-1 h-1 rounded-full animate-bounce bg-purple-400" style={{ animationDelay: "200ms", animationDuration: "1s" }}></div>
+                      <div className="w-1 h-1 rounded-full animate-bounce bg-purple-400" style={{ animationDelay: "400ms", animationDuration: "1s" }}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Ephemeral Summary Card (private, only visible to sender) */}
+            {ephemeralSummary && (
+              <div className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-all duration-300">
+                {/* Bot Avatar */}
+                <div className="absolute left-2 sm:left-4 mt-0.5">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-500/80 to-blue-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(168,85,247,0.3)]">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 13 22h-2a7 7 0 0 1-6.73-3H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
+                      <circle cx="10" cy="15" r="1" fill="currentColor" />
+                      <circle cx="14" cy="15" r="1" fill="currentColor" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Bot Content */}
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-semibold text-[15px] text-purple-400">Summarizer Agent</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-400 border border-purple-500/30">BOT</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Only visible to you</span>
+                    <span className="text-[11px] ml-1 text-[hsl(var(--theme-text-muted))]">
+                      {formatMessageTime(ephemeralSummary.created_at)}
+                    </span>
+                  </div>
+                  <div className="p-4 rounded-xl border-l-[3px] border-l-purple-500/60 bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default))]">
+                    <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+                      {displayedSummaryText}
+                      {displayedSummaryText.length < ephemeralSummary.content.length && (
+                        <span className="inline-block w-0.5 h-4 bg-purple-400 ml-0.5 animate-pulse" />
+                      )}
+                    </div>
+                    <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
+                      <span>Method: {ephemeralSummary.method}</span>
+                      <span>•</span>
+                      <span>{ephemeralSummary.message_count} messages analyzed</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { setEphemeralSummary(null); setDisplayedSummaryText(''); }}
+                    className="mt-2 text-[11px] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Pending Scheduled Summaries (delivered when user enters channel) */}
+            {pendingScheduledSummaries.map((sched) => (
+              <div key={sched.id} className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-all duration-300">
+                <div className="absolute left-2 sm:left-4 mt-0.5">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-blue-500/80 to-cyan-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(59,130,246,0.3)]">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 13 22h-2a7 7 0 0 1-6.73-3H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
+                      <circle cx="10" cy="15" r="1" fill="currentColor" />
+                      <circle cx="14" cy="15" r="1" fill="currentColor" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-semibold text-[15px] text-blue-400">Summarizer Agent</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/30">SCHEDULED</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Only visible to you</span>
+                    <span className="text-[11px] ml-1 text-[hsl(var(--theme-text-muted))]">
+                      {formatMessageTime(sched.created_at)}
+                    </span>
+                  </div>
+                  <div className="p-4 rounded-xl border-l-[3px] border-l-blue-500/60 bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default))]">
+                    <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+                      {sched.content}
+                    </div>
+                    {(sched.method || sched.message_count) && (
+                      <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
+                        {sched.method && <span>Method: {sched.method}</span>}
+                        {sched.method && sched.message_count && <span>•</span>}
+                        {sched.message_count && <span>{sched.message_count} messages analyzed</span>}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setPendingScheduledSummaries(prev => prev.filter(s => s.id !== sched.id))}
+                    className="mt-2 text-[11px] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ))}
 
             <div ref={messagesEndRef} className="h-4" />
           </div>
@@ -1250,48 +1638,7 @@ export default function Dashboard({}: DashboardProps) {
       </footer>
       )}
 
-      {/* AI Command Result Display */}
-      {commandResult && commandResult.success && (
-        <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-4 max-w-md w-auto sm:w-full max-h-[60vh] sm:max-h-[70vh] z-50 rounded-xl shadow-2xl border overflow-hidden flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]">
-          {/* Header - Fixed */}
-          <div className="flex items-start justify-between gap-3 p-4 border-b border-[hsl(var(--theme-border-default))]">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-[hsl(var(--theme-accent-primary)/0.2)]">
-                <Bot className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-sm text-[hsl(var(--theme-text-primary))]">
-                  Conversation Summary
-                </h3>
-                {commandResult.method && (
-                  <p className="text-xs text-[hsl(var(--theme-text-muted))]">
-                    Method: {commandResult.method}
-                  </p>
-                )}
-              </div>
-            </div>
-            <button
-              onClick={() => setCommandResult(null)}
-              className="p-1 rounded-lg transition-colors flex-shrink-0 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))]"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
 
-          {/* Content - Scrollable */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {commandResult.summary && (
-              <div className="text-sm p-3 rounded-lg bg-[hsl(var(--theme-bg-secondary))]">
-                <div className="leading-relaxed whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
-                  {commandResult.summary}
-                </div>
-              </div>
-            )}
-
-            {/* Hide Key Points - summary already contains everything */}
-          </div>
-        </div>
-      )}
 
       {/* --- Search Modal --- */}
       <SearchModal
@@ -1309,9 +1656,93 @@ export default function Dashboard({}: DashboardProps) {
           onClose={() => setPinsOpen(false)}
           onJumpToMessage={scrollToMessage}
           onUnpin={handleUnpinMessage}
-          canManagePins={true}
+          canManagePins={false}
+          currentUserId={authUser?.id}
         />
       )}
+
+      {/* --- Summary History Panel --- */}
+      {summaryHistoryOpen && currentChannel && (
+        <div className="fixed inset-y-0 right-0 w-[380px] z-50 flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-l border-[hsl(var(--theme-border-default)/0.5)] shadow-2xl animate-in slide-in-from-right duration-200">
+          {/* Panel Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--theme-border-default)/0.3)]">
+            <div className="flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-purple-400" />
+              <h3 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">Summary History</h3>
+              <span className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+                #{currentChannel.name}
+              </span>
+            </div>
+            <button
+              onClick={() => setSummaryHistoryOpen(false)}
+              className="p-1.5 rounded-md hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Panel Body */}
+          <div className="flex-1 overflow-y-auto px-4 py-3" style={{ scrollbarWidth: 'thin' }}>
+            {savedSummaries.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <BookOpen className="w-8 h-8 text-[hsl(var(--theme-text-muted)/0.3)] mb-3" />
+                <p className="text-sm text-[hsl(var(--theme-text-muted))]">No summaries yet</p>
+                <p className="text-[11px] text-[hsl(var(--theme-text-muted)/0.7)] mt-1">Type /summarize in the chat to generate one</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {savedSummaries.map((s) => (
+                  <div key={s.id} className="group rounded-xl border border-[hsl(var(--theme-border-default)/0.3)] bg-[hsl(var(--theme-bg-secondary)/0.4)] overflow-hidden">
+                    {/* Summary header */}
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--theme-border-default)/0.15)]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-medium text-purple-400">
+                          {s.method === 'gemini' ? 'AI' : 'Extractive'}
+                        </span>
+                        <span className="text-[10px] text-[hsl(var(--theme-text-muted))]">
+                          {s.message_count} msgs
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-[hsl(var(--theme-text-muted))]">
+                          {s.created_at ? new Date(s.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                        </span>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await aiAgentService.deleteMySummary(s.id);
+                              setSavedSummaries(prev => prev.filter(x => x.id !== s.id));
+                            } catch {}
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 text-[hsl(var(--theme-text-muted))] hover:text-red-400 transition-all"
+                          title="Delete summary"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    {/* Summary content */}
+                    <div className="px-3 py-2.5 text-[12px] leading-[1.6] text-[hsl(var(--theme-text-secondary))] whitespace-pre-line max-h-[200px] overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+                      {s.summary}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* --- Pin Duration / Unpin Modal --- */}
+      <PinDurationModal
+        isOpen={pinModalOpen}
+        onClose={() => { setPinModalOpen(false); setPinModalMessageId(null); setPinModalContext(undefined); }}
+        onConfirm={handleConfirmPin}
+        onUnpin={handleModalUnpin}
+        messagePreview={pinModalPreview}
+        pinContext={pinModalContext}
+        currentUserId={authUser?.id ?? null}
+      />
 
       {/* --- User Profile Popover --- */}
       {profilePopover && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Brain, MessageSquare, Users, Clock, FileText, Loader2, AlertCircle, Download, Sparkles, BarChart3, ArrowLeft } from 'lucide-react';
+import { Brain, MessageSquare, Users, Clock, FileText, Loader2, AlertCircle, Sparkles, BarChart3, ArrowLeft, Timer, Play, Settings2, CalendarClock, Zap } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAIAgents } from '@/contexts/AIAgentContext';
 import { useRealtime } from '@/hooks/useRealtime';
@@ -9,8 +9,8 @@ import { useNavigate } from 'react-router-dom';
 export default function SummarizerAgent() {
   const { isDarkMode, currentTheme } = useTheme();
   const isBasicTheme = currentTheme === 'basic';
-  const { generateSummary, getChannelSummaries, summaries } = useAIAgents();
-  const { currentChannel } = useRealtime();
+  const { generateSummary, getChannelSummaries, summaries, configureCommunityAgent, getSummarizerSchedule, triggerAutoSummarize } = useAIAgents();
+  const { currentChannel, currentCommunity } = useRealtime();
   const navigate = useNavigate();
   
   const [isGenerating, setIsGenerating] = useState(false);
@@ -19,13 +19,45 @@ export default function SummarizerAgent() {
   const [selectedSummary, setSelectedSummary] = useState<SummaryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Scheduler state
+  const [showScheduleConfig, setShowScheduleConfig] = useState(false);
+  const [autoSummarizeEnabled, setAutoSummarizeEnabled] = useState(false);
+  const [scheduleTime, setScheduleTime] = useState('21:00');
+  const [autoMessageCount, setAutoMessageCount] = useState(200);
+  const [lastAutoSummaryDate, setLastAutoSummaryDate] = useState('');
+  const [isSavingSchedule, setIsSavingSchedule] = useState(false);
+  const [isTriggering, setIsTriggering] = useState(false);
+  const [scheduleSuccess, setScheduleSuccess] = useState<string | null>(null);
+
   const channelSummaries = currentChannel ? (summaries[currentChannel.id] || []) : [];
+
+  const isAdmin = currentCommunity?.role === 'owner' || currentCommunity?.role === 'admin';
 
   useEffect(() => {
     if (currentChannel) {
       loadExistingSummaries();
     }
   }, [currentChannel]);
+
+  // Load scheduler settings for admins
+  useEffect(() => {
+    if (currentCommunity?.id && isAdmin) {
+      loadScheduleSettings();
+    }
+  }, [currentCommunity?.id, isAdmin]);
+
+  const loadScheduleSettings = async () => {
+    if (!currentCommunity?.id) return;
+    try {
+      const data = await getSummarizerSchedule(currentCommunity.id);
+      setAutoSummarizeEnabled(data.auto_summarize_enabled || false);
+      setScheduleTime(data.schedule_time || '21:00');
+      setAutoMessageCount(data.auto_summarize_message_count || 200);
+      setLastAutoSummaryDate(data.last_auto_summary_date || '');
+    } catch {
+      // Agent may not be installed — that's fine
+    }
+  };
 
   const loadExistingSummaries = async () => {
     if (!currentChannel) return;
@@ -57,6 +89,47 @@ export default function SummarizerAgent() {
     }
   };
 
+  const handleSaveSchedule = async () => {
+    if (!currentCommunity?.id) return;
+    setIsSavingSchedule(true);
+    setScheduleSuccess(null);
+    setError(null);
+
+    try {
+      await configureCommunityAgent(currentCommunity.id, 'summarizer', {
+        auto_summarize_enabled: autoSummarizeEnabled,
+        schedule_time: scheduleTime,
+        auto_summarize_message_count: autoMessageCount,
+      });
+      setScheduleSuccess('Schedule saved successfully!');
+      setTimeout(() => setScheduleSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsSavingSchedule(false);
+    }
+  };
+
+  const handleTriggerNow = async () => {
+    if (!currentCommunity?.id) return;
+    setIsTriggering(true);
+    setError(null);
+
+    try {
+      const result = await triggerAutoSummarize(currentCommunity.id);
+      setScheduleSuccess(`Auto-summarize complete! ${result.channels_processed} channels processed.`);
+      setTimeout(() => setScheduleSuccess(null), 5000);
+      // Reload summaries for current channel
+      if (currentChannel) {
+        await getChannelSummaries(currentChannel.id);
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsTriggering(false);
+    }
+  };
+
   const formatCreatedAt = (createdAt: string | undefined) => {
     if (!createdAt) return 'Just now';
     
@@ -79,10 +152,20 @@ export default function SummarizerAgent() {
     }
   };
 
+  const formatScheduleTime = (time24: string) => {
+    try {
+      const [h, m] = time24.split(':').map(Number);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
+    } catch {
+      return time24;
+    }
+  };
+
   if (!currentChannel) {
     return (
       <div className="h-full flex flex-col bg-[hsl(var(--theme-bg-primary))]">
-        {/* Header with back button */}
         <div className="flex-shrink-0 p-4 border-b border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-header-bg))]">
           <button 
             onClick={() => navigate(-1)}
@@ -134,6 +217,21 @@ export default function SummarizerAgent() {
               </p>
             </div>
           </div>
+
+          {/* Schedule Config Toggle (admins only) */}
+          {isAdmin && (
+            <button
+              onClick={() => setShowScheduleConfig(!showScheduleConfig)}
+              className={`p-2.5 rounded-xl border transition-all duration-300 ${
+                showScheduleConfig
+                  ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] border-[hsl(var(--theme-accent-primary)/0.5)] text-[hsl(var(--theme-accent-primary))]'
+                  : 'bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:border-[hsl(var(--theme-border-hover))]'
+              }`}
+              title="Schedule Settings"
+            >
+              <CalendarClock className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Generate Summary Controls */}
@@ -176,6 +274,135 @@ export default function SummarizerAgent() {
       </div>
 
       <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}>
+
+        {/* ── Scheduler Config Panel (admins only) ────────────────── */}
+        {showScheduleConfig && isAdmin && (
+          <div className="m-4 p-5 rounded-2xl border bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))]">
+            <div className="flex items-center gap-3 mb-5">
+              <div className={`p-2.5 ${isBasicTheme ? 'rounded-md' : 'rounded-xl'} bg-purple-500/15 border border-purple-500/30`}>
+                <Timer className="w-5 h-5 text-purple-400" />
+              </div>
+              <div>
+                <h4 className="font-bold text-[hsl(var(--theme-text-primary))]">Auto-Summarize Scheduler</h4>
+                <p className="text-xs text-[hsl(var(--theme-text-muted))]">
+                  Automatically summarize all channels and post as a bot message
+                </p>
+              </div>
+            </div>
+
+            {/* Enable Toggle */}
+            <div className="flex items-center justify-between p-4 rounded-xl bg-[hsl(var(--theme-bg-tertiary))] border border-[hsl(var(--theme-border-default))] mb-4">
+              <div>
+                <div className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
+                  Enable Auto-Summarize
+                </div>
+                <div className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
+                  Summarizer will run daily at the scheduled time
+                </div>
+              </div>
+              <button
+                onClick={() => setAutoSummarizeEnabled(!autoSummarizeEnabled)}
+                className={`relative w-12 h-7 rounded-full transition-all duration-300 ${
+                  autoSummarizeEnabled
+                    ? 'bg-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.4)]'
+                    : 'bg-[hsl(var(--theme-bg-primary))] border border-[hsl(var(--theme-border-default))]'
+                }`}
+              >
+                <span className={`absolute top-1 w-5 h-5 rounded-full transition-all duration-300 ${
+                  autoSummarizeEnabled
+                    ? 'left-6 bg-white'
+                    : 'left-1 bg-[hsl(var(--theme-text-muted))]'
+                }`} />
+              </button>
+            </div>
+
+            {/* Schedule Time */}
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-[hsl(var(--theme-text-secondary))] mb-2">
+                  <Clock className="w-3.5 h-3.5 inline mr-1.5" />
+                  Schedule Time (UTC)
+                </label>
+                <input
+                  type="time"
+                  value={scheduleTime}
+                  onChange={(e) => setScheduleTime(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-purple-500 bg-[hsl(var(--theme-input-bg))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[hsl(var(--theme-text-secondary))] mb-2">
+                  <MessageSquare className="w-3.5 h-3.5 inline mr-1.5" />
+                  Messages to Analyze
+                </label>
+                <select
+                  value={autoMessageCount}
+                  onChange={(e) => setAutoMessageCount(Number(e.target.value))}
+                  className="w-full px-3 py-2.5 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-purple-500 bg-[hsl(var(--theme-input-bg))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] transition-all"
+                >
+                  <option value={50}>50 messages</option>
+                  <option value={100}>100 messages</option>
+                  <option value={150}>150 messages</option>
+                  <option value={200}>200 messages</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Status info */}
+            {autoSummarizeEnabled && (
+              <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 mb-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <CalendarClock className="w-4 h-4 text-purple-400" />
+                  <span className="text-purple-300 font-medium">
+                    Runs daily at {formatScheduleTime(scheduleTime)} UTC
+                  </span>
+                </div>
+                {lastAutoSummaryDate && (
+                  <div className="text-xs text-[hsl(var(--theme-text-muted))] mt-1.5 ml-6">
+                    Last auto-summary: {lastAutoSummaryDate}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSaveSchedule}
+                disabled={isSavingSchedule}
+                className={`flex items-center gap-2 px-5 py-2.5 ${isBasicTheme ? 'rounded-md' : 'rounded-xl'} bg-purple-600 hover:bg-purple-500 text-sm font-semibold text-white transition-all duration-300 disabled:opacity-50 hover:shadow-[0_0_20px_rgba(168,85,247,0.3)]`}
+              >
+                {isSavingSchedule ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Settings2 className="w-4 h-4" />
+                )}
+                Save Schedule
+              </button>
+
+              <button
+                onClick={handleTriggerNow}
+                disabled={isTriggering}
+                className={`flex items-center gap-2 px-5 py-2.5 ${isBasicTheme ? 'rounded-md' : 'rounded-xl'} border text-sm font-medium transition-all duration-300 disabled:opacity-50 bg-[hsl(var(--theme-bg-tertiary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] hover:border-[hsl(var(--theme-border-hover))]`}
+              >
+                {isTriggering ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Zap className="w-4 h-4" />
+                )}
+                Run Now
+              </button>
+            </div>
+
+            {/* Success Message */}
+            {scheduleSuccess && (
+              <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-sm text-emerald-400 font-medium">
+                {scheduleSuccess}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Error Display */}
         {error && (
           <div className="m-4 p-4 rounded-xl border flex items-start gap-3 bg-red-500/10 border-red-500/30">

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { aiAgentService, SummaryResult, MoodTrackingResult, EngagementMetrics, WellnessInsights, KnowledgeEntry } from '@/services/aiAgentService';
+import { aiAgentService, SummaryResult, MoodTrackingResult, EngagementMetrics, WellnessInsights, KnowledgeEntry, AgentCatalogEntry, InstalledAgent, AgentLog, AgentLogsResponse } from '@/services/aiAgentService';
 import { useAuth } from './AuthContext';
 import { useRealtime } from '@/hooks/useRealtime';
 
@@ -8,9 +8,23 @@ interface AIAgentContextType {
   agentStatus: Record<string, string>;
   isLoadingAgents: boolean;
   
+  // Agent Catalog & Management
+  getAgentCatalog: (communityId?: number) => Promise<AgentCatalogEntry[]>;
+  installCommunityAgent: (communityId: number, agentType: string, settings?: Record<string, any>) => Promise<any>;
+  uninstallCommunityAgent: (communityId: number, agentType: string) => Promise<any>;
+  configureCommunityAgent: (communityId: number, agentType: string, settings: Record<string, any>, enabled?: boolean) => Promise<any>;
+  getCommunityAgentStatus: (communityId: number) => Promise<InstalledAgent[]>;
+  activatePersonalAgent: (agentType: string, settings?: Record<string, any>) => Promise<any>;
+  deactivatePersonalAgent: (agentType: string) => Promise<any>;
+  getPersonalAgentStatus: () => Promise<InstalledAgent[]>;
+  configurePersonalAgent: (agentType: string, settings: Record<string, any>, enabled?: boolean) => Promise<any>;
+  getAgentLogs: (params?: { agent_type?: string; community_id?: number; status?: string; page?: number; limit?: number }) => Promise<AgentLogsResponse>;
+  
   // Summarizer
   generateSummary: (channelId: number, messageCount?: number) => Promise<SummaryResult>;
   getChannelSummaries: (channelId: number) => Promise<SummaryResult[]>;
+  getSummarizerSchedule: (communityId: number) => Promise<any>;
+  triggerAutoSummarize: (communityId: number) => Promise<any>;
   summaries: Record<number, SummaryResult[]>; // channelId -> summaries
   
   // Mood Tracker
@@ -108,6 +122,111 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // =====================================================
+  // AGENT CATALOG & MANAGEMENT
+  // =====================================================
+  const getAgentCatalog = useCallback(async (communityId?: number) => {
+    try {
+      return await aiAgentService.getAgentCatalog(communityId);
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  const installCommunityAgent = useCallback(async (communityId: number, agentType: string, settings?: Record<string, any>) => {
+    try {
+      const result = await aiAgentService.installCommunityAgent(communityId, agentType, settings);
+      setError(null);
+      return result;
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  const uninstallCommunityAgent = useCallback(async (communityId: number, agentType: string) => {
+    try {
+      const result = await aiAgentService.uninstallCommunityAgent(communityId, agentType);
+      setError(null);
+      return result;
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  const configureCommunityAgent = useCallback(async (communityId: number, agentType: string, settings: Record<string, any>, enabled?: boolean) => {
+    try {
+      const result = await aiAgentService.configureCommunityAgent(communityId, agentType, settings, enabled);
+      setError(null);
+      return result;
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  const getCommunityAgentStatus = useCallback(async (communityId: number) => {
+    try {
+      return await aiAgentService.getCommunityAgentStatus(communityId);
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  const activatePersonalAgent = useCallback(async (agentType: string, settings?: Record<string, any>) => {
+    try {
+      const result = await aiAgentService.activatePersonalAgent(agentType, settings);
+      setError(null);
+      return result;
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  const deactivatePersonalAgent = useCallback(async (agentType: string) => {
+    try {
+      const result = await aiAgentService.deactivatePersonalAgent(agentType);
+      setError(null);
+      return result;
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  const getPersonalAgentStatus = useCallback(async () => {
+    try {
+      return await aiAgentService.getPersonalAgentStatus();
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  const configurePersonalAgent = useCallback(async (agentType: string, settings: Record<string, any>, enabled?: boolean) => {
+    try {
+      const result = await aiAgentService.configurePersonalAgent(agentType, settings, enabled);
+      setError(null);
+      return result;
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  const getAgentLogs = useCallback(async (params?: { agent_type?: string; community_id?: number; status?: string; page?: number; limit?: number }) => {
+    try {
+      return await aiAgentService.getAgentLogs(params);
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  // =====================================================
   // SUMMARIZER FUNCTIONS
   // =====================================================
   const generateSummary = useCallback(async (channelId: number, messageCount: number = 100): Promise<SummaryResult> => {
@@ -137,6 +256,26 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
       }));
       setError(null);
       return results;
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  const getSummarizerSchedule = useCallback(async (communityId: number) => {
+    try {
+      return await aiAgentService.getSummarizerSchedule(communityId);
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  const triggerAutoSummarize = useCallback(async (communityId: number) => {
+    try {
+      const result = await aiAgentService.triggerAutoSummarize(communityId);
+      setError(null);
+      return result;
     } catch (err: any) {
       setError(err.message);
       throw err;
@@ -580,9 +719,23 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
     agentStatus,
     isLoadingAgents,
     
+    // Agent Catalog & Management
+    getAgentCatalog,
+    installCommunityAgent,
+    uninstallCommunityAgent,
+    configureCommunityAgent,
+    getCommunityAgentStatus,
+    activatePersonalAgent,
+    deactivatePersonalAgent,
+    getPersonalAgentStatus,
+    configurePersonalAgent,
+    getAgentLogs,
+    
     // Summarizer
     generateSummary,
     getChannelSummaries,
+    getSummarizerSchedule,
+    triggerAutoSummarize,
     summaries,
     
     // Mood Tracker

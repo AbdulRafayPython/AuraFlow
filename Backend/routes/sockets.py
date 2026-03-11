@@ -26,7 +26,10 @@ user_id_cache = {}
 
 
 def handle_ai_command(content: str, username: str, user_id: int, channel_id: int, community_id: int = None):
-    """Handle AI commands from chat (/summarize, /help, etc.)"""
+    """Handle AI commands from chat (/summarize, /help, etc.)
+    
+    /summarize posts the result as a bot message in the channel (message_type='ai').
+    """
     try:
         log.info(f"[COMMAND HANDLER] Processing command: {content}")
         command_parts = content.strip().split()
@@ -42,45 +45,89 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
             log.info(f"[COMMAND] /summarize requested by {username} for channel {channel_id} with {message_count} messages")
             
             # Generate summary
-            log.info(f"[COMMAND] Initializing SummarizerAgent...")
             summarizer = SummarizerAgent()
-            log.info(f"[COMMAND] SummarizerAgent initialized, calling summarize_channel...")
-            
             result = summarizer.summarize_channel(
                 channel_id=channel_id,
                 message_count=message_count,
                 user_id=user_id
             )
             
-            log.info(f"[COMMAND] Summarizer returned: {result}")
+            log.info(f"[COMMAND] Summarizer returned success={result.get('success')}")
             
             if result.get('success'):
-                # Add personalized greeting
-                greeting = f"Hey {username}! 👋\n\nI know it's a bit of a long chat discussion. Here's the discussion that the chat had:\n\n"
-                footer = f"\n\n📊 Summary of last {result['message_count']} messages as requested"
-                summary_with_greeting = greeting + result['summary'] + footer
-                
-                response = {
+                # Format as a bot message and post into the channel
+                from tasks.agent_tasks import _format_summary_as_bot_message
+
+                # Get channel name for the header
+                channel_name = ''
+                conn = None
+                try:
+                    conn = get_db_connection()
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT name FROM channels WHERE id = %s", (channel_id,))
+                        row = cur.fetchone()
+                        if row:
+                            channel_name = row['name']
+                finally:
+                    if conn:
+                        conn.close()
+
+                bot_content = _format_summary_as_bot_message(result, channel_name)
+
+                # Insert as message_type='ai' and broadcast to the channel
+                conn = None
+                try:
+                    conn = get_db_connection()
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO messages (channel_id, sender_id, content, message_type)
+                            VALUES (%s, %s, %s, 'ai')
+                        """, (channel_id, user_id, bot_content))
+                        message_id = cur.lastrowid
+
+                        cur.execute("""
+                            SELECT m.*, u.username, u.display_name, u.avatar_url
+                            FROM messages m JOIN users u ON m.sender_id = u.id
+                            WHERE m.id = %s
+                        """, (message_id,))
+                        msg = cur.fetchone()
+                        conn.commit()
+
+                    if msg:
+                        payload = {
+                            'id': msg['id'],
+                            'channel_id': msg['channel_id'],
+                            'sender_id': user_id,
+                            'content': msg['content'],
+                            'message_type': 'ai',
+                            'reply_to': None,
+                            'created_at': msg['created_at'].isoformat() if hasattr(msg['created_at'], 'isoformat') else str(msg['created_at']),
+                            'author': 'Summarizer Agent',
+                            'avatar': None,
+                            'is_blocked': False,
+                            'moderation': None,
+                        }
+                        room = f"channel_{channel_id}"
+                        emit('message_received', payload, room=room, namespace='/')
+                        log.info(f"[COMMAND] ✅ Bot summary posted to channel {channel_id}")
+                finally:
+                    if conn:
+                        conn.close()
+
+                # Return success (no popup, message is already in the chat)
+                return {
                     'type': 'summarize',
                     'success': True,
-                    'summary': summary_with_greeting,
-                    'username': username,
-                    'key_points': result.get('key_points', []),
+                    'posted_as_bot': True,
                     'message_count': result['message_count'],
-                    'participants': result.get('participants', []),
                     'method': result.get('method', 'extractive'),
-                    'message': f"✨ Summary of last {result['message_count']} messages"
                 }
-                log.info(f"[COMMAND] Returning success response: {response}")
-                return response
             else:
-                error_response = {
+                return {
                     'type': 'summarize',
                     'success': False,
                     'error': result.get('error', 'Failed to generate summary')
                 }
-                log.warning(f"[COMMAND] Returning error response: {error_response}")
-                return error_response
         
         elif command == '/help':
             return {
@@ -201,6 +248,17 @@ def register_socket_events(socketio):
                 call_room = f"calluser_{username}"
                 join_room(call_room)
                 
+                # Join community rooms for unread tracking
+                cur.execute("""
+                    SELECT community_id FROM community_members WHERE user_id = %s
+                """, (user_id,))
+                community_rows = cur.fetchall()
+                log.info(f"[SOCKET] 🏘️ User {username} (ID: {user_id}) joining {len(community_rows)} community rooms")
+                for cm_row in community_rows:
+                    room_name = f"community_{cm_row['community_id']}"
+                    join_room(room_name)
+                    log.info(f"[SOCKET] ├─ Joined room: {room_name}")
+                
                 # Track user's rooms
                 user_rooms[username] = rooms()
                 
@@ -216,10 +274,30 @@ def register_socket_events(socketio):
                 """, (username,))
             conn.commit()
 
-            emit('user_status', {
+            # Register with presence service
+            try:
+                from services.presence import user_connected
+                user_connected(user_id, username, request.sid)
+            except ImportError:
+                pass
+            
+            # Load unread counts for this user
+            try:
+                from services.unread_tracker import load_user_unreads, get_user_unreads
+                load_user_unreads(user_id)
+                unreads = get_user_unreads(user_id)
+                log.info(f"[SOCKET] 📊 Emitting initial_unreads to {username} (ID: {user_id}): {unreads}")
+                emit('initial_unreads', unreads)
+            except ImportError:
+                log.error(f"[SOCKET] ❌ Failed to import unread_tracker")
+            except Exception as e:
+                log.error(f"[SOCKET] ❌ Failed to load/emit initial_unreads: {e}", exc_info=True)
+            conn.commit()
+
+            socketio.emit('user_status', {
                 'username': username,
                 'status': 'online'
-            }, broadcast=True, include_self=False)
+            }, namespace='/', skip_sid=request.sid)
 
             log.info(f"[SOCKET] {username} connected - online")
 
@@ -240,6 +318,15 @@ def register_socket_events(socketio):
             # Update heartbeat timestamp
             user_heartbeats[username] = datetime.now()
             log.debug(f"[HEARTBEAT] Received from {username}")
+            
+            # Update presence service
+            try:
+                uid = user_id_cache.get(username)
+                if uid:
+                    from services.presence import heartbeat as presence_heartbeat
+                    presence_heartbeat(uid, username)
+            except ImportError:
+                pass
             
             # Emit acknowledgment
             emit('heartbeat_ack', {'timestamp': datetime.now().isoformat()})
@@ -276,8 +363,16 @@ def register_socket_events(socketio):
             # (prevents a second socket's disconnect from nuking the primary session)
             if username in user_socket_sessions and user_socket_sessions[username] == sid:
                 del user_socket_sessions[username]
-                user_id_cache.pop(username, None)
+                user_id_cache_uid = user_id_cache.pop(username, None)
                 log.info(f"[SOCKET] Removed session mapping for {username}")
+                
+                # Notify presence service
+                try:
+                    from services.presence import user_disconnected
+                    if user_id_cache_uid:
+                        user_disconnected(user_id_cache_uid, username, sid)
+                except ImportError:
+                    pass
             elif username in user_socket_sessions:
                 log.info(f"[SOCKET] Skipping session removal for {username} - SID mismatch (disconnect: {sid}, stored: {user_socket_sessions[username]})")
                 # Another socket is still active for this user, don't mark offline
@@ -369,12 +464,12 @@ def register_socket_events(socketio):
                 """, (username,))
             conn.commit()
 
-            emit('user_status', {
+            socketio.emit('user_status', {
                 'username': username,
                 'status': 'offline'
-            }, broadcast=True)
+            }, namespace='/')
 
-            # Clean up any active 1-to-1 calls for this user
+            # Clean up any active 1-to-1 calls for this user + persist call logs
             calls_to_remove = []
             for cid, c in active_calls.items():
                 if username in (c['caller'], c['callee']):
@@ -386,6 +481,12 @@ def register_socket_events(socketio):
                             'by': username,
                             'reason': 'disconnected',
                         }, room=other_sid)
+                    # Persist call log based on state when user disconnected
+                    if c['status'] == 'connected' and c.get('connected_at'):
+                        duration = int((datetime.utcnow() - datetime.fromisoformat(c['connected_at'])).total_seconds())
+                        _emit_call_log(c, 'attended', max(duration, 1))
+                    elif c['status'] == 'ringing':
+                        _emit_call_log(c, 'missed', 0)
                     calls_to_remove.append(cid)
             for cid in calls_to_remove:
                 del active_calls[cid]
@@ -588,14 +689,44 @@ def register_socket_events(socketio):
                     if is_blocked:
                         log.info(f"[SOCKET] User {username} is BLOCKED in community {community_id}")
             
-            # 🛡️ SMART MODERATION CHECK (log all checks for accurate stats)
-            moderation_result = moderation_agent.moderate_message(
-                text=content,
-                user_id=user_id,
-                channel_id=channel_id,
-                message_id=message_id,
-                log=True  # Log all moderation checks for stats tracking
-            )
+            # 🛡️ SMART MODERATION CHECK — Only if moderation agent is installed for community
+            moderation_installed = False
+            if community_id:
+                try:
+                    chk_conn = get_db_connection()
+                    with chk_conn.cursor() as chk_cur:
+                        chk_cur.execute("""
+                            SELECT 1 FROM community_agents
+                            WHERE community_id = %s AND agent_type = 'moderation' AND enabled = TRUE
+                        """, (community_id,))
+                        moderation_installed = chk_cur.fetchone() is not None
+                    chk_conn.close()
+                except Exception:
+                    moderation_installed = True  # Fail-safe: moderate if can't check
+
+            if moderation_installed:
+                moderation_result = moderation_agent.moderate_message(
+                    text=content,
+                    user_id=user_id,
+                    channel_id=channel_id,
+                    message_id=message_id,
+                    log=True
+                )
+                # Track moderation usage
+                try:
+                    u_conn = get_db_connection()
+                    with u_conn.cursor() as u_cur:
+                        u_cur.execute("""
+                            UPDATE community_agents
+                            SET usage_count = usage_count + 1, last_active = NOW()
+                            WHERE community_id = %s AND agent_type = 'moderation'
+                        """, (community_id,))
+                    u_conn.commit()
+                    u_conn.close()
+                except Exception:
+                    pass
+            else:
+                moderation_result = {'action': 'allow', 'severity': 'none', 'confidence': 0, 'reasons': []}
             
             log.info(f"[MODERATION] Message {message_id} checked: {moderation_result['action']} (confidence: {moderation_result['confidence']})")
             
@@ -740,8 +871,58 @@ def register_socket_events(socketio):
                     'author': username
                 }, room=room, include_self=True)
                 log.info(f"[SOCKET] ✓ Message {message_id} broadcast complete")
+            
+            # ── Real-time unread delivery ──────────────────────────────────
+            # Only track unreads for messages that are actually delivered
+            if moderation_result['action'] != 'block':
+                # PRIMARY: Emit lightweight channel_activity to community room
+                # This is the reliable real-time path — community rooms are joined
+                # on connect and proven to work. The frontend filters locally.
+                if community_id:
+                    socketio.emit('channel_activity', {
+                        'channel_id': channel_id,
+                        'community_id': community_id,
+                        'sender_id': user_id,
+                        'message_id': message_id,
+                    }, room=f"community_{community_id}", namespace='/')
+                    log.info(f"[UNREAD] channel_activity emitted to community_{community_id} for channel {channel_id}")
+
+                # SECONDARY: Update in-memory cache + per-user room emit (backup)
+                try:
+                    from services.unread_tracker import increment_channel_unread
+                    increment_channel_unread(channel_id, user_id, community_id)
+                except Exception as unread_err:
+                    log.warning(f"[UNREAD] increment_channel_unread failed: {unread_err}")
 
             log.info(f"[SOCKET] Message from {username} to channel {channel_id} - Action: {moderation_result['action']}")
+
+            # 🤖 AGENT AUTO-EXECUTION (fire-and-forget via Celery)
+            # Only dispatch for text messages that weren't blocked
+            if content and moderation_result['action'] != 'block' and not content.strip().startswith('/'):
+                # Mood tracking — personal agent
+                try:
+                    from tasks.agent_tasks import track_mood_task
+                    track_mood_task.delay(content, user_id, channel_id)
+                except Exception as e:
+                    log.debug(f"[AGENT_DISPATCH] Mood task skipped: {e}")
+
+                # Focus analysis — community agent (every 50th message in past hour)
+                try:
+                    from tasks.agent_tasks import analyze_focus_task
+                    focus_conn = get_db_connection()
+                    try:
+                        with focus_conn.cursor() as fc:
+                            fc.execute("""
+                                SELECT COUNT(*) as cnt FROM messages
+                                WHERE channel_id = %s AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                            """, (channel_id,))
+                            msg_count = fc.fetchone()['cnt']
+                        if msg_count > 0 and msg_count % 50 == 0:
+                            analyze_focus_task.delay(channel_id, community_id)
+                    finally:
+                        focus_conn.close()
+                except Exception as e:
+                    log.debug(f"[AGENT_DISPATCH] Focus task skipped: {e}")
 
         except Exception as e:
             log.error(f"[SOCKET] new_message error: {e}", exc_info=True)
@@ -933,6 +1114,13 @@ def register_socket_events(socketio):
             receiver_room = f"user_{receiver_id}"
             log.info(f"[SOCKET] 🔔 Emitting receive_direct_message to receiver's personal room: {receiver_room}")
             socketio.emit('receive_direct_message', message_data, to=receiver_room, namespace='/')
+            
+            # Track DM unread count
+            try:
+                from services.unread_tracker import increment_dm_unread
+                increment_dm_unread(receiver_id, sender_id)
+            except ImportError:
+                pass
 
         except Exception as e:
             log.error(f"[SOCKET] send_direct_message error: {e}", exc_info=True)
@@ -1760,24 +1948,255 @@ def register_socket_events(socketio):
             log.error(f"[STATUS] Error: {e}")
 
     # ============================================================================
-    # 1-TO-1 AUDIO / VIDEO CALL SIGNALING
+    # UNREAD TRACKING SOCKET EVENTS
     # ============================================================================
-    # Active calls: call_id -> { caller, callee, status, type, started_at }
+
+    @socketio.on('mark_channel_read')
+    def handle_mark_channel_read(data):
+        """Mark a channel as read for the current user."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+            
+            channel_id = data.get('channel_id')
+            message_id = data.get('message_id')
+            user_id = user_id_cache.get(username)
+            
+            if not user_id or not channel_id:
+                return
+            
+            try:
+                from services.unread_tracker import mark_channel_read
+                mark_channel_read(user_id, channel_id, message_id)
+            except ImportError:
+                # Fallback to direct DB update
+                conn = get_db_connection()
+                try:
+                    with conn.cursor() as cur:
+                        if not message_id:
+                            cur.execute("SELECT MAX(id) AS max_id FROM messages WHERE channel_id = %s", (channel_id,))
+                            result = cur.fetchone()
+                            message_id = result['max_id'] if result else 0
+                        if message_id:
+                            cur.execute("""
+                                INSERT INTO channel_read_status (user_id, channel_id, last_read_message_id)
+                                VALUES (%s, %s, %s)
+                                ON DUPLICATE KEY UPDATE
+                                    last_read_message_id = GREATEST(last_read_message_id, VALUES(last_read_message_id)),
+                                    last_read_at = CURRENT_TIMESTAMP
+                            """, (user_id, channel_id, message_id))
+                    conn.commit()
+                finally:
+                    conn.close()
+            
+            log.debug(f"[UNREAD] {username} marked channel {channel_id} as read")
+        except Exception as e:
+            log.error(f"[UNREAD] mark_channel_read error: {e}")
+
+    @socketio.on('mark_dm_read')
+    def handle_mark_dm_read(data):
+        """Mark DM conversation as read."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+            
+            other_user_id = data.get('other_user_id')
+            user_id = user_id_cache.get(username)
+            
+            if not user_id or not other_user_id:
+                return
+            
+            try:
+                from services.unread_tracker import mark_dm_read
+                mark_dm_read(user_id, other_user_id)
+            except ImportError:
+                conn = get_db_connection()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            UPDATE direct_messages
+                            SET is_read = TRUE, read_at = NOW()
+                            WHERE sender_id = %s AND receiver_id = %s AND is_read = FALSE
+                        """, (other_user_id, user_id))
+                    conn.commit()
+                finally:
+                    conn.close()
+            
+            # Notify the sender that their messages were read
+            socketio.emit('dm_messages_read', {
+                'reader_id': user_id,
+                'reader_username': username,
+            }, room=f"user_{other_user_id}", namespace='/')
+            
+            log.debug(f"[UNREAD] {username} marked DMs from user {other_user_id} as read")
+        except Exception as e:
+            log.error(f"[UNREAD] mark_dm_read error: {e}")
+
+    @socketio.on('get_unreads')
+    def handle_get_unreads():
+        """Get all unread counts for the current user."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+            
+            user_id = user_id_cache.get(username)
+            if not user_id:
+                return
+            
+            try:
+                from services.unread_tracker import get_user_unreads
+                unreads = get_user_unreads(user_id)
+                emit('initial_unreads', unreads)
+            except ImportError:
+                pass
+        except Exception as e:
+            log.error(f"[UNREAD] get_unreads error: {e}")
+
+    # ============================================================================
+    # FRIEND STATUS ROOM
+    # ============================================================================
+
+    @socketio.on('join_friend_status')
+    def handle_join_friend_status():
+        """Join friend status room for presence tracking."""
+        try:
+            username = get_user_from_socket()
+            if not username:
+                return
+            
+            user_id = user_id_cache.get(username)
+            if not user_id:
+                return
+            
+            # Send current friend statuses
+            try:
+                from services.presence import get_online_friends
+                friend_statuses = get_online_friends(user_id)
+                emit('friends_status_bulk', friend_statuses)
+            except ImportError:
+                pass
+            
+            log.debug(f"[SOCKET] {username} requested friend statuses")
+        except Exception as e:
+            log.error(f"[SOCKET] join_friend_status error: {e}")
+
+    # ============================================================================
+    # 1-TO-1 AUDIO / VIDEO CALL SIGNALING  (with persistent call logs)
+    # ============================================================================
+    # Active calls: call_id -> { caller, callee, caller_id, callee_id, status, type, started_at, connected_at }
     active_calls = {}
 
     def _get_user_id(username):
         """Get user id from username."""
+        # Fast path: cache
+        if username in user_id_cache:
+            return user_id_cache[username]
         try:
             conn = get_db_connection()
             with conn.cursor() as cur:
                 cur.execute("SELECT id FROM users WHERE username = %s", (username,))
                 row = cur.fetchone()
-                return row['id'] if row else None
+                uid = row['id'] if row else None
+                if uid:
+                    user_id_cache[username] = uid
+                return uid
         except Exception:
             return None
         finally:
             if conn:
                 conn.close()
+
+    def _persist_call_log(caller_id, callee_id, call_type, status, duration, call_id):
+        """Insert a call log entry into direct_messages for BOTH participants.
+        Returns the created DM row dict or None."""
+        import json
+        content = json.dumps({
+            'call_type': call_type,   # 'audio' | 'video'
+            'status': status,         # 'attended' | 'missed' | 'rejected' | 'canceled'
+            'duration': duration,     # seconds (0 for non-attended)
+            'call_id': call_id,
+        })
+        conn = None
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO direct_messages (sender_id, receiver_id, content, message_type)
+                    VALUES (%s, %s, %s, 'call')
+                """, (caller_id, callee_id, content))
+                msg_id = cur.lastrowid
+                cur.execute("""
+                    SELECT dm.*, u.username, u.display_name, u.avatar_url
+                    FROM direct_messages dm
+                    JOIN users u ON dm.sender_id = u.id
+                    WHERE dm.id = %s
+                """, (msg_id,))
+                row = cur.fetchone()
+                # Get receiver info
+                cur.execute("SELECT id, username, display_name, avatar_url FROM users WHERE id = %s", (callee_id,))
+                recv = cur.fetchone()
+            conn.commit()
+
+            if not row:
+                return None
+
+            from utils import get_avatar_url
+            sender_avatar = get_avatar_url(row['username'], row['avatar_url'])
+            recv_avatar = get_avatar_url(recv['username'], recv['avatar_url']) if recv else None
+
+            return {
+                'id': row['id'],
+                'sender_id': row['sender_id'],
+                'receiver_id': row['receiver_id'],
+                'content': row['content'],
+                'message_type': 'call',
+                'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+                'is_read': False,
+                'edited_at': None,
+                'reply_to': None,
+                'sender': {
+                    'id': row['sender_id'],
+                    'username': row['username'],
+                    'display_name': row['display_name'] or row['username'],
+                    'avatar_url': sender_avatar,
+                },
+                'receiver': {
+                    'id': recv['id'],
+                    'username': recv['username'],
+                    'display_name': recv['display_name'] or recv['username'],
+                    'avatar_url': recv_avatar,
+                } if recv else None,
+            }
+        except Exception as e:
+            log.error(f"[CALL] Failed to persist call log: {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            return None
+        finally:
+            if conn:
+                conn.close()
+
+    def _emit_call_log(call, status, duration=0):
+        """Persist a call log and broadcast it to both participants as a DM."""
+        msg = _persist_call_log(
+            call['caller_id'], call['callee_id'],
+            call['type'], status, duration, call.get('call_id', ''),
+        )
+        if msg:
+            # Use socketio.emit (not bare emit) so it works reliably
+            # even inside disconnect handlers where request context is gone
+            dm_room = f"dm_{min(call['caller_id'], call['callee_id'])}_{max(call['caller_id'], call['callee_id'])}"
+            socketio.emit('receive_direct_message', msg, to=dm_room, namespace='/')
+            # Also emit to personal rooms for unread badge / notification
+            socketio.emit('receive_direct_message', msg, to=f"user_{call['caller_id']}", namespace='/')
+            socketio.emit('receive_direct_message', msg, to=f"user_{call['callee_id']}", namespace='/')
+            log.info(f"[CALL] Call log emitted: {status} (call_id={call.get('call_id')}, msg_id={msg['id']})")
+        else:
+            log.error(f"[CALL] Failed to create call log for status={status}, call_id={call.get('call_id')}")
+        return msg
 
     @socketio.on('call:initiate')
     def handle_call_initiate(data):
@@ -1811,15 +2230,18 @@ def register_socket_events(socketio):
                         emit('call:error', {'message': 'Already in a call'})
                         return
 
-            # Get caller profile info
+            # Get caller + callee profile info + IDs
             conn = get_db_connection()
             caller_info = {}
             callee_info = {}
+            caller_id = None
+            callee_id = None
             try:
                 with conn.cursor() as cur:
                     cur.execute("SELECT id, username, display_name, avatar_url FROM users WHERE username = %s", (caller,))
                     row = cur.fetchone()
                     if row:
+                        caller_id = row['id']
                         caller_info = {
                             'id': row['id'],
                             'username': row['username'],
@@ -1829,6 +2251,7 @@ def register_socket_events(socketio):
                     cur.execute("SELECT id, username, display_name, avatar_url FROM users WHERE username = %s", (callee_username,))
                     row2 = cur.fetchone()
                     if row2:
+                        callee_id = row2['id']
                         callee_info = {
                             'id': row2['id'],
                             'username': row2['username'],
@@ -1838,15 +2261,23 @@ def register_socket_events(socketio):
             finally:
                 conn.close()
 
+            if not caller_id or not callee_id:
+                emit('call:error', {'message': 'User not found'})
+                return
+
             import uuid
-            call_id = str(uuid.uuid4())
+            call_id = data.get('callId') or str(uuid.uuid4())
 
             active_calls[call_id] = {
+                'call_id': call_id,
                 'caller': caller,
                 'callee': callee_username,
+                'caller_id': caller_id,
+                'callee_id': callee_id,
                 'type': call_type,
                 'status': 'ringing',
                 'started_at': datetime.utcnow().isoformat(),
+                'connected_at': None,
             }
 
             # Notify callee via username room (reaches all sockets for that user)
@@ -1888,6 +2319,7 @@ def register_socket_events(socketio):
                 return
 
             call['status'] = 'connected'
+            call['connected_at'] = datetime.utcnow().isoformat()
 
             emit('call:accepted', {'callId': call_id}, room=f"calluser_{call['caller']}")
 
@@ -1914,13 +2346,23 @@ def register_socket_events(socketio):
                 return
 
             other = call['caller'] if username == call['callee'] else call['callee']
+
+            # Determine status: callee rejects = 'rejected', caller cancels = 'canceled'
+            if username == call['callee']:
+                status = 'rejected'
+            else:
+                status = 'canceled'
+
             emit('call:rejected', {
                 'callId': call_id,
                 'by': username,
             }, room=f"calluser_{other}")
 
+            # Persist call log
+            _emit_call_log(call, status, 0)
+
             del active_calls[call_id]
-            log.info(f"[CALL] {username} rejected call {call_id}")
+            log.info(f"[CALL] {username} {status} call {call_id}")
 
         except Exception as e:
             log.error(f"[CALL] reject error: {e}", exc_info=True)
@@ -1942,10 +2384,25 @@ def register_socket_events(socketio):
                 return
 
             other = call['caller'] if username == call['callee'] else call['callee']
+
             emit('call:ended', {
                 'callId': call_id,
                 'by': username,
             }, room=f"calluser_{other}")
+
+            # Determine status + duration
+            if call['status'] == 'connected' and call.get('connected_at'):
+                # Call was answered — attended
+                duration = int((datetime.utcnow() - datetime.fromisoformat(call['connected_at'])).total_seconds())
+                _emit_call_log(call, 'attended', max(duration, 1))
+            elif call['status'] == 'ringing':
+                # Caller ended before callee picked up — missed
+                if username == call['caller']:
+                    _emit_call_log(call, 'missed', 0)
+                else:
+                    # Callee ended while ringing = rejected
+                    _emit_call_log(call, 'rejected', 0)
+            # else: already handled or unknown state — skip logging
 
             del active_calls[call_id]
             log.info(f"[CALL] {username} ended call {call_id}")

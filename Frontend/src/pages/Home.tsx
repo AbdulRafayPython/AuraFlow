@@ -1,7 +1,8 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { 
-  Plus, Search, AlertCircle, Compass, MessageSquare, Users, 
-  Bot, Shield, Sparkles, ArrowRight, Zap, Globe
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import {
+  Plus, AlertCircle, Globe, MessageSquare, Users,
+  Bot, Shield, Sparkles, Zap, Heart,
+  UserPlus, Tag, Lightbulb
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -20,6 +21,13 @@ interface CommunityFormData {
   color: string;
 }
 
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
 export default function Home() {
   const { isDarkMode, currentTheme } = useTheme();
   const { user } = useAuth();
@@ -27,7 +35,7 @@ export default function Home() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const isBasicTheme = currentTheme === 'basic';
-  
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -36,24 +44,18 @@ export default function Home() {
     console.log('[HOME] Component mounted. Current communities:', communities);
   }, [communities]);
 
+  /* ── Handlers ── */
   const handleCreateCommunity = useCallback(
     async (data: CommunityFormData): Promise<Community> => {
       try {
         setApiError(null);
         const newCommunity = await channelService.createCommunity(data);
-        toast({
-          title: '✅ Community created',
-          description: `Proceed to branding and uploads.`,
-        });
+        toast({ title: '✅ Community created', description: 'Proceed to branding and uploads.' });
         return newCommunity;
       } catch (error: any) {
         const errorMsg = error.message || 'Failed to create community';
         setApiError(errorMsg);
-        toast({
-          title: '❌ Error',
-          description: errorMsg,
-          variant: 'destructive',
-        });
+        toast({ title: '❌ Error', description: errorMsg, variant: 'destructive' });
         throw error;
       }
     },
@@ -64,8 +66,7 @@ export default function Home() {
     async (search: string, limit: number, offset: number): Promise<Community[]> => {
       try {
         setApiError(null);
-        const communities = await channelService.discoverCommunities(search, limit, offset);
-        return communities;
+        return await channelService.discoverCommunities(search, limit, offset);
       } catch (error: any) {
         const errorMsg = error.message || 'Failed to discover communities';
         console.error('[HOME] Discovery error:', errorMsg);
@@ -81,10 +82,7 @@ export default function Home() {
       try {
         setApiError(null);
         await channelService.joinCommunity(communityId);
-        toast({
-          title: '✅ Success',
-          description: 'You have joined the community!',
-        });
+        toast({ title: '✅ Success', description: 'You have joined the community!' });
         setShowJoinModal(false);
         await reloadCommunities();
       } catch (error: any) {
@@ -96,207 +94,268 @@ export default function Home() {
         } else {
           setApiError(errorMsg);
         }
-        toast({
-          title: '❌ Error',
-          description: errorMsg,
-          variant: 'destructive',
-        });
+        toast({ title: '❌ Error', description: errorMsg, variant: 'destructive' });
       }
     },
     [toast, reloadCommunities]
   );
 
   const displayName = user?.display_name || user?.username || 'there';
+  const greeting = useMemo(() => getGreeting(), []);
 
-  const features = [
+  /* ── Data ── */
+  const stats = [
     {
-      icon: <MessageSquare className="w-5 h-5" />,
-      title: 'Real-time Chat',
-      desc: 'Instant messaging with channels, threads, and direct messages.',
-      color: 'from-blue-500 to-cyan-500',
-      colorLight: 'bg-blue-50 text-blue-600 border-blue-200',
-      colorDark: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+      icon: <Users className="w-6 h-6" />,
+      value: communities.length,
+      label: 'Communities',
+      accent: 'text-[hsl(var(--theme-accent-primary))]',
+      bg: isDarkMode ? 'bg-[hsl(var(--theme-accent-primary)/0.1)]' : 'bg-blue-50',
     },
     {
-      icon: <Bot className="w-5 h-5" />,
-      title: 'AI Agents',
-      desc: 'Smart assistants that summarize, moderate, and track engagement.',
-      color: 'from-violet-500 to-purple-500',
-      colorLight: 'bg-violet-50 text-violet-600 border-violet-200',
-      colorDark: 'bg-violet-500/10 text-violet-400 border-violet-500/20',
+      icon: <Sparkles className="w-6 h-6" />,
+      value: 6,
+      label: 'AI Agents',
+      accent: 'text-violet-400',
+      bg: isDarkMode ? 'bg-violet-500/10' : 'bg-violet-50',
     },
     {
-      icon: <Shield className="w-5 h-5" />,
-      title: 'Auto Moderation',
-      desc: 'Content safety powered by AI to keep conversations healthy.',
-      color: 'from-emerald-500 to-teal-500',
-      colorLight: 'bg-emerald-50 text-emerald-600 border-emerald-200',
-      colorDark: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-    },
-    {
-      icon: <Zap className="w-5 h-5" />,
-      title: 'Mood & Wellness',
-      desc: 'Sentiment analysis and wellness insights for your community.',
-      color: 'from-amber-500 to-orange-500',
-      colorLight: 'bg-amber-50 text-amber-600 border-amber-200',
-      colorDark: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+      icon: <Heart className="w-6 h-6" />,
+      value: 'Active',
+      label: 'Wellness Tracking',
+      accent: 'text-emerald-400',
+      bg: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50',
     },
   ];
 
-  return (
-    <div 
-      className="flex-1 flex flex-col overflow-y-auto"
-      style={{ 
-        background: 'var(--theme-bg-gradient, hsl(var(--theme-bg-primary)))'
-      }}
-    >
-      {/* Error Banner */}
-      {apiError && (
-        <div className="mx-4 sm:mx-8 mt-4">
-          <div className="p-3 sm:p-4 rounded-xl border flex items-start gap-3 bg-red-500/10 border-red-500/20 text-red-400">
-            <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
-            <div className="min-w-0">
-              <p className="font-medium text-sm">Unable to complete action</p>
-              <p className="text-xs mt-0.5 opacity-80">{apiError}</p>
-            </div>
-          </div>
-        </div>
-      )}
+  const features = [
+    {
+      icon: <MessageSquare className="w-6 h-6" />,
+      title: 'Real-time Chat',
+      desc: 'Connect instantly with your community members across secure, encrypted channels.',
+      accent: 'text-[hsl(var(--theme-accent-primary))]',
+      bg: isDarkMode ? 'bg-[hsl(var(--theme-accent-primary)/0.1)]' : 'bg-blue-50',
+      hoverBorder: 'hover:border-[hsl(var(--theme-accent-primary)/0.3)]',
+    },
+    {
+      icon: <Bot className="w-6 h-6" />,
+      title: 'AI Agents',
+      desc: 'Deploy intelligent agents to handle tasks, summarize chats, and provide insights.',
+      accent: 'text-violet-400',
+      bg: isDarkMode ? 'bg-violet-500/10' : 'bg-violet-50',
+      hoverBorder: 'hover:border-violet-400/30',
+    },
+    {
+      icon: <Shield className="w-6 h-6" />,
+      title: 'Auto Moderation',
+      desc: 'Maintain a healthy environment with AI-powered moderation and spam protection.',
+      accent: 'text-emerald-400',
+      bg: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50',
+      hoverBorder: 'hover:border-emerald-400/30',
+    },
+    {
+      icon: <Zap className="w-6 h-6" />,
+      title: 'Mood Wellness',
+      desc: 'Monitor community sentiment and individual wellbeing with privacy-first tracking.',
+      accent: 'text-orange-400',
+      bg: isDarkMode ? 'bg-orange-400/10' : 'bg-orange-50',
+      hoverBorder: 'hover:border-orange-400/30',
+    },
+  ];
 
-      {/* Hero Section */}
-      <div className="relative overflow-hidden">
-        {/* Background decorations */}
-        {!isBasicTheme && (
-          <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full opacity-[0.07]"
-              style={{ background: 'radial-gradient(circle, hsl(var(--theme-accent-primary)), transparent 70%)' }} />
-            <div className="absolute -bottom-20 -left-20 w-72 h-72 rounded-full opacity-[0.05]"
-              style={{ background: 'radial-gradient(circle, hsl(var(--theme-accent-secondary)), transparent 70%)' }} />
+  const quickLinks = [
+    {
+      icon: <UserPlus className="w-5 h-5" />,
+      title: 'Find Friends',
+      desc: 'Sync contacts to find members you know.',
+    },
+    {
+      icon: <Tag className="w-5 h-5" />,
+      title: 'Organize Channels',
+      desc: 'Use drag-and-drop to group channels.',
+    },
+    {
+      icon: <Lightbulb className="w-5 h-5" />,
+      title: 'Agent Training',
+      desc: 'Teach your agents by providing feedback.',
+    },
+  ];
+
+  /* ── Shared styles ── */
+  const cardCls = `bg-[hsl(var(--theme-bg-secondary)/0.5)] border border-[hsl(var(--theme-border-default)/0.5)] ${isBasicTheme ? 'rounded-lg' : 'rounded-2xl'}`;
+
+  return (
+    <div
+      className="flex-1 flex flex-col overflow-y-auto custom-scrollbar"
+      style={{ background: 'var(--theme-bg-gradient, hsl(var(--theme-bg-primary)))' }}
+    >
+      <main className="max-w-6xl w-full mx-auto px-6 py-8 flex flex-col gap-8">
+
+        {/* ── Error Banner ── */}
+        {apiError && (
+          <div className="animate-fade-in">
+            <div className={`p-3.5 ${isBasicTheme ? 'rounded-md' : 'rounded-xl'} border flex items-start gap-3 bg-red-500/10 border-red-500/20 text-red-400`}>
+              <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="font-semibold text-sm">Unable to complete action</p>
+                <p className="text-xs mt-0.5 opacity-80">{apiError}</p>
+              </div>
+            </div>
           </div>
         )}
 
-        <div className="relative px-5 sm:px-8 lg:px-12 pt-8 sm:pt-14 pb-6 sm:pb-10">
-          {/* Greeting */}
-          <div className="max-w-3xl">
-            <p className="text-sm font-medium mb-2 text-[hsl(var(--theme-accent-primary))]">
-              Welcome back
-            </p>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-[hsl(var(--theme-text-primary))]">
-              Hey, {displayName}
-            </h1>
-            <p className="mt-2 sm:mt-3 text-sm sm:text-base leading-relaxed max-w-xl text-[hsl(var(--theme-text-secondary))]">
-              {communities.length > 0 
-                ? `You're part of ${communities.length} ${communities.length === 1 ? 'community' : 'communities'}. Jump back in or discover something new.`
-                : 'Get started by creating your own space or finding one that fits you.'
-              }
-            </p>
+        {/* ═══════════════════════════════════════════
+            HERO CARD
+        ═══════════════════════════════════════════ */}
+        <section
+          className={`relative overflow-hidden ${isBasicTheme ? 'rounded-xl' : 'rounded-3xl'} border border-[hsl(var(--theme-border-default)/0.5)] p-8 sm:p-12`}
+          style={{
+            background: isDarkMode
+              ? 'linear-gradient(135deg, hsl(var(--theme-bg-secondary)) 0%, hsl(var(--theme-bg-primary)) 100%)'
+              : 'linear-gradient(135deg, hsl(var(--theme-bg-secondary)) 0%, hsl(var(--theme-bg-primary)) 100%)',
+          }}
+        >
+          {/* Ambient glow */}
+          {!isBasicTheme && (
+            <div
+              className="absolute -top-1/2 -right-[10%] w-[300px] h-[300px] pointer-events-none"
+              style={{
+                background: 'radial-gradient(circle, hsl(var(--theme-accent-primary) / 0.1) 0%, transparent 70%)',
+              }}
+            />
+          )}
+
+          {/* Greeting badge */}
+          <div className="mb-5">
+            <span className={`inline-block px-3 py-1 text-[10px] font-bold tracking-widest uppercase ${isBasicTheme ? 'rounded-md' : 'rounded-full'} bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]`}>
+              {greeting}
+            </span>
           </div>
 
-          {/* Quick Actions */}
-          <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row gap-3 sm:gap-4">
+          {/* Heading */}
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[hsl(var(--theme-text-primary))] mb-4 tracking-tight">
+            Welcome back, {displayName}
+          </h1>
+
+          {/* Subtitle */}
+          <p className="text-[hsl(var(--theme-text-secondary))] text-base sm:text-lg mb-8 max-w-xl leading-relaxed">
+            {communities.length > 0 ? (
+              <>
+                You're currently active in{' '}
+                <span className="text-[hsl(var(--theme-text-primary))] font-semibold">
+                  {communities.length} {communities.length === 1 ? 'community' : 'communities'}
+                </span>
+                {' '}and{' '}
+                <span className="text-[hsl(var(--theme-text-primary))] font-semibold">6 AI agents</span>.
+              </>
+            ) : (
+              'Create your first community or explore what others have built.'
+            )}
+          </p>
+
+          {/* CTA Buttons */}
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <button
               onClick={() => setShowCreateModal(true)}
-              className={`group flex items-center gap-3 px-5 py-3 sm:py-3.5 ${isBasicTheme ? 'rounded-lg' : 'rounded-2xl'} font-semibold text-sm transition-all duration-200 text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-lg hover:shadow-[hsl(var(--theme-accent-primary)/0.25)] hover:scale-[1.02] active:scale-[0.98]`}
+              className={`inline-flex items-center gap-2 px-6 py-3 ${isBasicTheme ? 'rounded-lg' : 'rounded-xl'} font-bold text-sm text-white transition-all duration-200 bg-[hsl(var(--theme-accent-primary))] hover:brightness-110 hover:shadow-lg active:scale-[0.98]`}
             >
-              <Plus className="w-4.5 h-4.5" />
+              <Plus className="w-5 h-5" />
               Create Community
-              <ArrowRight className="w-4 h-4 opacity-0 -ml-2 group-hover:opacity-100 group-hover:ml-0 transition-all duration-200" />
             </button>
 
             <button
               onClick={() => navigate('/discover')}
-              className={`group flex items-center gap-3 px-5 py-3 sm:py-3.5 ${isBasicTheme ? 'rounded-lg' : 'rounded-2xl'} font-semibold text-sm transition-all duration-200 border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:border-[hsl(var(--theme-border-hover))] hover:scale-[1.02] active:scale-[0.98]`}
+              className={`inline-flex items-center gap-2 px-6 py-3 ${isBasicTheme ? 'rounded-lg' : 'rounded-xl'} font-bold text-sm transition-all duration-200 border ${cardCls} text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))] active:scale-[0.98]`}
             >
-              <Compass className="w-4.5 h-4.5" />
+              <Globe className="w-5 h-5" />
               Explore Communities
-              <ArrowRight className="w-4 h-4 opacity-0 -ml-2 group-hover:opacity-100 group-hover:ml-0 transition-all duration-200" />
             </button>
           </div>
-        </div>
-      </div>
+        </section>
 
-      {/* Divider */}
-      <div className="mx-5 sm:mx-8 lg:mx-12">
-        <div className="h-px bg-[hsl(var(--theme-border-default)/0.5)]" />
-      </div>
-
-      {/* Features Grid */}
-      <div className="px-5 sm:px-8 lg:px-12 py-6 sm:py-10">
-        <div className="flex items-center gap-2 mb-5 sm:mb-6">
-          <Sparkles className="w-4 h-4 text-[hsl(var(--theme-accent-primary))]" />
-          <h2 className="text-xs font-bold uppercase tracking-widest text-[hsl(var(--theme-text-muted))]">
-            What you can do
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-          {features.map((feat, i) => (
-            <div
-              key={i}
-              className={`group p-4 sm:p-5 ${isBasicTheme ? 'rounded-lg' : 'rounded-2xl'} border transition-all duration-200 bg-[hsl(var(--theme-bg-secondary)/0.4)] border-[hsl(var(--theme-border-default)/0.5)] hover:bg-[hsl(var(--theme-bg-secondary)/0.7)] hover:border-[hsl(var(--theme-border-default))]`}
-            >
-              <div className="flex items-start gap-3.5">
-                <div className={`flex-shrink-0 p-2.5 ${isBasicTheme ? 'rounded-lg' : 'rounded-xl'} border ${isDarkMode ? feat.colorDark : feat.colorLight} transition-colors`}>
-                  {feat.icon}
-                </div>
-                <div className="min-w-0">
-                  <h3 className="font-semibold text-sm text-[hsl(var(--theme-text-primary))]">{feat.title}</h3>
-                  <p className="mt-1 text-xs leading-relaxed text-[hsl(var(--theme-text-muted))]">{feat.desc}</p>
-                </div>
+        {/* ═══════════════════════════════════════════
+            STATS GRID
+        ═══════════════════════════════════════════ */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+          {stats.map((s, i) => (
+            <div key={i} className={`${cardCls} p-6 flex justify-between items-center`}>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--theme-text-muted))] mb-1">
+                  {s.label}
+                </p>
+                <p className="text-3xl font-bold text-[hsl(var(--theme-text-primary))]">
+                  {s.value}
+                </p>
+              </div>
+              <div className={`w-10 h-10 ${isBasicTheme ? 'rounded-md' : 'rounded-lg'} flex items-center justify-center ${s.bg} ${s.accent}`}>
+                {s.icon}
               </div>
             </div>
           ))}
-        </div>
-      </div>
+        </section>
 
-      {/* Divider */}
-      <div className="mx-5 sm:mx-8 lg:mx-12">
-        <div className="h-px bg-[hsl(var(--theme-border-default)/0.5)]" />
-      </div>
-
-      {/* Quick Tips */}
-      <div className="px-5 sm:px-8 lg:px-12 py-6 sm:py-10 pb-24 md:pb-10">
-        <div className="flex items-center gap-2 mb-5 sm:mb-6">
-          <Globe className="w-4 h-4 text-[hsl(var(--theme-accent-primary))]" />
-          <h2 className="text-xs font-bold uppercase tracking-widest text-[hsl(var(--theme-text-muted))]">
-            Quick tips
+        {/* ═══════════════════════════════════════════
+            FEATURE GRID
+        ═══════════════════════════════════════════ */}
+        <section>
+          <h2 className="text-[10px] font-bold tracking-[0.2em] uppercase text-[hsl(var(--theme-text-muted))] mb-6">
+            What you can do
           </h2>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-          <div className={`p-4 ${isBasicTheme ? 'rounded-lg' : 'rounded-xl'} border bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.4)]`}>
-            <div className="flex items-center gap-2 mb-2">
-              <Users className="w-3.5 h-3.5 text-[hsl(var(--theme-accent-primary))]" />
-              <span className="text-xs font-semibold text-[hsl(var(--theme-text-primary))]">Friends</span>
-            </div>
-            <p className="text-xs leading-relaxed text-[hsl(var(--theme-text-muted))]">
-              Use the sidebar to add friends and start private conversations anytime.
-            </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8">
+            {features.map((feat, i) => (
+              <div
+                key={i}
+                className={`group ${cardCls} ${feat.hoverBorder} p-6 sm:p-8 ${isBasicTheme ? 'rounded-xl' : 'rounded-3xl'} cursor-pointer transition-colors duration-200`}
+              >
+                {/* Icon */}
+                <div className={`w-10 h-10 ${isBasicTheme ? 'rounded-lg' : 'rounded-xl'} flex items-center justify-center ${feat.bg} ${feat.accent} mb-6`}>
+                  {feat.icon}
+                </div>
+
+                {/* Title */}
+                <h3 className={`text-xl sm:text-2xl font-bold text-[hsl(var(--theme-text-primary))] mb-3 group-hover:${feat.accent} transition-colors`}>
+                  {feat.title}
+                </h3>
+
+                {/* Description */}
+                <p className="text-[hsl(var(--theme-text-muted))] leading-relaxed max-w-sm text-sm">
+                  {feat.desc}
+                </p>
+              </div>
+            ))}
           </div>
+        </section>
 
-          <div className={`p-4 ${isBasicTheme ? 'rounded-lg' : 'rounded-xl'} border bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.4)]`}>
-            <div className="flex items-center gap-2 mb-2">
-              <MessageSquare className="w-3.5 h-3.5 text-[hsl(var(--theme-accent-primary))]" />
-              <span className="text-xs font-semibold text-[hsl(var(--theme-text-primary))]">Channels</span>
+        {/* ═══════════════════════════════════════════
+            QUICK LINKS
+        ═══════════════════════════════════════════ */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 pb-12 md:pb-4">
+          {quickLinks.map((link, i) => (
+            <div
+              key={i}
+              className={`flex items-center gap-4 p-4 ${cardCls} ${isBasicTheme ? '' : 'bg-[hsl(var(--theme-bg-secondary)/0.3)]'} hover:bg-[hsl(var(--theme-bg-secondary)/0.6)] transition-colors cursor-pointer`}
+            >
+              <div className="text-[hsl(var(--theme-text-muted))] flex-shrink-0">
+                {link.icon}
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-[hsl(var(--theme-text-primary))]">{link.title}</h4>
+                <p className="text-xs text-[hsl(var(--theme-text-muted))]">{link.desc}</p>
+              </div>
             </div>
-            <p className="text-xs leading-relaxed text-[hsl(var(--theme-text-muted))]">
-              Communities have text and voice channels — pick one and start chatting.
-            </p>
-          </div>
+          ))}
+        </section>
 
-          <div className={`p-4 ${isBasicTheme ? 'rounded-lg' : 'rounded-xl'} border bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.4)]`}>
-            <div className="flex items-center gap-2 mb-2">
-              <Bot className="w-3.5 h-3.5 text-[hsl(var(--theme-accent-primary))]" />
-              <span className="text-xs font-semibold text-[hsl(var(--theme-text-primary))]">AI Agents</span>
-            </div>
-            <p className="text-xs leading-relaxed text-[hsl(var(--theme-text-muted))]">
-              Visit Explore to manage agents like summarizer, mood tracker, and moderation.
-            </p>
-          </div>
-        </div>
-      </div>
+        {/* ── Footer ── */}
+        <footer className="text-center pb-8 pt-4">
+          <p className="text-[11px] uppercase tracking-widest text-[hsl(var(--theme-text-muted)/0.5)]">
+            © 2026 AuraFlow Protocol &bull; Designed for Professionals
+          </p>
+        </footer>
+      </main>
 
-      {/* Modals */}
+      {/* ── Modals ── */}
       <CreateCommunityModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}

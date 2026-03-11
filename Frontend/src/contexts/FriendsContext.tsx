@@ -134,51 +134,51 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     try {
       await friendService.acceptFriendRequest(requestId);
-      // Remove from pending
-      setPendingRequests(pendingRequests.filter(r => r.id !== requestId));
+      // Remove from pending using functional update
+      setPendingRequests(prev => prev.filter(r => r.id !== requestId));
       // Refresh friends list
       await getFriends();
     } catch (err: any) {
       setError(err.response?.data?.message || "Failed to accept friend request");
       throw err;
     }
-  }, [pendingRequests, getFriends]);
+  }, [getFriends]);
 
   // Reject friend request
   const rejectFriendRequest = useCallback(async (requestId: number) => {
     setError(null);
     try {
       await friendService.rejectFriendRequest(requestId);
-      setPendingRequests(pendingRequests.filter(r => r.id !== requestId));
+      setPendingRequests(prev => prev.filter(r => r.id !== requestId));
     } catch (err: any) {
       setError(err.response?.data?.message || "Failed to reject friend request");
       throw err;
     }
-  }, [pendingRequests]);
+  }, []);
 
   // Cancel sent friend request
   const cancelFriendRequest = useCallback(async (requestId: number) => {
     setError(null);
     try {
       await friendService.cancelFriendRequest(requestId);
-      setSentRequests(sentRequests.filter(r => r.id !== requestId));
+      setSentRequests(prev => prev.filter(r => r.id !== requestId));
     } catch (err: any) {
       setError(err.response?.data?.message || "Failed to cancel friend request");
       throw err;
     }
-  }, [sentRequests]);
+  }, []);
 
   // Remove friend
   const removeFriend = useCallback(async (friendId: number) => {
     setError(null);
     try {
       await friendService.removeFriend(friendId);
-      setFriends(friends.filter(f => f.id !== friendId));
+      setFriends(prev => prev.filter(f => f.id !== friendId));
     } catch (err: any) {
       setError(err.response?.data?.message || "Failed to remove friend");
       throw err;
     }
-  }, [friends]);
+  }, []);
 
   // Block user
   const blockUser = useCallback(async (userId: number) => {
@@ -186,25 +186,25 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
     try {
       await friendService.blockUser(userId);
       // Remove from friends if they are a friend
-      setFriends(friends.filter(f => f.id !== userId));
+      setFriends(prev => prev.filter(f => f.id !== userId));
       await getBlockedUsers();
     } catch (err: any) {
       setError(err.response?.data?.message || "Failed to block user");
       throw err;
     }
-  }, [friends, getBlockedUsers]);
+  }, [getBlockedUsers]);
 
   // Unblock user
   const unblockUser = useCallback(async (userId: number) => {
     setError(null);
     try {
       await friendService.unblockUser(userId);
-      setBlockedUsers(blockedUsers.filter(b => b.blocked_user_id !== userId));
+      setBlockedUsers(prev => prev.filter(b => b.blocked_user_id !== userId));
     } catch (err: any) {
       setError(err.response?.data?.message || "Failed to unblock user");
       throw err;
     }
-  }, [blockedUsers]);
+  }, []);
 
   // Local state updates
   const addFriend = useCallback((friend: Friend) => {
@@ -270,9 +270,10 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
   // Setup socket listeners - register handlers immediately
   // (handlers are just array pushes that work regardless of connection state)
   useEffect(() => {
+    console.log('[FriendsContext] 🔌 Setting up socket listeners...');
     // Friend request received (receiver side)
     const unsubscribeFriendRequest = socketService.onFriendRequest((request) => {
-      console.log('[FriendsContext] Friend request received:', request.id);
+      console.log('[FriendsContext] 🔔 Friend request received via socket:', JSON.stringify(request));
       
       setPendingRequests(prev => {
         const isDuplicate = prev.some(r => r.id === request.id);
@@ -301,7 +302,7 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
       });
     });
 
-    // Friend status changed (online/offline/accepted/rejected/removed/blocked)
+    // Friend status changed (online/offline/accepted/rejected/removed/blocked/cancelled)
     const unsubscribeFriendStatus = socketService.onFriendStatus((data) => {
       console.log('[FriendsContext] Friend status changed:', data);
       if (data.status === "online" || data.status === "offline" || data.status === "idle" || data.status === "dnd") {
@@ -318,11 +319,28 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
       } else if (data.status === "accepted") {
         console.log('[FriendsContext] Friend request accepted, reloading friends & sentRequests');
         getFriends();
-        getSentRequests();
+        // Remove from sentRequests (sender side) — by friend_id (the acceptor)
+        setSentRequests(prev => prev.filter(r => r.receiver_id !== data.friend_id));
+        // Remove from pendingRequests (receiver side) — by friend_id (the sender)
         setPendingRequests(prev => prev.filter(r => r.sender_id !== data.friend_id));
       } else if (data.status === "rejected") {
-        console.log('[FriendsContext] Friend request rejected, refreshing sentRequests');
-        getSentRequests();
+        console.log('[FriendsContext] Friend request rejected, removing from sentRequests');
+        // Sender sees their sent request disappear in real-time
+        if (data.request_id) {
+          setSentRequests(prev => prev.filter(r => r.id !== data.request_id));
+        } else {
+          // Fallback: remove by friend_id (the rejector)
+          setSentRequests(prev => prev.filter(r => r.receiver_id !== data.friend_id));
+        }
+      } else if (data.status === "cancelled") {
+        console.log('[FriendsContext] Friend request cancelled, removing from pendingRequests');
+        // Receiver sees the incoming request disappear in real-time
+        if (data.request_id) {
+          setPendingRequests(prev => prev.filter(r => r.id !== data.request_id));
+        } else {
+          // Fallback: remove by friend_id (the canceller/sender)
+          setPendingRequests(prev => prev.filter(r => r.sender_id !== data.friend_id));
+        }
       }
     });
 

@@ -1,9 +1,12 @@
 
 # routes/friends.py
+import logging
 from flask import jsonify, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
 from datetime import datetime
+
+log = logging.getLogger(__name__)
 
 
 # =====================================
@@ -64,11 +67,54 @@ def send_friend_request():
                     # Resend: update existing rejected request
                     cur.execute("""
                         UPDATE friend_requests 
-                        SET status = 'pending', created_at = NOW()
+                        SET sender_id = %s, receiver_id = %s, status = 'pending', created_at = NOW()
                         WHERE id = %s
-                    """, (existing['id'],))
+                    """, (sender_id, receiver_id, existing['id'],))
                     conn.commit()
-                    return jsonify({'message': 'Friend request re-sent successfully'}), 200
+
+                    # Emit socket event so receiver sees it in real-time
+                    try:
+                        socketio = current_app.extensions.get('socketio')
+                        if socketio:
+                            resend_data = {
+                                'id': existing['id'],
+                                'sender_id': sender_id,
+                                'receiver_id': receiver_id,
+                                'status': 'pending',
+                                'created_at': datetime.now().isoformat(),
+                                'sender': {
+                                    'username': current_user,
+                                    'display_name': current_user,
+                                    'avatar_url': None
+                                }
+                            }
+                            # Fetch proper sender info
+                            with conn.cursor() as cur2:
+                                cur2.execute("SELECT username, display_name, avatar_url FROM users WHERE id = %s", (sender_id,))
+                                s_info = cur2.fetchone()
+                                if s_info:
+                                    resend_data['sender'] = {
+                                        'username': s_info['username'],
+                                        'display_name': s_info['display_name'] or s_info['username'],
+                                        'avatar_url': s_info['avatar_url']
+                                    }
+                            socketio.emit('friend_request_received', resend_data,
+                                         room=f"user_{receiver_id}", namespace='/')
+                            print(f"[FRIEND_REQUEST] ✅ Re-send event emitted to user_{receiver_id}")
+                    except Exception as se:
+                        print(f"[FRIEND_REQUEST] ❌ Re-send socket emit failed: {se}")
+
+                    return jsonify({
+                        'id': existing['id'],
+                        'sender_id': sender_id,
+                        'receiver_id': receiver_id,
+                        'status': 'pending',
+                        'created_at': datetime.now().isoformat(),
+                        'username': target_username,
+                        'display_name': receiver_row.get('display_name', target_username) if isinstance(receiver_row, dict) else target_username,
+                        'avatar_url': receiver_row.get('avatar_url') if isinstance(receiver_row, dict) else None,
+                        'message': 'Friend request re-sent successfully'
+                    }), 200
                 elif existing['status'] in ('accepted', 'cancelled'):
                     # Should not happen, but clean up
                     cur.execute("DELETE FROM friend_requests WHERE id = %s", (existing['id'],))
@@ -110,37 +156,73 @@ def send_friend_request():
         
         # Emit socket event to notify receiver in real-time
         try:
-            from app import socketio
-            from routes.sockets import user_socket_sessions
+            # Try current_app.extensions first (standard pattern)
+            socketio = current_app.extensions.get('socketio')
+            if not socketio:
+                # Fallback: direct import from app module
+                from app import socketio as app_socketio
+                socketio = app_socketio
+                log.info(f"[FRIEND_REQUEST] Using fallback direct import for socketio")
             
-            notification_data = {
-                'id': request_id,
-                'sender_id': sender_id,
-                'receiver_id': receiver_id,
-                'status': 'pending',
-                'created_at': response_data['created_at'],
-                'sender': {
-                    'username': sender_info['username'],
-                    'display_name': sender_info['display_name'] or sender_info['username'],
-                    'avatar_url': sender_info['avatar_url']
-                } if sender_info else None
-            }
+            log.info(f"[FRIEND_REQUEST] socketio: {type(socketio).__name__} truthy={bool(socketio)}")
             
-            receiver_room = f"user_{receiver_id}"
-            
-            # Room-based emit (reaches all sockets in the personal room)
-            socketio.emit('friend_request_received', notification_data, 
-                         to=receiver_room, namespace='/')
-            print(f"[FRIEND_REQUEST] ✅ Event emitted to room {receiver_room}")
-            
-            # Also emit directly to the user's socket ID as fallback
-            if receiver_username and receiver_username in user_socket_sessions:
-                receiver_sid = user_socket_sessions[receiver_username]
-                socketio.emit('friend_request_received', notification_data,
-                             to=receiver_sid, namespace='/')
+            if socketio:
+                notification_data = {
+                    'id': request_id,
+                    'sender_id': sender_id,
+                    'receiver_id': receiver_id,
+                    'status': 'pending',
+                    'created_at': response_data['created_at'],
+                    'sender': {
+                        'username': sender_info['username'],
+                        'display_name': sender_info['display_name'] or sender_info['username'],
+                        'avatar_url': sender_info['avatar_url']
+                    } if sender_info else None
+                }
+                
+                receiver_room = f"user_{receiver_id}"
+                log.info(f"[FRIEND_REQUEST] Emitting friend_request_received to room={receiver_room}")
+                
+                # Diagnostic: check room membership
+                try:
+                    from routes.sockets import user_socket_sessions, user_rooms
+                    log.info(f"[FRIEND_REQUEST] 🔍 user_socket_sessions keys: {list(user_socket_sessions.keys())}")
+                    if receiver_username:
+                        recv_sid = user_socket_sessions.get(receiver_username)
+                        log.info(f"[FRIEND_REQUEST] 🔍 Receiver '{receiver_username}' SID: {recv_sid}")
+                        if recv_sid:
+                            try:
+                                from flask_socketio import rooms as get_rooms
+                                recv_rooms = get_rooms(sid=recv_sid, namespace='/')
+                                log.info(f"[FRIEND_REQUEST] 🔍 Receiver SID {recv_sid} rooms: {recv_rooms}")
+                            except Exception as room_err:
+                                log.warning(f"[FRIEND_REQUEST] 🔍 Could not check rooms: {room_err}")
+                    else:
+                        log.warning(f"[FRIEND_REQUEST] 🔍 receiver_username is None!")
+                except Exception as diag_err:
+                    log.warning(f"[FRIEND_REQUEST] 🔍 Diagnostic failed: {diag_err}")
+                
+                # Emit to user's personal room (room-based, reaches all SIDs)
+                socketio.emit('friend_request_received', notification_data, 
+                             room=receiver_room, namespace='/')
+                
+                # ALSO emit to the user's direct SID as backup
+                try:
+                    from routes.sockets import user_socket_sessions
+                    if receiver_username and receiver_username in user_socket_sessions:
+                        receiver_sid = user_socket_sessions[receiver_username]
+                        socketio.emit('friend_request_received', notification_data,
+                                     to=receiver_sid, namespace='/')
+                        log.info(f"[FRIEND_REQUEST] ✅ Also emitted directly to SID {receiver_sid}")
+                except Exception as sid_err:
+                    log.warning(f"[FRIEND_REQUEST] Direct SID emit skipped: {sid_err}")
+                
+                log.info(f"[FRIEND_REQUEST] ✅ Event emitted to room {receiver_room}")
+            else:
+                log.error(f"[FRIEND_REQUEST] ❌ socketio is None/falsy from both sources")
             
         except Exception as socket_error:
-            print(f"[FRIEND_REQUEST] ❌ Failed to emit event: {socket_error}")
+            log.error(f"[FRIEND_REQUEST] ❌ Failed to emit event: {socket_error}", exc_info=True)
         
         return jsonify(response_data), 201
 
@@ -315,28 +397,33 @@ def accept_friend_request(request_id):
         
         # Emit socket event to notify sender that request was accepted
         try:
-            from app import socketio
-            
-            notification_data = {
-                'request_id': request_id,
-                'sender_id': req['sender_id'],
-                'acceptor_id': user_id,
-                'username': acceptor_info['username'],
-                'display_name': acceptor_info['display_name'] or acceptor_info['username'],
-                'avatar_url': acceptor_info['avatar_url']
-            }
-            
-            # Notify the original sender
-            socketio.emit('friend_request_accepted', notification_data,
-                         room=f"user_{req['sender_id']}", namespace='/')
-            
-            # Also emit friend_status to both users
-            socketio.emit('friend_status', {'friend_id': user_id, 'status': 'accepted'},
-                         room=f"user_{req['sender_id']}", namespace='/')
-            socketio.emit('friend_status', {'friend_id': req['sender_id'], 'status': 'accepted'},
-                         room=f"user_{user_id}", namespace='/')
-            
-            print(f"[SOCKET] Emitted friend_request_accepted to user_{req['sender_id']}")
+            socketio = current_app.extensions.get('socketio')
+            if not socketio:
+                from app import socketio as app_socketio
+                socketio = app_socketio
+            if socketio:
+                notification_data = {
+                    'request_id': request_id,
+                    'sender_id': req['sender_id'],
+                    'acceptor_id': user_id,
+                    'username': acceptor_info['username'],
+                    'display_name': acceptor_info['display_name'] or acceptor_info['username'],
+                    'avatar_url': acceptor_info['avatar_url']
+                }
+                
+                # Notify the original sender
+                socketio.emit('friend_request_accepted', notification_data,
+                             room=f"user_{req['sender_id']}", namespace='/')
+                
+                # Also emit friend_status to both users
+                socketio.emit('friend_status', {'friend_id': user_id, 'status': 'accepted'},
+                             room=f"user_{req['sender_id']}", namespace='/')
+                socketio.emit('friend_status', {'friend_id': req['sender_id'], 'status': 'accepted'},
+                             room=f"user_{user_id}", namespace='/')
+                
+                print(f"[SOCKET] ✅ Emitted friend_request_accepted to user_{req['sender_id']}")
+            else:
+                print(f"[SOCKET] ❌ socketio not found in app extensions")
         except Exception as socket_error:
             print(f"[WARNING] Failed to emit friend_request_accepted event: {socket_error}")
         
@@ -375,16 +462,59 @@ def _update_request_status(request_id, status, role_field):
                 return jsonify({'error': 'User not found'}), 404
             user_id = user_row['id']
 
-            cur.execute(f"""
-                UPDATE friend_requests 
-                SET status = %s 
-                WHERE id = %s AND {role_field} = %s AND status = 'pending'
-            """, (status, request_id, user_id))
-            
-            if cur.rowcount == 0:
+            # Fetch the request BEFORE updating so we know who to notify
+            cur.execute("""
+                SELECT id, sender_id, receiver_id, status
+                FROM friend_requests
+                WHERE id = %s AND status = 'pending'
+            """, (request_id,))
+            req = cur.fetchone()
+            if not req:
                 return jsonify({'error': 'Request not found or already processed'}), 404
 
+            # Verify the current user has the right role
+            if req[role_field] != user_id:
+                return jsonify({'error': 'Request not found or access denied'}), 404
+
+            cur.execute("""
+                UPDATE friend_requests 
+                SET status = %s 
+                WHERE id = %s
+            """, (status, request_id))
+
         conn.commit()
+
+        # Emit socket event to the OTHER party
+        try:
+            socketio = current_app.extensions.get('socketio')
+            if not socketio:
+                from app import socketio as app_socketio
+                socketio = app_socketio
+            if socketio:
+                if status == 'rejected':
+                    # Notify the SENDER that their request was rejected
+                    other_user_id = req['sender_id']
+                    socketio.emit('friend_request_rejected', {
+                        'request_id': request_id,
+                        'rejector_id': user_id,
+                        'sender_id': req['sender_id'],
+                        'receiver_id': req['receiver_id'],
+                    }, room=f"user_{other_user_id}", namespace='/')
+                    log.info(f"[FRIEND_REQUEST] ✅ Emitted friend_request_rejected to user_{other_user_id}")
+                elif status == 'cancelled':
+                    # Notify the RECEIVER that the request was cancelled
+                    other_user_id = req['receiver_id']
+                    socketio.emit('friend_request_cancelled', {
+                        'request_id': request_id,
+                        'sender_id': req['sender_id'],
+                        'receiver_id': req['receiver_id'],
+                    }, room=f"user_{other_user_id}", namespace='/')
+                    log.info(f"[FRIEND_REQUEST] ✅ Emitted friend_request_cancelled to user_{other_user_id}")
+            else:
+                log.warning("[FRIEND_REQUEST] ❌ socketio instance is None - cannot emit")
+        except Exception as se:
+            log.error(f"[FRIEND_REQUEST] ❌ Failed to emit {status} event: {se}")
+
         return jsonify({'message': f'Friend request {status}'}), 200
 
     except Exception as e:
@@ -420,6 +550,22 @@ def remove_friend(friend_id):
                 return jsonify({'error': 'Not friends'}), 404
 
         conn.commit()
+
+        # Notify the other user in real-time
+        try:
+            socketio = current_app.extensions.get('socketio')
+            if not socketio:
+                from app import socketio as app_socketio
+                socketio = app_socketio
+            if socketio:
+                socketio.emit('friend_removed', {'friend_id': user_id},
+                             room=f"user_{friend_id}", namespace='/')
+                log.info(f"[FRIEND] ✅ Emitted friend_removed to user_{friend_id}")
+            else:
+                log.warning("[FRIEND] ❌ socketio is None - cannot emit friend_removed")
+        except Exception as se:
+            log.error(f"[FRIEND] ❌ Failed to emit friend_removed: {se}")
+
         return jsonify({'message': 'Friend removed'}), 200
 
     except Exception as e:
@@ -473,6 +619,22 @@ def block_friend(friend_id):
             """, (user_id, friend_id, friend_id, user_id))
 
         conn.commit()
+
+        # Notify the blocked user in real-time
+        try:
+            socketio = current_app.extensions.get('socketio')
+            if not socketio:
+                from app import socketio as app_socketio
+                socketio = app_socketio
+            if socketio:
+                socketio.emit('user_blocked', {'blocked_user_id': friend_id, 'blocker_id': user_id},
+                             room=f"user_{friend_id}", namespace='/')
+                log.info(f"[FRIEND] ✅ Emitted user_blocked to user_{friend_id}")
+            else:
+                log.warning("[FRIEND] ❌ socketio is None - cannot emit user_blocked")
+        except Exception as se:
+            log.error(f"[FRIEND] ❌ Failed to emit user_blocked: {se}")
+
         return jsonify({'message': 'User blocked'}), 200
 
     except Exception as e:
@@ -553,6 +715,22 @@ def unblock_friend(friend_id):
             cur.execute("DELETE FROM blocked_friends WHERE blocker_id = %s AND blocked_id = %s", (user_id, friend_id))
 
         conn.commit()
+
+        # Notify the unblocked user in real-time
+        try:
+            socketio = current_app.extensions.get('socketio')
+            if not socketio:
+                from app import socketio as app_socketio
+                socketio = app_socketio
+            if socketio:
+                socketio.emit('user_unblocked', {'unblocked_user_id': friend_id, 'unblocker_id': user_id},
+                             room=f"user_{friend_id}", namespace='/')
+                log.info(f"[FRIEND] ✅ Emitted user_unblocked to user_{friend_id}")
+            else:
+                log.warning("[FRIEND] ❌ socketio is None - cannot emit user_unblocked")
+        except Exception as se:
+            log.error(f"[FRIEND] ❌ Failed to emit user_unblocked: {se}")
+
         return jsonify({'message': 'User unblocked'}), 200
 
     except Exception as e:

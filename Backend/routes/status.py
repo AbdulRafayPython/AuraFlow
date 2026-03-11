@@ -228,7 +228,7 @@ def get_user_profile(username):
 def get_unread_counts():
     """
     Get unread message counts for all channels the user is a member of.
-    Returns: { channel_id: { unread_count, last_message_id, last_message_at } }
+    Returns: { channels: {}, communities: {}, dms: {}, total_unread }
     """
     conn = None
     try:
@@ -241,41 +241,67 @@ def get_unread_counts():
                 return jsonify({'error': 'User not found'}), 404
             user_id = user['id']
 
-            # Get all channels user is in, with unread count
+        # Use unread tracker service if available
+        try:
+            from services.unread_tracker import get_user_unreads, load_user_unreads
+            load_user_unreads(user_id)
+            unreads = get_user_unreads(user_id)
+            return jsonify(unreads), 200
+        except ImportError:
+            pass
+
+        # Fallback to DB query
+        with conn.cursor() as cur:
+            # Channel unreads
             cur.execute("""
                 SELECT 
-                    cm.channel_id,
+                    cm.channel_id, ch.community_id,
                     COALESCE(crs.last_read_message_id, 0) AS last_read_id,
                     (
                         SELECT COUNT(*) FROM messages m
                         WHERE m.channel_id = cm.channel_id
                           AND m.id > COALESCE(crs.last_read_message_id, 0)
                           AND m.sender_id != %s
-                    ) AS unread_count,
-                    (
-                        SELECT MAX(m2.id) FROM messages m2
-                        WHERE m2.channel_id = cm.channel_id
-                    ) AS last_message_id,
-                    (
-                        SELECT MAX(m3.created_at) FROM messages m3
-                        WHERE m3.channel_id = cm.channel_id
-                    ) AS last_message_at
+                    ) AS unread_count
                 FROM channel_members cm
+                JOIN channels ch ON cm.channel_id = ch.id
                 LEFT JOIN channel_read_status crs 
                     ON crs.channel_id = cm.channel_id AND crs.user_id = %s
                 WHERE cm.user_id = %s
             """, (user_id, user_id, user_id))
 
-            unread = {}
+            channels = {}
+            communities = {}
             for row in cur.fetchall():
                 if row['unread_count'] > 0:
-                    unread[row['channel_id']] = {
-                        'unread_count': row['unread_count'],
-                        'last_message_id': row['last_message_id'],
-                        'last_message_at': row['last_message_at'].isoformat() if row['last_message_at'] else None,
-                    }
+                    channels[str(row['channel_id'])] = row['unread_count']
+                    comm_id = row['community_id']
+                    if comm_id:
+                        communities[str(comm_id)] = communities.get(str(comm_id), 0) + row['unread_count']
 
-        return jsonify(unread), 200
+            # DM unreads
+            cur.execute("""
+                SELECT sender_id, COUNT(*) as cnt
+                FROM direct_messages
+                WHERE receiver_id = %s AND is_read = FALSE
+                GROUP BY sender_id
+            """, (user_id,))
+            dms = {}
+            total_dm = 0
+            for row in cur.fetchall():
+                dms[str(row['sender_id'])] = row['cnt']
+                total_dm += row['cnt']
+
+            total_channel = sum(channels.values())
+
+        return jsonify({
+            'channels': channels,
+            'communities': communities,
+            'dms': dms,
+            'total_dm_unread': total_dm,
+            'total_channel_unread': total_channel,
+            'total_unread': total_dm + total_channel,
+        }), 200
 
     except Exception as e:
         log.error(f"[UNREAD] Get error: {e}", exc_info=True)

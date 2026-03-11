@@ -93,6 +93,74 @@ export interface FocusSession {
   recommendations: string[];
 }
 
+export interface AgentCatalogEntry {
+  agent_type: string;
+  display_name: string;
+  description: string;
+  category: 'community' | 'personal';
+  icon: string;
+  default_settings: Record<string, any>;
+  features: string[];
+  personal_status?: {
+    activated: boolean;
+    enabled?: boolean;
+    settings?: Record<string, any> | null;
+    activated_at?: string | null;
+    last_used?: string | null;
+    usage_count?: number;
+  };
+  community_status?: {
+    installed: boolean;
+    enabled?: boolean;
+    settings?: Record<string, any> | null;
+    installed_by?: string;
+    installed_at?: string | null;
+    last_active?: string | null;
+    usage_count?: number;
+  };
+}
+
+export interface InstalledAgent {
+  agent_type: string;
+  display_name: string;
+  description: string;
+  icon: string;
+  category?: string;
+  features: string[];
+  enabled: boolean;
+  settings: Record<string, any>;
+  installed_by?: string;
+  installed_at?: string | null;
+  activated_at?: string | null;
+  last_active?: string | null;
+  last_used?: string | null;
+  usage_count: number;
+}
+
+export interface AgentLog {
+  id: number;
+  agent_name: string;
+  action_type: string;
+  input_data: string | null;
+  output_data: string | null;
+  status: string;
+  execution_time_ms: number;
+  community_id: number | null;
+  user_id: number | null;
+  created_at: string;
+}
+
+export interface AgentLogsResponse {
+  success: boolean;
+  logs: AgentLog[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+}
+
 class AIAgentService {
   // =====================================================
   // SUMMARIZER AGENT
@@ -114,6 +182,30 @@ class AIAgentService {
       return response.summaries || [];
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to fetch summaries');
+    }
+  }
+
+  async getSummarizerSchedule(communityId: number): Promise<{
+    auto_summarize_enabled: boolean;
+    schedule_time: string;
+    auto_summarize_message_count: number;
+    last_auto_summary_date: string;
+    agent_enabled: boolean;
+  }> {
+    try {
+      const response: any = await api.get(`/api/agents/summarizer/schedule/${communityId}`);
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to get schedule');
+    }
+  }
+
+  async triggerAutoSummarize(communityId: number): Promise<any> {
+    try {
+      const response = await api.post(`/api/agents/summarizer/trigger/${communityId}`);
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to trigger auto-summarize');
     }
   }
 
@@ -643,6 +735,198 @@ class AIAgentService {
       return response.data.agents;
     } catch (error: any) {
       throw new Error('Failed to check agent status');
+    }
+  }
+
+  // =====================================================
+  // AGENT CATALOG & MANAGEMENT
+  // =====================================================
+  
+  async getAgentCatalog(communityId?: number): Promise<AgentCatalogEntry[]> {
+    try {
+      const params = communityId ? `?community_id=${communityId}` : '';
+      const response = await api.get(`/api/agents/catalog${params}`);
+      return response.agents || [];
+    } catch (error: any) {
+      console.error('[Agent Service] Catalog error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to fetch agent catalog');
+    }
+  }
+
+  async installCommunityAgent(communityId: number, agentType: string, settings?: Record<string, any>): Promise<any> {
+    try {
+      const response = await api.post(`/api/agents/install/community/${communityId}`, {
+        agent_type: agentType,
+        settings: settings || {},
+      });
+      return response;
+    } catch (error: any) {
+      console.error('[Agent Service] Install error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to install agent');
+    }
+  }
+
+  async uninstallCommunityAgent(communityId: number, agentType: string): Promise<any> {
+    try {
+      const response = await api.delete(`/api/agents/uninstall/community/${communityId}/${agentType}`);
+      return response;
+    } catch (error: any) {
+      console.error('[Agent Service] Uninstall error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to uninstall agent');
+    }
+  }
+
+  async configureCommunityAgent(communityId: number, agentType: string, settings: Record<string, any>, enabled?: boolean): Promise<any> {
+    try {
+      const body: any = { settings };
+      if (enabled !== undefined) body.enabled = enabled;
+      const response = await api.put(`/api/agents/configure/community/${communityId}/${agentType}`, body);
+      return response;
+    } catch (error: any) {
+      console.error('[Agent Service] Configure error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to configure agent');
+    }
+  }
+
+  async getCommunityAgentStatus(communityId: number): Promise<InstalledAgent[]> {
+    try {
+      const response = await api.get(`/api/agents/status/community/${communityId}`);
+      return response.agents || [];
+    } catch (error: any) {
+      console.error('[Agent Service] Community status error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to get community agent status');
+    }
+  }
+
+  async activatePersonalAgent(agentType: string, settings?: Record<string, any>): Promise<any> {
+    try {
+      const response = await api.post('/api/agents/activate/personal', {
+        agent_type: agentType,
+        settings: settings || {},
+      });
+      return response;
+    } catch (error: any) {
+      console.error('[Agent Service] Activate error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to activate agent');
+    }
+  }
+
+  async deactivatePersonalAgent(agentType: string): Promise<any> {
+    try {
+      const response = await api.delete(`/api/agents/deactivate/personal/${agentType}`);
+      return response;
+    } catch (error: any) {
+      console.error('[Agent Service] Deactivate error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to deactivate agent');
+    }
+  }
+
+  async getPersonalAgentStatus(): Promise<InstalledAgent[]> {
+    try {
+      const response = await api.get('/api/agents/status/personal');
+      return response.agents || [];
+    } catch (error: any) {
+      console.error('[Agent Service] Personal status error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to get personal agent status');
+    }
+  }
+
+  async configurePersonalAgent(agentType: string, settings: Record<string, any>, enabled?: boolean): Promise<any> {
+    try {
+      const body: any = { settings };
+      if (enabled !== undefined) body.enabled = enabled;
+      const response = await api.put(`/api/agents/configure/personal/${agentType}`, body);
+      return response;
+    } catch (error: any) {
+      console.error('[Agent Service] Configure personal error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to configure personal agent');
+    }
+  }
+
+  async getAgentLogs(params?: { agent_type?: string; community_id?: number; status?: string; page?: number; limit?: number }): Promise<AgentLogsResponse> {
+    try {
+      const searchParams = new URLSearchParams();
+      if (params?.agent_type) searchParams.set('agent_type', params.agent_type);
+      if (params?.community_id) searchParams.set('community_id', String(params.community_id));
+      if (params?.status) searchParams.set('status', params.status);
+      if (params?.page) searchParams.set('page', String(params.page));
+      if (params?.limit) searchParams.set('limit', String(params.limit));
+      const response = await api.get(`/api/agents/logs?${searchParams.toString()}`);
+      return response;
+    } catch (error: any) {
+      console.error('[Agent Service] Logs error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to fetch agent logs');
+    }
+  }
+
+  // =====================================================
+  // PERSONAL SUMMARY SCHEDULES
+  // =====================================================
+  async getSummarySchedules(): Promise<any[]> {
+    try {
+      const response: any = await api.get('/api/agents/summary-schedules');
+      return response.schedules || [];
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to fetch schedules');
+    }
+  }
+
+  async createSummarySchedule(data: { channel_id: number; community_id: number; schedule_time: string; timezone?: string }): Promise<any> {
+    try {
+      return await api.post('/api/agents/summary-schedules', data);
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to create schedule');
+    }
+  }
+
+  async updateSummarySchedule(scheduleId: number, data: { schedule_time?: string; is_active?: boolean; timezone?: string }): Promise<any> {
+    try {
+      return await api.put(`/api/agents/summary-schedules/${scheduleId}`, data);
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to update schedule');
+    }
+  }
+
+  async deleteSummarySchedule(scheduleId: number): Promise<any> {
+    try {
+      return await api.delete(`/api/agents/summary-schedules/${scheduleId}`);
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to delete schedule');
+    }
+  }
+
+  async getPendingSummaries(channelId?: number): Promise<any[]> {
+    try {
+      const url = channelId
+        ? `/api/agents/summary-schedules/pending?channel_id=${channelId}`
+        : '/api/agents/summary-schedules/pending';
+      const response: any = await api.get(url);
+      return response.summaries || [];
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to fetch pending summaries');
+    }
+  }
+
+  // =====================================================
+  // MY SUMMARIES — User's generated summary history
+  // =====================================================
+  async getMySummaries(channelId?: number, limit: number = 20): Promise<any[]> {
+    try {
+      const params = new URLSearchParams();
+      if (channelId) params.set('channel_id', String(channelId));
+      if (limit) params.set('limit', String(limit));
+      const response: any = await api.get(`/api/agents/my-summaries?${params.toString()}`);
+      return response.summaries || [];
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to fetch summaries');
+    }
+  }
+
+  async deleteMySummary(summaryId: number): Promise<void> {
+    try {
+      await api.delete(`/api/agents/my-summaries/${summaryId}`);
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to delete summary');
     }
   }
 }

@@ -531,13 +531,20 @@ class ModerationAgent:
                 cur.execute("""
                     INSERT INTO ai_agent_logs 
                     (agent_id, user_id, channel_id, message_id, action_type, 
-                     input_text, output_text, confidence_score)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     input_text, output_text, confidence_score,
+                     agent_name, input_data, output_data, status, execution_time_ms)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s)
                 """, (
                     agent_id, user_id, db_channel_id, message_id, 'moderation',
                     message[:500],  # Truncate long messages
                     json.dumps(output_data),
-                    confidence
+                    confidence,
+                    'moderation',
+                    json.dumps({'text': message[:200], 'user_id': user_id, 'channel_id': db_channel_id}),
+                    json.dumps(output_data),
+                    'success',
+                    0
                 ))
                 
                 conn.commit()

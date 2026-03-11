@@ -1,7 +1,8 @@
-// components/pins/PinnedMessagesPanel.tsx — Slide-out panel for pinned messages
-import React, { useState, useEffect } from 'react';
-import { Pin, X, Loader2, MessageSquare, Trash2 } from 'lucide-react';
+// components/pins/PinnedMessagesPanel.tsx — Slide-out panel for pinned messages with countdown timers
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Pin, PinOff, X, Loader2, MessageSquare, Trash2, Clock, Timer } from 'lucide-react';
 import { pinService, type PinnedMessage } from '@/services/pinService';
+import { socketService } from '@/services/socketService';
 import { cn } from '@/lib/utils';
 
 interface PinnedMessagesPanelProps {
@@ -9,9 +10,11 @@ interface PinnedMessagesPanelProps {
   channelName?: string;
   isOpen: boolean;
   onClose: () => void;
-  onUnpin?: (messageId: number) => void;
+  onUnpin?: (messageId: number) => Promise<void> | void;
   onJumpToMessage?: (messageId: number) => void;
   canManagePins?: boolean;
+  /** Current user's ID — used to show unpin only for pins the user created */
+  currentUserId?: number;
 }
 
 function formatPinnedDate(dateStr: string): string {
@@ -19,6 +22,59 @@ function formatPinnedDate(dateStr: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
     ' at ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
+
+/** Formats remaining seconds into a human-readable countdown string */
+function formatCountdown(seconds: number): string {
+  if (seconds <= 0) return 'Expired';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+/** Hook that ticks every second and returns remaining seconds for a given expiry ISO string */
+function useCountdown(expiresAt: string | null | undefined): number | null {
+  const [remaining, setRemaining] = useState<number | null>(() => {
+    if (!expiresAt) return null;
+    return Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
+  });
+
+  useEffect(() => {
+    if (!expiresAt) { setRemaining(null); return; }
+    const target = new Date(expiresAt).getTime();
+    const tick = () => setRemaining(Math.max(0, Math.floor((target - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  return remaining;
+}
+
+/** Small badge component showing live countdown */
+const CountdownBadge: React.FC<{ expiresAt: string }> = ({ expiresAt }) => {
+  const remaining = useCountdown(expiresAt);
+  if (remaining == null) return null;
+
+  const isUrgent = remaining <= 60; // last minute
+  const isWarning = remaining <= 300 && !isUrgent; // last 5 min
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium transition-colors',
+        isUrgent && 'bg-red-500/20 text-red-400 animate-pulse',
+        isWarning && 'bg-amber-500/15 text-amber-400',
+        !isUrgent && !isWarning && 'bg-[hsl(var(--theme-accent-primary)/0.12)] text-[hsl(var(--theme-accent-primary))]',
+      )}
+    >
+      <Timer className="w-3 h-3" />
+      {remaining === 0 ? 'Expired' : formatCountdown(remaining)}
+    </span>
+  );
+};
 
 const PinnedMessagesPanel: React.FC<PinnedMessagesPanelProps> = ({
   channelId,
@@ -28,37 +84,77 @@ const PinnedMessagesPanel: React.FC<PinnedMessagesPanelProps> = ({
   onUnpin,
   onJumpToMessage,
   canManagePins = false,
+  currentUserId,
 }) => {
   const [pins, setPins] = useState<PinnedMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [count, setCount] = useState(0);
 
-  useEffect(() => {
-    if (!isOpen || !channelId) return;
-    let cancelled = false;
+  const loadPins = useCallback(() => {
+    if (!channelId) return;
     setLoading(true);
-
     pinService.getPinnedMessages(channelId)
       .then(data => {
-        if (!cancelled) {
-          setPins(data.pins);
-          setCount(data.count);
-        }
+        setPins(data.pins);
+        setCount(data.count);
       })
       .catch(err => console.error('Failed to load pins:', err))
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .finally(() => setLoading(false));
+  }, [channelId]);
 
-    return () => { cancelled = true; };
-  }, [isOpen, channelId]);
+  useEffect(() => {
+    if (!isOpen || !channelId) return;
+    loadPins();
+  }, [isOpen, channelId, loadPins]);
+
+  // Listen for real-time pin events (pin_expired, message_pinned, message_unpinned)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const unsubPinEvent = socketService.onPinEvent((data) => {
+      if (data.type === 'expired' && data.channel_id === channelId) {
+        setPins(prev => prev.filter(p => p.message.id !== data.message_id));
+        setCount(prev => Math.max(0, prev - 1));
+      }
+    });
+
+    // Also listen for generic pin/unpin message_pinned / message_unpinned from channel room
+    const socket = socketService.getSocket();
+    const handlePinned = (data: any) => {
+      if (data.channel_id === channelId) loadPins();
+    };
+    const handleUnpinned = (data: any) => {
+      if (data.channel_id === channelId) {
+        setPins(prev => prev.filter(p => p.message.id !== data.message_id));
+        setCount(prev => Math.max(0, prev - 1));
+      }
+    };
+
+    socket?.on('message_pinned', handlePinned);
+    socket?.on('message_unpinned', handleUnpinned);
+
+    return () => {
+      unsubPinEvent();
+      socket?.off('message_pinned', handlePinned);
+      socket?.off('message_unpinned', handleUnpinned);
+    };
+  }, [isOpen, channelId, loadPins]);
 
   const handleUnpin = async (messageId: number) => {
-    try {
-      await pinService.unpinMessage(channelId, messageId);
-      setPins(prev => prev.filter(p => p.message.id !== messageId));
-      setCount(prev => prev - 1);
-      onUnpin?.(messageId);
-    } catch (err) {
-      console.error('Failed to unpin:', err);
+    // Optimistic local removal for instant feedback
+    setPins(prev => prev.filter(p => p.message.id !== messageId));
+    setCount(prev => Math.max(0, prev - 1));
+    if (onUnpin) {
+      // Delegate API call + state sync to parent (Dashboard)
+      try { await onUnpin(messageId); } catch { /* toast handled by parent */ }
+    } else {
+      // Standalone fallback
+      try {
+        await pinService.unpinMessage(channelId, messageId);
+      } catch (err) {
+        console.error('Failed to unpin:', err);
+        loadPins(); // revert on failure
+      }
     }
   };
 
@@ -103,61 +199,84 @@ const PinnedMessagesPanel: React.FC<PinnedMessagesPanelProps> = ({
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-[hsl(var(--theme-border-subtle)/0.5)]">
+            <div className="p-3 space-y-2.5">
               {pins.map(pin => (
                 <div
                   key={pin.pin_id}
-                  className="group relative px-4 py-3 hover:bg-[hsl(var(--theme-bg-hover)/0.5)] transition-colors"
+                  className="group relative rounded-xl border border-[hsl(var(--theme-border-subtle)/0.5)] bg-[hsl(var(--theme-bg-surface)/0.4)] hover:bg-[hsl(var(--theme-bg-hover)/0.5)] transition-colors overflow-hidden"
                 >
-                  {/* Pin meta */}
-                  <div className="flex items-center gap-2 text-xs text-[hsl(var(--theme-text-muted))] mb-1.5">
-                    <Pin className="w-3 h-3" />
-                    <span>
-                      Pinned by <span className="font-medium text-[hsl(var(--theme-text-secondary))]">{pin.pinned_by.display_name}</span>
-                    </span>
-                    <span className="ml-auto">{formatPinnedDate(pin.pinned_at)}</span>
-                  </div>
+                  {/* Accent top bar */}
+                  <div className="h-[2px] bg-gradient-to-r from-[hsl(var(--theme-accent-primary)/0.6)] to-transparent" />
 
-                  {/* Message content */}
-                  <div className="flex items-start gap-3">
-                    <img
-                      src={pin.message.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${pin.message.author}`}
-                      alt=""
-                      className="w-8 h-8 rounded-full flex-shrink-0 mt-0.5"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
-                          {pin.message.display_name}
-                        </span>
-                        <span className="text-xs text-[hsl(var(--theme-text-muted))]">
-                          {formatPinnedDate(pin.message.created_at)}
+                  <div className="px-3.5 pt-2.5 pb-3">
+                    {/* Row 1: Pin meta — who pinned + date */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Pin className="w-3 h-3 text-[hsl(var(--theme-accent-primary)/0.7)] flex-shrink-0" />
+                        <span className="text-[11px] text-[hsl(var(--theme-text-muted))] truncate">
+                          Pinned by <span className="font-medium text-[hsl(var(--theme-text-secondary))]">{pin.pinned_by.display_name}</span>
                         </span>
                       </div>
-                      <p className="text-sm text-[hsl(var(--theme-text-secondary))] leading-relaxed line-clamp-4">
-                        {pin.message.content}
-                      </p>
+                      <span className="text-[11px] text-[hsl(var(--theme-text-muted)/0.7)] flex-shrink-0 ml-3">
+                        {formatPinnedDate(pin.pinned_at)}
+                      </span>
                     </div>
-                  </div>
 
-                  {/* Actions */}
-                  <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => onJumpToMessage?.(pin.message.id)}
-                      className="p-1.5 rounded-md bg-[hsl(var(--theme-bg-surface))] hover:bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-muted))] border border-[hsl(var(--theme-border-subtle))] transition-colors"
-                      title="Jump to message"
-                    >
-                      <MessageSquare className="w-3.5 h-3.5" />
-                    </button>
-                    {canManagePins && (
-                      <button
-                        onClick={() => handleUnpin(pin.message.id)}
-                        className="p-1.5 rounded-md bg-[hsl(var(--theme-bg-surface))] hover:bg-red-500/10 text-[hsl(var(--theme-text-muted))] hover:text-red-400 border border-[hsl(var(--theme-border-subtle))] transition-colors"
-                        title="Unpin message"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    {/* Row 2: Message content */}
+                    <div className="flex items-start gap-2.5">
+                      <img
+                        src={pin.message.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${pin.message.author}`}
+                        alt=""
+                        className="w-8 h-8 rounded-full flex-shrink-0 mt-0.5"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="text-[13px] font-semibold text-[hsl(var(--theme-text-primary))] truncate">
+                            {pin.message.display_name}
+                          </span>
+                          <span className="text-[10px] text-[hsl(var(--theme-text-muted)/0.6)] flex-shrink-0">
+                            {formatPinnedDate(pin.message.created_at)}
+                          </span>
+                        </div>
+                        <p className="text-[13px] text-[hsl(var(--theme-text-secondary))] leading-relaxed line-clamp-3">
+                          {pin.message.content}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Row 3: Footer — countdown + actions */}
+                    <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-[hsl(var(--theme-border-subtle)/0.3)]">
+                      {/* Left: countdown timer */}
+                      <div className="flex-shrink-0">
+                        {pin.expires_at ? (
+                          <CountdownBadge expiresAt={pin.expires_at} />
+                        ) : (
+                          <span className="text-[10px] text-[hsl(var(--theme-text-muted)/0.5)]">No expiry</span>
+                        )}
+                      </div>
+
+                      {/* Right: action buttons — always visible, subtle */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => onJumpToMessage?.(pin.message.id)}
+                          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))] transition-colors"
+                          title="Jump to message"
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          <span className="hidden sm:inline">Jump</span>
+                        </button>
+                        {(canManagePins || (currentUserId && pin.pinned_by?.user_id === currentUserId)) && (
+                          <button
+                            onClick={() => handleUnpin(pin.message.id)}
+                            className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                            title="Unpin message"
+                          >
+                            <PinOff className="w-3 h-3" />
+                            <span className="hidden sm:inline">Unpin</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}

@@ -11,7 +11,6 @@ import re
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 import math
-import warnings
 from collections import Counter
 from dotenv import load_dotenv
 import os
@@ -22,20 +21,40 @@ from utils.ai.text_processor import TextProcessor
 
 load_dotenv()
 
-# Gemini API integration
+# Gemini API integration (using new google-genai SDK)
 try:
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", FutureWarning)
-        import google.generativeai as genai
+    from google import genai
+    from google.genai import errors as genai_errors
     from config import GEMINI_API_KEY
     GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
     if GEMINI_AVAILABLE:
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        # Validate key at startup with a minimal request
+        try:
+            _test = _gemini_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents='ping'
+            )
+            print("[SUMMARIZER] ✅ Gemini API key validated successfully")
+        except genai_errors.ClientError as ve:
+            # Only disable on auth/permission errors (400, 403), not rate limits (429)
+            if ve.code in (400, 403):
+                GEMINI_AVAILABLE = False
+                _gemini_client = None
+                print(f"[SUMMARIZER] ❌ Gemini API key invalid: {ve}")
+            else:
+                print(f"[SUMMARIZER] ⚠️ Gemini startup check got non-fatal error (will retry at runtime): {ve}")
+        except Exception as ve:
+            print(f"[SUMMARIZER] ⚠️ Gemini startup check failed (will retry at runtime): {ve}")
+    else:
+        _gemini_client = None
 except ImportError:
     GEMINI_AVAILABLE = False
-    print("[SUMMARIZER] Gemini AI not available - using extractive method only")
+    _gemini_client = None
+    print("[SUMMARIZER] Gemini AI not available - install google-genai package")
 except Exception as e:
     GEMINI_AVAILABLE = False
+    _gemini_client = None
     print(f"[SUMMARIZER] Gemini configuration error: {e}")
 
 
@@ -50,16 +69,8 @@ class SummarizerAgent:
         self.min_messages_for_summary = 20  # Minimum messages to trigger summary
         self.max_summary_sentences = 10     # Maximum sentences in extractive summary
         self.gemini_available = GEMINI_AVAILABLE
-        
-        # Initialize Gemini model if available
-        if self.gemini_available:
-            try:
-                # Use gemini-2.0-flash directly — fast, reliable, free tier friendly
-                self.gemini_model = genai.GenerativeModel('gemini-2.0-flash')
-                print("[SUMMARIZER] ✅ Gemini model initialized (gemini-2.0-flash)")
-            except Exception as e:
-                print(f"[SUMMARIZER] Failed to initialize Gemini: {e}")
-                self.gemini_available = False
+        self.gemini_client = _gemini_client
+        self.gemini_model = 'gemini-2.5-flash'
         
     def summarize_channel(self, channel_id: int, message_count: int = 100, 
                          user_id: Optional[int] = None) -> Dict:
@@ -151,7 +162,8 @@ class SummarizerAgent:
                     start_message_id=messages[0]['id'],
                     end_message_id=messages[-1]['id'],
                     created_by=user_id,
-                    participants=summary_result['participants']
+                    participants=summary_result['participants'],
+                    method=summary_result.get('method', 'extractive')
                 )
                 
                 # Log agent activity
@@ -590,8 +602,11 @@ KEY DECISIONS:
 
 Now create the summary in this discussion style:"""
 
-            # Generate with Gemini
-            response = self.gemini_model.generate_content(prompt)
+            # Generate with Gemini (new SDK)
+            response = self.gemini_client.models.generate_content(
+                model=self.gemini_model,
+                contents=prompt
+            )
             
             if response and response.text:
                 return response.text.strip()
@@ -646,13 +661,12 @@ Now create the summary in this discussion style:"""
     def _save_summary(self, channel_id: int, summary_text: str, 
                      message_count: int, start_message_id: int,
                      end_message_id: int, created_by: Optional[int],
-                     participants: List[str]) -> int:
+                     participants: List[str], method: str = 'extractive') -> int:
         """Save summary to database"""
         conn = None
         try:
             conn = get_db_connection()
             with conn.cursor() as cur:
-                # Use actual schema: summary, generated_by (not summary_text, created_by)
                 generated_by = 'summarizer_agent'
                 if created_by:
                     cur.execute("SELECT username FROM users WHERE id = %s", (created_by,))
@@ -665,9 +679,9 @@ Now create the summary in this discussion style:"""
                 
                 cur.execute("""
                     INSERT INTO conversation_summaries 
-                    (channel_id, summary, generated_by, message_count, participants)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (channel_id, summary_text, generated_by, message_count, participants_json))
+                    (channel_id, summary, generated_by, created_by, message_count, method, participants)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (channel_id, summary_text, generated_by, created_by, message_count, method, participants_json))
                 
                 conn.commit()
                 return cur.lastrowid

@@ -4,6 +4,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { socketService } from '@/services/socketService';
 import { callWebrtcService, type CallMediaType } from '@/services/callWebrtcService';
+import { callSoundService } from '@/services/callSoundService';
 import { useAuth } from '@/contexts/AuthContext';
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -81,6 +82,31 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { callIdRef.current = callId; }, [callId]);
   useEffect(() => { callStateRef.current = callState; }, [callState]);
+
+  // ── Sound management — plays ringtone / ringback based on state ──
+  useEffect(() => {
+    switch (callState) {
+      case 'calling':
+        callSoundService.playRingback();
+        break;
+      case 'ringing':
+        callSoundService.playRingtone();
+        break;
+      case 'connected':
+        callSoundService.stop();
+        break;
+      case 'ended':
+      case 'rejected':
+      case 'failed':
+        callSoundService.stop();
+        callSoundService.playCallEnd();
+        break;
+      case 'idle':
+        callSoundService.stop();
+        break;
+    }
+    return () => { callSoundService.stop(); };
+  }, [callState]);
 
   // ── Cleanup helper ─────────────────────────────────────────────────
   const resetCallState = useCallback(() => {
@@ -172,12 +198,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const initiateCall = useCallback((callee: CallPeer, type: CallMediaType) => {
     if (callStateRef.current !== 'idle') return;
 
+    // Generate callId locally so endCall() always has it — no race with server
+    const localCallId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setCallId(localCallId);
     setCallState('calling');
     setCallType(type);
     setRemotePeer(callee);
     setIsCaller(true);
 
     getSocket()?.emit('call:initiate', {
+      callId: localCallId,
       callee: callee.username,
       type,
     });
@@ -286,25 +316,22 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       setCallState('ringing');
     };
 
-    // Caller gets confirmation + callId
+    // Caller gets confirmation — callId already set locally, just set up WebRTC
     const onInitiated = async (data: { callId: string; callee: CallPeer; type: CallMediaType }) => {
-      setCallId(data.callId);
+      // Server echoes the callId we sent — no need to overwrite
       // Caller hasn't set up WebRTC yet — do it now
       try {
         await setupWebRTC(data.type, data.callId);
       } catch (err: any) {
         console.error('[CALL] Caller media error:', err);
-        // Show a user-visible alert so they know what went wrong
         const reason = err?.message === 'INSECURE_CONTEXT'
           ? 'Camera/microphone access requires HTTPS.\n\nAccess the app via https:// or use localhost.'
           : err?.message === 'PERMISSION_DENIED'
             ? 'Camera/microphone permission was denied. Please allow access and try again.'
             : `Could not access camera/microphone: ${err?.message || 'Unknown error'}`;
-        // End (not reject) — this is a technical failure, not a user rejection
         setCallState('failed');
         getSocket()?.emit('call:end', { callId: data.callId });
         goIdle();
-        // Alert after state cleanup so UI updates first
         setTimeout(() => alert(reason), 100);
       }
     };

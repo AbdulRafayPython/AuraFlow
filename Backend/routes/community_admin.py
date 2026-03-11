@@ -345,17 +345,22 @@ def get_community_alerts(community_id):
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT 
-                    ml.id, ml.user_id, ml.channel_id, ml.message_text,
-                    ml.flag_type, ml.severity, ml.confidence, ml.action_taken,
-                    ml.reason, ml.created_at,
+                    l.id, l.user_id, l.channel_id, l.input_text as message_text,
+                    JSON_UNQUOTE(JSON_EXTRACT(l.output_data, '$.reasons[0]')) as flag_type,
+                    JSON_UNQUOTE(JSON_EXTRACT(l.output_data, '$.severity')) as severity,
+                    l.confidence_score as confidence,
+                    JSON_UNQUOTE(JSON_EXTRACT(l.output_data, '$.action')) as action_taken,
+                    JSON_UNQUOTE(JSON_EXTRACT(l.output_data, '$.reasons')) as reason,
+                    l.created_at,
                     u.username, u.avatar_url,
                     ch.name as channel_name
-                FROM moderation_logs ml
-                JOIN users u ON ml.user_id = u.id
-                JOIN channels ch ON ml.channel_id = ch.id
-                WHERE ch.community_id = %s
-                AND ml.severity IN ('medium', 'high', 'critical')
-                ORDER BY ml.created_at DESC
+                FROM ai_agent_logs l
+                JOIN users u ON l.user_id = u.id
+                JOIN channels ch ON l.channel_id = ch.id
+                WHERE l.community_id = %s
+                AND l.agent_name = 'moderation'
+                AND JSON_UNQUOTE(JSON_EXTRACT(l.output_data, '$.severity')) IN ('medium', 'high', 'critical')
+                ORDER BY l.created_at DESC
                 LIMIT %s
             """, (community_id, limit))
             
@@ -426,9 +431,10 @@ def get_community_members(community_id):
                     cm.role, cm.joined_at,
                     (SELECT COUNT(*) FROM messages WHERE sender_id = u.id 
                      {f'AND channel_id IN ({channel_placeholders})' if channels else 'AND 1=0'}) as message_count,
-                    (SELECT COUNT(*) FROM moderation_logs WHERE user_id = u.id 
+                    (SELECT COUNT(*) FROM ai_agent_logs WHERE user_id = u.id 
+                     AND agent_name = 'moderation'
                      {f'AND channel_id IN ({channel_placeholders})' if channels else 'AND 1=0'}
-                     AND action_taken != 'none') as violation_count
+                     AND JSON_UNQUOTE(JSON_EXTRACT(output_data, '$.action')) != 'allow') as violation_count
                 FROM users u
                 INNER JOIN community_members cm ON u.id = cm.user_id
                 WHERE cm.community_id = %s
@@ -539,9 +545,10 @@ def get_member_details(community_id, user_id):
                     cm.role, cm.joined_at,
                     (SELECT COUNT(*) FROM messages WHERE sender_id = u.id 
                      {f'AND channel_id IN ({channel_placeholders})' if channels else 'AND 1=0'}) as message_count,
-                    (SELECT COUNT(*) FROM moderation_logs WHERE user_id = u.id 
+                    (SELECT COUNT(*) FROM ai_agent_logs WHERE user_id = u.id 
+                     AND agent_name = 'moderation'
                      {f'AND channel_id IN ({channel_placeholders})' if channels else 'AND 1=0'}
-                     AND action_taken != 'none') as violation_count
+                     AND JSON_UNQUOTE(JSON_EXTRACT(output_data, '$.action')) != 'allow') as violation_count
                 FROM users u
                 INNER JOIN community_members cm ON u.id = cm.user_id
                 WHERE cm.community_id = %s AND u.id = %s

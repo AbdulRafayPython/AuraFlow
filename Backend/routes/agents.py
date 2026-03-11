@@ -32,6 +32,24 @@ focus_agent = FocusAgent()
 engagement_agent = EngagementAgent()
 wellness_agent = WellnessAgent()
 
+# ── Agent-type alias map ──
+# Frontend may use e.g. 'mood_tracker' but agent_registry stores 'mood'.
+AGENT_TYPE_ALIASES: dict[str, str] = {
+    'mood_tracker': 'mood',
+    'knowledge_builder': 'knowledge',
+}
+
+# Reverse: DB name → frontend-friendly name (for catalog responses)
+AGENT_TYPE_DISPLAY: dict[str, str] = {v: k for k, v in AGENT_TYPE_ALIASES.items()}
+
+def _normalize_agent_type(agent_type: str) -> str:
+    """Resolve frontend alias → DB agent_type."""
+    return AGENT_TYPE_ALIASES.get(agent_type, agent_type)
+
+def _display_agent_type(agent_type: str) -> str:
+    """Resolve DB agent_type → frontend display name."""
+    return AGENT_TYPE_DISPLAY.get(agent_type, agent_type)
+
 
 # =====================================
 # SUMMARIZER AGENT ROUTES
@@ -2970,6 +2988,1290 @@ def get_recent_knowledge():
         print(f"[AGENTS API] Error in get_recent_knowledge: {e}")
         import traceback
         traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ======================================================================
+# AGENT CATALOG & MANAGEMENT ROUTES
+# ======================================================================
+
+def _get_user_id(username):
+    """Helper: Get user ID from username."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            row = cur.fetchone()
+            return row['id'] if row else None
+    finally:
+        conn.close()
+
+
+def _check_community_admin(user_id, community_id):
+    """Helper: Check if user is admin or owner of a community."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT role FROM community_members
+                WHERE community_id = %s AND user_id = %s AND role IN ('admin', 'owner')
+            """, (community_id, user_id))
+            return cur.fetchone() is not None
+    finally:
+        conn.close()
+
+
+def _check_community_member(user_id, community_id):
+    """Helper: Check if user is a member of a community."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT 1 FROM community_members
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id))
+            return cur.fetchone() is not None
+    finally:
+        conn.close()
+
+
+@agents_bp.route('/catalog', methods=['GET'])
+@jwt_required()
+def get_agent_catalog():
+    """
+    Get the full agent catalog with install status per community/user.
+    
+    Query params:
+        - community_id (optional): Show install status for this community
+    
+    Returns:
+        List of all agents with metadata, features, and install status
+    """
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+        
+        community_id = request.args.get('community_id', type=int)
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get all agents from registry
+            cur.execute("""
+                SELECT agent_type, display_name, description, category, icon,
+                       default_settings, features, is_active
+                FROM agent_registry
+                WHERE is_active = TRUE
+                ORDER BY category, display_name
+            """)
+            agents = cur.fetchall()
+            
+            # Get user's personal agents
+            cur.execute("""
+                SELECT agent_type, enabled, settings, activated_at, last_used, usage_count
+                FROM user_agents WHERE user_id = %s
+            """, (user_id,))
+            personal = {r['agent_type']: r for r in cur.fetchall()}
+            
+            # Get community agents if community_id provided
+            community_installed = {}
+            if community_id:
+                cur.execute("""
+                    SELECT ca.agent_type, ca.enabled, ca.settings, ca.installed_at,
+                           ca.last_active, ca.usage_count, u.username as installed_by
+                    FROM community_agents ca
+                    JOIN users u ON ca.installed_by = u.id
+                    WHERE ca.community_id = %s
+                """, (community_id,))
+                community_installed = {r['agent_type']: r for r in cur.fetchall()}
+        
+        catalog = []
+        for agent in agents:
+            frontend_type = _display_agent_type(agent['agent_type'])
+            entry = {
+                'agent_type': frontend_type,
+                'display_name': agent['display_name'],
+                'description': agent['description'],
+                'category': agent['category'],
+                'icon': agent['icon'],
+                'default_settings': json.loads(agent['default_settings']) if agent['default_settings'] else {},
+                'features': json.loads(agent['features']) if agent['features'] else [],
+            }
+            
+            # Add personal install status
+            if agent['category'] == 'personal' and agent['agent_type'] in personal:
+                p = personal[agent['agent_type']]
+                entry['personal_status'] = {
+                    'activated': True,
+                    'enabled': p['enabled'],
+                    'settings': json.loads(p['settings']) if p['settings'] else None,
+                    'activated_at': p['activated_at'].isoformat() if p['activated_at'] else None,
+                    'last_used': p['last_used'].isoformat() if p['last_used'] else None,
+                    'usage_count': p['usage_count'],
+                }
+            else:
+                entry['personal_status'] = {'activated': False}
+            
+            # Add community install status
+            if community_id and agent['agent_type'] in community_installed:
+                c = community_installed[agent['agent_type']]
+                entry['community_status'] = {
+                    'installed': True,
+                    'enabled': c['enabled'],
+                    'settings': json.loads(c['settings']) if c['settings'] else None,
+                    'installed_by': c['installed_by'],
+                    'installed_at': c['installed_at'].isoformat() if c['installed_at'] else None,
+                    'last_active': c['last_active'].isoformat() if c['last_active'] else None,
+                    'usage_count': c['usage_count'],
+                }
+            elif community_id:
+                entry['community_status'] = {'installed': False}
+            
+            catalog.append(entry)
+        
+        return jsonify({'success': True, 'agents': catalog}), 200
+        
+    except Exception as e:
+        print(f"[AGENTS API] Error in get_agent_catalog: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/install/community/<int:community_id>', methods=['POST'])
+@jwt_required()
+def install_community_agent(community_id):
+    """
+    Install an agent for a community. Only admins/owners can install.
+    
+    Body:
+        - agent_type: str (required)
+        - settings: dict (optional, overrides defaults)
+    """
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Check admin permission
+        if not _check_community_admin(user_id, community_id):
+            return jsonify({'error': 'Only community admins can install agents'}), 403
+        
+        data = request.get_json() or {}
+        agent_type = data.get('agent_type')
+        if not agent_type:
+            return jsonify({'error': 'agent_type is required'}), 400
+        agent_type = _normalize_agent_type(agent_type)
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Verify agent exists and is a community agent
+            cur.execute("""
+                SELECT agent_type, category, default_settings FROM agent_registry
+                WHERE agent_type = %s AND is_active = TRUE
+            """, (agent_type,))
+            agent = cur.fetchone()
+            
+            if not agent:
+                return jsonify({'error': 'Agent not found'}), 404
+            if agent['category'] != 'community':
+                return jsonify({'error': 'This is a personal agent, use /activate/personal instead'}), 400
+            
+            # Check if already installed
+            cur.execute("""
+                SELECT id FROM community_agents
+                WHERE community_id = %s AND agent_type = %s
+            """, (community_id, agent_type))
+            if cur.fetchone():
+                return jsonify({'error': 'Agent already installed in this community'}), 409
+            
+            # Merge provided settings with defaults
+            default_settings = json.loads(agent['default_settings']) if agent['default_settings'] else {}
+            custom_settings = data.get('settings', {})
+            merged_settings = {**default_settings, **custom_settings}
+            
+            # Install
+            cur.execute("""
+                INSERT INTO community_agents (community_id, agent_type, enabled, settings, installed_by)
+                VALUES (%s, %s, TRUE, %s, %s)
+            """, (community_id, agent_type, json.dumps(merged_settings), user_id))
+            conn.commit()
+        
+        # Invalidate cache
+        try:
+            from services.redis_client import invalidate_installed_agents, invalidate_agent_settings
+            invalidate_installed_agents(community_id)
+            invalidate_agent_settings(community_id, agent_type)
+        except Exception:
+            pass
+        
+        return jsonify({
+            'success': True,
+            'message': f'{agent_type} agent installed successfully',
+            'agent_type': agent_type,
+            'community_id': community_id,
+        }), 201
+        
+    except Exception as e:
+        print(f"[AGENTS API] Error installing agent: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/uninstall/community/<int:community_id>/<agent_type>', methods=['DELETE'])
+@jwt_required()
+def uninstall_community_agent(community_id, agent_type):
+    """Uninstall an agent from a community. Admins/owners only."""
+    agent_type = _normalize_agent_type(agent_type)
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+        
+        if not _check_community_admin(user_id, community_id):
+            return jsonify({'error': 'Only community admins can uninstall agents'}), 403
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                DELETE FROM community_agents
+                WHERE community_id = %s AND agent_type = %s
+            """, (community_id, agent_type))
+            
+            if cur.rowcount == 0:
+                return jsonify({'error': 'Agent not installed in this community'}), 404
+            
+            conn.commit()
+        
+        try:
+            from services.redis_client import invalidate_installed_agents, invalidate_agent_settings
+            invalidate_installed_agents(community_id)
+            invalidate_agent_settings(community_id, agent_type)
+        except Exception:
+            pass
+        
+        return jsonify({
+            'success': True,
+            'message': f'{agent_type} agent uninstalled',
+        }), 200
+        
+    except Exception as e:
+        print(f"[AGENTS API] Error uninstalling agent: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/configure/community/<int:community_id>/<agent_type>', methods=['PUT'])
+@jwt_required()
+def configure_community_agent(community_id, agent_type):
+    """
+    Update settings for an installed community agent. Admins/owners only.
+    
+    Body:
+        - settings: dict (merged with existing)
+        - enabled: bool (optional)
+    """
+    agent_type = _normalize_agent_type(agent_type)
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+        
+        if not _check_community_admin(user_id, community_id):
+            return jsonify({'error': 'Only community admins can configure agents'}), 403
+        
+        data = request.get_json() or {}
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Get current settings
+            cur.execute("""
+                SELECT id, settings, enabled FROM community_agents
+                WHERE community_id = %s AND agent_type = %s
+            """, (community_id, agent_type))
+            current = cur.fetchone()
+            
+            if not current:
+                return jsonify({'error': 'Agent not installed in this community'}), 404
+            
+            # Merge settings
+            current_settings = json.loads(current['settings']) if current['settings'] else {}
+            new_settings = data.get('settings', {})
+            merged = {**current_settings, **new_settings}
+            
+            # Update
+            enabled = data.get('enabled', current['enabled'])
+            cur.execute("""
+                UPDATE community_agents
+                SET settings = %s, enabled = %s
+                WHERE community_id = %s AND agent_type = %s
+            """, (json.dumps(merged), enabled, community_id, agent_type))
+            conn.commit()
+        
+        try:
+            from services.redis_client import invalidate_agent_settings, invalidate_installed_agents
+            invalidate_agent_settings(community_id, agent_type)
+            invalidate_installed_agents(community_id)
+        except Exception:
+            pass
+        
+        return jsonify({
+            'success': True,
+            'settings': merged,
+            'enabled': enabled,
+        }), 200
+        
+    except Exception as e:
+        print(f"[AGENTS API] Error configuring agent: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ── Summarizer Scheduler Endpoints ────────────────────────────────────
+
+@agents_bp.route('/summarizer/schedule/<int:community_id>', methods=['GET'])
+@jwt_required()
+def get_summarizer_schedule(community_id):
+    """Get the auto-summarize schedule settings for a community."""
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+
+        if not _check_community_member(user_id, community_id):
+            return jsonify({'error': 'Access denied'}), 403
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT settings, enabled FROM community_agents
+                WHERE community_id = %s AND agent_type = 'summarizer'
+            """, (community_id,))
+            row = cur.fetchone()
+
+        if not row:
+            return jsonify({'error': 'Summarizer agent not installed'}), 404
+
+        settings = json.loads(row['settings']) if row['settings'] else {}
+        return jsonify({
+            'success': True,
+            'auto_summarize_enabled': settings.get('auto_summarize_enabled', False),
+            'schedule_time': settings.get('schedule_time', '21:00'),
+            'auto_summarize_message_count': settings.get('auto_summarize_message_count', 200),
+            'last_auto_summary_date': settings.get('last_auto_summary_date', ''),
+            'agent_enabled': row['enabled'],
+        }), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error getting summarizer schedule: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/summarizer/trigger/<int:community_id>', methods=['POST'])
+@jwt_required()
+def trigger_auto_summarize(community_id):
+    """Manually trigger auto-summarize for a community (admin only). Posts bot messages."""
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+
+        if not _check_community_admin(user_id, community_id):
+            return jsonify({'error': 'Only community admins can trigger auto-summarize'}), 403
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT settings, enabled, installed_by FROM community_agents
+                WHERE community_id = %s AND agent_type = 'summarizer'
+            """, (community_id,))
+            row = cur.fetchone()
+
+        if not row:
+            return jsonify({'error': 'Summarizer agent not installed'}), 404
+        if not row['enabled']:
+            return jsonify({'error': 'Summarizer agent is disabled'}), 400
+
+        conn.close()
+        conn = None
+
+        settings = json.loads(row['settings']) if row['settings'] else {}
+        message_count = settings.get('auto_summarize_message_count', 200)
+        sender_id = row['installed_by']
+
+        from agents.summarizer import SummarizerAgent
+        from tasks.agent_tasks import _format_summary_as_bot_message, _post_bot_message
+
+        agent = SummarizerAgent()
+        c = get_db_connection()
+        try:
+            with c.cursor() as cur:
+                cur.execute("""
+                    SELECT id, name FROM channels 
+                    WHERE community_id = %s AND type = 'text'
+                """, (community_id,))
+                channels = cur.fetchall()
+        finally:
+            c.close()
+
+        results = []
+        for channel in channels:
+            try:
+                result = agent.summarize_channel(channel['id'], message_count, user_id)
+                if result and result.get('success'):
+                    bot_message = _format_summary_as_bot_message(result, channel['name'])
+                    msg_id = _post_bot_message(channel['id'], community_id, bot_message, sender_id)
+                    results.append({
+                        'channel_id': channel['id'],
+                        'channel_name': channel['name'],
+                        'success': True,
+                        'message_id': msg_id,
+                    })
+                else:
+                    results.append({
+                        'channel_id': channel['id'],
+                        'channel_name': channel['name'],
+                        'success': False,
+                        'reason': 'No messages to summarize',
+                    })
+            except Exception as ch_err:
+                results.append({
+                    'channel_id': channel['id'],
+                    'channel_name': channel['name'],
+                    'success': False,
+                    'reason': str(ch_err),
+                })
+
+        return jsonify({
+            'success': True,
+            'channels_processed': len(results),
+            'results': results,
+        }), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error triggering auto-summarize: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/status/community/<int:community_id>', methods=['GET'])
+@jwt_required()
+def get_community_agent_status(community_id):
+    """Get all installed agents for a community with their status."""
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Members can view, but must be a member
+        if not _check_community_member(user_id, community_id):
+            return jsonify({'error': 'Access denied'}), 403
+        
+        # Try cache first
+        try:
+            from services.redis_client import get_installed_agents, set_installed_agents
+            cached = get_installed_agents(community_id)
+            if cached:
+                return jsonify({'success': True, 'agents': cached}), 200
+        except Exception:
+            pass
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT ca.agent_type, ca.enabled, ca.settings, ca.installed_at,
+                       ca.last_active, ca.usage_count,
+                       ar.display_name, ar.description, ar.icon, ar.category, ar.features,
+                       u.username as installed_by
+                FROM community_agents ca
+                JOIN agent_registry ar ON ca.agent_type = ar.agent_type
+                JOIN users u ON ca.installed_by = u.id
+                WHERE ca.community_id = %s
+                ORDER BY ca.installed_at DESC
+            """, (community_id,))
+            agents = cur.fetchall()
+        
+        result = []
+        for a in agents:
+            result.append({
+                'agent_type': _display_agent_type(a['agent_type']),
+                'display_name': a['display_name'],
+                'description': a['description'],
+                'icon': a['icon'],
+                'category': a['category'],
+                'features': json.loads(a['features']) if a['features'] else [],
+                'enabled': a['enabled'],
+                'settings': json.loads(a['settings']) if a['settings'] else {},
+                'installed_by': a['installed_by'],
+                'installed_at': a['installed_at'].isoformat() if a['installed_at'] else None,
+                'last_active': a['last_active'].isoformat() if a['last_active'] else None,
+                'usage_count': a['usage_count'],
+            })
+        
+        # Cache the result
+        try:
+            set_installed_agents(community_id, result)
+        except Exception:
+            pass
+        
+        return jsonify({'success': True, 'agents': result}), 200
+        
+    except Exception as e:
+        print(f"[AGENTS API] Error getting community status: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/activate/personal', methods=['POST'])
+@jwt_required()
+def activate_personal_agent():
+    """
+    Activate a personal agent for the current user.
+    
+    Body:
+        - agent_type: str (required)
+        - settings: dict (optional)
+    """
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+        
+        data = request.get_json() or {}
+        agent_type = data.get('agent_type')
+        if not agent_type:
+            return jsonify({'error': 'agent_type is required'}), 400
+        agent_type = _normalize_agent_type(agent_type)
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Verify agent exists and is a personal agent
+            cur.execute("""
+                SELECT agent_type, category, default_settings FROM agent_registry
+                WHERE agent_type = %s AND is_active = TRUE
+            """, (agent_type,))
+            agent = cur.fetchone()
+            
+            if not agent:
+                return jsonify({'error': 'Agent not found'}), 404
+            if agent['category'] != 'personal':
+                return jsonify({'error': 'This is a community agent, use /install/community instead'}), 400
+            
+            # Check if already activated
+            cur.execute("""
+                SELECT id, enabled FROM user_agents
+                WHERE user_id = %s AND agent_type = %s
+            """, (user_id, agent_type))
+            existing = cur.fetchone()
+            
+            if existing:
+                if existing['enabled']:
+                    return jsonify({'error': 'Agent already activated'}), 409
+                # Re-activate if disabled
+                cur.execute("""
+                    UPDATE user_agents SET enabled = TRUE WHERE id = %s
+                """, (existing['id'],))
+                conn.commit()
+                return jsonify({'success': True, 'message': f'{agent_type} re-activated'}), 200
+            
+            # Merge settings
+            default_settings = json.loads(agent['default_settings']) if agent['default_settings'] else {}
+            custom_settings = data.get('settings', {})
+            merged_settings = {**default_settings, **custom_settings}
+            
+            cur.execute("""
+                INSERT INTO user_agents (user_id, agent_type, enabled, settings)
+                VALUES (%s, %s, TRUE, %s)
+            """, (user_id, agent_type, json.dumps(merged_settings)))
+            conn.commit()
+        
+        try:
+            from services.redis_client import invalidate_personal_agents
+            invalidate_personal_agents(user_id)
+        except Exception:
+            pass
+        
+        return jsonify({
+            'success': True,
+            'message': f'{agent_type} activated',
+        }), 201
+        
+    except Exception as e:
+        print(f"[AGENTS API] Error activating personal agent: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/deactivate/personal/<agent_type>', methods=['DELETE'])
+@jwt_required()
+def deactivate_personal_agent(agent_type):
+    """Deactivate a personal agent for the current user."""
+    agent_type = _normalize_agent_type(agent_type)
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE user_agents SET enabled = FALSE
+                WHERE user_id = %s AND agent_type = %s
+            """, (user_id, agent_type))
+            
+            if cur.rowcount == 0:
+                return jsonify({'error': 'Agent not activated'}), 404
+            conn.commit()
+        
+        try:
+            from services.redis_client import invalidate_personal_agents
+            invalidate_personal_agents(user_id)
+        except Exception:
+            pass
+        
+        return jsonify({'success': True, 'message': f'{agent_type} deactivated'}), 200
+        
+    except Exception as e:
+        print(f"[AGENTS API] Error deactivating agent: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/status/personal', methods=['GET'])
+@jwt_required()
+def get_personal_agent_status():
+    """Get all personal agents for the current user with their status."""
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Try cache first
+        try:
+            from services.redis_client import get_personal_agents, set_personal_agents
+            cached = get_personal_agents(user_id)
+            if cached:
+                return jsonify({'success': True, 'agents': cached}), 200
+        except Exception:
+            pass
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT ua.agent_type, ua.enabled, ua.settings, ua.activated_at,
+                       ua.last_used, ua.usage_count,
+                       ar.display_name, ar.description, ar.icon, ar.features
+                FROM user_agents ua
+                JOIN agent_registry ar ON ua.agent_type = ar.agent_type
+                WHERE ua.user_id = %s
+                ORDER BY ua.activated_at DESC
+            """, (user_id,))
+            agents = cur.fetchall()
+        
+        result = []
+        for a in agents:
+            result.append({
+                'agent_type': _display_agent_type(a['agent_type']),
+                'display_name': a['display_name'],
+                'description': a['description'],
+                'icon': a['icon'],
+                'features': json.loads(a['features']) if a['features'] else [],
+                'enabled': a['enabled'],
+                'settings': json.loads(a['settings']) if a['settings'] else {},
+                'activated_at': a['activated_at'].isoformat() if a['activated_at'] else None,
+                'last_used': a['last_used'].isoformat() if a['last_used'] else None,
+                'usage_count': a['usage_count'],
+            })
+        
+        try:
+            set_personal_agents(user_id, result)
+        except Exception:
+            pass
+        
+        return jsonify({'success': True, 'agents': result}), 200
+        
+    except Exception as e:
+        print(f"[AGENTS API] Error getting personal status: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/configure/personal/<agent_type>', methods=['PUT'])
+@jwt_required()
+def configure_personal_agent(agent_type):
+    """
+    Update settings for a personal agent.
+    
+    Body:
+        - settings: dict (merged with existing)
+        - enabled: bool (optional)
+    """
+    agent_type = _normalize_agent_type(agent_type)
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+        
+        data = request.get_json() or {}
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, settings, enabled FROM user_agents
+                WHERE user_id = %s AND agent_type = %s
+            """, (user_id, agent_type))
+            current = cur.fetchone()
+            
+            if not current:
+                return jsonify({'error': 'Agent not activated'}), 404
+            
+            current_settings = json.loads(current['settings']) if current['settings'] else {}
+            new_settings = data.get('settings', {})
+            merged = {**current_settings, **new_settings}
+            enabled = data.get('enabled', current['enabled'])
+            
+            cur.execute("""
+                UPDATE user_agents SET settings = %s, enabled = %s
+                WHERE user_id = %s AND agent_type = %s
+            """, (json.dumps(merged), enabled, user_id, agent_type))
+            conn.commit()
+        
+        try:
+            from services.redis_client import invalidate_personal_agents
+            invalidate_personal_agents(user_id)
+        except Exception:
+            pass
+        
+        return jsonify({'success': True, 'settings': merged, 'enabled': enabled}), 200
+        
+    except Exception as e:
+        print(f"[AGENTS API] Error configuring personal agent: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/logs', methods=['GET'])
+@jwt_required()
+def get_agent_logs():
+    """
+    Get paginated agent execution logs.
+    
+    Query params:
+        - agent_type: Filter by agent type
+        - community_id: Filter by community
+        - status: Filter by status (success/error/partial)
+        - page: Page number (default 1)
+        - limit: Items per page (default 20, max 100)
+    """
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+        
+        agent_type = request.args.get('agent_type')
+        community_id = request.args.get('community_id', type=int)
+        status = request.args.get('status')
+        page = max(1, request.args.get('page', 1, type=int))
+        limit = min(100, max(1, request.args.get('limit', 20, type=int)))
+        offset = (page - 1) * limit
+        
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Build query
+            where = ["1=1"]
+            params = []
+            
+            if agent_type:
+                where.append("agent_name = %s")
+                params.append(agent_type)
+            if community_id:
+                where.append("community_id = %s")
+                params.append(community_id)
+            if status:
+                where.append("status = %s")
+                params.append(status)
+            
+            where_clause = " AND ".join(where)
+            
+            # Count total
+            cur.execute(f"SELECT COUNT(*) as total FROM ai_agent_logs WHERE {where_clause}", params)
+            total = cur.fetchone()['total']
+            
+            # Get page
+            cur.execute(f"""
+                SELECT id, agent_name, action_type, input_data, output_data,
+                       status, execution_time_ms, community_id, user_id, created_at
+                FROM ai_agent_logs
+                WHERE {where_clause}
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s
+            """, params + [limit, offset])
+            logs = cur.fetchall()
+        
+        result = []
+        for log in logs:
+            result.append({
+                'id': log['id'],
+                'agent_name': log['agent_name'],
+                'action_type': log['action_type'],
+                'input_data': log['input_data'][:500] if log['input_data'] else None,
+                'output_data': log['output_data'][:500] if log['output_data'] else None,
+                'status': log['status'],
+                'execution_time_ms': log['execution_time_ms'],
+                'community_id': log['community_id'],
+                'user_id': log['user_id'],
+                'created_at': log['created_at'].isoformat() if log['created_at'] else None,
+            })
+        
+        return jsonify({
+            'success': True,
+            'logs': result,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total': total,
+                'pages': (total + limit - 1) // limit,
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"[AGENTS API] Error getting logs: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ======================================================================
+# MY SUMMARIES — User's generated summary history
+# ======================================================================
+
+@agents_bp.route('/my-summaries', methods=['GET'])
+@jwt_required()
+def get_my_summaries():
+    """Get all summaries generated by the current user, optionally filtered by channel."""
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+
+        channel_id = request.args.get('channel_id', type=int)
+        limit = min(request.args.get('limit', 20, type=int), 50)
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            if channel_id:
+                cur.execute("""
+                    SELECT cs.id, cs.channel_id, cs.summary, cs.generated_by, cs.created_at,
+                           cs.message_count, cs.method, cs.participants, c.name AS channel_name
+                    FROM conversation_summaries cs
+                    LEFT JOIN channels c ON c.id = cs.channel_id
+                    WHERE cs.created_by = %s AND cs.channel_id = %s
+                    ORDER BY cs.created_at DESC
+                    LIMIT %s
+                """, (user_id, channel_id, limit))
+            else:
+                cur.execute("""
+                    SELECT cs.id, cs.channel_id, cs.summary, cs.generated_by, cs.created_at,
+                           cs.message_count, cs.method, cs.participants, c.name AS channel_name
+                    FROM conversation_summaries cs
+                    LEFT JOIN channels c ON c.id = cs.channel_id
+                    WHERE cs.created_by = %s
+                    ORDER BY cs.created_at DESC
+                    LIMIT %s
+                """, (user_id, limit))
+
+            rows = cur.fetchall()
+            import json
+            summaries = []
+            for r in rows:
+                participants = r.get('participants', '[]')
+                if isinstance(participants, str):
+                    try:
+                        participants = json.loads(participants)
+                    except Exception:
+                        participants = []
+                summaries.append({
+                    'id': r['id'],
+                    'channel_id': r['channel_id'],
+                    'channel_name': r.get('channel_name', ''),
+                    'summary': r['summary'],
+                    'generated_by': r['generated_by'],
+                    'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+                    'message_count': r.get('message_count', 0),
+                    'method': r.get('method', 'extractive'),
+                    'participants': participants,
+                })
+
+        return jsonify({'success': True, 'summaries': summaries}), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error getting my summaries: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/my-summaries/<int:summary_id>', methods=['DELETE'])
+@jwt_required()
+def delete_my_summary(summary_id):
+    """Delete a summary the current user generated."""
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM conversation_summaries WHERE id = %s AND created_by = %s", (summary_id, user_id))
+            if not cur.fetchone():
+                return jsonify({'error': 'Summary not found or access denied'}), 404
+            cur.execute("DELETE FROM conversation_summaries WHERE id = %s AND created_by = %s", (summary_id, user_id))
+            conn.commit()
+
+        return jsonify({'success': True}), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error deleting summary: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ======================================================================
+# SUMMARY SCHEDULE ENDPOINTS — Per-user scheduled auto-summaries
+# ======================================================================
+
+@agents_bp.route('/summary-schedules', methods=['GET'])
+@jwt_required()
+def get_summary_schedules():
+    """Get all summary schedules for the current user."""
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT s.id, s.channel_id, s.community_id, s.schedule_time,
+                       s.timezone, s.is_active, s.last_triggered_at,
+                       s.created_at, s.updated_at,
+                       c.name AS channel_name, cm.name AS community_name
+                FROM user_summary_schedules s
+                JOIN channels c ON c.id = s.channel_id
+                JOIN communities cm ON cm.id = s.community_id
+                WHERE s.user_id = %s
+                ORDER BY s.created_at DESC
+            """, (user_id,))
+            rows = cur.fetchall()
+
+        schedules = []
+        for r in rows:
+            # MySQL TIME column returns timedelta; convert to HH:MM string
+            sched_time = r['schedule_time']
+            if hasattr(sched_time, 'total_seconds'):
+                total_secs = int(sched_time.total_seconds())
+                sched_time_str = f"{total_secs // 3600:02d}:{(total_secs % 3600) // 60:02d}"
+            else:
+                sched_time_str = str(sched_time)[:5]
+
+            schedules.append({
+                'id': r['id'],
+                'channel_id': r['channel_id'],
+                'community_id': r['community_id'],
+                'channel_name': r['channel_name'],
+                'community_name': r['community_name'],
+                'schedule_time': sched_time_str,
+                'timezone': r['timezone'],
+                'is_active': bool(r['is_active']),
+                'last_triggered_at': r['last_triggered_at'].isoformat() if r['last_triggered_at'] else None,
+                'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+            })
+
+        return jsonify({'success': True, 'schedules': schedules}), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error getting schedules: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/summary-schedules', methods=['POST'])
+@jwt_required()
+def create_summary_schedule():
+    """Create or update a summary schedule for a channel."""
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        channel_id = data.get('channel_id')
+        schedule_time = data.get('schedule_time')  # "HH:MM" or "HH:MM:SS"
+
+        if not channel_id or not schedule_time:
+            return jsonify({'error': 'channel_id and schedule_time required'}), 400
+
+        timezone = data.get('timezone', 'UTC')
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Verify channel exists and get community_id
+            cur.execute("SELECT id, community_id FROM channels WHERE id = %s", (channel_id,))
+            ch = cur.fetchone()
+            if not ch:
+                return jsonify({'error': 'Channel not found'}), 404
+            community_id = ch['community_id']
+
+            # Verify user is a member of the community
+            cur.execute("""
+                SELECT 1 FROM community_members WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id))
+            if not cur.fetchone():
+                return jsonify({'error': 'Not a member of this community'}), 403
+
+            # Upsert — one schedule per user per channel
+            cur.execute("""
+                INSERT INTO user_summary_schedules
+                    (user_id, channel_id, community_id, schedule_time, timezone, is_active)
+                VALUES (%s, %s, %s, %s, %s, TRUE)
+                ON DUPLICATE KEY UPDATE
+                    schedule_time = VALUES(schedule_time),
+                    timezone = VALUES(timezone),
+                    is_active = TRUE,
+                    updated_at = NOW()
+            """, (user_id, channel_id, community_id, schedule_time, timezone))
+            conn.commit()
+
+            # Get the created/updated record
+            cur.execute("""
+                SELECT id, schedule_time, timezone, is_active, created_at
+                FROM user_summary_schedules
+                WHERE user_id = %s AND channel_id = %s
+            """, (user_id, channel_id))
+            row = cur.fetchone()
+
+        return jsonify({
+            'success': True,
+            'schedule': {
+                'id': row['id'],
+                'channel_id': channel_id,
+                'community_id': community_id,
+                'schedule_time': str(row['schedule_time']),
+                'timezone': row['timezone'],
+                'is_active': bool(row['is_active']),
+            }
+        }), 201
+
+    except Exception as e:
+        print(f"[AGENTS API] Error creating schedule: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/summary-schedules/<int:schedule_id>', methods=['PUT'])
+@jwt_required()
+def update_summary_schedule(schedule_id):
+    """Update an existing summary schedule (time, active status)."""
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+
+        data = request.get_json() or {}
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id FROM user_summary_schedules WHERE id = %s AND user_id = %s
+            """, (schedule_id, user_id))
+            if not cur.fetchone():
+                return jsonify({'error': 'Schedule not found'}), 404
+
+            updates = []
+            params = []
+            if 'schedule_time' in data:
+                updates.append("schedule_time = %s")
+                params.append(data['schedule_time'])
+            if 'timezone' in data:
+                updates.append("timezone = %s")
+                params.append(data['timezone'])
+            if 'is_active' in data:
+                updates.append("is_active = %s")
+                params.append(bool(data['is_active']))
+
+            if not updates:
+                return jsonify({'error': 'No fields to update'}), 400
+
+            params.append(schedule_id)
+            cur.execute(f"UPDATE user_summary_schedules SET {', '.join(updates)} WHERE id = %s", params)
+            conn.commit()
+
+        return jsonify({'success': True, 'message': 'Schedule updated'}), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error updating schedule: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/summary-schedules/<int:schedule_id>', methods=['DELETE'])
+@jwt_required()
+def delete_summary_schedule(schedule_id):
+    """Delete a summary schedule."""
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM user_summary_schedules WHERE id = %s AND user_id = %s", (schedule_id, user_id))
+            if cur.rowcount == 0:
+                return jsonify({'error': 'Schedule not found'}), 404
+            conn.commit()
+
+        return jsonify({'success': True, 'message': 'Schedule deleted'}), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error deleting schedule: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/summary-schedules/pending', methods=['GET'])
+@jwt_required()
+def get_pending_summaries():
+    """Get undelivered scheduled summaries for the current user, optionally filtered by channel."""
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+
+        channel_id = request.args.get('channel_id', type=int)
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            if channel_id:
+                cur.execute("""
+                    SELECT id, channel_id, community_id, content, method, message_count, created_at
+                    FROM scheduled_summaries
+                    WHERE user_id = %s AND channel_id = %s AND is_delivered = FALSE
+                    ORDER BY created_at DESC LIMIT 5
+                """, (user_id, channel_id))
+            else:
+                cur.execute("""
+                    SELECT id, channel_id, community_id, content, method, message_count, created_at
+                    FROM scheduled_summaries
+                    WHERE user_id = %s AND is_delivered = FALSE
+                    ORDER BY created_at DESC LIMIT 20
+                """, (user_id,))
+            rows = cur.fetchall()
+
+            # Mark as delivered
+            if rows:
+                ids = [r['id'] for r in rows]
+                placeholders = ','.join(['%s'] * len(ids))
+                cur.execute(f"UPDATE scheduled_summaries SET is_delivered = TRUE WHERE id IN ({placeholders})", ids)
+                conn.commit()
+
+        summaries = [{
+            'id': r['id'],
+            'channel_id': r['channel_id'],
+            'community_id': r['community_id'],
+            'content': r['content'],
+            'method': r['method'],
+            'message_count': r['message_count'],
+            'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+        } for r in rows]
+
+        return jsonify({'success': True, 'summaries': summaries}), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error getting pending summaries: {e}")
         return jsonify({'error': 'Internal server error'}), 500
     finally:
         if conn:

@@ -18,7 +18,7 @@ interface DirectMessageEvent {
   sender_id: number;
   receiver_id: number;
   content: string;
-  message_type: 'text' | 'image' | 'file' | 'ai' | 'voice' | 'video';
+  message_type: 'text' | 'image' | 'file' | 'ai' | 'voice' | 'video' | 'call';
   created_at: string;
   is_read: boolean;
   reply_to?: number | null;
@@ -62,9 +62,17 @@ type UserBlockedHandler = (data: { community_id: number; user_id: number; blocke
 type ChannelHandler = (data: any) => void;
 type DirectMessageHandler = (message: DirectMessageEvent) => void;
 type FriendRequestHandler = (request: FriendRequestEvent) => void;
-type FriendStatusHandler = (data: { friend_id: number; status: string }) => void;
+type FriendStatusHandler = (data: { friend_id: number; status: string; request_id?: number }) => void;
 type ModerationActionHandler = (data: { community_id: number; channel_id: number; action: string; severity: string; timestamp: string }) => void;
 type CommandResultHandler = (data: { type: string; success: boolean; summary?: string; key_points?: string[]; method?: string; error?: string }) => void;
+type UnreadUpdateHandler = (data: { channel_id?: number; community_id?: number; channel_unread?: number; community_unread?: number; total_unread?: number }) => void;
+type DMUnreadUpdateHandler = (data: { sender_id: number; unread_count: number; total_dm_unread: number; total_unread: number }) => void;
+type InitialUnreadsHandler = (data: { channels: Record<string, number>; communities: Record<string, number>; dms: Record<string, number>; total_unread: number }) => void;
+type PinEventHandler = (data: { channel_id?: number; message_id: number; pin_id?: number; type?: string; pinned_by?: string; expires_at?: string | null }) => void;
+type FriendsBulkStatusHandler = (data: Record<number, string>) => void;
+type ChannelActivityHandler = (data: { channel_id: number; community_id: number; sender_id: number; message_id: number }) => void;
+type SummaryGeneratingHandler = (data: { channel_id: number; status: string }) => void;
+type SummaryResultHandler = (data: { channel_id: number; content: string; method: string; message_count: number; created_at: string }) => void;
 
 class SocketService {
   private socket: Socket | null = null;
@@ -86,6 +94,15 @@ class SocketService {
   private friendStatusHandlers: FriendStatusHandler[] = [];
   private moderationActionHandlers: ModerationActionHandler[] = [];
   private commandResultHandlers: CommandResultHandler[] = [];
+  private unreadUpdateHandlers: UnreadUpdateHandler[] = [];
+  private dmUnreadUpdateHandlers: DMUnreadUpdateHandler[] = [];
+  private initialUnreadsHandlers: InitialUnreadsHandler[] = [];
+  private pinEventHandlers: PinEventHandler[] = [];
+  private friendsBulkStatusHandlers: FriendsBulkStatusHandler[] = [];
+  private channelActivityHandlers: ChannelActivityHandler[] = [];
+  private summaryGeneratingHandlers: SummaryGeneratingHandler[] = [];
+  private summaryResultHandlers: SummaryResultHandler[] = [];
+  private dmTypingHandlers: ((data: { user_id: number; is_typing: boolean }) => void)[] = [];
   private currentChannel: number | null = null;
   private currentDMUser: number | null = null;
   private typingTimeout: NodeJS.Timeout | null = null;
@@ -95,6 +112,8 @@ class SocketService {
   private dmListenerRegistered: boolean = false;
   // Dedup set for DM messages (receiver gets message from both DM room & personal room)
   private recentDMIds: Set<number> = new Set();
+  // Track if socket event listeners have been set up (prevent duplicates)
+  private listenersAttached: boolean = false;
 
   connect(token: string) {
     if (this.socket?.connected) {
@@ -125,10 +144,32 @@ class SocketService {
     });
 
     this.setupEventListeners();
+    
+    // If socket is already connected (e.g., shared with socket.ts), trigger room joins immediately
+    if (this.socket.connected) {
+      console.log('[SOCKET] ✅ Socket already connected (shared connection), joining rooms...');
+      this.socket.emit('join_friend_status');
+      this.socket.emit('get_unreads');
+    } else if (!this.socket.connected) {
+      // Explicitly connect if not yet connected
+      this.socket.connect();
+    }
   }
 
   private setupEventListeners() {
     if (!this.socket) return;
+    
+    // Prevent duplicate listener registration if called multiple times on the same socket
+    if (this.listenersAttached) {
+      console.log('[SOCKET] ⏭️ Listeners already attached, skipping duplicate registration');
+      // Still ensure we're in the right rooms if already connected
+      if (this.socket.connected) {
+        this.socket.emit('join_friend_status');
+        this.socket.emit('get_unreads');
+      }
+      return;
+    }
+    this.listenersAttached = true;
 
     // Connection events
     this.socket.on('connect', () => {
@@ -149,6 +190,8 @@ class SocketService {
       }
       // Always rejoin friend status room for presence tracking
       this.socket?.emit('join_friend_status');
+      // Request fresh unread snapshot on every reconnect
+      this.socket?.emit('get_unreads');
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -316,19 +359,21 @@ class SocketService {
     });
 
     this.socket.on('user_typing_dm', (data: { user_id: number; is_typing: boolean }) => {
-      console.log('[SOCKET] ⌨️ User typing in DM:', data);
       this.typingHandlers.forEach(handler => handler({
         username: '',
         channel_id: 0,
         is_typing: data.is_typing
       }));
+      this.dmTypingHandlers.forEach(handler => handler(data));
     });
 
     // Friend request events
     this.socket.on('friend_request_received', (data: FriendRequestEvent) => {
-      console.log('[SOCKET] Friend request received:', data.id);
-      this.friendRequestHandlers.forEach(handler => {
+      console.log('[SOCKET] 🔔 friend_request_received event fired:', JSON.stringify(data));
+      console.log('[SOCKET] 🔔 friendRequestHandlers count:', this.friendRequestHandlers.length);
+      this.friendRequestHandlers.forEach((handler, i) => {
         try {
+          console.log(`[SOCKET] 🔔 Calling friendRequest handler #${i}`);
           handler(data);
         } catch (error) {
           console.error('[SOCKET] Friend request handler error:', error);
@@ -350,7 +395,18 @@ class SocketService {
       // Notify friend status handlers to clean up sentRequests
       this.friendStatusHandlers.forEach(handler => handler({ 
         friend_id: data.rejector_id || data.receiver_id, 
-        status: 'rejected' 
+        status: 'rejected',
+        request_id: data.request_id,
+      }));
+    });
+
+    this.socket.on('friend_request_cancelled', (data: any) => {
+      console.log('[SOCKET] Friend request cancelled:', data);
+      // Notify friend status handlers to remove from pendingRequests
+      this.friendStatusHandlers.forEach(handler => handler({ 
+        friend_id: data.sender_id, 
+        status: 'cancelled',
+        request_id: data.request_id,
       }));
     });
 
@@ -378,6 +434,86 @@ class SocketService {
     this.socket.on('user_unblocked', (data: { unblocked_user_id: number }) => {
       console.log('[SOCKET] ✓ User unblocked:', data);
       this.friendStatusHandlers.forEach(handler => handler({ friend_id: data.unblocked_user_id, status: 'unblocked' }));
+    });
+
+    // ─── Unread & Presence Events ───────────────────────────────────────
+
+    // Initial unread counts on connect/reconnect
+    this.socket.on('initial_unreads', (data: any) => {
+      console.log('[SOCKET] 📊 Initial unreads received:', JSON.stringify(data));
+      this.initialUnreadsHandlers.forEach(handler => handler(data));
+    });
+
+    // Channel/community unread increment
+    this.socket.on('unread_update', (data: any) => {
+      console.log('[SOCKET] 🔔 unread_update received:', JSON.stringify(data));
+      this.unreadUpdateHandlers.forEach(handler => handler(data));
+    });
+
+    // Channel activity — lightweight event emitted to community room for instant unread
+    this.socket.on('channel_activity', (data: any) => {
+      console.log('[SOCKET] ⚡ channel_activity received:', JSON.stringify(data), `| handlers registered: ${this.channelActivityHandlers.length}`);
+      this.channelActivityHandlers.forEach((handler, i) => {
+        console.log(`[SOCKET] ⚡ Calling handler #${i}`);
+        handler(data);
+      });
+    });
+
+    // DM unread increment
+    this.socket.on('dm_unread_update', (data: any) => {
+      console.log('[SOCKET] 💬 dm_unread_update received:', JSON.stringify(data));
+      this.dmUnreadUpdateHandlers.forEach(handler => handler(data));
+    });
+
+    // Pin expired (timer ran out)
+    this.socket.on('pin_expired', (data: any) => {
+      console.log('[SOCKET] 📌 Pin expired:', data);
+      this.pinEventHandlers.forEach(handler => handler({ ...data, type: 'expired' }));
+    });
+
+    // Channel pin events
+    this.socket.on('message_pinned', (data: any) => {
+      console.log('[SOCKET] 📌 Message pinned:', data);
+      this.pinEventHandlers.forEach(handler => handler({ ...data, type: 'channel_pinned' }));
+    });
+
+    this.socket.on('message_unpinned', (data: any) => {
+      console.log('[SOCKET] 📌 Message unpinned:', data);
+      this.pinEventHandlers.forEach(handler => handler({ ...data, type: 'channel_unpinned' }));
+    });
+
+    // DM pin events
+    this.socket.on('dm_message_pinned', (data: any) => {
+      console.log('[SOCKET] 📌 DM message pinned:', data);
+      this.pinEventHandlers.forEach(handler => handler({ ...data, type: 'dm_pinned' }));
+    });
+
+    this.socket.on('dm_message_unpinned', (data: any) => {
+      console.log('[SOCKET] 📌 DM message unpinned:', data);
+      this.pinEventHandlers.forEach(handler => handler({ ...data, type: 'dm_unpinned' }));
+    });
+
+    // Bulk friend presence snapshot
+    this.socket.on('friends_status_bulk', (data: Record<number, string>) => {
+      console.log('[SOCKET] 👥 Bulk friend status:', Object.keys(data).length, 'friends');
+      this.friendsBulkStatusHandlers.forEach(handler => handler(data));
+    });
+
+    // DM messages read acknowledgement
+    this.socket.on('dm_messages_read', (data: { user_id: number }) => {
+      console.log('[SOCKET] ✓ DM messages read by:', data.user_id);
+      this.dmUnreadUpdateHandlers.forEach(handler => handler({ sender_id: data.user_id, unread_count: 0, total_dm_unread: 0, total_unread: 0 }));
+    });
+
+    // Summary generation events (ephemeral, private to sender)
+    this.socket.on('summary_generating', (data: { channel_id: number; status: string }) => {
+      console.log('[SOCKET] 🤖 Summary generating for channel:', data.channel_id);
+      this.summaryGeneratingHandlers.forEach(handler => handler(data));
+    });
+
+    this.socket.on('summary_result', (data: { channel_id: number; content: string; method: string; message_count: number; created_at: string }) => {
+      console.log('[SOCKET] 📋 Summary result received for channel:', data.channel_id);
+      this.summaryResultHandlers.forEach(handler => handler(data));
     });
   }
 
@@ -474,6 +610,26 @@ class SocketService {
 
     this.socket.emit('leave_friend_status');
     console.log('[SOCKET] 👥 Left friend status room');
+  }
+
+  // ─── Unread / Read Tracking Emitters ─────────────────────────────
+
+  // Emit mark channel as read
+  markChannelRead(channelId: number, messageId?: number) {
+    if (!this.socket?.connected) return;
+    this.socket.emit('mark_channel_read', { channel_id: channelId, message_id: messageId });
+  }
+
+  // Emit mark DM as read
+  markDMRead(otherUserId: number) {
+    if (!this.socket?.connected) return;
+    this.socket.emit('mark_dm_read', { other_user_id: otherUserId });
+  }
+
+  // Request current unread snapshot
+  requestUnreads() {
+    if (!this.socket?.connected) return;
+    this.socket.emit('get_unreads');
   }
 
   // Join a channel
@@ -660,6 +816,13 @@ class SocketService {
     };
   }
 
+  onDMTyping(handler: (data: { user_id: number; is_typing: boolean }) => void) {
+    this.dmTypingHandlers.push(handler);
+    return () => {
+      this.dmTypingHandlers = this.dmTypingHandlers.filter(h => h !== handler);
+    };
+  }
+
   onError(handler: ErrorHandler) {
     this.errorHandlers.push(handler);
     return () => {
@@ -718,8 +881,10 @@ class SocketService {
 
   onFriendRequest(handler: FriendRequestHandler) {
     this.friendRequestHandlers.push(handler);
+    console.log(`[SOCKET] 📌 onFriendRequest registered. Total handlers: ${this.friendRequestHandlers.length}`);
     return () => {
       this.friendRequestHandlers = this.friendRequestHandlers.filter(h => h !== handler);
+      console.log(`[SOCKET] 🗑️ onFriendRequest unregistered. Remaining: ${this.friendRequestHandlers.length}`);
     };
   }
 
@@ -744,6 +909,64 @@ class SocketService {
     };
   }
 
+  onUnreadUpdate(handler: UnreadUpdateHandler) {
+    this.unreadUpdateHandlers.push(handler);
+    return () => {
+      this.unreadUpdateHandlers = this.unreadUpdateHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onDMUnreadUpdate(handler: DMUnreadUpdateHandler) {
+    this.dmUnreadUpdateHandlers.push(handler);
+    return () => {
+      this.dmUnreadUpdateHandlers = this.dmUnreadUpdateHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onInitialUnreads(handler: InitialUnreadsHandler) {
+    this.initialUnreadsHandlers.push(handler);
+    return () => {
+      this.initialUnreadsHandlers = this.initialUnreadsHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onPinEvent(handler: PinEventHandler) {
+    this.pinEventHandlers.push(handler);
+    return () => {
+      this.pinEventHandlers = this.pinEventHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onFriendsBulkStatus(handler: FriendsBulkStatusHandler) {
+    this.friendsBulkStatusHandlers.push(handler);
+    return () => {
+      this.friendsBulkStatusHandlers = this.friendsBulkStatusHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onChannelActivity(handler: ChannelActivityHandler) {
+    this.channelActivityHandlers.push(handler);
+    console.log(`[SOCKET] 📌 onChannelActivity registered. Total handlers: ${this.channelActivityHandlers.length}`);
+    return () => {
+      this.channelActivityHandlers = this.channelActivityHandlers.filter(h => h !== handler);
+      console.log(`[SOCKET] 🗑️ onChannelActivity unregistered. Remaining: ${this.channelActivityHandlers.length}`);
+    };
+  }
+
+  onSummaryGenerating(handler: SummaryGeneratingHandler) {
+    this.summaryGeneratingHandlers.push(handler);
+    return () => {
+      this.summaryGeneratingHandlers = this.summaryGeneratingHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onSummaryResult(handler: SummaryResultHandler) {
+    this.summaryResultHandlers.push(handler);
+    return () => {
+      this.summaryResultHandlers = this.summaryResultHandlers.filter(h => h !== handler);
+    };
+  }
+
   disconnect() {
     if (this.typingTimeout) {
       clearTimeout(this.typingTimeout);
@@ -757,6 +980,7 @@ class SocketService {
       this.socket.disconnect();
       this.socket = null;
       this.currentChannel = null;
+      this.listenersAttached = false;
       console.log('[SOCKET] 🔌 Disconnected manually');
     }
   }

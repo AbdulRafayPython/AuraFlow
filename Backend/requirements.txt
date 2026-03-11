@@ -15,12 +15,16 @@ gunicorn
 gevent
 gevent-websocket
 
+# Task Queue & Cache
+redis>=5.0.0
+celery>=5.3.0
+
 # AI Agent Dependencies
 nltk
 scikit-learn
 spacy
 textblob
-google-generativeai
+google-genai
 googletrans==4.0.0-rc1
 deep-translator
 

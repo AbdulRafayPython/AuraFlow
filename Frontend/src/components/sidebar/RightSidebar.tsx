@@ -1,7 +1,4 @@
-import { RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 import { useTheme } from "../../contexts/ThemeContext";
-import AIAgentPanel from "../ai-agents/AIAgentPanel";
-import { useState } from "react";
 import { useRealtime } from "@/hooks/useRealtime";
 
 interface RightSidebarProps {
@@ -11,9 +8,8 @@ interface RightSidebarProps {
 export default function RightSidebar({ isCollapsed }: RightSidebarProps) {
   const { currentTheme } = useTheme();
   const { currentCommunity } = useRealtime();
-  const [isAIAgentPanelOpen, setIsAIAgentPanelOpen] = useState(true);
 
-  // Don't show AI agents if no community is selected
+  // Don't show sidebar if no community is selected
   if (!currentCommunity) {
     return null;
   }
@@ -45,10 +41,10 @@ export default function RightSidebar({ isCollapsed }: RightSidebarProps) {
               }}
             />
           )}
-          <AIAgentPanel 
-            isOpen={isAIAgentPanelOpen}
-            onClose={() => setIsAIAgentPanelOpen(false)}
-          />
+          {/* Agent management moved to modal system — see AgentDetailModal, AgentSettingsModal */}
+          <div className="flex items-center justify-center h-full text-[hsl(var(--theme-text-muted))] text-sm">
+            <p className="opacity-50">Manage agents from Settings</p>
+          </div>
         </div>
       )}
     </div>

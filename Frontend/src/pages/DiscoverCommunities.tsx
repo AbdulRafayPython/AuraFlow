@@ -4,10 +4,12 @@ import {
   Search, Users, Compass, Gamepad2, Music, Film, FlaskConical, GraduationCap,
   Sparkles, TrendingUp, Loader2, Plus, ChevronRight, Home, Verified,
   ArrowLeft, Hash, MessageSquare, Bot, Brain, Shield, Heart, BookOpen,
-  Focus, Activity, Zap, Eye, Settings, ChevronDown, CheckCircle, Power
+  Focus, Activity, Zap, Eye, Settings, ChevronDown, CheckCircle, Power, User
 } from 'lucide-react';
 import { channelService } from '@/services/channelService';
 import { getAvatarUrl } from '@/lib/utils';
+import { AgentDetailModal } from '@/components/modals/AgentDetailModal';
+import { AgentSettingsModal } from '@/components/modals/AgentSettingsModal';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRealtime } from '@/hooks/useRealtime';
 import { useAIAgents } from '@/contexts/AIAgentContext';
@@ -50,6 +52,10 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
   const [offset, setOffset] = useState(0);
   const [joiningId, setJoiningId] = useState<number | null>(null);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [selectedAgentType, setSelectedAgentType] = useState<string | null>(null);
+  const [agentDetailOpen, setAgentDetailOpen] = useState(false);
+  const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
+  const [settingsAgentType, setSettingsAgentType] = useState<string | null>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
@@ -135,6 +141,16 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
     } finally {
       setJoiningId(null);
     }
+  };
+
+  const handleAgentCardClick = (agentType: string) => {
+    setSelectedAgentType(agentType);
+    setAgentDetailOpen(true);
+  };
+
+  const handleAgentConfigure = (agentType: string) => {
+    setSettingsAgentType(agentType);
+    setAgentSettingsOpen(true);
   };
 
   const getCommunityLogoUrl = (community: Community) => {
@@ -276,8 +292,8 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                   {/* Overview Stats */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-10">
                     {[
-                      { label: 'Total Agents', value: '7', icon: Bot, accent: 'text-violet-400' },
-                      { label: 'Categories', value: '4', icon: Activity, accent: 'text-blue-400' },
+                      { label: 'Community Agents', value: '4', icon: Users, accent: 'text-blue-400' },
+                      { label: 'Personal Agents', value: '3', icon: User, accent: 'text-violet-400' },
                       { label: 'Always On', value: '24/7', icon: Zap, accent: 'text-amber-400' },
                       { label: 'Zero Config', value: 'Ready', icon: CheckCircle, accent: 'text-emerald-400' },
                     ].map((stat, i) => (
@@ -289,85 +305,25 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                     ))}
                   </div>
 
-                  {/* Core Agents Section */}
+                  {/* ═══════════════════════════════════════════════════
+                      COMMUNITY AGENTS — Admin-installed, server-wide
+                      ═══════════════════════════════════════════════════ */}
                   <div className="mb-10">
-                    <h2 className="text-base font-semibold text-[hsl(var(--theme-text-primary))] mb-4 flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-[hsl(var(--theme-accent-primary))]" />
-                      Core Agents
-                    </h2>
+                    <div className="flex items-center gap-3 mb-1">
+                      <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
+                        <Users className="w-5 h-5 text-blue-400" />
+                        Community Agents
+                      </h2>
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider">Admin</span>
+                    </div>
+                    <p className="text-xs text-[hsl(var(--theme-text-muted))] mb-5 ml-7">
+                      Installed by community admins and run server-wide across all channels.
+                    </p>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {/* Summarizer */}
-                      <div
-                        onClick={() => navigate('/agent/summarizer')}
-                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-blue-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
-                      >
-                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #1e3a5f 0%, #2563eb 60%, #3b82f6 100%)' }}>
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
-                            <Brain className="w-32 h-32" />
-                          </div>
-                        </div>
-                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                          <Brain className="w-7 h-7 text-white" />
-                        </div>
-                        <div className="pt-8 pb-4 px-4">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Summarizer</h3>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">Core</span>
-                          </div>
-                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
-                            Condenses long conversations into clear, actionable recaps. Never miss what happened while you were away.
-                          </p>
-                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
-                            <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-400" /> Auto-runs</span>
-                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Per-channel</span>
-                          </div>
-                        </div>
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
-                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
-                            <Eye className="w-4 h-4" /> View Details
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Mood Tracker */}
-                      <div
-                        onClick={() => navigate('/agent/mood')}
-                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-pink-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
-                      >
-                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #831843 0%, #ec4899 60%, #f472b6 100%)' }}>
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
-                            <Heart className="w-32 h-32" />
-                          </div>
-                        </div>
-                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-pink-500 to-pink-600 flex items-center justify-center">
-                          <Heart className="w-7 h-7 text-white" />
-                        </div>
-                        <div className="pt-8 pb-4 px-4">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Mood Tracker</h3>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20">Core</span>
-                          </div>
-                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
-                            Reads the room in real time. Tracks sentiment shifts across conversations so you can stay ahead of issues.
-                          </p>
-                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
-                            <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-400" /> Real-time</span>
-                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Sentiment</span>
-                          </div>
-                        </div>
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
-                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-pink-500 to-pink-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
-                            <Eye className="w-4 h-4" /> View Details
-                          </button>
-                        </div>
-                      </div>
-
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
                       {/* Moderation */}
                       <div
-                        onClick={() => navigate('/agent/moderation')}
+                        onClick={() => handleAgentCardClick('moderation')}
                         className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-red-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
                       >
                         <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #7f1d1d 0%, #ef4444 60%, #f87171 100%)' }}>
@@ -383,13 +339,14 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Moderation</h3>
                             <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-red-500/10 text-red-400 border border-red-500/20">Safety</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">Community</span>
                           </div>
                           <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
                             Filters harmful content, detects spam, and enforces community guidelines automatically. Owner-only controls.
                           </p>
                           <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
                             <span className="flex items-center gap-1"><Shield className="w-3 h-3 text-red-400" /> Auto-filter</span>
-                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Logs</span>
+                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Every message</span>
                           </div>
                         </div>
                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
@@ -398,20 +355,10 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                           </button>
                         </div>
                       </div>
-                    </div>
-                  </div>
 
-                  {/* Insight & Growth Agents */}
-                  <div className="mb-10">
-                    <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] mb-5 flex items-center gap-2">
-                      <TrendingUp className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
-                      Insight & Growth
-                    </h2>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                       {/* Engagement */}
                       <div
-                        onClick={() => navigate('/agent/engagement')}
+                        onClick={() => handleAgentCardClick('engagement')}
                         className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-emerald-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
                       >
                         <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #064e3b 0%, #10b981 60%, #34d399 100%)' }}>
@@ -427,13 +374,14 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Engagement</h3>
                             <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Growth</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">Community</span>
                           </div>
                           <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
                             Surfaces activity trends, peak hours, and top contributors. Know what drives your community forward.
                           </p>
                           <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
                             <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3 text-emerald-400" /> Analytics</span>
-                            <span className="flex items-center gap-1"><Users className="w-3 h-3" /> Leaderboard</span>
+                            <span className="flex items-center gap-1"><Users className="w-3 h-3" /> Every 30 min</span>
                           </div>
                         </div>
                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
@@ -443,43 +391,9 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                         </div>
                       </div>
 
-                      {/* Wellness */}
-                      <div
-                        onClick={() => navigate('/agent/wellness')}
-                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-purple-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
-                      >
-                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #4c1d95 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
-                            <Heart className="w-32 h-32" />
-                          </div>
-                        </div>
-                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
-                          <Heart className="w-7 h-7 text-white" />
-                        </div>
-                        <div className="pt-8 pb-4 px-4">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Wellness</h3>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">Wellbeing</span>
-                          </div>
-                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
-                            Tracks community wellbeing and surfaces patterns that may need attention. Proactive, not reactive.
-                          </p>
-                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
-                            <span className="flex items-center gap-1"><Heart className="w-3 h-3 text-purple-400" /> Wellness</span>
-                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Trends</span>
-                          </div>
-                        </div>
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
-                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-purple-500 to-purple-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
-                            <Eye className="w-4 h-4" /> View Details
-                          </button>
-                        </div>
-                      </div>
-
                       {/* Knowledge Builder */}
                       <div
-                        onClick={() => navigate('/agent/knowledge')}
+                        onClick={() => handleAgentCardClick('knowledge_builder')}
                         className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-indigo-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
                       >
                         <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #312e81 0%, #6366f1 60%, #818cf8 100%)' }}>
@@ -495,13 +409,14 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Knowledge Builder</h3>
                             <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Learn</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">Community</span>
                           </div>
                           <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
                             Extracts Q&A pairs and builds a searchable knowledge base from your conversations over time.
                           </p>
                           <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
                             <span className="flex items-center gap-1"><BookOpen className="w-3 h-3 text-indigo-400" /> Q&A</span>
-                            <span className="flex items-center gap-1"><Search className="w-3 h-3" /> Searchable</span>
+                            <span className="flex items-center gap-1"><Search className="w-3 h-3" /> Every 2 hrs</span>
                           </div>
                         </div>
                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
@@ -513,7 +428,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
 
                       {/* Focus */}
                       <div
-                        onClick={() => navigate('/agent/focus')}
+                        onClick={() => handleAgentCardClick('focus')}
                         className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-orange-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
                       >
                         <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #7c2d12 0%, #f97316 60%, #fb923c 100%)' }}>
@@ -529,17 +444,141 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Focus</h3>
                             <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">Productivity</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">Community</span>
                           </div>
                           <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
-                            Helps members stay on track with productivity insights. Tracks focus sessions and distraction patterns.
+                            Monitors conversation focus, detects topic drift, and keeps channel discussions on track.
                           </p>
                           <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
-                            <span className="flex items-center gap-1"><Focus className="w-3 h-3 text-orange-400" /> Sessions</span>
-                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Tracking</span>
+                            <span className="flex items-center gap-1"><Focus className="w-3 h-3 text-orange-400" /> Topic drift</span>
+                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Every 50 msgs</span>
                           </div>
                         </div>
                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
                           <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-orange-500 to-orange-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
+                            <Eye className="w-4 h-4" /> View Details
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ═══════════════════════════════════════════════════
+                      PERSONAL AGENTS — User-activated, per-individual
+                      ═══════════════════════════════════════════════════ */}
+                  <div className="mb-10">
+                    <div className="flex items-center gap-3 mb-1">
+                      <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
+                        <User className="w-5 h-5 text-violet-400" />
+                        Personal Agents
+                      </h2>
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/20 uppercase tracking-wider">User</span>
+                    </div>
+                    <p className="text-xs text-[hsl(var(--theme-text-muted))] mb-5 ml-7">
+                      Activated by individual users. Each person controls their own personal agents.
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {/* Summarizer */}
+                      <div
+                        onClick={() => handleAgentCardClick('summarizer')}
+                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-blue-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
+                      >
+                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #1e3a5f 0%, #2563eb 60%, #3b82f6 100%)' }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
+                            <Brain className="w-32 h-32" />
+                          </div>
+                        </div>
+                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                          <Brain className="w-7 h-7 text-white" />
+                        </div>
+                        <div className="pt-8 pb-4 px-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Summarizer</h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">AI</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20">Personal</span>
+                          </div>
+                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
+                            Condenses long conversations into clear, actionable recaps. Use /summarize to catch up instantly.
+                          </p>
+                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                            <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-400" /> /summarize</span>
+                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> On-demand</span>
+                          </div>
+                        </div>
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
+                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
+                            <Eye className="w-4 h-4" /> View Details
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Mood Tracker */}
+                      <div
+                        onClick={() => handleAgentCardClick('mood_tracker')}
+                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-pink-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
+                      >
+                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #831843 0%, #ec4899 60%, #f472b6 100%)' }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
+                            <Heart className="w-32 h-32" />
+                          </div>
+                        </div>
+                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-pink-500 to-pink-600 flex items-center justify-center">
+                          <Heart className="w-7 h-7 text-white" />
+                        </div>
+                        <div className="pt-8 pb-4 px-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Mood Tracker</h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20">Sentiment</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20">Personal</span>
+                          </div>
+                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
+                            Tracks your emotional tone in real time with Roman Urdu support and sentiment visualization.
+                          </p>
+                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                            <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-400" /> Auto-track</span>
+                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Every message</span>
+                          </div>
+                        </div>
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
+                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-pink-500 to-pink-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
+                            <Eye className="w-4 h-4" /> View Details
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Wellness */}
+                      <div
+                        onClick={() => handleAgentCardClick('wellness')}
+                        className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-purple-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer"
+                      >
+                        <div className="relative h-28 overflow-hidden" style={{ background: 'linear-gradient(135deg, #4c1d95 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
+                            <Heart className="w-32 h-32" />
+                          </div>
+                        </div>
+                        <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
+                          <Heart className="w-7 h-7 text-white" />
+                        </div>
+                        <div className="pt-8 pb-4 px-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">Wellness</h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">Wellbeing</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20">Personal</span>
+                          </div>
+                          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
+                            Monitors your activity patterns and provides personalized wellness suggestions and break reminders.
+                          </p>
+                          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                            <span className="flex items-center gap-1"><Heart className="w-3 h-3 text-purple-400" /> Wellness</span>
+                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" /> Hourly check</span>
+                          </div>
+                        </div>
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
+                          <button className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-purple-500 to-purple-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2">
                             <Eye className="w-4 h-4" /> View Details
                           </button>
                         </div>
@@ -557,9 +596,9 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="p-5 rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.4)]">
                         <div className="w-8 h-8 rounded-lg bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))] flex items-center justify-center font-bold text-sm mb-3">1</div>
-                        <h3 className="font-semibold text-sm text-[hsl(var(--theme-text-primary))] mb-1">Select a Community</h3>
+                        <h3 className="font-semibold text-sm text-[hsl(var(--theme-text-primary))] mb-1">Choose Your Agents</h3>
                         <p className="text-xs text-[hsl(var(--theme-text-muted))] leading-relaxed">
-                          Pick any community you own or admin from the sidebar. Agents are scoped per community.
+                          Community agents are installed by admins server-wide. Personal agents are activated by each user individually.
                         </p>
                       </div>
                       <div className="p-5 rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.4)]">
@@ -972,6 +1011,33 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
         </>
         )}
       </div>
+
+      {/* Agent Detail Modal */}
+      {selectedAgentType && (
+        <AgentDetailModal
+          open={agentDetailOpen}
+          onClose={() => {
+            setAgentDetailOpen(false);
+            setTimeout(() => setSelectedAgentType(null), 300);
+          }}
+          agentType={selectedAgentType}
+          mode="discover"
+          onSuccess={() => {}}
+        />
+      )}
+
+      {/* Agent Settings Modal */}
+      {settingsAgentType && (
+        <AgentSettingsModal
+          open={agentSettingsOpen}
+          onClose={() => {
+            setAgentSettingsOpen(false);
+            setTimeout(() => setSettingsAgentType(null), 300);
+          }}
+          agentType={settingsAgentType}
+          onSuccess={() => {}}
+        />
+      )}
     </div>
   );
 }

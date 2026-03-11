@@ -13,11 +13,15 @@ import ReactionPicker from '@/components/ReactionPicker';
 import MessageReactions from '@/components/MessageReactions';
 import { reactionService } from '@/services/reactionService';
 import { socket } from '@/socket';
+import { socketService } from '@/services/socketService';
 import FileAttachment from '@/components/chat/FileAttachment';
 import FileUploadPreview from '@/components/chat/FileUploadPreview';
 import ReplyPreview from '@/components/chat/ReplyPreview';
 import ReplyBar from '@/components/chat/ReplyBar';
 import VoiceRecorder from '@/components/chat/VoiceRecorder';
+import CallMessageBubble from '@/components/chat/CallMessageBubble';
+import TypingIndicator from '@/components/chat/TypingIndicator';
+import JumpToLatest from '@/components/chat/JumpToLatest';
 import { uploadService, validateFile, type UploadProgress } from '@/services/uploadService';
 import { useToast } from '@/hooks/use-toast';
 import UserProfilePopover from '@/components/profile/UserProfilePopover';
@@ -53,6 +57,10 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [replyingTo, setReplyingTo] = useState<DirectMessage | null>(null);
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [newMessageCount, setNewMessageCount] = useState(0);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
 
   // Profile popover state
@@ -84,6 +92,55 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   // Get current user's actual ID
   const currentUserId = currentUser?.id;
 
+  // Mark DM as read when this conversation is opened / focused
+  useEffect(() => {
+    if (userId) {
+      socketService.markDMRead(userId);
+    }
+  }, [userId]);
+
+  // Play notification sound for incoming DM when this view is open but tab is blurred
+  useEffect(() => {
+    const unsub = socketService.onDirectMessage((data: any) => {
+      if (data.sender_id === userId && document.hidden) {
+        try {
+          const audio = new Audio('/notification.mp3');
+          audio.volume = 0.3;
+          audio.play().catch(() => {});
+        } catch {
+          // Notification sound file may not exist — silent fallback
+        }
+      }
+    });
+    return unsub;
+  }, [userId]);
+
+  // Subscribe to DM typing events from the other user
+  useEffect(() => {
+    const unsub = socketService.onDMTyping((data: { user_id: number; is_typing: boolean }) => {
+      if (data.user_id === userId) {
+        setIsOtherTyping(data.is_typing);
+      }
+    });
+    return unsub;
+  }, [userId]);
+
+  // Emit typing status on input change
+  const emitTyping = useCallback(() => {
+    socketService.sendDMTyping(userId, true);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      socketService.sendDMTyping(userId, false);
+    }, 2000);
+  }, [userId]);
+
+  // Cleanup typing timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, []);
+
   const conversation = conversations.find(c => c.user_id === userId);
   // Sort messages chronologically with oldest first, newest last (bottom)
   const displayMessages = [...messages].sort((a, b) => {
@@ -92,15 +149,6 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   
   // Enrich messages with sender and receiver data from friends or conversation user
   const enrichedMessages = displayMessages.map(msg => {
-    console.log('[DirectMessageView] Processing message:', {
-      id: msg.id,
-      sender_id: msg.sender_id,
-      receiver_id: msg.receiver_id,
-      content: msg.content,
-      currentUserId: currentUserId,
-      otherUserId: userId
-    });
-
     if (msg.sender && msg.sender.display_name) {
       return msg;
     }
@@ -165,8 +213,6 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
     };
     return enrichedMsg;
   });
-  
-  console.log('[DirectMessageView] All enriched messages:', enrichedMessages);
 
   useEffect(() => {
     // Mark unread messages as read
@@ -251,11 +297,15 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
     // Update the previous length
     prevMessagesLengthRef.current = enrichedMessages.length;
 
-    // Only auto-scroll if user is near bottom or if it's a new message
-    if (isNearBottom || hasNewMessage) {
+    // Only auto-scroll if user is near bottom or if it's a new message from current user
+    if (isNearBottom || (hasNewMessage && enrichedMessages.length > 0 && enrichedMessages[enrichedMessages.length - 1]?.sender_id === currentUserId)) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setNewMessageCount(0);
+    } else if (hasNewMessage && !isNearBottom) {
+      // User scrolled up and a new message came in — increment counter
+      setNewMessageCount(prev => prev + 1);
     }
-  }, [enrichedMessages]);
+  }, [enrichedMessages, currentUserId]);
 
   // Track scroll position to determine if we should auto-scroll
   const handleScroll = () => {
@@ -264,7 +314,17 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
     setShouldAutoScroll(isNearBottom);
+    setShowJumpToLatest(!isNearBottom);
+    if (isNearBottom) {
+      setNewMessageCount(0);
+    }
   };
+
+  const handleJumpToLatest = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setShowJumpToLatest(false);
+    setNewMessageCount(0);
+  }, []);
 
   // Reply helpers
   const handleReply = (msg: DirectMessage) => {
@@ -441,64 +501,74 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[hsl(var(--theme-bg-primary))] transition-colors duration-300">
-      {/* Header - Clean and Simple */}
-      <header className="px-6 py-3 border-b flex-shrink-0 flex items-center gap-3 bg-[hsl(var(--theme-header-bg)/0.8)] backdrop-blur-xl border-[hsl(var(--theme-border-default))] transition-colors duration-300 sticky top-0 z-40">
+      {/* Header - Clean and Professional */}
+      <header className="px-4 sm:px-6 py-3 border-b flex-shrink-0 flex items-center gap-3 bg-[hsl(var(--theme-header-bg)/0.85)] backdrop-blur-xl border-[hsl(var(--theme-border-default)/0.6)] transition-colors duration-300 sticky top-0 z-40">
         {onClose && (
           <button
             onClick={onClose}
-            className="p-2 rounded-lg transition-all duration-300 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:shadow-[var(--theme-glow-secondary)]"
+            className="p-2 rounded-xl transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] active:scale-95"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
         )}
         <div className="flex items-center gap-3 flex-1">
-          <img
-            src={getAvatarUrl(avatar, username)}
-            alt={displayName || username}
-            className="w-10 h-10 rounded-full object-cover ring-2 ring-[hsl(var(--theme-border-default))] hover:ring-[hsl(var(--theme-accent-primary))] transition-all duration-300"
-          />
+          <div className="relative">
+            <img
+              src={getAvatarUrl(avatar, username)}
+              alt={displayName || username}
+              className="w-10 h-10 rounded-full object-cover ring-2 ring-[hsl(var(--theme-border-default)/0.5)] hover:ring-[hsl(var(--theme-accent-primary)/0.6)] transition-all duration-300 cursor-pointer"
+              onClick={(e) => handleProfileClick(username, e)}
+            />
+            {/* Online status dot */}
+            <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[hsl(var(--theme-bg-primary))]" />
+          </div>
           <div className="flex-1 min-w-0">
-            <h2 className="text-base font-semibold truncate text-[hsl(var(--theme-text-primary))]">
+            <h2 className="text-[15px] font-semibold truncate text-[hsl(var(--theme-text-primary))] leading-tight">
               {displayName || username}
             </h2>
-            <p className="text-xs text-[hsl(var(--theme-text-muted))]">
+            <p className="text-[11px] text-emerald-500 font-medium tracking-wide">
               Online
             </p>
           </div>
 
           {/* Call buttons */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             <button
               onClick={handleAudioCall}
               disabled={callState !== 'idle'}
-              className="p-2.5 rounded-lg transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] disabled:opacity-40 disabled:cursor-not-allowed"
+              className="p-2.5 rounded-xl transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))] disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
               title="Audio Call"
             >
-              <Phone className="w-5 h-5" />
+              <Phone className="w-[18px] h-[18px]" />
             </button>
             <button
               onClick={handleVideoCall}
               disabled={callState !== 'idle'}
-              className="p-2.5 rounded-lg transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] disabled:opacity-40 disabled:cursor-not-allowed"
+              className="p-2.5 rounded-xl transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))] disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
               title="Video Call"
             >
-              <Video className="w-5 h-5" />
+              <Video className="w-[18px] h-[18px]" />
             </button>
           </div>
         </div>
       </header>
 
-      {/* Messages - Professional and Clean */}
+      {/* Messages Area */}
       <main 
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-4 scrollbar scrollbar-thumb-[hsl(var(--theme-bg-tertiary))] scrollbar-track-[hsl(var(--theme-bg-secondary)/0.3)]"
+        className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 scrollbar scrollbar-thumb-[hsl(var(--theme-bg-tertiary))] scrollbar-track-transparent relative"
       >
         {enrichedMessages.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-[hsl(var(--theme-text-muted))]">
-            <div className="text-center text-sm">
-              <p>No messages yet</p>
-              <p className="text-xs mt-1 text-[hsl(var(--theme-text-muted)/0.7)]">Start chatting!</p>
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center space-y-3 animate-in fade-in duration-500">
+              <div className="w-16 h-16 mx-auto rounded-full bg-[hsl(var(--theme-bg-secondary))] flex items-center justify-center">
+                <Send className="w-6 h-6 text-[hsl(var(--theme-text-muted)/0.5)] -rotate-45" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-[hsl(var(--theme-text-secondary))]">No messages yet</p>
+                <p className="text-xs mt-1 text-[hsl(var(--theme-text-muted)/0.7)]">Say hello to {displayName || username}!</p>
+              </div>
             </div>
           </div>
         ) : (
@@ -508,48 +578,59 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             const isSent = msg.sender_id === currentUserId;
 
             return (
-              <div key={msg.id} className={showAvatar ? 'mt-4' : 'mt-0.5'}>
+              <div key={msg.id} className={`${showAvatar ? 'mt-3' : 'mt-0.5'} animate-in fade-in slide-in-from-bottom-1 duration-200`}>
                 {showDateDivider && (
-                  <div className="flex items-center gap-3 my-6">
-                    <div className="flex-1 h-px bg-[hsl(var(--theme-border-default))]" />
-                    <span className="text-xs font-medium px-3 py-1 rounded-full bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-muted))]">
+                  <div className="flex items-center gap-3 my-5">
+                    <div className="flex-1 h-px bg-gradient-to-r from-transparent via-[hsl(var(--theme-border-default)/0.6)] to-transparent" />
+                    <span className="text-[11px] font-medium px-3 py-1 rounded-full bg-[hsl(var(--theme-bg-secondary)/0.8)] text-[hsl(var(--theme-text-muted))] backdrop-blur-sm">
                       {formatDate(msg.created_at)}
                     </span>
-                    <div className="flex-1 h-px bg-[hsl(var(--theme-border-default))]" />
+                    <div className="flex-1 h-px bg-gradient-to-r from-transparent via-[hsl(var(--theme-border-default)/0.6)] to-transparent" />
                   </div>
                 )}
 
-                {/* Receiver message (left) */}
-                {!isSent ? (
+                {/* Call log message — centered bubble */}
+                {msg.message_type === 'call' ? (
+                  <div
+                    id={`dm-msg-${msg.id}`}
+                    className={`flex ${isSent ? 'justify-end' : 'justify-start'} px-2 py-1`}
+                  >
+                    <CallMessageBubble
+                      content={msg.content}
+                      isSent={isSent}
+                      createdAt={msg.created_at}
+                    />
+                  </div>
+                ) : !isSent ? (
                   <div 
                     id={`dm-msg-${msg.id}`}
-                    className="flex gap-2 group px-2 py-0.5 rounded-lg transition-all duration-300 justify-start relative hover:bg-[hsl(var(--theme-bg-hover)/0.5)]"
+                    className="flex gap-2.5 group px-2 py-0.5 rounded-lg transition-all duration-200 justify-start relative"
                     onMouseEnter={() => setHoveredMessageId(msg.id)}
                     onMouseLeave={() => setHoveredMessageId(null)}
                   >
-                    <div className="flex-shrink-0">
+                    <div className="flex-shrink-0 self-end mb-1">
                       {showAvatar ? (
                         <img
                           src={getAvatarUrl(msg.sender?.avatar_url, msg.sender?.username || 'unknown')}
                           alt={msg.sender?.username || 'Unknown'}
-                          className="w-7 h-7 rounded-full object-cover cursor-pointer hover:shadow-lg transition-shadow"
+                          className="w-8 h-8 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity ring-1 ring-[hsl(var(--theme-border-default)/0.3)]"
                           onClick={(e) => handleProfileClick(msg.sender?.username || 'unknown', e)}
                         />
                       ) : (
-                        <div className="w-7 h-7" />
+                        <div className="w-8 h-8" />
                       )}
                     </div>
 
-                    <div className="flex-1 min-w-0 max-w-lg">
+                    <div className="flex-1 min-w-0" style={{ maxWidth: '65%' }}>
                       {showAvatar && (
-                        <div className="flex items-baseline gap-2 mb-0.5">
+                        <div className="flex items-baseline gap-2 mb-1">
                           <span
-                            className="font-medium text-sm text-[hsl(var(--theme-text-primary))] hover:underline cursor-pointer"
+                            className="font-semibold text-[13px] text-[hsl(var(--theme-text-primary))] hover:underline cursor-pointer"
                             onClick={(e) => handleProfileClick(msg.sender?.username || 'unknown', e)}
                           >
                             {msg.sender?.display_name || msg.sender?.username || 'Unknown'}
                           </span>
-                          <span className="text-xs text-[hsl(var(--theme-text-muted))]">{formatTime(msg.created_at)}</span>
+                          <span className="text-[11px] text-[hsl(var(--theme-text-muted)/0.7)]">{formatTime(msg.created_at)}</span>
                         </div>
                       )}
 
@@ -559,6 +640,10 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                             type="text"
                             value={editContent}
                             onChange={(e) => setEditContent(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { e.preventDefault(); handleEdit(msg.id); }
+                              if (e.key === 'Escape') { setEditingId(null); setEditContent(''); }
+                            }}
                             className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-input-bg))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))]"
                             autoFocus
                           />
@@ -602,12 +687,12 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                                 )}
                               </div>
                             ) : (
-                            <p className="text-sm leading-relaxed break-words rounded-2xl px-4 py-2.5 w-fit max-w-md text-[hsl(var(--theme-text-primary))] bg-[hsl(var(--theme-message-other))] transition-colors duration-300">
+                            <p className={`text-sm leading-relaxed break-words px-4 py-2.5 w-fit text-[hsl(var(--theme-text-primary))] bg-[hsl(var(--theme-message-other))] transition-colors duration-200 ${showAvatar ? 'rounded-2xl rounded-tl-md' : 'rounded-2xl rounded-tl-md'}`}>
                               <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-normal' : ''}>
                                 {msg.content}
                               </span>
                               {!showAvatar && (
-                                <span className="text-xs ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-[hsl(var(--theme-text-muted))]">
+                                <span className="text-[10px] ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-[hsl(var(--theme-text-muted)/0.6)]">
                                   {formatTime(msg.created_at)}
                                 </span>
                               )}
@@ -670,31 +755,40 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                   /* Sender message (right) */
                   <div 
                     id={`dm-msg-${msg.id}`}
-                    className="flex gap-2.5 group px-2 py-1 rounded-md transition-all duration-300 justify-end relative hover:bg-[hsl(var(--theme-bg-hover)/0.5)]"
+                    className="flex gap-2 group px-2 py-0.5 rounded-lg transition-all duration-200 justify-end relative"
                     onMouseEnter={() => setHoveredMessageId(msg.id)}
                     onMouseLeave={() => setHoveredMessageId(null)}
                   >
-                    {/* Message Menu */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-all duration-300 relative flex-shrink-0 flex items-start pt-2">
+                    {/* Message Menu — 3-dot */}
+                    <div
+                      data-message-menu
+                      className="opacity-0 group-hover:opacity-100 transition-all duration-200 relative flex-shrink-0 flex items-center"
+                    >
                       <button
                         onClick={() => setMenuOpen(menuOpen === msg.id ? null : msg.id)}
-                        className="p-1.5 rounded-lg transition-all duration-300 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
+                        className="p-1.5 rounded-lg transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
                       >
                         <MoreVertical className="w-4 h-4" />
                       </button>
 
                       {menuOpen === msg.id && (
-                        <div className="absolute left-0 top-10 w-40 rounded-lg shadow-lg z-20 border bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] shadow-[var(--theme-glow-secondary)]">
-                          <button
-                            onClick={() => { setEditingId(msg.id); setEditContent(msg.content); setMenuOpen(null); }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-all duration-300 rounded-t-lg text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))]"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                            Edit
-                          </button>
+                        <div
+                          data-message-menu
+                          className="absolute right-0 top-full mt-1 w-36 rounded-xl shadow-lg z-30 border bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] overflow-hidden"
+                        >
+                          {/* Only show Edit for plain text messages */}
+                          {(!msg.attachment && msg.message_type !== 'image' && msg.message_type !== 'file' && msg.message_type !== 'voice' && msg.message_type !== 'video') && (
+                            <button
+                              onClick={() => { setEditingId(msg.id); setEditContent(msg.content); setMenuOpen(null); }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-all duration-200 text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))]"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                              Edit
+                            </button>
+                          )}
                           <button
                             onClick={() => handleDelete(msg.id)}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 transition-all duration-300 border-t rounded-b-lg hover:bg-[hsl(var(--theme-bg-hover))] border-[hsl(var(--theme-border-default))]"
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 transition-all duration-200 border-t hover:bg-red-500/10 border-[hsl(var(--theme-border-default)/0.5)]"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             Delete
@@ -703,11 +797,11 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                       )}
                     </div>
 
-                    <div className="flex-1 min-w-0 max-w-lg text-right">
+                    <div className="flex-1 min-w-0 text-right" style={{ maxWidth: '65%' }}>
                       {showAvatar && (
-                        <div className="flex items-baseline gap-2 mb-0.5 justify-end">
-                          <span className="text-xs text-[hsl(var(--theme-text-muted))]">{formatTime(msg.created_at)}</span>
-                          <span className="font-medium text-sm text-[hsl(var(--theme-text-primary))]">
+                        <div className="flex items-baseline gap-2 mb-1 justify-end">
+                          <span className="text-[11px] text-[hsl(var(--theme-text-muted)/0.7)]">{formatTime(msg.created_at)}</span>
+                          <span className="font-semibold text-[13px] text-[hsl(var(--theme-text-primary))]">
                             You
                           </span>
                         </div>
@@ -719,6 +813,10 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                             type="text"
                             value={editContent}
                             onChange={(e) => setEditContent(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { e.preventDefault(); handleEdit(msg.id); }
+                              if (e.key === 'Escape') { setEditingId(null); setEditContent(''); }
+                            }}
                             className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-input-bg))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))]"
                             autoFocus
                           />
@@ -769,12 +867,12 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                                 )}
                               </div>
                             ) : (
-                            <p className="text-sm leading-relaxed break-words text-white bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] rounded-2xl px-4 py-2.5 w-fit max-w-md shadow-lg hover:shadow-[var(--theme-glow-secondary)] transition-all duration-300">
+                            <p className={`text-sm leading-relaxed break-words text-white bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] px-4 py-2.5 w-fit shadow-md hover:shadow-lg transition-all duration-200 ml-auto ${showAvatar ? 'rounded-2xl rounded-tr-md' : 'rounded-2xl rounded-tr-md'}`}>
                               <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-normal' : ''}>
                                 {msg.content}
                               </span>
                               {!showAvatar && (
-                                <span className="text-xs ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-white/70">
+                                <span className="text-[10px] ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-white/50">
                                   {formatTime(msg.created_at)}
                                 </span>
                               )}
@@ -830,12 +928,12 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                       )}
                     </div>
 
-                    <div className="flex-shrink-0">
+                    <div className="flex-shrink-0 self-end mb-1">
                       {showAvatar ? (
                         <img
                           src={getAvatarUrl(currentUser?.avatar_url || currentUser?.avatar, currentUser?.username || 'You')}
                           alt="You"
-                          className="w-8 h-8 rounded-full object-cover"
+                          className="w-8 h-8 rounded-full object-cover ring-1 ring-[hsl(var(--theme-border-default)/0.3)]"
                         />
                       ) : (
                         <div className="w-8 h-8" />
@@ -847,11 +945,26 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             );
           })
         )}
+        {/* Typing indicator */}
+        {isOtherTyping && (
+          <TypingIndicator
+            name={displayName || username}
+            avatar={getAvatarUrl(avatar, username)}
+          />
+        )}
         <div ref={messagesEndRef} />
+
+        {/* Jump to latest button */}
+        {showJumpToLatest && (
+          <JumpToLatest
+            onClick={handleJumpToLatest}
+            unreadCount={newMessageCount}
+          />
+        )}
       </main>
 
-      {/* Input - Professional */}
-      <footer className="border-t backdrop-blur flex-shrink-0 bg-[hsl(var(--theme-bg-primary)/0.95)] border-[hsl(var(--theme-border-default)/0.5)] transition-colors duration-300">
+      {/* Input Area */}
+      <footer className="border-t backdrop-blur flex-shrink-0 bg-[hsl(var(--theme-bg-primary)/0.95)] border-[hsl(var(--theme-border-default)/0.4)] transition-colors duration-300">
         {/* Reply Bar */}
         {replyingTo && (
           <ReplyBar
@@ -885,23 +998,26 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
           </div>
         )}
 
-        <form onSubmit={handleSend} className="px-6 py-4">
-          <div className="flex items-center gap-3 rounded-2xl px-4 py-3 border focus-within:border-[hsl(var(--theme-accent-primary))] focus-within:ring-1 focus-within:ring-[hsl(var(--theme-accent-primary)/0.3)] focus-within:shadow-[var(--theme-glow-secondary)] transition-all duration-300 border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-input-bg))] hover:border-[hsl(var(--theme-border-hover))]">
+        <form onSubmit={handleSend} className="px-4 sm:px-6 py-3">
+          <div className="flex items-center gap-2.5 rounded-2xl px-3.5 py-2.5 border focus-within:border-[hsl(var(--theme-accent-primary)/0.6)] focus-within:ring-1 focus-within:ring-[hsl(var(--theme-accent-primary)/0.2)] transition-all duration-200 border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-input-bg))] hover:border-[hsl(var(--theme-border-hover)/0.7)]">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="p-1.5 rounded-md transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]"
+              className="p-1.5 rounded-lg transition-all duration-200 text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))] hover:bg-[hsl(var(--theme-bg-hover))] active:scale-95"
               title="Attach a file"
             >
-              <Paperclip className="w-5 h-5" />
+              <Paperclip className="w-[18px] h-[18px]" />
             </button>
             <input
               type="text"
-              placeholder={`Message ${displayName || username}...`}
+              placeholder={`Message @${displayName || username}`}
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={(e) => {
+                setMessage(e.target.value);
+                if (e.target.value.trim()) emitTyping();
+              }}
               disabled={isSending}
-              className="flex-1 bg-transparent outline-none text-sm disabled:opacity-50 text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]"
+              className="flex-1 bg-transparent outline-none text-sm disabled:opacity-50 text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted)/0.5)]"
               onKeyPress={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -921,10 +1037,14 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             <button
               type="submit"
               disabled={(!message.trim() && !pendingFile) || isSending}
-              className="p-2 text-[hsl(var(--theme-accent-primary))] rounded-lg disabled:opacity-40 disabled:hover:text-[hsl(var(--theme-accent-primary))] disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all duration-300 flex-shrink-0 hover:text-[hsl(var(--theme-accent-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:shadow-[var(--theme-glow-secondary)]"
+              className={`p-2 rounded-xl transition-all duration-200 flex-shrink-0 active:scale-95 ${
+                message.trim() || pendingFile
+                  ? 'text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-sm hover:shadow-md'
+                  : 'text-[hsl(var(--theme-text-muted)/0.4)] cursor-not-allowed'
+              }`}
               title="Send message (Enter)"
             >
-              <Send className="w-5 h-5" />
+              <Send className="w-[18px] h-[18px]" />
             </button>
           </div>
         </form>

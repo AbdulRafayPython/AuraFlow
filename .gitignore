@@ -39,6 +39,15 @@ Backend/.env.*
 Backend/*.log
 Backend/startup.log
 
+# Redis dump
+Backend/dump.rdb
+
+# Celery Beat schedule database
+Backend/celerybeat-schedule.*
+
+# Archive scripts with credentials
+Backend/scripts/archive/setup_cloud_db.py
+
 # Uploads (user-generated, not in repo)
 Backend/uploads/
 

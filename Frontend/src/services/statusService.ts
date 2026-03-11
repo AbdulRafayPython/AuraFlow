@@ -21,6 +21,16 @@ export interface UserProfile {
   is_self: boolean;
 }
 
+export interface UnreadData {
+  channels: Record<string, number>;
+  communities: Record<string, number>;
+  dms: Record<string, number>;
+  total_dm_unread: number;
+  total_channel_unread: number;
+  total_unread: number;
+}
+
+// Legacy format support
 export type UnreadCounts = Record<string, {
   unread_count: number;
   last_message_id: number;
@@ -67,8 +77,8 @@ class StatusService {
 
   // ---- Unread Tracking ----
 
-  async getUnreadCounts(): Promise<UnreadCounts> {
-    const resp = await axios.get<UnreadCounts>(`${API_URL}/status/unread`, this.getAuthHeaders());
+  async getUnreadCounts(): Promise<UnreadData> {
+    const resp = await axios.get<UnreadData>(`${API_URL}/status/unread`, this.getAuthHeaders());
     return resp.data;
   }
 

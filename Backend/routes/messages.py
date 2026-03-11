@@ -10,17 +10,98 @@ import logging
 
 log = logging.getLogger(__name__)
 
-# Import moderation agent and summarizer
+# Import moderation agent, summarizer, mood tracker, and wellness agent
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from agents.moderation import ModerationAgent
 from agents.summarizer import SummarizerAgent
+from agents.mood_tracker import MoodTrackerAgent
+from agents.wellness import WellnessAgent
 
 # Initialize agents
 moderation_agent = ModerationAgent()
 
 
+def _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_type='text'):
+    """
+    Fire-and-forget Celery tasks for AI agent auto-execution.
+    Called after a message is successfully saved. Non-blocking.
+    Only dispatches if the relevant agent is installed/activated.
+    """
+    if message_type != 'text' or not content:
+        return
+    
+    try:
+        from tasks.agent_tasks import track_mood_task
+        # Mood tracking — personal agent (fire-and-forget)
+        track_mood_task.delay(content, user_id, channel_id)
+    except Exception as e:
+        log.debug(f"[AGENT_DISPATCH] Mood task dispatch skipped: {e}")
+    
+    try:
+        from tasks.agent_tasks import analyze_focus_task
+        # Focus analysis — community agent (check every 50 messages)
+        from database import get_db_connection as _gdb
+        c = _gdb()
+        try:
+            with c.cursor() as cur:
+                cur.execute("""
+                    SELECT COUNT(*) as cnt FROM messages 
+                    WHERE channel_id = %s AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                """, (channel_id,))
+                msg_count = cur.fetchone()['cnt']
+            if msg_count > 0 and msg_count % 50 == 0:
+                analyze_focus_task.delay(channel_id, community_id)
+        finally:
+            c.close()
+    except Exception as e:
+        log.debug(f"[AGENT_DISPATCH] Focus task dispatch skipped: {e}")
+
+
+def _emit_unread_tracking(socketio, channel_id, community_id, sender_id, message_id):
+    """Emit channel_activity + increment in-memory unread cache.
+    
+    Called from the HTTP send_message endpoint after a message is saved and
+    broadcast via message_received.  This is the ONLY place unread tracking
+    fires — the socket on_new_message handler is NOT used by the frontend.
+    """
+    log.info(f"[UNREAD-TRACK] ╔══ _emit_unread_tracking called ══╗")
+    log.info(f"[UNREAD-TRACK] ║ channel_id={channel_id}, community_id={community_id}, sender_id={sender_id}, message_id={message_id}")
+    log.info(f"[UNREAD-TRACK] ║ socketio obj = {type(socketio).__name__} (truthy={bool(socketio)})")
+    
+    try:
+        if community_id:
+            event_data = {
+                'channel_id': channel_id,
+                'community_id': community_id,
+                'sender_id': sender_id,
+                'message_id': message_id,
+            }
+            target_room = f"community_{community_id}"
+            log.info(f"[UNREAD-TRACK] ║ EMITTING channel_activity to room={target_room} data={event_data}")
+            socketio.emit('channel_activity', event_data, room=target_room, namespace='/')
+            log.info(f"[UNREAD-TRACK] ║ ✅ channel_activity EMITTED successfully")
+        else:
+            log.warning(f"[UNREAD-TRACK] ║ ⚠️ community_id is None/falsy — skipping channel_activity emit")
+    except Exception as e:
+        log.error(f"[UNREAD-TRACK] ║ ❌ channel_activity emit FAILED: {e}", exc_info=True)
+
+    try:
+        from services.unread_tracker import increment_channel_unread
+        log.info(f"[UNREAD-TRACK] ║ Calling increment_channel_unread(ch={channel_id}, sender={sender_id}, comm={community_id})")
+        increment_channel_unread(channel_id, sender_id, community_id)
+        log.info(f"[UNREAD-TRACK] ║ ✅ increment_channel_unread completed")
+    except Exception as e:
+        log.error(f"[UNREAD-TRACK] ║ ❌ increment_channel_unread FAILED: {e}", exc_info=True)
+    
+    log.info(f"[UNREAD-TRACK] ╚══ _emit_unread_tracking done ══╝")
+
+
 def handle_ai_command(content: str, username: str, user_id: int, channel_id: int, community_id: int = None):
-    """Handle AI commands from chat (/summarize, /help, etc.)"""
+    """Handle AI commands from chat (/summarize, /help, etc.)
+    
+    /summarize is ephemeral — only the sender sees the result (not saved to DB).
+    Returns a dict with 'ephemeral': True for private delivery.
+    """
     try:
         log.info(f"[HTTP COMMAND] Processing command: {content}")
         command_parts = content.strip().split()
@@ -43,18 +124,35 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                 user_id=user_id
             )
             
-            log.info(f"[HTTP COMMAND] Summarizer returned: {result}")
+            log.info(f"[HTTP COMMAND] Summarizer returned success={result.get('success')}")
             
             if result.get('success'):
+                from tasks.agent_tasks import _format_summary_as_bot_message
+
+                # Get channel name
+                channel_name = ''
+                conn2 = None
+                try:
+                    conn2 = get_db_connection()
+                    with conn2.cursor() as cur2:
+                        cur2.execute("SELECT name FROM channels WHERE id = %s", (channel_id,))
+                        row = cur2.fetchone()
+                        if row:
+                            channel_name = row['name']
+                finally:
+                    if conn2:
+                        conn2.close()
+
+                bot_content = _format_summary_as_bot_message(result, channel_name)
+
+                # Ephemeral: don't save to DB, return content for private delivery
                 return {
                     'type': 'summarize',
                     'success': True,
-                    'summary': result['summary'],
-                    'key_points': result.get('key_points', []),
+                    'ephemeral': True,
+                    'summary_content': bot_content,
                     'message_count': result['message_count'],
-                    'participants': result.get('participants', []),
                     'method': result.get('method', 'extractive'),
-                    'message': f"✨ Summary of last {result['message_count']} messages"
                 }
             else:
                 return {
@@ -63,15 +161,151 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                     'error': result.get('error', 'Failed to generate summary')
                 }
         
+        elif command == '/mood':
+            # Parse optional time period in hours
+            time_period = 24
+            if len(command_parts) > 1 and command_parts[1].isdigit():
+                time_period = min(int(command_parts[1]), 168)  # Max 7 days
+            
+            log.info(f"[HTTP COMMAND] /mood requested by {username} (user_id={user_id}) for {time_period}h")
+            
+            # Check if user has mood tracker activated
+            conn = None
+            try:
+                from database import get_db_connection as _gdb
+                conn = _gdb()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT enabled FROM user_agents WHERE user_id = %s AND agent_type = 'mood'",
+                        (user_id,)
+                    )
+                    agent_row = cur.fetchone()
+                    if not agent_row or not agent_row.get('enabled'):
+                        return {
+                            'type': 'mood',
+                            'success': False,
+                            'error': 'Mood Tracker is not activated. Activate it from Explore → Personal Agents.'
+                        }
+            finally:
+                if conn:
+                    conn.close()
+            
+            mood_agent = MoodTrackerAgent()
+            result = mood_agent.track_user_mood(user_id=user_id, time_period_hours=time_period)
+            
+            if result.get('success', True) and not result.get('error'):
+                mood = result.get('overall_mood', result.get('mood', 'neutral'))
+                confidence = result.get('confidence', 0)
+                message_count = result.get('messages_analyzed', result.get('message_count', 0))
+                
+                mood_emoji = {'happy': '😊', 'sad': '😢', 'angry': '😠', 'neutral': '😐',
+                              'excited': '🤩', 'anxious': '😰', 'calm': '😌', 'frustrated': '😤'}.get(mood, '🎭')
+                
+                response_text = f"{mood_emoji} **Your Mood Analysis** (last {time_period}h)\n\n"
+                response_text += f"• **Overall Mood:** {mood.capitalize()}\n"
+                response_text += f"• **Confidence:** {confidence:.0%}\n"
+                response_text += f"• **Messages Analyzed:** {message_count}\n"
+                
+                if result.get('emotions'):
+                    emotions = ', '.join(result['emotions'][:5])
+                    response_text += f"• **Detected Emotions:** {emotions}\n"
+                
+                if result.get('trend'):
+                    response_text += f"• **Trend:** {result['trend']}\n"
+                
+                return {
+                    'type': 'mood',
+                    'success': True,
+                    'mood': mood,
+                    'confidence': confidence,
+                    'message_count': message_count,
+                    'message': response_text
+                }
+            else:
+                return {
+                    'type': 'mood',
+                    'success': False,
+                    'error': result.get('error', 'Failed to analyze mood. Try again later.')
+                }
+        
+        elif command == '/wellness':
+            log.info(f"[HTTP COMMAND] /wellness requested by {username} (user_id={user_id})")
+            
+            # Check if user has wellness agent activated
+            conn = None
+            try:
+                from database import get_db_connection as _gdb
+                conn = _gdb()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT enabled FROM user_agents WHERE user_id = %s AND agent_type = 'wellness'",
+                        (user_id,)
+                    )
+                    agent_row = cur.fetchone()
+                    if not agent_row or not agent_row.get('enabled'):
+                        return {
+                            'type': 'wellness',
+                            'success': False,
+                            'error': 'Wellness Agent is not activated. Activate it from Explore → Personal Agents.'
+                        }
+            finally:
+                if conn:
+                    conn.close()
+            
+            wellness_agent = WellnessAgent()
+            result = wellness_agent.check_user_wellness(user_id=user_id)
+            
+            if result.get('success', True) and not result.get('error'):
+                score = result.get('wellness_score', result.get('score', 0))
+                status = result.get('status', 'unknown')
+                
+                status_emoji = {'excellent': '🌟', 'good': '✨', 'moderate': '💛',
+                                'concerning': '⚠️', 'critical': '🚨'}.get(status, '💫')
+                
+                response_text = f"{status_emoji} **Your Wellness Check**\n\n"
+                response_text += f"• **Wellness Score:** {score}/100\n"
+                response_text += f"• **Status:** {status.capitalize()}\n"
+                
+                if result.get('activity_level'):
+                    response_text += f"• **Activity Level:** {result['activity_level'].capitalize()}\n"
+                
+                if result.get('suggestions'):
+                    response_text += "\n**Suggestions:**\n"
+                    for suggestion in result['suggestions'][:3]:
+                        response_text += f"  💡 {suggestion}\n"
+                
+                if result.get('break_recommended'):
+                    response_text += "\n🧘 *Consider taking a short break!*"
+                
+                return {
+                    'type': 'wellness',
+                    'success': True,
+                    'score': score,
+                    'status': status,
+                    'message': response_text
+                }
+            else:
+                return {
+                    'type': 'wellness',
+                    'success': False,
+                    'error': result.get('error', 'Failed to check wellness. Try again later.')
+                }
+        
         elif command == '/help':
             return {
                 'type': 'help',
                 'success': True,
                 'message': """**AuraFlow AI Commands:**
+
+**Personal Agent Commands:**
 • `/summarize [count]` - Summarize recent messages (default: 100)
+• `/mood [hours]` - Analyze your mood over a time period (default: 24h)
+• `/wellness` - Check your current wellness score and get suggestions
+
+**General:**
 • `/help` - Show this help message
 
-More commands coming soon!"""
+*Personal agents must be activated from Explore → Personal Agents to use their commands.*"""
             }
         
         else:
@@ -268,44 +502,50 @@ def send_message():
             if content.strip().startswith('/'):
                 log.info(f"[HTTP] ✅ COMMAND DETECTED: {content}")
                 try:
+                    from flask import current_app
+                    socketio = current_app.extensions.get('socketio')
+                    command_name = content.strip().split()[0].lower()
+
+                    # For /summarize, emit typing indicator to sender before processing
+                    user_sid = None
+                    if socketio:
+                        try:
+                            from routes.sockets import user_socket_sessions
+                            user_sid = user_socket_sessions.get(current_user)
+                        except Exception:
+                            pass
+
+                    if command_name == '/summarize' and socketio and user_sid:
+                        socketio.emit('summary_generating', {
+                            'channel_id': channel_id,
+                            'status': 'generating'
+                        }, room=user_sid, namespace='/')
+                        log.info(f"[HTTP] ✅ Typing indicator sent to {current_user}")
+
                     command_result = handle_ai_command(content, current_user, user_id, channel_id, community_id)
                     log.info(f"[HTTP] ✅ Command handler returned: {command_result}")
                     
                     if command_result:
-                        # Emit command result via socket to ALL users in the channel
-                        from flask import current_app
-                        socketio = current_app.extensions.get('socketio')
-                        if socketio:
-                            log.info(f"[HTTP] ✅ SocketIO found, emitting to channel_{channel_id} and community_{community_id}")
-                            
-                            # Get all rooms and connected sockets for debugging
-                            try:
-                                from routes.sockets import user_socket_sessions
-                                user_sid = user_socket_sessions.get(current_user)
-                                log.info(f"[HTTP] 🔍 User '{current_user}' socket SID: {user_sid}")
-                                
-                                # Get socket's current rooms
-                                if user_sid:
-                                    from flask_socketio import rooms as get_rooms
-                                    user_rooms = get_rooms(sid=user_sid, namespace='/')
-                                    log.info(f"[HTTP] 🔍 Socket {user_sid} is in rooms: {user_rooms}")
-                                    
-                                    # Direct emission to user's socket as BACKUP
-                                    socketio.emit('command_result', command_result, room=user_sid, namespace='/')
-                                    log.info(f"[HTTP] ✅ DIRECT EMIT to user socket {user_sid}")
-                            except Exception as room_err:
-                                log.warning(f"[HTTP] ⚠️  Room check failed: {room_err}")
-                            
-                            # Emit to both rooms (standard broadcast)
-                            socketio.emit('command_result', command_result, room=f"channel_{channel_id}", namespace='/')
-                            log.info(f"[HTTP] ✅ ROOM EMIT to channel_{channel_id}")
-                            
-                            socketio.emit('command_result', command_result, room=f"community_{community_id}", namespace='/')
-                            log.info(f"[HTTP] ✅ ROOM EMIT to community_{community_id}")
-                        else:
-                            log.error(f"[HTTP] ❌ SocketIO not found in app extensions!")
-                        
-                        # Still save and broadcast the command message for transparency
+                        # ── Ephemeral commands (e.g. /summarize) ─────────────
+                        # Don't save to DB, don't broadcast — emit privately to sender only
+                        if command_result.get('ephemeral'):
+                            if socketio and user_sid:
+                                socketio.emit('summary_result', {
+                                    'channel_id': channel_id,
+                                    'content': command_result.get('summary_content', ''),
+                                    'method': command_result.get('method', 'extractive'),
+                                    'message_count': command_result.get('message_count', 0),
+                                    'created_at': datetime.now().isoformat(),
+                                }, room=user_sid, namespace='/')
+                                log.info(f"[HTTP] ✅ Ephemeral summary sent privately to {current_user}")
+
+                            return jsonify({
+                                'command_result': command_result,
+                                'ephemeral': True,
+                            }), 200
+
+                        # ── Non-ephemeral commands (/mood, /wellness, /help) ─
+                        # Save command message and broadcast as before
                         cur.execute("""
                             INSERT INTO messages (channel_id, sender_id, content, message_type, reply_to)
                             VALUES (%s, %s, %s, %s, %s)
@@ -313,8 +553,7 @@ def send_message():
                         message_id = cur.lastrowid
                         conn.commit()
                         log.info(f"[HTTP] ✅ Command message saved with ID {message_id}")
-                        
-                        # Broadcast the command message itself too
+
                         if socketio:
                             msg_payload = {
                                 'id': message_id,
@@ -327,11 +566,17 @@ def send_message():
                                 'avatar': None
                             }
                             socketio.emit('message_received', msg_payload, room=f"channel_{channel_id}", namespace='/')
-                            socketio.emit('message_received', msg_payload, room=f"community_{community_id}", namespace='/')
-                            log.info(f"[HTTP] ✅ Command message broadcasted")
-                        
-                        # Return command result + message info
-                        log.info(f"[HTTP] ✅ Returning success response with command_result")
+
+                        if command_result.get('posted_as_bot') and command_result.get('bot_payload'):
+                            if socketio:
+                                socketio.emit('message_received', command_result['bot_payload'], room=f"channel_{channel_id}", namespace='/')
+                        elif not command_result.get('success'):
+                            if socketio and user_sid:
+                                socketio.emit('command_result', command_result, room=user_sid, namespace='/')
+
+                        if socketio:
+                            _emit_unread_tracking(socketio, channel_id, community_id, user_id, message_id)
+
                         return jsonify({
                             'message': {
                                 'id': message_id,
@@ -396,6 +641,10 @@ def send_message():
                     }
                     socketio.emit('message_received', payload, room=f"channel_{channel_id}", namespace='/')
                     socketio.emit('message_received', payload, room=f"community_{community_id}", namespace='/')
+                    _emit_unread_tracking(socketio, channel_id, community_id, user_id, msg['id'])
+
+                # 🤖 Agent auto-execution (fire-and-forget)
+                _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_type)
 
                 avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
                 return jsonify({
@@ -485,6 +734,7 @@ def send_message():
                     }
                     socketio.emit('message_received', payload, room=f"channel_{channel_id}", namespace='/')
                     socketio.emit('message_received', payload, room=f"community_{community_id}", namespace='/')
+                    _emit_unread_tracking(socketio, channel_id, community_id, user_id, message_id)
 
                 if final_action != 'allow':
                     moderation_agent.log_moderation_action(
@@ -492,6 +742,9 @@ def send_message():
                         moderation_result['severity'], moderation_result.get('reasons', []),
                         moderation_result.get('confidence', 0), message_id
                     )
+
+                # 🤖 Agent auto-execution (fire-and-forget)
+                _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_type)
 
                 avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
                 return jsonify({

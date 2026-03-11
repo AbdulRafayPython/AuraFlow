@@ -18,9 +18,9 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
 import { channelService } from "@/services/channelService";
-import { statusService } from "@/services/statusService";
 import { voiceService } from "@/services/voiceService";
 import { socketService } from "@/services/socketService";
+import { useUnreadCounts } from "@/hooks/useUnreadCounts";
 import { getAvatarUrl } from "@/lib/utils";
 import CommunityMembersAddModal from "@/components/modals/CommunityMembersAddModal";
 import CreateChannelModal from "@/components/modals/CreateChannelModal";
@@ -84,44 +84,20 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
     friends: true,
   });
 
-  // Unread counts
-  const [unreadCounts, setUnreadCounts] = useState<Record<number, number>>({});
+  // Unread counts — from centralised hook (driven by channel_activity + unread_update + initial_unreads)
+  const { channels: unreadCounts, markChannelRead: markChRead } = useUnreadCounts();
   
   // Voice participants for sidebar cards
   const [voiceParticipants, setVoiceParticipants] = useState<Record<string, { members: Array<{ id: number; username: string; display_name: string; avatar_url?: string }>; total: number }>>({});
   
   const { isInVoiceChannel, currentVoiceChannel, joinVoiceChannel, leaveVoiceChannel, voiceUsers, setVoiceRoomModalOpen } = useVoice();
 
-  // Fetch unread counts when community changes
+  // ── Mark channel as read when selected ──────────────────────────────
   useEffect(() => {
-    if (!currentCommunity) return;
-    statusService.getUnreadCounts().then(data => {
-      const map: Record<number, number> = {};
-      data.forEach((c: any) => { map[c.channel_id] = c.unread_count; });
-      setUnreadCounts(map);
-    }).catch(() => {});
-  }, [currentCommunity?.id]);
-
-  // Clear unread when a channel is selected
-  useEffect(() => {
-    if (currentChannel?.id) {
-      setUnreadCounts(prev => ({ ...prev, [currentChannel.id]: 0 }));
+    if (currentChannel?.id && currentCommunity?.id) {
+      markChRead(currentChannel.id, Number(currentCommunity.id));
     }
-  }, [currentChannel?.id]);
-
-  // Socket: increment unread on new message for non-active channels
-  useEffect(() => {
-    const handleNewMessage = (data: any) => {
-      if (data.channel_id && data.channel_id !== currentChannel?.id) {
-        setUnreadCounts(prev => ({
-          ...prev,
-          [data.channel_id]: (prev[data.channel_id] || 0) + 1,
-        }));
-      }
-    };
-    socketService.getSocket()?.on('new_message', handleNewMessage);
-    return () => { socketService.getSocket()?.off('new_message', handleNewMessage); };
-  }, [currentChannel?.id]);
+  }, [currentChannel?.id, currentCommunity?.id, markChRead]);
 
   // Fetch voice participants for sidebar cards
   useEffect(() => {

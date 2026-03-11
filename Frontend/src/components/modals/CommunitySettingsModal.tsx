@@ -1,11 +1,12 @@
 // components/modals/CommunitySettingsModal.tsx
 import { useState, useRef, useEffect } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
-import { X, Camera, Trash2, Upload, Image as ImageIcon, Loader2, Check, AlertCircle } from "lucide-react";
+import { X, Camera, Trash2, Upload, Image as ImageIcon, Loader2, Check, AlertCircle, Bot, Settings as SettingsIcon } from "lucide-react";
 import { channelService } from "@/services/channelService";
 import { useNotifications } from "@/hooks/useNotifications";
 import { Community } from "@/types";
 import { API_SERVER } from "@/config/api";
+import CommunityAgentsTab from "@/components/ai-agents/CommunityAgentsTab";
 
 interface CommunitySettingsModalProps {
   isOpen: boolean;
@@ -36,6 +37,7 @@ export default function CommunitySettingsModal({
   const [isLoading, setIsLoading] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [activeTab, setActiveTab] = useState<'general' | 'agents'>('general');
   
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
@@ -339,9 +341,40 @@ export default function CommunitySettingsModal({
 
         {/* Content */}
         <div className="pt-16 px-6 pb-6 max-h-[60vh] overflow-y-auto">
-          <h2 className="text-xl font-bold mb-6 text-[hsl(var(--theme-text-primary))]">
+          <h2 className="text-xl font-bold mb-4 text-[hsl(var(--theme-text-primary))]">
             Community Settings
           </h2>
+
+          {/* Tab Navigation */}
+          <div className="flex gap-1 mb-6 p-1 rounded-xl bg-[hsl(var(--theme-bg-tertiary)/0.5)]">
+            <button
+              onClick={() => setActiveTab('general')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${
+                activeTab === 'general'
+                  ? 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-primary))] shadow-sm'
+                  : 'text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-secondary))]'
+              }`}
+            >
+              <SettingsIcon className="w-4 h-4" />
+              General
+            </button>
+            <button
+              onClick={() => setActiveTab('agents')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${
+                activeTab === 'agents'
+                  ? 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-primary))] shadow-sm'
+                  : 'text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-secondary))]'
+              }`}
+            >
+              <Bot className="w-4 h-4" />
+              AI Agents
+            </button>
+          </div>
+
+          {activeTab === 'agents' ? (
+            <CommunityAgentsTab communityId={community.id} isAdmin={isOwnerOrAdmin} />
+          ) : (
+          <>
 
           {!isOwnerOrAdmin && (
             <div className="flex items-start gap-3 p-4 rounded-xl mb-6 bg-amber-500/10 border border-amber-500/20">
@@ -438,6 +471,8 @@ export default function CommunitySettingsModal({
                 Save Changes
               </button>
             </div>
+          )}
+          </>
           )}
         </div>
       </div>
