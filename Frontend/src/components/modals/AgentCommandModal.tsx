@@ -195,7 +195,7 @@ export const AgentCommandModal: React.FC<AgentCommandModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}>
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
           {/* Commands */}
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--theme-text-muted))] mb-3 flex items-center gap-2">

@@ -78,30 +78,7 @@ export default function FriendRequestsModal({
       {/* Modal Container */}
       <div
         className="w-full max-w-2xl rounded-3xl shadow-2xl border max-h-[85vh] overflow-y-auto flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl"
-        style={{
-          scrollbarWidth: "thin",
-          scrollbarColor: "hsl(var(--theme-text-muted)) transparent",
-        }}
       >
-        {/* Webkit-specific scrollbar styling */}
-        <style>{`
-          .friend-requests-modal::-webkit-scrollbar {
-            width: 10px;
-          }
-          .friend-requests-modal::-webkit-scrollbar-track {
-            background: transparent;
-            border-radius: 12px;
-          }
-          .friend-requests-modal::-webkit-scrollbar-thumb {
-            background-color: hsl(var(--theme-text-muted));
-            border-radius: 12px;
-            border: 3px solid hsl(var(--theme-bg-elevated));
-            background-clip: padding-box;
-          }
-          .friend-requests-modal:hover::-webkit-scrollbar-thumb {
-            background-color: hsl(var(--theme-text-secondary));
-          }
-        `}</style>
 
         {/* Sticky Header */}
         <div className="sticky top-0 z-10 p-5 border-b backdrop-blur-xl bg-[hsl(var(--theme-bg-elevated))]/80 border-[hsl(var(--theme-border-default))]">

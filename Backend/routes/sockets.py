@@ -7,11 +7,11 @@ import logging
 from datetime import datetime
 import sys
 import os
+import time
+from collections import defaultdict
 
 # Add agents directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from agents.moderation import ModerationAgent
-from agents.summarizer import SummarizerAgent
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +23,22 @@ user_heartbeats = {}
 user_rooms = {}
 # Cache user IDs: username -> user_id  (avoids DB hit on every keystroke / event)
 user_id_cache = {}
+
+# ── Socket Rate Limiter ──────────────────────────────────────────────
+_socket_rate_buckets = defaultdict(list)  # sid -> list of timestamps
+SOCKET_RATE_LIMIT = 30   # max events
+SOCKET_RATE_WINDOW = 10  # per N seconds
+
+def _socket_rate_limited(sid: str) -> bool:
+    """Return True if this socket id has exceeded the rate limit."""
+    now = time.monotonic()
+    bucket = _socket_rate_buckets[sid]
+    # Prune expired timestamps
+    _socket_rate_buckets[sid] = bucket = [t for t in bucket if now - t < SOCKET_RATE_WINDOW]
+    if len(bucket) >= SOCKET_RATE_LIMIT:
+        return True
+    bucket.append(now)
+    return False
 
 
 def handle_ai_command(content: str, username: str, user_id: int, channel_id: int, community_id: int = None):
@@ -45,6 +61,7 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
             log.info(f"[COMMAND] /summarize requested by {username} for channel {channel_id} with {message_count} messages")
             
             # Generate summary
+            from agents.summarizer import SummarizerAgent
             summarizer = SummarizerAgent()
             result = summarizer.summarize_channel(
                 channel_id=channel_id,
@@ -155,20 +172,31 @@ More commands coming soon!"""
 def register_socket_events(socketio):
     """Register all real-time Socket.IO events including voice channel operations."""
     
-    # Initialize moderation agent
+    # Initialize moderation agent (lazy)
+    from agents.moderation import ModerationAgent
     moderation_agent = ModerationAgent()
     log.info("[MODERATION] Smart Moderation Agent initialized")
+
+    # Store auth data from connect handler so get_user_from_socket can access it
+    _socket_auth = {}
 
     def get_user_from_socket():
         """Extract and verify JWT from socket connection."""
         try:
             auth = None
             
-            # Check request args first (most common)
-            if hasattr(request, 'args') and request.args.get('token'):
+            # Check auth data passed from connect handler (Flask-SocketIO 5.x)
+            sid = getattr(request, 'sid', None)
+            if sid and sid in _socket_auth:
+                auth = _socket_auth[sid].get('token') if isinstance(_socket_auth[sid], dict) else None
+            # Check Socket.IO auth transport on request object
+            if not auth and hasattr(request, 'auth') and isinstance(getattr(request, 'auth', None), dict):
+                auth = request.auth.get('token')
+            # Check request args (legacy query-string approach)
+            if not auth and hasattr(request, 'args') and request.args.get('token'):
                 auth = request.args.get('token')
             # Check headers
-            elif hasattr(request, 'headers') and request.headers.get('Authorization'):
+            if not auth and hasattr(request, 'headers') and request.headers.get('Authorization'):
                 auth = request.headers.get('Authorization')
 
             if not auth:
@@ -210,9 +238,13 @@ def register_socket_events(socketio):
     # ============================================================================
 
     @socketio.on('connect')
-    def handle_connect():
+    def handle_connect(auth=None):
         conn = None
         try:
+            # Store auth data so get_user_from_socket can read it
+            if auth and request.sid:
+                _socket_auth[request.sid] = auth
+
             username = get_user_from_socket()
             if not username:
                 log.error("[SOCKET] Connect rejected: Invalid token")
@@ -340,6 +372,9 @@ def register_socket_events(socketio):
         try:
             if reason:
                 log.info(f"[SOCKET] Disconnect reason: {reason}")
+            
+            # Clean up stored auth data
+            _socket_auth.pop(request.sid, None)
             
             # Try to get username from session first, then from token
             username = None
@@ -646,10 +681,20 @@ def register_socket_events(socketio):
                 log.error(f"[SOCKET] new_message: Could not get user from socket")
                 return
 
+            # Rate limiting
+            if _socket_rate_limited(request.sid):
+                emit('error', {'message': 'Rate limit exceeded. Slow down.'})
+                return
+
             channel_id = data.get('channel_id')
             message = data.get('message')
             content = message.get('content', '')
             message_id = message.get('id')
+
+            # Message length validation
+            if len(content) > 5000:
+                emit('error', {'message': 'Message too long (max 5000 characters)'})
+                return
 
             # Ensure essential fields are present on the message payload
             message['channel_id'] = channel_id
@@ -661,20 +706,32 @@ def register_socket_events(socketio):
             # Get user ID and community ID for moderation
             conn = get_db_connection()
             with conn.cursor() as cur:
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+                cur.execute("SELECT id, display_name, avatar_url FROM users WHERE username = %s", (username,))
                 user_row = cur.fetchone()
                 if not user_row:
                     log.error(f"[SOCKET] User not found: {username}")
                     return
                 user_id = user_row['id']
+                sender_display_name = user_row.get('display_name') or username
+                sender_avatar = user_row.get('avatar_url')
                 log.info(f"[SOCKET] User {username} has id {user_id}")
                 
-                # Get community_id from channel
+                # Get community_id + channel name from channel
                 cur.execute("""
-                    SELECT community_id FROM channels WHERE id = %s
+                    SELECT c.community_id, c.name AS channel_name,
+                           cm.name AS community_name, cm.logo_url AS community_logo,
+                           cm.icon AS community_icon, cm.color AS community_color
+                    FROM channels c
+                    LEFT JOIN communities cm ON cm.id = c.community_id
+                    WHERE c.id = %s
                 """, (channel_id,))
                 channel_row = cur.fetchone()
                 community_id = channel_row['community_id'] if channel_row else None
+                channel_name = channel_row['channel_name'] if channel_row else None
+                community_name = channel_row['community_name'] if channel_row else None
+                community_logo = channel_row['community_logo'] if channel_row else None
+                community_icon = channel_row['community_icon'] if channel_row else None
+                community_color = channel_row['community_color'] if channel_row else None
                 log.info(f"[SOCKET] Channel {channel_id} belongs to community {community_id}")
                 
                 # Check if user is blocked from this community
@@ -884,6 +941,14 @@ def register_socket_events(socketio):
                         'community_id': community_id,
                         'sender_id': user_id,
                         'message_id': message_id,
+                        'sender_name': sender_display_name,
+                        'sender_avatar': sender_avatar,
+                        'channel_name': channel_name,
+                        'community_name': community_name,
+                        'community_logo': community_logo,
+                        'community_icon': community_icon,
+                        'community_color': community_color,
+                        'content_preview': (content[:120] + '…') if len(content) > 120 else content,
                     }, room=f"community_{community_id}", namespace='/')
                     log.info(f"[UNREAD] channel_activity emitted to community_{community_id} for channel {channel_id}")
 
@@ -1494,6 +1559,8 @@ def register_socket_events(socketio):
             if not username:
                 log.error("[VOICE] send_offer: No username")
                 return
+            if _socket_rate_limited(request.sid):
+                return
 
             channel_id = data.get('channel_id')
             target_user = data.get('target_user')  # This is a username
@@ -1525,6 +1592,8 @@ def register_socket_events(socketio):
             username = get_user_from_socket()
             if not username:
                 log.error("[VOICE] send_answer: No username")
+                return
+            if _socket_rate_limited(request.sid):
                 return
 
             channel_id = data.get('channel_id')
@@ -1577,6 +1646,8 @@ def register_socket_events(socketio):
         try:
             username = get_user_from_socket()
             if not username:
+                return
+            if _socket_rate_limited(request.sid):
                 return
 
             channel_id = data.get('channel_id')

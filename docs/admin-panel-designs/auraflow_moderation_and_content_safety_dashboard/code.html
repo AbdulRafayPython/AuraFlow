@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AuraFlow Moderation and Content Safety Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#8c2bee",
+                        "background-light": "#f7f6f8",
+                        "background-dark": "#191022",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .glass {
+            background: rgba(26, 17, 34, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen flex">
+<!-- Sidebar Navigation -->
+<aside class="w-64 border-r border-primary/10 bg-background-light dark:bg-background-dark/50 flex flex-col h-screen sticky top-0">
+<div class="p-6 flex items-center gap-3">
+<div class="size-10 bg-gradient-to-br from-primary to-purple-400 rounded-lg flex items-center justify-center text-white shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined">auto_awesome</span>
+</div>
+<div>
+<h1 class="text-lg font-bold tracking-tight">AuraFlow</h1>
+<p class="text-xs text-slate-500 dark:text-slate-400">Safety Engine</p>
+</div>
+</div>
+<nav class="flex-1 px-4 py-4 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400 hover:bg-primary/10 hover:text-primary rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="text-sm font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 bg-primary/10 text-primary rounded-lg" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1">shield_with_heart</span>
+<span class="text-sm font-medium">Moderation</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400 hover:bg-primary/10 hover:text-primary rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="text-sm font-medium">Users</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400 hover:bg-primary/10 hover:text-primary rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined">rule_folder</span>
+<span class="text-sm font-medium">Rules</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400 hover:bg-primary/10 hover:text-primary rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-sm font-medium">Settings</span>
+</a>
+</nav>
+<div class="p-4 border-t border-primary/10">
+<button class="w-full bg-primary hover:bg-primary/90 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all">
+<span class="material-symbols-outlined text-sm">support_agent</span>
+                Support
+            </button>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 overflow-y-auto">
+<header class="h-16 border-b border-primary/10 px-8 flex items-center justify-between glass sticky top-0 z-10">
+<h2 class="text-xl font-semibold">Moderation Queue</h2>
+<div class="flex items-center gap-4">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">search</span>
+<input class="bg-primary/5 border border-primary/10 rounded-full pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-primary focus:border-primary outline-none" placeholder="Search incidents..." type="text"/>
+</div>
+<button class="size-8 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center">
+<span class="material-symbols-outlined text-sm">notifications</span>
+</button>
+<div class="size-8 rounded-full overflow-hidden border border-primary/50">
+<img alt="Admin Profile" data-alt="Admin user portrait for profile avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCUa9k45ACIKKfrFHibr2TFk33m1Lv8i71yLkzS3OVPlmER2lapW4r3YXvrppx1KdiQhRdP7Z-1_8-Ky6f2_gx6XgxDhpQXZBrtwBGfU4fuaqsvXaM1x1t0fw6ZztgpjAwCMZPf6Z0hXx6mq4dE3MIxBgU6qSGcTgkWS-8CC5YA3zQLxtN_ORdfVT16nAqWCmrnK-zsDF5d0NoWQ6wTChNt8PzsrK27uKs73DsFBOh7TYjxhmehGi2eWmhvM1Cfa3GFAxLclaEQzITQ"/>
+</div>
+</div>
+</header>
+<div class="p-8 space-y-8 max-w-[1400px] mx-auto">
+<!-- KPI Cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+<div class="glass border border-primary/10 p-6 rounded-xl hover:border-primary/30 transition-all shadow-sm">
+<div class="flex justify-between items-start mb-4">
+<span class="material-symbols-outlined text-red-400 p-2 bg-red-400/10 rounded-lg">flag</span>
+<span class="text-emerald-500 text-xs font-bold">+15%</span>
+</div>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Flagged Today</p>
+<h3 class="text-3xl font-bold mt-1">7</h3>
+</div>
+<div class="glass border border-primary/10 p-6 rounded-xl hover:border-primary/30 transition-all shadow-sm">
+<div class="flex justify-between items-start mb-4">
+<span class="material-symbols-outlined text-emerald-400 p-2 bg-emerald-400/10 rounded-lg">check_circle</span>
+<span class="text-orange-500 text-xs font-bold">-5%</span>
+</div>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Resolved Today</p>
+<h3 class="text-3xl font-bold mt-1">12</h3>
+</div>
+<div class="glass border border-primary/10 p-6 rounded-xl hover:border-primary/30 transition-all shadow-sm">
+<div class="flex justify-between items-start mb-4">
+<span class="material-symbols-outlined text-orange-400 p-2 bg-orange-400/10 rounded-lg">warning</span>
+<span class="text-emerald-500 text-xs font-bold">+2%</span>
+</div>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Active Violations</p>
+<h3 class="text-3xl font-bold mt-1">3</h3>
+</div>
+<div class="glass border border-primary/10 p-6 rounded-xl hover:border-primary/30 transition-all shadow-sm">
+<div class="flex justify-between items-start mb-4">
+<span class="material-symbols-outlined text-primary p-2 bg-primary/10 rounded-lg">block</span>
+<span class="text-orange-500 text-xs font-bold">-10%</span>
+</div>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Auto-Blocked</p>
+<h3 class="text-3xl font-bold mt-1">1</h3>
+</div>
+</div>
+<!-- Tab Navigation & Filters -->
+<div class="space-y-4">
+<div class="flex border-b border-primary/10 gap-8">
+<button class="border-b-2 border-primary text-primary pb-3 text-sm font-bold flex items-center gap-2">
+                        Flagged Messages <span class="bg-primary/20 text-primary text-[10px] px-1.5 py-0.5 rounded-full">24</span>
+</button>
+<button class="text-slate-500 dark:text-slate-400 pb-3 text-sm font-bold hover:text-primary transition-colors">Blocked Users</button>
+<button class="text-slate-500 dark:text-slate-400 pb-3 text-sm font-bold hover:text-primary transition-colors">Moderation Log</button>
+<button class="text-slate-500 dark:text-slate-400 pb-3 text-sm font-bold hover:text-primary transition-colors">Auto-Rules</button>
+</div>
+<div class="flex flex-wrap gap-3">
+<button class="flex items-center gap-2 px-3 py-1.5 bg-primary/5 hover:bg-primary/10 border border-primary/10 rounded-lg text-xs font-medium transition-colors">
+                        Severity: All <span class="material-symbols-outlined text-sm">expand_more</span>
+</button>
+<button class="flex items-center gap-2 px-3 py-1.5 bg-primary/5 hover:bg-primary/10 border border-primary/10 rounded-lg text-xs font-medium transition-colors">
+                        Flag Type: Toxic <span class="material-symbols-outlined text-sm">expand_more</span>
+</button>
+<button class="flex items-center gap-2 px-3 py-1.5 bg-primary/5 hover:bg-primary/10 border border-primary/10 rounded-lg text-xs font-medium transition-colors">
+                        Date: Today <span class="material-symbols-outlined text-sm">expand_more</span>
+</button>
+<button class="flex items-center gap-2 px-3 py-1.5 bg-primary/5 hover:bg-primary/10 border border-primary/10 rounded-lg text-xs font-medium transition-colors">
+                        Community: Global <span class="material-symbols-outlined text-sm">expand_more</span>
+</button>
+</div>
+</div>
+<!-- Data Table -->
+<div class="overflow-hidden rounded-xl border border-primary/10 glass">
+<table class="w-full text-left text-sm">
+<thead class="bg-primary/10 border-b border-primary/10">
+<tr>
+<th class="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Severity</th>
+<th class="px-6 py-4 font-semibold text-xs uppercase tracking-wider">User</th>
+<th class="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Community</th>
+<th class="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Message Preview</th>
+<th class="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Type</th>
+<th class="px-6 py-4 font-semibold text-xs uppercase tracking-wider">AI Confidence</th>
+<th class="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Timestamp</th>
+<th class="px-6 py-4 font-semibold text-xs uppercase tracking-wider text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-primary/5">
+<!-- Critical Row (Expanded Style) -->
+<tr class="bg-primary/5 hover:bg-primary/10 transition-colors">
+<td class="px-6 py-4">
+<span class="px-2.5 py-1 bg-red-500/10 text-red-500 rounded-full text-[11px] font-bold border border-red-500/20">Critical</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<img alt="User" class="size-8 rounded-full" data-alt="Portrait of Alex Rivera for user table row" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAri7YVfGNoeDYiin9Z7rRjBwFKjAbdHrNjKlHPW3tmcrcO7Qck_JSnUCyQpLL3SCpkcvwfd9YsS-4lKeMg4ijmhteVGs-K0j1paxSG6V532fMVOzAcK4Du0ZTaNggrsUMPWg83MyBR95RijhCJMqa4mw6MkO4shERj7NPm_xPqleDbH8-pyhWqA1Ac4Jp5JarVx-UeeliOtfLcGxDC6aEA4h23nhypdCcOyzzalvwDros44L8Va-okBPfSOgw6ngjug0nc19NJykTC"/>
+<div>
+<p class="font-medium">Alex Rivera</p>
+<p class="text-[10px] text-slate-500">ID: 88219</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-slate-400">General</td>
+<td class="px-6 py-4 text-slate-400 max-w-xs truncate italic">"I will destroy everything you love..."</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 bg-slate-800 text-slate-200 rounded text-[11px]">Toxic</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[98%]"></div>
+</div>
+<span class="text-xs font-bold">98%</span>
+</div>
+</td>
+<td class="px-6 py-4 text-slate-400">10:45 AM</td>
+<td class="px-6 py-4 text-right">
+<button class="text-primary font-bold hover:underline">Review</button>
+</td>
+</tr>
+<!-- Expanded Detail Panel (Attached to Row 1) -->
+<tr class="bg-primary/10">
+<td class="p-8" colspan="8">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+<div class="lg:col-span-2 space-y-6">
+<div class="bg-background-dark/40 p-5 rounded-xl border border-primary/20">
+<h4 class="text-xs font-bold text-primary uppercase mb-3">Full Message Content</h4>
+<p class="text-lg leading-relaxed font-display">
+                                                "I will destroy everything you love if you ever try to talk to her again. I know where you live and I'm not afraid to show up tonight. Watch your back."
+                                            </p>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="glass border border-primary/10 p-4 rounded-xl">
+<h4 class="text-xs font-bold text-primary uppercase mb-3">AI Analysis</h4>
+<div class="space-y-2">
+<div class="flex justify-between items-center text-xs">
+<span>Threat Detection</span>
+<span class="text-red-400 font-bold">High (0.99)</span>
+</div>
+<div class="flex justify-between items-center text-xs">
+<span>Insult Level</span>
+<span class="text-orange-400 font-bold">Medium (0.42)</span>
+</div>
+<div class="flex justify-between items-center text-xs">
+<span>Sentiment Score</span>
+<span class="text-red-400 font-bold">-0.94 (Negative)</span>
+</div>
+</div>
+</div>
+<div class="glass border border-primary/10 p-4 rounded-xl">
+<h4 class="text-xs font-bold text-primary uppercase mb-3">Detected Keywords</h4>
+<div class="flex flex-wrap gap-2">
+<span class="bg-red-500/20 text-red-400 px-2 py-1 rounded text-[10px] border border-red-500/20">destroy</span>
+<span class="bg-red-500/20 text-red-400 px-2 py-1 rounded text-[10px] border border-red-500/20">where you live</span>
+<span class="bg-red-500/20 text-red-400 px-2 py-1 rounded text-[10px] border border-red-500/20">watch your back</span>
+<span class="bg-slate-700 text-slate-300 px-2 py-1 rounded text-[10px]">show up</span>
+</div>
+</div>
+</div>
+</div>
+<div class="space-y-6">
+<div class="glass border border-primary/10 p-5 rounded-xl">
+<h4 class="text-xs font-bold text-primary uppercase mb-4">User History</h4>
+<div class="space-y-4 relative before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-px before:bg-primary/20">
+<div class="pl-6 relative">
+<div class="absolute left-0 top-1 size-4 bg-orange-400 rounded-full border-4 border-background-dark"></div>
+<p class="text-[11px] font-bold">3 days ago</p>
+<p class="text-xs text-slate-400">Verbal warning (Harassment)</p>
+</div>
+<div class="pl-6 relative">
+<div class="absolute left-0 top-1 size-4 bg-primary rounded-full border-4 border-background-dark"></div>
+<p class="text-[11px] font-bold">2 weeks ago</p>
+<p class="text-xs text-slate-400">Joined community</p>
+</div>
+<div class="pl-6 relative">
+<div class="absolute left-0 top-1 size-4 bg-emerald-400 rounded-full border-4 border-background-dark"></div>
+<p class="text-[11px] font-bold">1 month ago</p>
+<p class="text-xs text-slate-400">Account verified</p>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-2">
+<button class="w-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">thumb_up</span> Approve Message
+                                            </button>
+<button class="w-full bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">notification_important</span> Warn User
+                                            </button>
+<button class="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">delete_forever</span> Delete Message
+                                            </button>
+<button class="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">person_off</span> Ban User Permanently
+                                            </button>
+</div>
+</div>
+</div>
+</td>
+</tr>
+<!-- Standard Row -->
+<tr class="hover:bg-primary/5 transition-colors">
+<td class="px-6 py-4">
+<span class="px-2.5 py-1 bg-orange-500/10 text-orange-500 rounded-full text-[11px] font-bold border border-orange-500/20">High</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<img alt="User" class="size-8 rounded-full" data-alt="Portrait of Sam Smith for user table row" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD3A-FTD0OMyY7ehHjHk_zaQ8qBS2OUxA95GX1NNlZNLV1wRkNsWjhmTk5tfS55c2v6iXxToZaxU5ftGLQzqzginyaOi1LYYnhpwrpgCcKbCyV91mAeVe6qxnVM4SM6DzoLAhTHatjuWNCKrZydAnyg9Owh-tqMBiFHkgDDyWah-8mXZh2Fymx0LXwuZONRXKEcxF0A3QEcrLgjqJDtPux7lYus5YyrRVcVP8Nte1Y2Qxa-aNTkmGtqhgUUU__F2AC_sW3hqJ0_iOWf"/>
+<div>
+<p class="font-medium">Sam Smith</p>
+<p class="text-[10px] text-slate-500">ID: 10423</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-slate-400">Crypto</td>
+<td class="px-6 py-4 text-slate-400 max-w-xs truncate italic">"Buy $COIN now for 1000x gains! Link in bio..."</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 bg-slate-800 text-slate-200 rounded text-[11px]">Spam</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[85%]"></div>
+</div>
+<span class="text-xs font-bold">85%</span>
+</div>
+</td>
+<td class="px-6 py-4 text-slate-400">10:30 AM</td>
+<td class="px-6 py-4 text-right">
+<button class="text-slate-400 font-bold hover:text-primary transition-colors">Review</button>
+</td>
+</tr>
+<!-- Standard Row -->
+<tr class="hover:bg-primary/5 transition-colors">
+<td class="px-6 py-4">
+<span class="px-2.5 py-1 bg-yellow-500/10 text-yellow-500 rounded-full text-[11px] font-bold border border-yellow-500/20">Medium</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<img alt="User" class="size-8 rounded-full" data-alt="Portrait of Jordan Lee for user table row" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAaZI0RVsFqOhCXm5ZjvZTO8Rz1isVwrPcGtQ9DQCOF1M14acPFNzUdYlIrMNBMPvAp3iN6WF5QaZugCTCILXieu8vngdz8xHmF914-gCJpiTCGkpqbmEh9s3ujTRXPoChIlSaSQ5UZv6W24pVlEKyZncjVLMpYxoTZMmXhBO7WkUQBrRAvaYLO96AWrweCEOdM3aPVSpZNdrLBFJjNCKMmLS8iD2At4KgKSvCfhL3Q1S2V0k48e7ybQX1JuAs1ROqJ4OYhg9BpSpoY"/>
+<div>
+<p class="font-medium">Jordan Lee</p>
+<p class="text-[10px] text-slate-500">ID: 45521</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-slate-400">Gaming</td>
+<td class="px-6 py-4 text-slate-400 max-w-xs truncate italic">"You suck at this game, why do you even play..."</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 bg-slate-800 text-slate-200 rounded text-[11px]">Harassment</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[72%]"></div>
+</div>
+<span class="text-xs font-bold">72%</span>
+</div>
+</td>
+<td class="px-6 py-4 text-slate-400">10:15 AM</td>
+<td class="px-6 py-4 text-right">
+<button class="text-slate-400 font-bold hover:text-primary transition-colors">Review</button>
+</td>
+</tr>
+<!-- Standard Row -->
+<tr class="hover:bg-primary/5 transition-colors">
+<td class="px-6 py-4">
+<span class="px-2.5 py-1 bg-blue-500/10 text-blue-500 rounded-full text-[11px] font-bold border border-blue-500/20">Low</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<img alt="User" class="size-8 rounded-full" data-alt="Portrait of Jamie Chen for user table row" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC3voAC1E3eVysuBeZrLHlf80rFT1YpFl4LfyjWeW_UleDAUIC6s8G7QZVu0fVuK7EHdwBLD3aGJlYAr5ef5Dv0KwImzFLvzG7iLzkOVCkvhJWrW9pAQAURDO5IRpIyLWixWF5cO2rLHDSASiHjywcMyRvzF-qupgIpXDw6zvkdVThitS-8jOkxZPOaBp5XY7cBhrykREXlXmy6VGuGCYzN-11CNHUOdQaxl_NH0qPMQVQ61V7cyP6UeGfg7N5t-SRSn45L7P1VCunR"/>
+<div>
+<p class="font-medium">Jamie Chen</p>
+<p class="text-[10px] text-slate-500">ID: 32201</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-slate-400">Art</td>
+<td class="px-6 py-4 text-slate-400 max-w-xs truncate italic">"This is really bad artwork, try harder."</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 bg-slate-800 text-slate-200 rounded text-[11px]">Negativity</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[45%]"></div>
+</div>
+<span class="text-xs font-bold">45%</span>
+</div>
+</td>
+<td class="px-6 py-4 text-slate-400">09:55 AM</td>
+<td class="px-6 py-4 text-right">
+<button class="text-slate-400 font-bold hover:text-primary transition-colors">Review</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Footer Pagination -->
+<div class="flex items-center justify-between pt-4">
+<p class="text-xs text-slate-500">Showing 1 to 10 of 24 flagged messages</p>
+<div class="flex gap-2">
+<button class="size-8 rounded border border-primary/10 flex items-center justify-center hover:bg-primary/10 transition-colors">
+<span class="material-symbols-outlined text-sm">chevron_left</span>
+</button>
+<button class="size-8 rounded bg-primary text-white flex items-center justify-center text-xs font-bold shadow-lg shadow-primary/20">1</button>
+<button class="size-8 rounded border border-primary/10 flex items-center justify-center text-xs font-bold hover:bg-primary/10 transition-colors">2</button>
+<button class="size-8 rounded border border-primary/10 flex items-center justify-center text-xs font-bold hover:bg-primary/10 transition-colors">3</button>
+<button class="size-8 rounded border border-primary/10 flex items-center justify-center hover:bg-primary/10 transition-colors">
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</main>
+</body></html>

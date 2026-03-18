@@ -831,30 +831,6 @@ const AuthCard: React.FC<AuthCardProps> = ({ mode, onModeChange, onAuth }) => {
           50% { opacity: 0.7; transform: scale(1.05); }
         }
         .animate-pulse-slow { animation: pulse-slow 4s ease-in-out infinite; }
-        
-        .custom-scrollbar {
-          scrollbar-width: thin;
-          scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
-          scroll-behavior: smooth;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: linear-gradient(180deg, rgba(99, 102, 241, 0.4), rgba(139, 92, 246, 0.4));
-          border-radius: 10px;
-          transition: background 0.3s ease;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: linear-gradient(180deg, rgba(99, 102, 241, 0.6), rgba(139, 92, 246, 0.6));
-        }
       `}</style>
     </div>
   );

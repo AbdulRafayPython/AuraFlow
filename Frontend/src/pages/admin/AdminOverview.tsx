@@ -231,10 +231,9 @@ export default function AdminOverview() {
     try {
       if (showToast) setRefreshing(true);
       
-      const [statsData, alertsData] = await Promise.all([
-        adminService.getOverviewStats(selectedCommunity.id),
-        adminService.getRecentAlerts(selectedCommunity.id, 5)
-      ]);
+      const [statsData, alertsData] = await Promise.all(
+        [adminService.getOverviewStats(selectedCommunity.id), adminService.getRecentAlerts(selectedCommunity.id, 5)]
+      );
       
       setStats(statsData);
       setAlerts(alertsData);
@@ -257,7 +256,7 @@ export default function AdminOverview() {
     }
   };
 
-  // Re-fetch when selected community changes
+  // Re-fetch when selected community changes (or on mount for system admin)
   useEffect(() => {
     setLoading(true);
     fetchData();
@@ -279,7 +278,7 @@ export default function AdminOverview() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">
-            {selectedCommunity?.name || 'Community'} Dashboard
+            {`${selectedCommunity?.name || 'Community'} Dashboard`}
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
             Monitor your community's health and activity at a glance
@@ -317,7 +316,7 @@ export default function AdminOverview() {
         />
         <StatCard
           title="Channels"
-          value={stats?.channels.total || 0}
+          value={stats?.channels?.total || 0}
           subtitle="in this community"
           icon={Hash}
           iconColor="text-purple-500"

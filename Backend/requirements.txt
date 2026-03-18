@@ -10,6 +10,9 @@ flask_socketio
 Pillow
 DBUtils
 
+# Encryption
+cryptography
+
 # Production server
 gunicorn
 gevent
@@ -30,5 +33,8 @@ deep-translator
 
 # NLP Processing (optional — skipped if RAM is limited)
 transformers
+
+# Web Push Notifications
+pywebpush
 torch --extra-index-url https://download.pytorch.org/whl/cpu
 sentencepiece

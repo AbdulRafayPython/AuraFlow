@@ -1,0 +1,21 @@
+{
+  "name": "AuroFlow",
+  "short_name": "AuroFlow",
+  "description": "Community chat platform with AI-powered features",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0a1a",
+  "theme_color": "#8B5CF6",
+  "icons": [
+    {
+      "src": "/AuraflowLogo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/AuraflowLogo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

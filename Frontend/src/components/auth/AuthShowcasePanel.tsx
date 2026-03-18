@@ -227,8 +227,8 @@ const DesktopMockup: React.FC<{
           
           {/* App title */}
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
-              <Sparkles className="w-3 h-3 text-white" />
+            <div className="w-5 h-5 rounded-lg overflow-hidden">
+              <img src="/AuraflowLogo.png" alt="AuraFlow" className="w-full h-full object-cover" />
             </div>
             <span className="text-xs font-medium text-gray-300">AuraFlow</span>
           </div>

@@ -12,3 +12,5 @@ export { default as EngagementAnalytics } from './EngagementAnalytics';
 export { default as MoodTrends } from './MoodTrends';
 export { default as UserManagement } from './UserManagement';
 export { default as Reports } from './Reports';
+export { default as CommunityManagement } from './CommunityManagement';
+export { default as AIAgentsManagement } from './AIAgentsManagement';

@@ -246,7 +246,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
             {/* Scrollable Content */}
             <div
               className="flex-1 overflow-y-auto"
-              style={{ background: 'hsl(var(--theme-bg-primary))', scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}
+              style={{ background: 'hsl(var(--theme-bg-primary))' }}
               onScroll={(e) => {
                 const scrollTop = (e.target as HTMLDivElement).scrollTop;
                 setIsScrolled(scrollTop > 10);

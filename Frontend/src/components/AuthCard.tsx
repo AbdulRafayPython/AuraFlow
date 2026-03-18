@@ -929,10 +929,8 @@ const BrandingAnimation: React.FC = () => {
             <div className="w-2 h-2 rounded-full bg-green-500/80" />
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-4 h-4 rounded bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
-              <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M21 6h-2v9H6v2c0 .55.45 1 1 1h11l4 4V7c0-.55-.45-1-1-1zm-4 6V3c0-.55-.45-1-1-1H3c-.55 0-1 .45-1 1v14l4-4h10c.55 0 1-.45 1-1z"/>
-              </svg>
+            <div className="w-4 h-4 rounded overflow-hidden">
+              <img src="/AuraflowLogo.png" alt="AuraFlow" className="w-full h-full object-cover" />
             </div>
             <span className="text-[10px] text-gray-300 font-medium">AuraFlow</span>
           </div>
@@ -1228,30 +1226,6 @@ const AuthCard: React.FC<AuthCardProps> = ({ mode, onModeChange, onAuth }) => {
         }
         .animate-shimmer {
           animation: shimmer 2s linear infinite;
-        }
-        
-        .custom-scrollbar {
-          scrollbar-width: thin;
-          scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
-          scroll-behavior: smooth;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: linear-gradient(180deg, rgba(99, 102, 241, 0.4), rgba(139, 92, 246, 0.4));
-          border-radius: 10px;
-          transition: background 0.3s ease;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: linear-gradient(180deg, rgba(99, 102, 241, 0.6), rgba(139, 92, 246, 0.6));
         }
       `}</style>
     </div>

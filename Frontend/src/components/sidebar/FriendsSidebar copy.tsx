@@ -179,7 +179,7 @@ export default function FriendsSidebar({ onNavigate, currentView }: FriendsSideb
       </div>
 
       {/* Online Friends (Quick Access) */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden w-full flex flex-col items-center gap-2 py-2 scrollbar-thin scrollbar-thumb-slate-700">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden w-full flex flex-col items-center gap-2 py-2">
         {allFriendsToShow.map((friend) => (
           <div
             key={friend.id}
@@ -388,21 +388,7 @@ export default function FriendsSidebar({ onNavigate, currentView }: FriendsSideb
         </div>
       </div>
 
-      <style>{`
-        .scrollbar-thin::-webkit-scrollbar {
-          width: 4px;
-        }
-        .scrollbar-thin::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .scrollbar-thin::-webkit-scrollbar-thumb {
-          background: rgba(100, 116, 139, 0.5);
-          border-radius: 10px;
-        }
-        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-          background: rgba(100, 116, 139, 0.7);
-        }
-      `}</style>
+
 
       {/* Logout Confirmation Dialog */}
       <ConfirmDialog

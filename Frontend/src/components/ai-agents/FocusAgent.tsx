@@ -330,7 +330,7 @@ const FocusAgentContent: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 p-5 bg-[hsl(var(--theme-bg-primary))] overflow-y-auto h-full" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}>
+    <div className="space-y-6 p-5 bg-[hsl(var(--theme-bg-primary))] overflow-y-auto h-full">
       {/* Header Section */}
       <div className="relative overflow-hidden rounded-xl bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))] p-5">
         {/* Gradient accent line at top */}

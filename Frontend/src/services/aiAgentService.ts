@@ -768,7 +768,7 @@ class AIAgentService {
 
   async uninstallCommunityAgent(communityId: number, agentType: string): Promise<any> {
     try {
-      const response = await api.delete(`/api/agents/uninstall/community/${communityId}/${agentType}`);
+      const response = await api.del(`/api/agents/uninstall/community/${communityId}/${agentType}`);
       return response;
     } catch (error: any) {
       console.error('[Agent Service] Uninstall error:', error);
@@ -813,7 +813,7 @@ class AIAgentService {
 
   async deactivatePersonalAgent(agentType: string): Promise<any> {
     try {
-      const response = await api.delete(`/api/agents/deactivate/personal/${agentType}`);
+      const response = await api.del(`/api/agents/deactivate/personal/${agentType}`);
       return response;
     } catch (error: any) {
       console.error('[Agent Service] Deactivate error:', error);
@@ -889,7 +889,7 @@ class AIAgentService {
 
   async deleteSummarySchedule(scheduleId: number): Promise<any> {
     try {
-      return await api.delete(`/api/agents/summary-schedules/${scheduleId}`);
+      return await api.del(`/api/agents/summary-schedules/${scheduleId}`);
     } catch (error: any) {
       throw new Error(error.data?.error || error.message || 'Failed to delete schedule');
     }
@@ -904,6 +904,14 @@ class AIAgentService {
       return response.summaries || [];
     } catch (error: any) {
       throw new Error(error.data?.error || error.message || 'Failed to fetch pending summaries');
+    }
+  }
+
+  async deleteScheduledSummary(summaryId: number): Promise<void> {
+    try {
+      await api.del(`/api/agents/summary-schedules/pending/${summaryId}`);
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to delete scheduled summary');
     }
   }
 
@@ -924,7 +932,7 @@ class AIAgentService {
 
   async deleteMySummary(summaryId: number): Promise<void> {
     try {
-      await api.delete(`/api/agents/my-summaries/${summaryId}`);
+      await api.del(`/api/agents/my-summaries/${summaryId}`);
     } catch (error: any) {
       throw new Error(error.data?.error || error.message || 'Failed to delete summary');
     }

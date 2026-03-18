@@ -10,6 +10,7 @@ Security: All endpoints require JWT + owner/admin role for the specific communit
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
+from services.notification_service import create_notification
 from datetime import datetime, timedelta
 from functools import wraps
 import logging
@@ -718,6 +719,25 @@ def remove_member(community_id, user_id):
             """, (community_id, user_id))
             
         conn.commit()
+        
+        # Notify the removed user
+        try:
+            with get_db_connection() as nconn:
+                with nconn.cursor() as cur2:
+                    cur2.execute("SELECT name FROM communities WHERE id = %s", (community_id,))
+                    cname = cur2.fetchone()
+                    community_name = cname['name'] if cname else 'a community'
+            create_notification(
+                user_id=user_id,
+                type='community_removal',
+                title='Removed from Community',
+                body=f'You were removed from {community_name}',
+                link='/',
+                related_id=community_id,
+            )
+        except Exception as notif_err:
+            log.warning(f"[ADMIN] Removal notification failed: {notif_err}")
+
         return jsonify({'success': True, 'message': 'Member removed'}), 200
         
     except Exception as e:

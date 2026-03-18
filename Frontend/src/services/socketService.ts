@@ -127,14 +127,14 @@ class SocketService {
     const isDev = import.meta.env.DEV;
     const serverUrl = isDev
       ? ''
-      : (import.meta.env.VITE_BACKEND_URL || `http://${window.location.hostname}:5000`);
+      : (import.meta.env.VITE_BACKEND_URL || `https://${window.location.hostname}`);
     
     console.log('[SOCKET] Connecting to:', serverUrl || '(same origin via proxy)');
     
-    // FIXED: Pass token in query string for Socket.IO handshake
+    // Use auth transport for secure token handshake
     this.socket = io(serverUrl, {
-      query: {
-        token: `Bearer ${token}`,  // Pass token in query for connection handshake
+      auth: {
+        token: `Bearer ${token}`,
       },
       transports: ['websocket', 'polling'],
       reconnection: true,
@@ -388,6 +388,20 @@ class SocketService {
         friend_id: data.acceptor_id || data.sender_id, 
         status: 'accepted' 
       }));
+      // Dispatch CustomEvent with full data for NotificationsContext
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('friendRequestAccepted', {
+          detail: {
+            username: data.display_name || data.username || `User ${data.acceptor_id}`,
+            from: {
+              id: data.acceptor_id || data.sender_id,
+              username: data.username || '',
+              display_name: data.display_name,
+              avatar_url: data.avatar_url,
+            },
+          }
+        }));
+      }
     });
 
     this.socket.on('friend_request_rejected', (data: any) => {
@@ -514,6 +528,14 @@ class SocketService {
     this.socket.on('summary_result', (data: { channel_id: number; content: string; method: string; message_count: number; created_at: string }) => {
       console.log('[SOCKET] 📋 Summary result received for channel:', data.channel_id);
       this.summaryResultHandlers.forEach(handler => handler(data));
+    });
+
+    // Server-pushed persistent notification (from notification_service)
+    this.socket.on('notification', (data: any) => {
+      console.log('[SOCKET] 🔔 Server notification received:', data);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('server-notification', { detail: data }));
+      }
     });
   }
 

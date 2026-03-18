@@ -897,6 +897,31 @@ def check_user_summary_schedules(self):
                                         print(f"[USER_SCHEDULES] ✅ Delivered to {u['username']} via socket")
                         except Exception as sock_err:
                             print(f"[USER_SCHEDULES] Socket delivery failed (will be fetched later): {sock_err}")
+
+                        # Send persistent notification (DB + socket + web push)
+                        try:
+                            from services.notification_service import create_notification
+                            msg_count = result.get('message_count', 0)
+                            notif = create_notification(
+                                user_id=schedule['user_id'],
+                                type='summary_ready',
+                                title=f"📝 Summary ready — #{schedule['channel_name']}",
+                                body=f"Your scheduled summary ({msg_count} messages) is ready to view.",
+                                icon_url='/AuraflowLogo.png',
+                                link=f"/community/{schedule['community_id']}",
+                                related_id=schedule['channel_id'],
+                                emit=False,  # Don't rely on service's _socketio (may be None in Celery)
+                            )
+                            # Emit notification via the socketio we already have
+                            if notif and socketio:
+                                socketio.emit(
+                                    'notification', notif,
+                                    room=f"user_{schedule['user_id']}",
+                                    namespace='/',
+                                )
+                                print(f"[USER_SCHEDULES] 🔔 Notification emitted for user {schedule['user_id']}")
+                        except Exception as notif_err:
+                            print(f"[USER_SCHEDULES] Notification failed: {notif_err}")
                     finally:
                         conn2.close()
 

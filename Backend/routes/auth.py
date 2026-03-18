@@ -148,12 +148,20 @@ def login():
 
             token = create_access_token(identity=row['username'])
             
-            # Check if user is admin (owner of any community)
-            cur.execute(
-                "SELECT 1 FROM community_members WHERE user_id = %s AND role = 'owner' LIMIT 1",
-                (row['id'],)
-            )
-            is_admin = cur.fetchone() is not None
+            # Determine user role: system_admin > admin (community owner) > user
+            cur.execute("SELECT role FROM users WHERE id = %s", (row['id'],))
+            user_role_row = cur.fetchone()
+            system_role = user_role_row['role'] if user_role_row else 'user'
+            
+            if system_role == 'system_admin':
+                role = 'system_admin'
+            else:
+                cur.execute(
+                    "SELECT 1 FROM community_members WHERE user_id = %s AND role = 'owner' LIMIT 1",
+                    (row['id'],)
+                )
+                is_community_owner = cur.fetchone() is not None
+                role = 'admin' if is_community_owner else 'user'
         conn.commit()
     finally:
         conn.close()
@@ -180,9 +188,9 @@ def login():
     # 🔥 FIX: Use format_user_data helper for consistent avatar URL
     user_data = format_user_data(row)
     user_data['is_first_login'] = bool(row.get('is_first_login', False))
-    user_data['role'] = 'admin' if is_admin else 'user'
+    user_data['role'] = role
     
-    print(f"[LOGIN] User: {user_data['username']}, Role: {user_data['role']}, Is Admin: {is_admin}")
+    print(f"[LOGIN] User: {user_data['username']}, Role: {user_data['role']}")
 
     return jsonify({
         "token": token,
@@ -271,22 +279,30 @@ def get_me():
             if not row:
                 return jsonify({'error': 'User not found'}), 404
             
-            # Check if user is admin (owner of any community)
+            # Determine user role: system_admin > admin (community owner) > user
             user_id = row['id']
-            cur.execute(
-                "SELECT 1 FROM community_members WHERE user_id = %s AND role = 'owner' LIMIT 1",
-                (user_id,)
-            )
-            is_admin = cur.fetchone() is not None
+            cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+            user_role_row = cur.fetchone()
+            system_role = user_role_row['role'] if user_role_row else 'user'
+            
+            if system_role == 'system_admin':
+                role = 'system_admin'
+            else:
+                cur.execute(
+                    "SELECT 1 FROM community_members WHERE user_id = %s AND role = 'owner' LIMIT 1",
+                    (user_id,)
+                )
+                is_community_owner = cur.fetchone() is not None
+                role = 'admin' if is_community_owner else 'user'
     finally:
         conn.close()
 
     # 🔥 FIX: Use format_user_data helper
     user_data = format_user_data(row)
     user_data['is_first_login'] = bool(row.get('is_first_login', False))
-    user_data['role'] = 'admin' if is_admin else 'user'
+    user_data['role'] = role
     
-    print(f"[GET_ME] User: {user_data['username']}, Role: {user_data['role']}, Is Admin: {is_admin}")
+    print(f"[GET_ME] User: {user_data['username']}, Role: {user_data['role']}")
 
     return jsonify(user_data), 200
 
@@ -326,6 +342,7 @@ def forgot_password():
 
 def verify_otp_endpoint():
     from services.otp_service import verify_otp
+    from services.redis_client import get_redis
     
     data = request.get_json()
     email = data.get("email")
@@ -334,10 +351,24 @@ def verify_otp_endpoint():
     if not email or not otp:
         return jsonify({"error": "Email and OTP are required"}), 400
 
+    # Rate limit OTP attempts: max 5 per 15 minutes per email
+    r = get_redis()
+    if r:
+        key = f"otp_attempts:{email}"
+        attempts = r.incr(key)
+        if attempts == 1:
+            r.expire(key, 900)  # 15 min window
+        if attempts > 5:
+            return jsonify({"error": "Too many OTP attempts. Try again later."}), 429
+
     valid, error_msg = verify_otp(email, otp)
     
     if not valid:
         return jsonify({"error": error_msg}), 400
+
+    # Clear rate limit on success
+    if r:
+        r.delete(f"otp_attempts:{email}")
 
     return jsonify({
         "message": "OTP verified successfully",

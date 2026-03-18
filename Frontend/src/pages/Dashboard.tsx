@@ -10,7 +10,6 @@ import EmojiPickerButton from "@/components/EmojiPickerButton";
 import ReactionPicker from "@/components/ReactionPicker";
 import MessageReactions from "@/components/MessageReactions";
 import { ModerationBadge } from "@/components/ModerationBadge";
-import NotificationButton from "@/components/NotificationButton";
 import { reactionService } from "@/services/reactionService";
 import { socket } from "@/socket";
 import { SocketDebugPanel } from "@/components/SocketDebugPanel";
@@ -952,9 +951,7 @@ export default function Dashboard({}: DashboardProps) {
             </button>
           )}
           
-          {/* Notifications */}
-          <NotificationButton />
-          
+          {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
             className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]"
@@ -985,8 +982,6 @@ export default function Dashboard({}: DashboardProps) {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto transition-colors duration-300 relative"
         style={{
-          scrollbarWidth: 'thin',
-          scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent',
           background: 'transparent'
         }}
       >
@@ -1682,7 +1677,7 @@ export default function Dashboard({}: DashboardProps) {
           </div>
 
           {/* Panel Body */}
-          <div className="flex-1 overflow-y-auto px-4 py-3" style={{ scrollbarWidth: 'thin' }}>
+          <div className="flex-1 overflow-y-auto px-4 py-3">
             {savedSummaries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <BookOpen className="w-8 h-8 text-[hsl(var(--theme-text-muted)/0.3)] mb-3" />
@@ -1722,7 +1717,7 @@ export default function Dashboard({}: DashboardProps) {
                       </div>
                     </div>
                     {/* Summary content */}
-                    <div className="px-3 py-2.5 text-[12px] leading-[1.6] text-[hsl(var(--theme-text-secondary))] whitespace-pre-line max-h-[200px] overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+                    <div className="px-3 py-2.5 text-[12px] leading-[1.6] text-[hsl(var(--theme-text-secondary))] whitespace-pre-line max-h-[200px] overflow-y-auto">
                       {s.summary}
                     </div>
                   </div>

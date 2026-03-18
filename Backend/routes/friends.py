@@ -5,6 +5,7 @@ from flask import jsonify, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
 from datetime import datetime
+from services.notification_service import create_notification
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +104,20 @@ def send_friend_request():
                             print(f"[FRIEND_REQUEST] ✅ Re-send event emitted to user_{receiver_id}")
                     except Exception as se:
                         print(f"[FRIEND_REQUEST] ❌ Re-send socket emit failed: {se}")
+
+                    # Persist notification for re-sent request
+                    try:
+                        create_notification(
+                            user_id=receiver_id,
+                            type='friend_request',
+                            title='New Friend Request',
+                            body=f'{resend_data["sender"]["display_name"]} sent you a friend request',
+                            icon_url=resend_data['sender'].get('avatar_url'),
+                            link='/friends',
+                            related_id=existing['id'],
+                        )
+                    except Exception:
+                        pass
 
                     return jsonify({
                         'id': existing['id'],
@@ -224,6 +239,21 @@ def send_friend_request():
         except Exception as socket_error:
             log.error(f"[FRIEND_REQUEST] ❌ Failed to emit event: {socket_error}", exc_info=True)
         
+        # Persist notification to DB
+        try:
+            sender_display = sender_info['display_name'] or sender_info['username'] if sender_info else current_user
+            create_notification(
+                user_id=receiver_id,
+                type='friend_request',
+                title='New Friend Request',
+                body=f'{sender_display} sent you a friend request',
+                icon_url=sender_info['avatar_url'] if sender_info else None,
+                link='/friends',
+                related_id=request_id,
+            )
+        except Exception as notif_err:
+            log.warning(f"[FRIEND_REQUEST] Notification persistence failed: {notif_err}")
+
         return jsonify(response_data), 201
 
     except Exception as e:
@@ -427,6 +457,21 @@ def accept_friend_request(request_id):
         except Exception as socket_error:
             print(f"[WARNING] Failed to emit friend_request_accepted event: {socket_error}")
         
+        # Persist notification to DB
+        try:
+            acceptor_display = acceptor_info['display_name'] or acceptor_info['username'] if acceptor_info else current_user
+            create_notification(
+                user_id=req['sender_id'],
+                type='friend_accepted',
+                title='Friend Request Accepted',
+                body=f'{acceptor_display} accepted your friend request',
+                icon_url=acceptor_info['avatar_url'] if acceptor_info else None,
+                link='/friends',
+                related_id=request_id,
+            )
+        except Exception as notif_err:
+            log.warning(f"[FRIEND_ACCEPT] Notification persistence failed: {notif_err}")
+
         return jsonify({'message': 'Friend request accepted'}), 200
 
     except Exception as e:

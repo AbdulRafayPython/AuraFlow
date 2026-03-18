@@ -87,7 +87,8 @@ const VerifyEmail = () => {
 
       <div className="relative z-10 w-full max-w-md bg-slate-800/95 backdrop-blur-xl rounded-xl shadow-2xl p-8 text-center">
         {/* Logo */}
-        <div className="mb-6">
+        <div className="mb-6 flex flex-col items-center">
+          <img src="/AuraflowLogo.png" alt="AuraFlow" className="w-14 h-14 mb-2" />
           <h1 className="text-2xl font-bold text-purple-400 tracking-wide">AuraFlow</h1>
         </div>
 

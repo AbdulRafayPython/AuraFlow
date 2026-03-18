@@ -1,6 +1,6 @@
-// components/NotificationButton.tsx - Professional notification button for navbar
+// components/NotificationButton.tsx - Professional notification button for navbar or sidebar
 import React, { useState, useRef, useEffect } from 'react';
-import { Bell, X, Check, MessageSquare, UserPlus, Users, CheckCheck, Trash2 } from 'lucide-react';
+import { Bell, X, Check, MessageSquare, UserPlus, Users, CheckCheck, Trash2, Hash, FileText } from 'lucide-react';
 import { useNotificationsContext, type Notification } from '@/contexts/NotificationsContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getAvatarUrl } from '@/lib/utils';
@@ -8,9 +8,11 @@ import { API_SERVER } from '@/config/api';
 
 interface NotificationButtonProps {
   onNavigate?: (view: string) => void;
+  /** 'header' = small icon in top bar (default), 'sidebar' = 48×48 icon-rail button */
+  placement?: 'header' | 'sidebar';
 }
 
-export function NotificationButton({ onNavigate }: NotificationButtonProps) {
+export function NotificationButton({ onNavigate, placement = 'header' }: NotificationButtonProps) {
   const { notifications, unreadCount, markAsRead, markAllAsRead, clearNotification, clearAll } = useNotificationsContext();
   const { isDarkMode } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
@@ -55,8 +57,11 @@ export function NotificationButton({ onNavigate }: NotificationButtonProps) {
     } else if (notification.type === 'friend_accepted' && onNavigate) {
       onNavigate('friends');
     } else if (notification.type === 'message' && onNavigate) {
-      // Navigate to DMs
       onNavigate('dm');
+    } else if (notification.type === 'channel_message' && onNavigate) {
+      onNavigate('community');
+    } else if (notification.type === 'summary_ready' && onNavigate) {
+      onNavigate('community');
     }
     
     setIsOpen(false);
@@ -68,8 +73,12 @@ export function NotificationButton({ onNavigate }: NotificationButtonProps) {
         return <UserPlus className="w-4 h-4 text-blue-500" />;
       case 'message':
         return <MessageSquare className="w-4 h-4 text-green-500" />;
+      case 'channel_message':
+        return <Hash className="w-4 h-4 text-indigo-500" />;
       case 'friend_accepted':
         return <Users className="w-4 h-4 text-purple-500" />;
+      case 'summary_ready':
+        return <FileText className="w-4 h-4 text-cyan-500" />;
       case 'system':
       case 'community_removal':
         return <Bell className="w-4 h-4 text-red-500" />;
@@ -96,48 +105,75 @@ export function NotificationButton({ onNavigate }: NotificationButtonProps) {
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   );
 
+  const isSidebar = placement === 'sidebar';
+
   return (
-    <div className="relative">
+    <div className={isSidebar ? 'relative group w-full flex justify-center' : 'relative'}>
       {/* Notification Bell Button */}
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className={`relative p-2 rounded-lg transition-all duration-200 ${
-          isDarkMode
-            ? 'hover:bg-slate-700 text-gray-300 hover:text-white'
-            : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
-        } ${isOpen ? (isDarkMode ? 'bg-slate-700' : 'bg-gray-100') : ''}`}
+        className={isSidebar
+          ? `relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 ${
+              isOpen
+                ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/40 scale-105'
+                : 'bg-[hsl(var(--theme-bg-secondary))] hover:bg-gradient-to-br hover:from-amber-500 hover:to-orange-600 text-[hsl(var(--theme-text-muted))] hover:text-white hover:scale-105 hover:shadow-lg'
+            }`
+          : `relative p-2 rounded-lg transition-all duration-200 ${
+              isDarkMode
+                ? 'hover:bg-slate-700 text-gray-300 hover:text-white'
+                : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
+            } ${isOpen ? (isDarkMode ? 'bg-slate-700' : 'bg-gray-100') : ''}`
+        }
         title="Notifications"
       >
-        <Bell className={`w-4 h-4 transition-transform ${isOpen ? 'scale-110' : ''}`} />
+        <Bell className={isSidebar
+          ? `w-5 h-5 transition-all duration-300 ${isOpen ? 'scale-110' : ''}`
+          : `w-4 h-4 transition-transform ${isOpen ? 'scale-110' : ''}`
+        } />
         
         {/* Unread Badge */}
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-white dark:ring-slate-800 animate-pulse">
+          <span className={`absolute flex items-center justify-center rounded-full bg-red-500 text-white font-bold animate-pulse ${
+            isSidebar
+              ? '-top-1 -right-1 min-w-[20px] h-5 px-1 text-[10px] border-2 border-[hsl(var(--theme-sidebar-bg))]'
+              : '-top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 text-[10px] ring-2 ring-white dark:ring-slate-800'
+          }`}>
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
+      {/* Tooltip – sidebar only, when panel is closed */}
+      {isSidebar && !isOpen && (
+        <div className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-xl whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 z-[9999] bg-[hsl(var(--theme-bg-elevated))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))] shadow-xl backdrop-blur-xl">
+          Notifications{unreadCount > 0 ? ` (${unreadCount})` : ''}
+        </div>
+      )}
+
       {/* Notification Dropdown */}
       {isOpen && (
         <>
-          {/* Backdrop for mobile */}
+          {/* Backdrop */}
           <div
-            className="fixed inset-0 z-[9998] md:hidden bg-black/20"
+            className="fixed inset-0 z-[9998] bg-black/20"
             onClick={() => setIsOpen(false)}
           />
 
           {/* Dropdown Panel */}
           <div
             ref={dropdownRef}
-            className={`absolute right-0 mt-2 w-80 sm:w-96 max-h-[480px] overflow-hidden rounded-xl shadow-2xl z-[9999] border transform origin-top-right transition-all duration-200 ${
+            className={`absolute ${
+              isSidebar
+                ? 'left-[calc(100%+12px)] top-0 w-80 sm:w-96 origin-top-left'
+                : 'right-0 mt-2 w-80 sm:w-96 origin-top-right'
+            } max-h-[480px] overflow-hidden rounded-xl shadow-2xl z-[9999] border transform transition-all duration-200 ${
               isDarkMode
                 ? 'bg-slate-800 border-slate-700'
                 : 'bg-white border-gray-200'
             }`}
             style={{
-              animation: 'slideDown 0.2s ease-out',
+              animation: isSidebar ? 'slideRight 0.2s ease-out' : 'slideDown 0.2s ease-out',
             }}
           >
             {/* Header */}
@@ -196,10 +232,7 @@ export function NotificationButton({ onNavigate }: NotificationButtonProps) {
             </div>
 
             {/* Notifications List */}
-            <div className="overflow-y-auto max-h-[380px]" style={{
-              scrollbarWidth: 'thin',
-              scrollbarColor: isDarkMode ? '#475569 transparent' : '#cbd5e1 transparent'
-            }}>
+            <div className="overflow-y-auto max-h-[380px]">
               {sortedNotifications.length === 0 ? (
                 <div className="px-4 py-12 text-center">
                   <div className={`w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center ${
@@ -239,15 +272,38 @@ export function NotificationButton({ onNavigate }: NotificationButtonProps) {
                       <div className="flex gap-3">
                         {/* Avatar or Icon */}
                         <div className="flex-shrink-0 relative">
-                          {notification.type === 'system' && notification.data?.community_logo ? (
-                            // Show community logo for removal notifications
+                          {/* Channel message — show community logo */}
+                          {notification.type === 'channel_message' && notification.data?.community_logo ? (
+                            <div className="w-10 h-10 rounded-full overflow-hidden ring-2 ring-indigo-500/50">
+                              <img
+                                src={`${API_SERVER}${notification.data.community_logo}`}
+                                alt={notification.data.community_name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const parent = target.parentElement;
+                                  if (parent) {
+                                    parent.style.backgroundColor = notification.data.community_color || '#6366F1';
+                                    parent.innerHTML = `<div class="w-full h-full flex items-center justify-center text-white font-bold text-sm">${notification.data.community_icon || '#'}</div>`;
+                                  }
+                                }}
+                              />
+                            </div>
+                          ) : notification.type === 'channel_message' && notification.data?.community_icon ? (
+                            <div
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ring-2 ring-indigo-500/50"
+                              style={{ backgroundColor: notification.data.community_color || '#6366F1' }}
+                            >
+                              {notification.data.community_icon}
+                            </div>
+                          ) : (notification.type === 'system' || notification.type === 'community_removal') && notification.data?.community_logo ? (
                             <div className="w-10 h-10 rounded-full overflow-hidden ring-2 ring-red-500">
                               <img
                                 src={`${API_SERVER}${notification.data.community_logo}`}
                                 alt={notification.data.community_name}
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
-                                  // Fallback to community icon if image fails
                                   const target = e.target as HTMLImageElement;
                                   target.style.display = 'none';
                                   const parent = target.parentElement;
@@ -258,13 +314,16 @@ export function NotificationButton({ onNavigate }: NotificationButtonProps) {
                                 }}
                               />
                             </div>
-                          ) : notification.type === 'system' && notification.data?.community_icon ? (
-                            // Show community icon for removal without logo
-                            <div 
+                          ) : (notification.type === 'system' || notification.type === 'community_removal') && notification.data?.community_icon ? (
+                            <div
                               className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ring-2 ring-red-500"
                               style={{ backgroundColor: notification.data.community_color || '#8B5CF6' }}
                             >
                               {notification.data.community_icon}
+                            </div>
+                          ) : notification.type === 'summary_ready' ? (
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-cyan-500 ring-2 ring-cyan-400/40">
+                              <FileText className="w-5 h-5 text-white" />
                             </div>
                           ) : notification.from?.avatar_url ? (
                             <img
@@ -370,6 +429,16 @@ export function NotificationButton({ onNavigate }: NotificationButtonProps) {
           to {
             opacity: 1;
             transform: translateY(0) scale(1);
+          }
+        }
+        @keyframes slideRight {
+          from {
+            opacity: 0;
+            transform: translateX(-8px) scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0) scale(1);
           }
         }
       `}</style>

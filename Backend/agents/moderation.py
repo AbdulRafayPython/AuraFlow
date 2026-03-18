@@ -12,6 +12,23 @@ from collections import Counter
 
 from database import get_db_connection
 
+# Module-level lexicon cache — loaded once, shared by all ModerationAgent instances
+_lexicon_cache = None
+_lexicon_path = os.path.join(os.path.dirname(__file__), '..', 'lexicons', 'moderation_keywords.json')
+
+def _load_lexicon():
+    global _lexicon_cache
+    if _lexicon_cache is not None:
+        return _lexicon_cache
+    try:
+        with open(_lexicon_path, 'r', encoding='utf-8') as f:
+            _lexicon_cache = json.load(f)
+        print("[MODERATION] Lexicons loaded and cached at module level")
+    except Exception as e:
+        print(f"[MODERATION] Error loading lexicons: {e}")
+        _lexicon_cache = {}
+    return _lexicon_cache
+
 
 class ModerationAgent:
     """
@@ -21,27 +38,7 @@ class ModerationAgent:
     
     def __init__(self):
         """Initialize the moderation agent"""
-        self.lexicon_path = os.path.join(
-            os.path.dirname(__file__), 
-            '..', 'lexicons', 'moderation_keywords.json'
-        )
-        self.load_lexicons()
-        
-    def load_lexicons(self):
-        """Load moderation lexicons from JSON file"""
-        try:
-            with open(self.lexicon_path, 'r', encoding='utf-8') as f:
-                self.lexicon = json.load(f)
-            print("[MODERATION] Lexicons loaded successfully")
-            # Log version info if available
-            if 'version' in self.lexicon:
-                print(f"[MODERATION] Lexicon version: {self.lexicon['version']}")
-            if 'metadata' in self.lexicon:
-                meta = self.lexicon['metadata']
-                print(f"[MODERATION] Supported languages: {len(meta.get('supported_languages', []))}")
-        except Exception as e:
-            print(f"[MODERATION] Error loading lexicons: {e}")
-            self.lexicon = {}
+        self.lexicon = _load_lexicon()
     
     def _word_match(self, word: str, text: str, lang: str) -> bool:
         """Language-aware word matching"""

@@ -156,6 +156,26 @@ export function useUnreadCounts() {
         console.log(`[UNREAD-HOOK] 📊 New state: ch[${data.channel_id}]=${next.channels[data.channel_id]}, comm[${data.community_id}]=${next.communities[data.community_id]}, total=${next.totalUnread}`);
         return next;
       });
+
+      // Dispatch CustomEvent for browser notification (useBrowserNotifications)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('channelMessageReceived', {
+          detail: {
+            channel_id: data.channel_id,
+            community_id: data.community_id,
+            sender_id: data.sender_id,
+            message_id: data.message_id,
+            sender_name: (data as any).sender_name,
+            sender_avatar: (data as any).sender_avatar,
+            channel_name: (data as any).channel_name,
+            community_name: (data as any).community_name,
+            community_logo: (data as any).community_logo,
+            community_icon: (data as any).community_icon,
+            community_color: (data as any).community_color,
+            content: (data as any).content_preview,
+          }
+        }));
+      }
     },
     // user?.id is stable across renders; re-create only if it changes
     // eslint-disable-next-line react-hooks/exhaustive-deps

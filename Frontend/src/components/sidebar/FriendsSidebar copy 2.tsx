@@ -351,7 +351,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                   </div>
                 </div>
 
-                <div className="p-2 max-h-80 overflow-y-auto scrollbar-thin">
+                <div className="p-2 max-h-80 overflow-y-auto">
                   <button onClick={() => { setShowProfileMenu(false); onNavigate("profile"); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-gray-100 text-gray-900'}`}>
                     <div className={`p-1.5 rounded-md ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'}`}><User className="w-4 h-4" /></div>
                     <span>My Profile</span>

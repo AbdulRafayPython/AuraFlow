@@ -23,19 +23,9 @@ import re
 
 from database import get_db_connection
 
-# Enhanced sentiment analysis engine (internal optimization)
-try:
-    import warnings
-    import logging
-    # Suppress transformer warnings
-    warnings.filterwarnings('ignore', category=UserWarning, module='transformers')
-    logging.getLogger('transformers').setLevel(logging.ERROR)
-    
-    from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
-    import torch
-    TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    TRANSFORMERS_AVAILABLE = False
+# Enhanced sentiment analysis engine — lazy-loaded to avoid slow startup
+# transformers + torch are imported on first use inside _init_xlm_roberta()
+TRANSFORMERS_AVAILABLE: bool | None = None  # resolved lazily
 
 # Google Translate integration - use deep-translator as primary
 try:
@@ -143,45 +133,63 @@ class MoodTrackerAgent:
     ]
     
     def __init__(self):
-        """Initialize the mood tracker with lexicons, translator, and XLM-RoBERTa model"""
+        """Initialize the mood tracker with lexicons and translator.
+        XLM-RoBERTa model is lazy-loaded on first analysis call."""
         self.lexicon_path = os.path.join(
             os.path.dirname(__file__), 
             '..', 'lexicons', 'roman_urdu_sentiments.json'
         )
         self.load_lexicons()
         self._init_translator()
-        self._init_xlm_roberta()
-    
-    def _init_xlm_roberta(self):
-        """Initialize enhanced sentiment analysis engine"""
+        # Defer heavy model init — will run on first _analyze_with_xlm_roberta call
         self.xlm_roberta_pipeline = None
         self.xlm_roberta_available = False
-        
-        if TRANSFORMERS_AVAILABLE:
+        self._xlm_init_done = False
+    
+    def _init_xlm_roberta(self):
+        """Lazy-initialize enhanced sentiment analysis engine.
+        Imports transformers + torch on first call to avoid slow startup."""
+        if self._xlm_init_done:
+            return
+        self._xlm_init_done = True
+
+        global TRANSFORMERS_AVAILABLE
+        if TRANSFORMERS_AVAILABLE is None:
             try:
-                # Load enhanced sentiment model from local folder
-                local_model_path = os.path.join(
-                    os.path.dirname(__file__), 
-                    '..', 'models', 'roman-urdu-sentiment'
-                )
-                
-                if os.path.exists(local_model_path) and os.path.isfile(os.path.join(local_model_path, 'config.json')):
-                    model_id = local_model_path
-                else:
-                    model_id = "Khubaib01/roman-urdu-sentiment-xlm-r"
-                
-                self.xlm_roberta_pipeline = pipeline(
-                    "text-classification",
-                    model=model_id,
-                    truncation=True,
-                    device=-1
-                )
-                self.xlm_roberta_available = True
-                # Silent initialization - no logs
-            except Exception as e:
-                # Silently fall back to lexicon approach
-                self.xlm_roberta_pipeline = None
-                self.xlm_roberta_available = False
+                import warnings as _w, logging as _lg
+                _w.filterwarnings('ignore', category=UserWarning, module='transformers')
+                _lg.getLogger('transformers').setLevel(_lg.ERROR)
+                from transformers import pipeline as _pipeline  # noqa: F811
+                import torch  # noqa: F401
+                TRANSFORMERS_AVAILABLE = True
+            except ImportError:
+                TRANSFORMERS_AVAILABLE = False
+
+        if not TRANSFORMERS_AVAILABLE:
+            return
+
+        try:
+            from transformers import pipeline
+            local_model_path = os.path.join(
+                os.path.dirname(__file__),
+                '..', 'models', 'roman-urdu-sentiment'
+            )
+
+            if os.path.exists(local_model_path) and os.path.isfile(os.path.join(local_model_path, 'config.json')):
+                model_id = local_model_path
+            else:
+                model_id = "Khubaib01/roman-urdu-sentiment-xlm-r"
+
+            self.xlm_roberta_pipeline = pipeline(
+                "text-classification",
+                model=model_id,
+                truncation=True,
+                device=-1
+            )
+            self.xlm_roberta_available = True
+        except Exception:
+            self.xlm_roberta_pipeline = None
+            self.xlm_roberta_available = False
     
     def _analyze_with_xlm_roberta(self, text: str) -> Optional[Dict[str, any]]:
         """
@@ -190,6 +198,9 @@ class MoodTrackerAgent:
         
         Labels: Positive (0), Negative (1), Neutral (2)
         """
+        # Lazy init on first call
+        if not self._xlm_init_done:
+            self._init_xlm_roberta()
         if not self.xlm_roberta_available or not self.xlm_roberta_pipeline:
             return None
         

@@ -1,6 +1,6 @@
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
-import { Sparkles, MessageSquare, Users, Bot, ArrowRight } from "lucide-react";
+import { MessageSquare, Users, Bot, ArrowRight } from "lucide-react";
 
 interface WelcomeProps {
   onContinue: () => void;
@@ -33,8 +33,8 @@ export default function Welcome({ onContinue }: WelcomeProps) {
       <div className={`w-full max-w-lg rounded-2xl shadow-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Header */}
         <div className="p-6 pb-4 text-center border-b border-slate-200 dark:border-slate-700">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl mb-4 shadow-lg shadow-indigo-500/25">
-            <Sparkles className="w-7 h-7 text-white" />
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl mb-4 shadow-lg shadow-indigo-500/25 overflow-hidden">
+            <img src="/AuraflowLogo.png" alt="AuraFlow" className="h-full w-full object-cover" />
           </div>
           <h1 className={`text-2xl font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             Welcome{user?.name ? `, ${user.name}` : ''} 👋

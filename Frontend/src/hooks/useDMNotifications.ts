@@ -41,7 +41,7 @@ export function useDMNotifications() {
 
       const notification = new Notification(`${senderName} sent you a message`, {
         body,
-        icon: data.sender?.avatar_url || '/favicon.ico',
+        icon: data.sender?.avatar_url || '/AuraflowLogo.png',
         tag: `dm-${data.sender_id}`, // Collapse notifications from same sender
         silent: false,
       });

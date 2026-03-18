@@ -95,6 +95,13 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        admin: {
+          bg: "#0f0814",
+          surface: "#191022",
+          border: "#322345",
+          accent: "#1d1129",
+          primary: "#8c2bee",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

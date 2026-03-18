@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { WorkspaceProvider } from './contexts/WorkspaceContext';
@@ -15,19 +15,8 @@ import { MediaViewerProvider } from './contexts/MediaViewerContext';
 import MediaViewer from './components/media/MediaViewer';
 import { useRealtime } from './hooks/useRealtime';
 import AuthPageWrapper from '@/pages/AuthPageWrapper';
-import Welcome from './components/onboarding/Welcome';
-import WorkspaceSetup from './components/onboarding/WorkspaceSetup';
-import ProfileSetup from './components/onboarding/ProfileSetup';
 import MainLayout from './components/layout/MainLayout';
-import Dashboard from '@/pages/Dashboard';
-import AgentDetails from '@/pages/AgentDetails';
-import DiscoverCommunities from '@/pages/DiscoverCommunities';
-import NotFound from '@/pages/NotFound';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import ForgotPassword from './pages/ForgotPassword';
-import OtpVerification from './pages/OtpVerification';
-import ResetPassword from './pages/ResetPassword';
-import VerifyEmail from './pages/VerifyEmail';
 import { Toaster } from './components/ui/toaster';
 import { ModerationToastListener } from './components/ModerationToast';
 import IncomingCallOverlay from './components/call/IncomingCallOverlay';
@@ -37,18 +26,67 @@ import { CallAudioRenderer } from './components/call/CallScreen';
 import VoiceDock from './components/voice/VoiceDock';
 import VoiceRoomModal from './components/voice/VoiceRoomModal';
 import FaviconBadge from './components/FaviconBadge';
-// Admin Dashboard Pages
-import {
-  AdminLayout,
-  AdminOverview,
-  FlaggedContent,
-  BlockedUsers,
-  CommunityHealth,
-  EngagementAnalytics,
-  MoodTrends,
-  UserManagement,
-  Reports
-} from './pages/admin';
+import { ErrorBoundary } from 'react-error-boundary';
+
+// Lazy-loaded pages
+const Welcome = lazy(() => import('./components/onboarding/Welcome'));
+const WorkspaceSetup = lazy(() => import('./components/onboarding/WorkspaceSetup'));
+const ProfileSetup = lazy(() => import('./components/onboarding/ProfileSetup'));
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const AgentDetails = lazy(() => import('@/pages/AgentDetails'));
+const DiscoverCommunities = lazy(() => import('@/pages/DiscoverCommunities'));
+const NotFound = lazy(() => import('@/pages/NotFound'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const OtpVerification = lazy(() => import('./pages/OtpVerification'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
+
+// Admin Dashboard Pages (lazy) - Community Admin
+const AdminLayout = lazy(() => import('./pages/admin').then(m => ({ default: m.AdminLayout })));
+const AdminOverview = lazy(() => import('./pages/admin').then(m => ({ default: m.AdminOverview })));
+const FlaggedContent = lazy(() => import('./pages/admin').then(m => ({ default: m.FlaggedContent })));
+const BlockedUsers = lazy(() => import('./pages/admin').then(m => ({ default: m.BlockedUsers })));
+const CommunityHealth = lazy(() => import('./pages/admin').then(m => ({ default: m.CommunityHealth })));
+const EngagementAnalytics = lazy(() => import('./pages/admin').then(m => ({ default: m.EngagementAnalytics })));
+const MoodTrends = lazy(() => import('./pages/admin').then(m => ({ default: m.MoodTrends })));
+const UserManagement = lazy(() => import('./pages/admin').then(m => ({ default: m.UserManagement })));
+const Reports = lazy(() => import('./pages/admin').then(m => ({ default: m.Reports })));
+const CommunityManagement = lazy(() => import('./pages/admin').then(m => ({ default: m.CommunityManagement })));
+const AIAgentsManagement = lazy(() => import('./pages/admin').then(m => ({ default: m.AIAgentsManagement })));
+
+// System Admin Dashboard Pages (lazy) - Platform-wide Admin
+const SystemAdminLogin = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SystemAdminLogin })));
+const SystemAdminLayout = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SystemAdminLayout })));
+const SystemAdminOverview = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SystemAdminOverview })));
+const SysFlaggedContent = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysFlaggedContent })));
+const SysBlockedUsers = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysBlockedUsers })));
+const SysUserManagement = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysUserManagement })));
+const SysCommunityHealth = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysCommunityHealth })));
+const SysMoodTrends = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysMoodTrends })));
+const SysEngagementAnalytics = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysEngagementAnalytics })));
+const SysReports = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysReports })));
+const SysCommunityManagement = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysCommunityManagement })));
+const SysAIAgentsManagement = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysAIAgentsManagement })));
+
+function ErrorFallback({ error, resetErrorBoundary }: { error: Error; resetErrorBoundary: () => void }) {
+  return (
+    <div className="flex items-center justify-center w-full h-screen bg-gradient-to-br from-slate-900 to-slate-800">
+      <div className="flex flex-col items-center gap-4 text-center p-6">
+        <h2 className="text-white text-xl font-semibold">Something went wrong</h2>
+        <p className="text-gray-400 text-sm max-w-md">{error.message}</p>
+        <button onClick={resetErrorBoundary} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+          Try again
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const PageSpinner = () => (
+  <div className="flex items-center justify-center w-full h-screen bg-gradient-to-br from-slate-900 to-slate-800">
+    <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+  </div>
+);
 
 function AppRouter() {
   const { user, isAuthenticated, completeOnboarding } = useAuth();
@@ -153,6 +191,7 @@ function AppRouter() {
 
 export default function App() {
   return (
+    <ErrorBoundary FallbackComponent={ErrorFallback}>
     <ThemeProvider>
       <AuthProvider>
         <RealtimeProvider>
@@ -166,13 +205,32 @@ export default function App() {
                       <AgentModalsProvider>
                       <MediaViewerProvider>
                         <BrowserRouter>
+                          <Suspense fallback={<PageSpinner />}>
                           <ModerationToastListener />
                           <Routes>
                             <Route path="/forgot-password" element={<ForgotPassword />} />
                             <Route path="/otp-verification" element={<OtpVerification />} />
                             <Route path="/reset-password" element={<ResetPassword />} />
                             <Route path="/verify-email" element={<VerifyEmail />} />
-                            {/* Admin Dashboard Routes (wrapped with CommunityDashboardProvider) */}
+                            {/* System Admin Routes (separate flow from community admin) */}
+                            <Route path="/system-admin/login" element={<SystemAdminLogin />} />
+                            <Route path="/system-admin" element={<SystemAdminLayout />}>
+                              <Route index element={<SystemAdminOverview />} />
+                              <Route path="moderation">
+                                <Route path="flagged" element={<SysFlaggedContent />} />
+                                <Route path="blocked" element={<SysBlockedUsers />} />
+                              </Route>
+                              <Route path="users" element={<SysUserManagement />} />
+                              <Route path="communities" element={<SysCommunityManagement />} />
+                              <Route path="agents" element={<SysAIAgentsManagement />} />
+                              <Route path="analytics">
+                                <Route path="health" element={<SysCommunityHealth />} />
+                                <Route path="engagement" element={<SysEngagementAnalytics />} />
+                                <Route path="mood" element={<SysMoodTrends />} />
+                              </Route>
+                              <Route path="reports" element={<SysReports />} />
+                            </Route>
+                            {/* Community Admin Dashboard Routes (wrapped with CommunityDashboardProvider) */}
                             <Route path="/admin" element={
                               <CommunityDashboardProvider>
                                 <AdminLayout />
@@ -190,9 +248,12 @@ export default function App() {
                                 <Route path="mood" element={<MoodTrends />} />
                               </Route>
                               <Route path="reports" element={<Reports />} />
+                              <Route path="communities" element={<CommunityManagement />} />
+                              <Route path="agents" element={<AIAgentsManagement />} />
                             </Route>
                             <Route path="/*" element={<AppRouter />} />
                           </Routes>
+                          </Suspense>
                           <MediaViewer />
                           <FaviconBadge />
                           <VoiceDock />
@@ -215,5 +276,6 @@ export default function App() {
         </RealtimeProvider>
       </AuthProvider>
     </ThemeProvider>
+    </ErrorBoundary>
   );
 }

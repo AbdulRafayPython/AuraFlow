@@ -36,6 +36,10 @@ export interface CommunityOverviewStats {
   channels: {
     total: number;
   };
+  communities?: {
+    total: number;
+    channels: number;
+  };
   moderation: {
     flagged_today: number;
     blocked_users: number;
@@ -238,6 +242,33 @@ class AdminService {
       return response.alerts || [];
     } catch (error: any) {
       throw new Error(error.data?.error || 'Failed to fetch recent alerts');
+    }
+  }
+
+  // =====================
+  // GLOBAL OVERVIEW (System Admin)
+  // =====================
+
+  async getGlobalOverviewStats(): Promise<CommunityOverviewStats> {
+    try {
+      const response: any = await api.get('/api/admin/overview/stats');
+      const s = response.stats;
+      // Normalize shape: backend returns communities.channels, frontend expects channels.total
+      return {
+        ...s,
+        channels: { total: s.communities?.channels || 0 },
+      };
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch global overview stats');
+    }
+  }
+
+  async getGlobalRecentAlerts(limit: number = 10): Promise<ModerationAlert[]> {
+    try {
+      const response: any = await api.get(`/api/admin/overview/recent-alerts?limit=${limit}`);
+      return response.alerts || [];
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch global recent alerts');
     }
   }
 
@@ -530,6 +561,302 @@ class AdminService {
       await api.put(`/api/admin/community/${communityId}/settings`, settings);
     } catch (error: any) {
       throw new Error(error.data?.error || 'Failed to update community settings');
+    }
+  }
+
+  // =====================
+  // GLOBAL / SYSTEM ADMIN METHODS
+  // These call platform-wide endpoints (no community scoping)
+  // =====================
+
+  async getGlobalFlaggedMessages(params: {
+    status?: string;
+    severity?: string;
+    flag_type?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{ messages: FlaggedMessage[]; pagination: PaginationInfo }> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params.status) queryParams.append('status', params.status);
+      if (params.severity) queryParams.append('severity', params.severity);
+      if (params.flag_type) queryParams.append('flag_type', params.flag_type);
+      if (params.limit) queryParams.append('limit', params.limit.toString());
+      if (params.offset) queryParams.append('offset', params.offset.toString());
+      const response: any = await api.get(`/api/admin/moderation/flagged?${queryParams}`);
+      return {
+        messages: response.flagged_messages || [],
+        pagination: response.pagination || { total: 0, limit: 20, offset: 0, has_more: false }
+      };
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch flagged messages');
+    }
+  }
+
+  async resolveGlobalModerationFlag(logId: number, action: string, note?: string): Promise<void> {
+    try {
+      await api.post(`/api/admin/moderation/resolve/${logId}`, { action, note });
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to resolve moderation');
+    }
+  }
+
+  async getGlobalBlockedUsers(params: {
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{ users: BlockedUser[]; pagination: PaginationInfo }> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params.limit) queryParams.append('limit', params.limit.toString());
+      if (params.offset) queryParams.append('offset', params.offset.toString());
+      const response: any = await api.get(`/api/admin/moderation/blocked-users?${queryParams}`);
+      return {
+        users: response.blocked_users || [],
+        pagination: response.pagination || { total: 0, limit: 20, offset: 0, has_more: false }
+      };
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch blocked users');
+    }
+  }
+
+  async unblockGlobalUser(blockId: number): Promise<void> {
+    try {
+      await api.del(`/api/admin/moderation/unblock/${blockId}`);
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to unblock user');
+    }
+  }
+
+  async getGlobalUsers(params: {
+    status?: string;
+    account_status?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{ members: CommunityMember[]; pagination: PaginationInfo }> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params.status) queryParams.append('status', params.status);
+      if (params.account_status) queryParams.append('account_status', params.account_status);
+      if (params.search) queryParams.append('search', params.search);
+      if (params.limit) queryParams.append('limit', params.limit.toString());
+      if (params.offset) queryParams.append('offset', params.offset.toString());
+      const response: any = await api.get(`/api/admin/users?${queryParams}`);
+      return {
+        members: (response.users || []).map((u: any) => ({
+          ...u,
+          role: u.system_role || 'user',
+          joined_at: u.created_at,
+        })),
+        pagination: response.pagination || { total: 0, limit: 20, offset: 0, has_more: false }
+      };
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch users');
+    }
+  }
+
+  async getGlobalUserDetails(userId: number): Promise<any> {
+    try {
+      const response: any = await api.get(`/api/admin/users/${userId}`);
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch user details');
+    }
+  }
+
+  async getGlobalCommunityHealth(days: number = 7): Promise<any> {
+    try {
+      const response: any = await api.get(`/api/admin/analytics/community-health?days=${days}`);
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch community health');
+    }
+  }
+
+  async getGlobalMoodTrends(days: number = 7): Promise<any> {
+    try {
+      const response: any = await api.get(`/api/admin/analytics/mood-trends?days=${days}`);
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch mood trends');
+    }
+  }
+
+  async getGlobalEngagementAnalytics(days: number = 7): Promise<any> {
+    try {
+      const response: any = await api.get(`/api/admin/analytics/engagement?days=${days}`);
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch engagement analytics');
+    }
+  }
+
+  async getGlobalDailyReport(date?: string): Promise<any> {
+    try {
+      let url = '/api/admin/reports/daily';
+      if (date) url += `?date=${date}`;
+      const response: any = await api.get(url);
+      return response.report;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch daily report');
+    }
+  }
+
+  async getGlobalWeeklyReport(): Promise<any> {
+    try {
+      const response: any = await api.get('/api/admin/reports/weekly');
+      return response.report;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch weekly report');
+    }
+  }
+
+  // =====================
+  // SYSTEM USER MANAGEMENT
+  // =====================
+
+  async updateUserSystemRole(userId: number, role: 'user' | 'system_admin'): Promise<void> {
+    try {
+      await api.put(`/api/admin/system/users/${userId}/role`, { role });
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to update user role');
+    }
+  }
+
+  async warnUser(userId: number, reason: string): Promise<void> {
+    try {
+      await api.post(`/api/admin/system/users/${userId}/warn`, { reason });
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to send warning');
+    }
+  }
+
+  async suspendUser(userId: number, reason: string, durationDays: number = 7): Promise<void> {
+    try {
+      await api.post(`/api/admin/system/users/${userId}/suspend`, { reason, duration_days: durationDays });
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to suspend user');
+    }
+  }
+
+  async banUser(userId: number, reason: string): Promise<void> {
+    try {
+      await api.post(`/api/admin/system/users/${userId}/ban`, { reason });
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to ban user');
+    }
+  }
+
+  async unsuspendUser(userId: number): Promise<void> {
+    try {
+      await api.post(`/api/admin/system/users/${userId}/unsuspend`, {});
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to restore user');
+    }
+  }
+
+  async getUserAdminActions(userId: number): Promise<any[]> {
+    try {
+      const response: any = await api.get(`/api/admin/system/users/${userId}/actions`);
+      return response.actions || [];
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch user actions');
+    }
+  }
+
+  // =====================
+  // SYSTEM COMMUNITY MANAGEMENT
+  // =====================
+
+  async getSystemCommunities(params: {
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{ communities: any[]; pagination: PaginationInfo }> {
+    try {
+      const qp = new URLSearchParams();
+      if (params.search) qp.append('search', params.search);
+      if (params.limit) qp.append('limit', params.limit.toString());
+      if (params.offset) qp.append('offset', params.offset.toString());
+      const response: any = await api.get(`/api/admin/system/communities?${qp}`);
+      return {
+        communities: response.communities || [],
+        pagination: response.pagination || { total: 0, limit: 20, offset: 0, has_more: false },
+      };
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch communities');
+    }
+  }
+
+  async getSystemCommunityDetails(communityId: number): Promise<any> {
+    try {
+      const response: any = await api.get(`/api/admin/system/communities/${communityId}`);
+      return response.community;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch community details');
+    }
+  }
+
+  async getSystemCommunityActivity(communityId: number): Promise<{ heatmap: number[][]; trends: any }> {
+    try {
+      const response: any = await api.get(`/api/admin/system/communities/${communityId}/activity`);
+      return { heatmap: response.heatmap, trends: response.trends };
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch activity data');
+    }
+  }
+
+  async updateSystemCommunity(communityId: number, data: { name: string; description: string }): Promise<void> {
+    try {
+      await api.put(`/api/admin/system/communities/${communityId}`, data);
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to update community');
+    }
+  }
+
+  async deleteSystemCommunity(communityId: number): Promise<void> {
+    try {
+      await api.del(`/api/admin/system/communities/${communityId}`);
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to delete community');
+    }
+  }
+
+  async getSystemCommunityMembers(communityId: number, params: {
+    search?: string;
+    role?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{ members: any[]; pagination: PaginationInfo }> {
+    try {
+      const qp = new URLSearchParams();
+      if (params.search) qp.append('search', params.search);
+      if (params.role) qp.append('role', params.role);
+      if (params.limit) qp.append('limit', params.limit.toString());
+      if (params.offset) qp.append('offset', params.offset.toString());
+      const response: any = await api.get(`/api/admin/system/communities/${communityId}/members?${qp}`);
+      return {
+        members: response.members || [],
+        pagination: response.pagination || { total: 0, limit: 20, offset: 0, has_more: false },
+      };
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch community members');
+    }
+  }
+
+  async updateCommunityMemberRole(communityId: number, userId: number, role: 'admin' | 'member'): Promise<void> {
+    try {
+      await api.put(`/api/admin/system/communities/${communityId}/members/${userId}/role`, { role });
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to update member role');
+    }
+  }
+
+  async removeCommunityMember(communityId: number, userId: number): Promise<void> {
+    try {
+      await api.del(`/api/admin/system/communities/${communityId}/members/${userId}`);
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to remove member');
     }
   }
 }

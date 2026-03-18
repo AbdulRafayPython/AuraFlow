@@ -99,21 +99,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
     }
   }, [userId]);
 
-  // Play notification sound for incoming DM when this view is open but tab is blurred
-  useEffect(() => {
-    const unsub = socketService.onDirectMessage((data: any) => {
-      if (data.sender_id === userId && document.hidden) {
-        try {
-          const audio = new Audio('/notification.mp3');
-          audio.volume = 0.3;
-          audio.play().catch(() => {});
-        } catch {
-          // Notification sound file may not exist — silent fallback
-        }
-      }
-    });
-    return unsub;
-  }, [userId]);
+  // Sound is handled centrally by NotificationsContext — no duplicate here
 
   // Subscribe to DM typing events from the other user
   useEffect(() => {
@@ -557,7 +543,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
       <main 
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 scrollbar scrollbar-thumb-[hsl(var(--theme-bg-tertiary))] scrollbar-track-transparent relative"
+        className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 relative"
       >
         {enrichedMessages.length === 0 ? (
           <div className="h-full flex items-center justify-center">

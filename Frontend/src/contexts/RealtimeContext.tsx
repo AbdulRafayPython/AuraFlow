@@ -1,5 +1,5 @@
 // contexts/RealtimeContext.tsx - FIXED with proper dependencies
-import React, { createContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { socketService } from '@/services/socketService';
 import { messageService } from '@/services/messageService';
 import { channelService } from '@/services/channelService';
@@ -723,7 +723,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     setMessages(prev => prev.map(m => m.id === messageId ? { ...m, ...fields } : m));
   }, []);
 
-  const value: RealtimeContextType = {
+  const value: RealtimeContextType = useMemo(() => ({
     isConnected,
     communities,
     currentCommunity,
@@ -748,7 +748,14 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     currentUser,               
     isLoadingCurrentUser,
     reloadCommunities,
-  };
+  }), [
+    isConnected, communities, currentCommunity, channels, currentChannel,
+    selectCommunity, selectChannel, addChannel, friends, currentFriend,
+    selectFriend, messages, sendMessage, updateMessageField, loadMoreMessages,
+    typingUsers, sendTyping, userStatuses, isLoadingMessages,
+    isLoadingCommunities, isLoadingFriends, currentUser, isLoadingCurrentUser,
+    reloadCommunities,
+  ]);
 
   return (
     <RealtimeContext.Provider value={value}>

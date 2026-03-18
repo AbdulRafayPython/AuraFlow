@@ -127,8 +127,10 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
   // ─── Personal Schedule State ─────────────────────────
   const [schedules, setSchedules] = useState<any[]>([]);
   const [channelOptions, setChannelOptions] = useState<any[]>([]);
+  const [communityOptions, setCommunityOptions] = useState<any[]>([]);
   const [schedulesLoading, setSchedulesLoading] = useState(false);
   const [showAddSchedule, setShowAddSchedule] = useState(false);
+  const [selectedCommunity, setSelectedCommunity] = useState<number | null>(communityId || null);
   const [newScheduleChannel, setNewScheduleChannel] = useState<number | null>(null);
   const [newScheduleTime, setNewScheduleTime] = useState('21:00');
   const [savingSchedule, setSavingSchedule] = useState(false);
@@ -181,18 +183,25 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
     loadSettings();
   }, [open, agentType, communityId]);
 
-  // Load personal schedules + channels for summarizer
+  // Load personal schedules + communities + channels for summarizer
   useEffect(() => {
-    if (!open || agentType !== 'summarizer' || !communityId) return;
+    if (!open || agentType !== 'summarizer') return;
     const loadSchedules = async () => {
       setSchedulesLoading(true);
       try {
-        const [scheds, channels] = await Promise.all([
+        const [scheds, communities] = await Promise.all([
           aiAgentService.getSummarySchedules(),
-          channelService.getCommunityChannels(communityId),
+          channelService.getCommunities(),
         ]);
         setSchedules(scheds);
-        setChannelOptions(channels);
+        setCommunityOptions(communities);
+        // If communityId provided, pre-load its channels
+        const cid = communityId || null;
+        if (cid) {
+          setSelectedCommunity(cid);
+          const channels = await channelService.getCommunityChannels(cid);
+          setChannelOptions(channels);
+        }
       } catch {
         // Silently fail — schedules section will show empty state
       } finally {
@@ -201,6 +210,16 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
     };
     loadSchedules();
   }, [open, agentType, communityId]);
+
+  // Load channels when community changes
+  useEffect(() => {
+    if (!selectedCommunity) { setChannelOptions([]); return; }
+    let cancelled = false;
+    channelService.getCommunityChannels(selectedCommunity).then(ch => {
+      if (!cancelled) setChannelOptions(ch);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedCommunity]);
 
   const handleChange = useCallback((key: string, value: any) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -232,28 +251,30 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
   }, [communityId, agentType, settings, onSuccess, onClose, showSuccess, showError]);
 
   const handleTriggerNow = useCallback(async () => {
-    if (!communityId) {
-      showError({ title: 'Auto-summarize is only available for community agents' });
+    const cid = communityId || selectedCommunity;
+    if (!cid) {
+      showError({ title: 'Please select a community first' });
       return;
     }
     setIsTriggering(true);
     try {
-      const result = await aiAgentService.triggerAutoSummarize(communityId);
+      const result = await aiAgentService.triggerAutoSummarize(cid);
       showSuccess({ title: `Auto-summarize complete! ${result.channels_processed} channels processed.` });
     } catch (error: any) {
       showError({ title: error.message || 'Failed to trigger auto-summarize' });
     } finally {
       setIsTriggering(false);
     }
-  }, [communityId, showSuccess, showError]);
+  }, [communityId, selectedCommunity, showSuccess, showError]);
 
   const handleAddSchedule = useCallback(async () => {
-    if (!newScheduleChannel || !communityId) return;
+    const cid = selectedCommunity || communityId;
+    if (!newScheduleChannel || !cid) return;
     setSavingSchedule(true);
     try {
       await aiAgentService.createSummarySchedule({
         channel_id: newScheduleChannel,
-        community_id: communityId,
+        community_id: cid,
         schedule_time: newScheduleTime,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
@@ -268,7 +289,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
     } finally {
       setSavingSchedule(false);
     }
-  }, [newScheduleChannel, newScheduleTime, communityId, showSuccess, showError]);
+  }, [newScheduleChannel, newScheduleTime, selectedCommunity, communityId, showSuccess, showError]);
 
   const handleToggleSchedule = useCallback(async (scheduleId: number, isActive: boolean) => {
     try {
@@ -327,7 +348,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}>
+        <div className="flex-1 overflow-y-auto px-6 py-4">
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="w-5 h-5 animate-spin text-[hsl(var(--theme-accent-primary))]" />
@@ -430,7 +451,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
               ))}
 
               {/* ─── Personal Summary Schedules (summarizer only) ─── */}
-              {agentType === 'summarizer' && communityId && (
+              {agentType === 'summarizer' && (
                 <div>
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--theme-text-muted))] mb-1.5">
                     📅 Personal Summary Schedules
@@ -461,6 +482,11 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
                               <span className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
                                 #{sched.channel_name || 'Unknown'}
                               </span>
+                              {sched.community_name && (
+                                <span className="ml-1.5 text-[11px] text-[hsl(var(--theme-text-muted))]">
+                                  in {sched.community_name}
+                                </span>
+                              )}
                               <span className="ml-2 text-[11px] text-[hsl(var(--theme-text-muted))]">
                                 at {sched.schedule_time?.slice(0, 5)} ({sched.timezone || 'UTC'})
                               </span>
@@ -488,20 +514,42 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
 
                         {showAddSchedule ? (
                           <div className="p-4 bg-[hsl(var(--theme-bg-secondary)/0.3)] space-y-3">
+                            {/* Community selector */}
+                            <div>
+                              <label className="text-[11px] font-medium text-[hsl(var(--theme-text-muted))] mb-1 block">Community</label>
+                              <select
+                                value={selectedCommunity || ''}
+                                onChange={(e) => { setSelectedCommunity(parseInt(e.target.value) || null); setNewScheduleChannel(null); }}
+                                disabled={!!communityId}
+                                className={`w-full px-3 py-2 text-xs ${isBasicTheme ? 'rounded-md' : 'rounded-lg'}
+                                  bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-primary))]
+                                  border border-[hsl(var(--theme-border-default))]
+                                  focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary)/0.5)]
+                                  disabled:opacity-60`}
+                              >
+                                <option value="">Select a community…</option>
+                                {communityOptions.map((c: any) => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            {/* Channel selector */}
                             <div>
                               <label className="text-[11px] font-medium text-[hsl(var(--theme-text-muted))] mb-1 block">Channel</label>
                               <select
                                 value={newScheduleChannel || ''}
                                 onChange={(e) => setNewScheduleChannel(parseInt(e.target.value) || null)}
+                                disabled={!selectedCommunity}
                                 className={`w-full px-3 py-2 text-xs ${isBasicTheme ? 'rounded-md' : 'rounded-lg'}
                                   bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-primary))]
                                   border border-[hsl(var(--theme-border-default))]
-                                  focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary)/0.5)]`}
+                                  focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary)/0.5)]
+                                  disabled:opacity-60`}
                               >
-                                <option value="">Select a channel…</option>
+                                <option value="">{selectedCommunity ? 'Select a channel…' : 'Select a community first'}</option>
                                 {channelOptions
                                   .filter(ch => !schedules.some(s => s.channel_id === ch.id))
-                                  .map((ch) => (
+                                  .map((ch: any) => (
                                     <option key={ch.id} value={ch.id}>#{ch.name}</option>
                                   ))}
                               </select>
@@ -558,7 +606,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
         {/* Footer */}
         <div className="flex-shrink-0 px-6 py-4 border-t border-[hsl(var(--theme-border-default)/0.3)] flex flex-col gap-3">
           {/* Summarizer Run Now button */}
-          {agentType === 'summarizer' && communityId && (
+          {agentType === 'summarizer' && (communityId || selectedCommunity) && (
             <button
               onClick={handleTriggerNow}
               disabled={isTriggering}

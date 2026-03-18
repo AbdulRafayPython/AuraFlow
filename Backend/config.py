@@ -42,6 +42,12 @@ JWT_REFRESH_TOKEN_EXPIRES_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRES_DAYS",
 RATE_LIMIT_DEFAULT = os.getenv("RATE_LIMIT_DEFAULT", "100 per minute")
 RATE_LIMIT_AUTH = os.getenv("RATE_LIMIT_AUTH", "5 per minute")
 
+# Web Push (VAPID) — generate once with: python -c "from pywebpush import webpush; from py_vapid import Vapid; v=Vapid(); v.generate_keys(); print(v.private_pem()); print(v.public_key)"
+# Or set env vars VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY, VAPID_CLAIMS_EMAIL
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
+VAPID_CLAIMS_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", SMTP_EMAIL or "mailto:admin@auroflow.app")
+
 # Log configuration status only in development
 if not IS_PRODUCTION:
     print(f"[CONFIG] Environment: {FLASK_ENV}")

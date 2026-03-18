@@ -1,4 +1,4 @@
-"""
+﻿"""
 AI Agents API Routes
 ====================
 RESTful endpoints for AI agent functionalities
@@ -9,45 +9,57 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
 import json
 
-# Import agents
-from agents.summarizer import SummarizerAgent
-from agents.mood_tracker import MoodTrackerAgent
-from agents.moderation import ModerationAgent
-from agents.knowledge_builder import KnowledgeBuilderAgent
-from agents.knowledge_builder_v2 import KnowledgeBuilderAgent as KnowledgeBuilderV2
-from agents.focus import FocusAgent
-from agents.engagement import EngagementAgent
-from agents.wellness import WellnessAgent
-
 # Create blueprint
 agents_bp = Blueprint('agents', __name__, url_prefix='/api/agents')
 
-# Initialize agents
-summarizer = SummarizerAgent()
-mood_tracker = MoodTrackerAgent()
-moderation_agent = ModerationAgent()
-knowledge_builder = KnowledgeBuilderAgent()
-knowledge_builder_v2 = KnowledgeBuilderV2()
-focus_agent = FocusAgent()
-engagement_agent = EngagementAgent()
-wellness_agent = WellnessAgent()
+# Lazy agent singletons â€” created on first access, not at import time
+_agents: dict = {}
 
-# ── Agent-type alias map ──
+def _get_agent(name: str):
+    """Return a cached agent instance, creating it on first call."""
+    if name not in _agents:
+        if name == 'summarizer':
+            from agents.summarizer import SummarizerAgent
+            _agents[name] = SummarizerAgent()
+        elif name == 'mood_tracker':
+            from agents.mood_tracker import MoodTrackerAgent
+            _agents[name] = MoodTrackerAgent()
+        elif name == 'moderation':
+            from agents.moderation import ModerationAgent
+            _agents[name] = ModerationAgent()
+        elif name == 'knowledge_builder':
+            from agents.knowledge_builder import KnowledgeBuilderAgent
+            _agents[name] = KnowledgeBuilderAgent()
+        elif name == 'knowledge_builder_v2':
+            from agents.knowledge_builder_v2 import KnowledgeBuilderAgent as KnowledgeBuilderV2
+            _agents[name] = KnowledgeBuilderV2()
+        elif name == 'focus':
+            from agents.focus import FocusAgent
+            _agents[name] = FocusAgent()
+        elif name == 'engagement':
+            from agents.engagement import EngagementAgent
+            _agents[name] = EngagementAgent()
+        elif name == 'wellness':
+            from agents.wellness import WellnessAgent
+            _agents[name] = WellnessAgent()
+    return _agents[name]
+
+# â”€â”€ Agent-type alias map â”€â”€
 # Frontend may use e.g. 'mood_tracker' but agent_registry stores 'mood'.
 AGENT_TYPE_ALIASES: dict[str, str] = {
     'mood_tracker': 'mood',
     'knowledge_builder': 'knowledge',
 }
 
-# Reverse: DB name → frontend-friendly name (for catalog responses)
+# Reverse: DB name â†’ frontend-friendly name (for catalog responses)
 AGENT_TYPE_DISPLAY: dict[str, str] = {v: k for k, v in AGENT_TYPE_ALIASES.items()}
 
 def _normalize_agent_type(agent_type: str) -> str:
-    """Resolve frontend alias → DB agent_type."""
+    """Resolve frontend alias â†’ DB agent_type."""
     return AGENT_TYPE_ALIASES.get(agent_type, agent_type)
 
 def _display_agent_type(agent_type: str) -> str:
-    """Resolve DB agent_type → frontend display name."""
+    """Resolve DB agent_type â†’ frontend display name."""
     return AGENT_TYPE_DISPLAY.get(agent_type, agent_type)
 
 
@@ -95,7 +107,7 @@ def summarize_channel(channel_id):
         message_count = min(data.get('message_count', 100), 200)  # Max 200 messages
         
         # Generate summary
-        result = summarizer.summarize_channel(
+        result = _get_agent("summarizer").summarize_channel(
             channel_id=channel_id,
             message_count=message_count,
             user_id=user_id
@@ -162,7 +174,7 @@ def get_channel_summaries(channel_id):
         limit = min(request.args.get('limit', 5, type=int), 20)
         
         # Fetch summaries
-        summaries = summarizer.get_recent_summaries(channel_id, limit)
+        summaries = _get_agent("summarizer").get_recent_summaries(channel_id, limit)
         print(f"[AGENTS API] Found {len(summaries)} summaries for channel {channel_id}")
         
         return jsonify({
@@ -292,7 +304,7 @@ def track_mood(user_id):
         time_period = data.get('time_period_hours', 24)
         
         # Track mood
-        result = mood_tracker.track_user_mood(user_id, time_period)
+        result = _get_agent("mood_tracker").track_user_mood(user_id, time_period)
         
         if result.get('success'):
             return jsonify(result), 200
@@ -337,7 +349,7 @@ def get_mood_history(user_id):
         limit = request.args.get('limit', 10, type=int)
         
         # Get mood history
-        history = mood_tracker.get_mood_history(user_id, limit)
+        history = _get_agent("mood_tracker").get_mood_history(user_id, limit)
         
         return jsonify({
             'success': True,
@@ -371,7 +383,7 @@ def analyze_message():
         text = data['text']
         
         # Analyze the message
-        result = mood_tracker.analyze_message(text)
+        result = _get_agent("mood_tracker").analyze_message(text)
         
         return jsonify({
             'success': True,
@@ -413,7 +425,7 @@ def get_mood_trends(user_id):
         conn.close()
         
         days = request.args.get('days', 7, type=int)
-        result = mood_tracker.get_mood_trends(user_id, days)
+        result = _get_agent("mood_tracker").get_mood_trends(user_id, days)
         
         return jsonify(result), 200 if result.get('success') else 400
         
@@ -453,7 +465,7 @@ def reanalyze_mood_history(user_id):
         conn.close()
         
         days = request.args.get('days', 30, type=int)
-        result = mood_tracker.reanalyze_user_history(user_id, days)
+        result = _get_agent("mood_tracker").reanalyze_user_history(user_id, days)
         
         return jsonify(result), 200 if result.get('success') else 400
         
@@ -486,7 +498,7 @@ def get_community_mood():
         if not community_id and not channel_id:
             return jsonify({'error': 'community_id or channel_id required'}), 400
         
-        result = mood_tracker.get_community_mood(
+        result = _get_agent("mood_tracker").get_community_mood(
             community_id=community_id,
             channel_id=channel_id,
             hours=hours
@@ -524,7 +536,7 @@ def get_mood_recommendations(user_id):
         
         conn.close()
         
-        result = mood_tracker.get_wellness_recommendations(user_id)
+        result = _get_agent("mood_tracker").get_wellness_recommendations(user_id)
         
         return jsonify(result), 200
         
@@ -558,7 +570,7 @@ def get_mood_insights(user_id):
         
         conn.close()
         
-        result = mood_tracker.get_mood_insights(user_id)
+        result = _get_agent("mood_tracker").get_mood_insights(user_id)
         
         return jsonify(result), 200 if result.get('success') else 400
         
@@ -596,7 +608,7 @@ def check_moderation():
         conn.close()
         
         # Run moderation
-        result = moderation_agent.moderate_message(text, user_id, channel_id)
+        result = _get_agent("moderation").moderate_message(text, user_id, channel_id)
         
         return jsonify({
             'success': True,
@@ -865,7 +877,7 @@ def analyze_engagement():
         conn.close()
         
         # Analyze engagement
-        result = engagement_agent.analyze_engagement(channel_id, time_period_hours)
+        result = _get_agent("engagement").analyze_engagement(channel_id, time_period_hours)
         
         if not result.get('success'):
             return jsonify(result), 400
@@ -936,7 +948,7 @@ def get_engagement_metrics(channel_id):
         conn.close()
         
         # Get real engagement metrics
-        result = engagement_agent.analyze_engagement(channel_id, hours)
+        result = _get_agent("engagement").analyze_engagement(channel_id, hours)
         
         if not result.get('success'):
             return jsonify({
@@ -996,7 +1008,7 @@ def get_engagement_trends(channel_id):
         conn.close()
         
         # Get engagement history
-        history = engagement_agent.get_engagement_history(channel_id, limit)
+        history = _get_agent("engagement").get_engagement_history(channel_id, limit)
         
         return jsonify({
             'success': True,
@@ -1018,7 +1030,7 @@ def get_icebreaker():
     """Get a random ice-breaker activity"""
     try:
         activity_type = request.args.get('type', 'random')
-        result = engagement_agent.get_icebreaker_activity(activity_type)
+        result = _get_agent("engagement").get_icebreaker_activity(activity_type)
         return jsonify(result), 200 if result.get('success') else 400
     except Exception as e:
         print(f"[AGENTS API] Error in get_icebreaker: {e}")
@@ -1030,7 +1042,7 @@ def get_icebreaker():
 def get_icebreaker_categories():
     """Get all ice-breaker categories"""
     try:
-        result = engagement_agent.get_all_icebreaker_categories()
+        result = _get_agent("engagement").get_all_icebreaker_categories()
         return jsonify(result), 200 if result.get('success') else 400
     except Exception as e:
         print(f"[AGENTS API] Error in get_icebreaker_categories: {e}")
@@ -1043,7 +1055,7 @@ def get_quick_poll():
     """Get a quick poll"""
     try:
         category = request.args.get('category', 'random')
-        result = engagement_agent.get_quick_poll(category)
+        result = _get_agent("engagement").get_quick_poll(category)
         return jsonify(result), 200 if result.get('success') else 400
     except Exception as e:
         print(f"[AGENTS API] Error in get_quick_poll: {e}")
@@ -1056,7 +1068,7 @@ def get_fun_challenge():
     """Get a fun challenge"""
     try:
         challenge_type = request.args.get('type', 'random')
-        result = engagement_agent.get_fun_challenge(challenge_type)
+        result = _get_agent("engagement").get_fun_challenge(challenge_type)
         return jsonify(result), 200 if result.get('success') else 400
     except Exception as e:
         print(f"[AGENTS API] Error in get_fun_challenge: {e}")
@@ -1069,7 +1081,7 @@ def get_conversation_starters():
     """Get conversation starters by category"""
     try:
         category = request.args.get('category', 'general')
-        result = engagement_agent.get_conversation_starter_by_category(category)
+        result = _get_agent("engagement").get_conversation_starter_by_category(category)
         return jsonify(result), 200 if result.get('success') else 400
     except Exception as e:
         print(f"[AGENTS API] Error in get_conversation_starters: {e}")
@@ -1082,7 +1094,7 @@ def get_booster_pack():
     """Get engagement booster pack based on engagement level"""
     try:
         engagement_level = request.args.get('level', 'low')
-        result = engagement_agent.get_engagement_booster_pack(engagement_level)
+        result = _get_agent("engagement").get_engagement_booster_pack(engagement_level)
         return jsonify(result), 200 if result.get('success') else 400
     except Exception as e:
         print(f"[AGENTS API] Error in get_booster_pack: {e}")
@@ -1114,7 +1126,7 @@ def log_activity():
             user_id = user_row['id']
         conn.close()
         
-        success = engagement_agent.log_activity_usage(
+        success = _get_agent("engagement").log_activity_usage(
             channel_id, activity_type, activity_title, user_id
         )
         
@@ -1134,7 +1146,7 @@ def get_activity_stats(channel_id):
     """Get activity usage statistics for a channel"""
     try:
         days = request.args.get('days', 7, type=int)
-        result = engagement_agent.get_activity_stats(channel_id, days)
+        result = _get_agent("engagement").get_activity_stats(channel_id, days)
         return jsonify(result), 200 if result.get('success') else 400
     except Exception as e:
         print(f"[AGENTS API] Error in get_activity_stats: {e}")
@@ -1166,7 +1178,7 @@ def check_wellness():
             user_id = user_row['id']
         conn.close()
         
-        result = wellness_agent.check_user_wellness(user_id)
+        result = _get_agent("wellness").check_user_wellness(user_id)
         
         return jsonify(result), 200 if result.get('success') else 400
         
@@ -1203,19 +1215,19 @@ def analyze_wellness():
         time_period_hours = data.get('time_period_hours', 24)
         
         # Get wellness check
-        wellness_check = wellness_agent.check_user_wellness(user_id)
+        wellness_check = _get_agent("wellness").check_user_wellness(user_id)
         
         if not wellness_check.get('success'):
             return jsonify(wellness_check), 400
         
         # Get activity suggestions
-        suggestions = wellness_agent.suggest_wellness_activity(user_id, wellness_check)
+        suggestions = _get_agent("wellness").suggest_wellness_activity(user_id, wellness_check)
         
         # === MOOD INTEGRATION ===
         # Get mood trends from mood tracker
-        mood_trends = mood_tracker.get_mood_trends(user_id, days=7)
-        mood_recommendations = mood_tracker.get_wellness_recommendations(user_id)
-        mood_insights = mood_tracker.get_mood_insights(user_id)
+        mood_trends = _get_agent("mood_tracker").get_mood_trends(user_id, days=7)
+        mood_recommendations = _get_agent("mood_tracker").get_wellness_recommendations(user_id)
+        mood_insights = _get_agent("mood_tracker").get_mood_insights(user_id)
         
         # Calculate comprehensive scores
         metrics = wellness_check.get('metrics', {})
@@ -1474,8 +1486,8 @@ def get_wellness_recommendations():
         conn.close()
         
         # Get current wellness state
-        wellness_check = wellness_agent.check_user_wellness(user_id)
-        activity_suggestions = wellness_agent.suggest_wellness_activity(user_id, wellness_check)
+        wellness_check = _get_agent("wellness").check_user_wellness(user_id)
+        activity_suggestions = _get_agent("wellness").suggest_wellness_activity(user_id, wellness_check)
         
         # Build recommendations based on state
         recommendations = []
@@ -1596,7 +1608,7 @@ def get_wellness_insights(user_id):
         days = request.args.get('days', 7, type=int)
         
         # Get wellness history
-        history = wellness_agent.get_wellness_history(user_id, limit=days * 2)
+        history = _get_agent("wellness").get_wellness_history(user_id, limit=days * 2)
         
         # Calculate insights from history
         insights = _calculate_wellness_insights(history)
@@ -1638,7 +1650,7 @@ def get_wellness_history():
         conn.close()
         
         limit = request.args.get('limit', 10, type=int)
-        history = wellness_agent.get_wellness_history(user_id, limit=limit)
+        history = _get_agent("wellness").get_wellness_history(user_id, limit=limit)
         
         return jsonify({
             'success': True,
@@ -1676,7 +1688,7 @@ def get_wellness_trends():
         conn.close()
         
         days = request.args.get('days', 7, type=int)
-        history = wellness_agent.get_wellness_history(user_id, limit=days * 3)
+        history = _get_agent("wellness").get_wellness_history(user_id, limit=days * 3)
         
         # Aggregate by day
         from collections import defaultdict
@@ -1971,18 +1983,15 @@ def get_knowledge_base(channel_id):
             # Get knowledge base entries for this channel or community
             cur.execute("""
                 SELECT 
-                    kb.id, kb.title, kb.content, kb.source, kb.question, kb.answer,
-                    kb.tags, kb.relevance_score, kb.usage_count, kb.related_channel,
+                    kb.id, kb.title, kb.content, kb.source, kb.related_channel,
                     kb.created_at, kb.updated_at,
-                    u.username as created_by_username,
                     c.name as channel_name
                 FROM knowledge_base kb
-                LEFT JOIN users u ON kb.created_by = u.id
                 LEFT JOIN channels c ON kb.related_channel = c.id
-                WHERE kb.related_channel = %s OR kb.community_id = %s
+                WHERE kb.related_channel = %s
                 ORDER BY kb.created_at DESC
                 LIMIT %s
-            """, (channel_id, community_id, limit))
+            """, (channel_id, limit))
             
             entries = cur.fetchall()
             
@@ -1993,14 +2002,8 @@ def get_knowledge_base(channel_id):
                     'title': entry['title'],
                     'content': entry['content'],
                     'source': entry['source'],
-                    'question': entry['question'],
-                    'answer': entry['answer'],
-                    'tags': entry['tags'].split(',') if entry['tags'] else [],
-                    'relevance_score': float(entry['relevance_score']) if entry['relevance_score'] else 0,
-                    'usage_count': entry['usage_count'] or 0,
                     'channel_id': entry['related_channel'],
                     'channel_name': entry['channel_name'],
-                    'created_by': entry['created_by_username'],
                     'created_at': entry['created_at'].isoformat() if entry['created_at'] else None,
                     'updated_at': entry['updated_at'].isoformat() if entry['updated_at'] else None
                 })
@@ -2370,7 +2373,7 @@ def extract_knowledge_channel(channel_id):
         conn.close()
 
         # Perform extraction
-        result = knowledge_builder.extract_knowledge(channel_id=channel_id, time_period_hours=time_period_hours)
+        result = _get_agent("knowledge_builder").extract_knowledge(channel_id=channel_id, time_period_hours=time_period_hours)
         if not result.get('success'):
             return jsonify({'success': False, 'error': result.get('error', 'Extraction failed')}), 400
 
@@ -2469,7 +2472,7 @@ def extract_knowledge_time():
         
         for cid in channel_ids:
             # Use new v2 agent
-            result = knowledge_builder_v2.extract_knowledge(channel_id=cid, time_period_hours=time_period_hours)
+            result = _get_agent("knowledge_builder_v2").extract_knowledge(channel_id=cid, time_period_hours=time_period_hours)
             
             if result.get('success'):
                 faqs = result.get('faqs', 0)
@@ -2682,7 +2685,7 @@ def analyze_focus():
             print(f"[AGENTS API] Analyzing channel {channel_id} for user {user_id}")
 
         # Run analysis (focus_agent opens its own DB connection)
-        result = focus_agent.analyze_focus(channel_id=channel_id, time_period_hours=time_period_hours)
+        result = _get_agent("focus").analyze_focus(channel_id=channel_id, time_period_hours=time_period_hours)
 
         print(f"[AGENTS API] Focus analysis result: success={result.get('success')}, error={result.get('error')}")
 
@@ -3349,7 +3352,7 @@ def configure_community_agent(community_id, agent_type):
             conn.close()
 
 
-# ── Summarizer Scheduler Endpoints ────────────────────────────────────
+# â”€â”€ Summarizer Scheduler Endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @agents_bp.route('/summarizer/schedule/<int:community_id>', methods=['GET'])
 @jwt_required()
@@ -3896,7 +3899,7 @@ def get_agent_logs():
 
 
 # ======================================================================
-# MY SUMMARIES — User's generated summary history
+# MY SUMMARIES â€” User's generated summary history
 # ======================================================================
 
 @agents_bp.route('/my-summaries', methods=['GET'])
@@ -4000,7 +4003,7 @@ def delete_my_summary(summary_id):
 
 
 # ======================================================================
-# SUMMARY SCHEDULE ENDPOINTS — Per-user scheduled auto-summaries
+# SUMMARY SCHEDULE ENDPOINTS â€” Per-user scheduled auto-summaries
 # ======================================================================
 
 @agents_bp.route('/summary-schedules', methods=['GET'])
@@ -4101,7 +4104,7 @@ def create_summary_schedule():
             if not cur.fetchone():
                 return jsonify({'error': 'Not a member of this community'}), 403
 
-            # Upsert — one schedule per user per channel
+            # Upsert â€” one schedule per user per channel
             cur.execute("""
                 INSERT INTO user_summary_schedules
                     (user_id, channel_id, community_id, schedule_time, timezone, is_active)
@@ -4272,6 +4275,37 @@ def get_pending_summaries():
 
     except Exception as e:
         print(f"[AGENTS API] Error getting pending summaries: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/summary-schedules/pending/<int:summary_id>', methods=['DELETE'])
+@jwt_required()
+def delete_scheduled_summary(summary_id):
+    """Delete a generated scheduled summary."""
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM scheduled_summaries WHERE id = %s AND user_id = %s",
+                (summary_id, user_id),
+            )
+            if cur.rowcount == 0:
+                return jsonify({'error': 'Summary not found'}), 404
+            conn.commit()
+
+        return jsonify({'success': True, 'message': 'Scheduled summary deleted'}), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error deleting scheduled summary: {e}")
         return jsonify({'error': 'Internal server error'}), 500
     finally:
         if conn:

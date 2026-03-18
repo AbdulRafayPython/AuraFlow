@@ -19,7 +19,6 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Brain,
   AlertTriangle,
   UserX,
   TrendingUp,
@@ -93,13 +92,6 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    title: 'AI Agents',
-    href: '/admin/agents',
-    icon: Brain,
-    disabled: true,
-    comingSoon: 'FYP 2',
-  },
-  {
     title: 'Reports',
     href: '/admin/reports',
     icon: FileText,
@@ -115,9 +107,9 @@ const navItems: NavItem[] = [
   },
 ];
 
-// Role check for admin access
-function isAdmin(role?: string): boolean {
-  return role === 'system_admin' || role === 'admin' || role === 'community_admin' || role === 'owner';
+// Role check for community admin access
+function isCommunityAdmin(role?: string): boolean {
+  return role === 'admin' || role === 'community_admin' || role === 'owner';
 }
 
 export default function AdminLayout() {
@@ -156,9 +148,9 @@ export default function AdminLayout() {
     return <Navigate to="/" replace />;
   }
 
-  // Role-based access control - user is loaded but not admin
-  if (!user || !isAdmin(user.role)) {
-    console.log('Admin access denied. User role:', user?.role);
+  // Role-based access control - user is loaded but not community admin
+  if (!user || !isCommunityAdmin(user.role)) {
+    console.log('Community admin access denied. User role:', user?.role);
     return <Navigate to="/" replace />;
   }
 
@@ -351,7 +343,9 @@ export default function AdminLayout() {
             <span className="font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-accent to-accent/70">
               AuraFlow
             </span>
-            <span className="text-[10px] text-muted-foreground -mt-1">Community Dashboard</span>
+            <span className="text-[10px] text-muted-foreground -mt-1">
+              Community Dashboard
+            </span>
           </div>
         )}
       </div>

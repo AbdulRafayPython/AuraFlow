@@ -50,6 +50,7 @@ from routes.community_admin import community_admin_bp
 from routes.search import search_bp
 from routes.pins import pins_bp
 from routes.status import status_bp
+from routes.notifications import notifications_bp
 
 load_dotenv()
 
@@ -58,10 +59,18 @@ app = Flask(__name__)
 # Gzip compression for all responses > 500 bytes
 Compress(app)
 
-# CORS Configuration
-# Allow all origins (ngrok, Vercel, localhost, etc.)
+# CORS Configuration — restrict origins in production
+import config as _cfg
+_ALLOWED_ORIGINS = [
+    o.strip() for o in os.getenv('ALLOWED_ORIGINS', '').split(',') if o.strip()
+] or (
+    [_cfg.FRONTEND_URL] if _cfg.FRONTEND_URL else ["*"]
+)
+if not _cfg.IS_PRODUCTION:
+    _ALLOWED_ORIGINS = "*"  # Allow all in development
+
 CORS(app, 
-     resources={r"/*": {"origins": "*"}},
+     resources={r"/*": {"origins": _ALLOWED_ORIGINS}},
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization", "ngrok-skip-browser-warning"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -69,26 +78,32 @@ CORS(app,
      max_age=3600
 )
 
-# Ensure CORS headers are on EVERY response (including errors, 404s, preflight)
+# Security headers on EVERY response
 @app.after_request
-def add_cors_headers(response):
-    origin = request.headers.get('Origin', '*')
-    response.headers['Access-Control-Allow-Origin'] = origin
-    response.headers['Access-Control-Allow-Credentials'] = 'true'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, ngrok-skip-browser-warning'
-    response.headers['Access-Control-Max-Age'] = '3600'
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    if _cfg.IS_PRODUCTION:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
 
-# Handle OPTIONS preflight requests
+# Handle OPTIONS preflight requests + HTTPS redirect in production
 @app.before_request
 def handle_preflight():
+    if _cfg.IS_PRODUCTION and request.headers.get('X-Forwarded-Proto', 'https') != 'https':
+        from flask import redirect
+        url = request.url.replace('http://', 'https://', 1)
+        return redirect(url, code=301)
     if request.method == 'OPTIONS':
         response = app.make_default_options_response()
         return response
 
 # JWT Configuration
-app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "super-secret-key")
+if _cfg.IS_PRODUCTION and not os.getenv("JWT_SECRET_KEY"):
+    raise RuntimeError("JWT_SECRET_KEY must be set in production")
+app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "dev-only-secret-key")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", "15")))
 app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=int(os.getenv("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "7")))
 
@@ -110,7 +125,7 @@ except Exception:
 # Initialize SocketIO — auto-detect async mode (eventlet if available, otherwise threading)
 socketio = SocketIO(
     app, 
-    cors_allowed_origins="*",
+    cors_allowed_origins=_ALLOWED_ORIGINS,
     logger=False,
     engineio_logger=False,
     ping_timeout=25,
@@ -214,6 +229,7 @@ app.register_blueprint(community_admin_bp)
 app.register_blueprint(search_bp)
 app.register_blueprint(pins_bp)
 app.register_blueprint(status_bp)
+app.register_blueprint(notifications_bp)
 
 # ======================================================================
 # FRIEND ROUTES
@@ -236,6 +252,10 @@ app.route("/api/friends/blocked", methods=["GET"])(get_blocked_friends)
 # SOCKET EVENTS
 # ======================================================================
 register_socket_events(socketio)
+
+# Initialize notification service with socketio
+from services.notification_service import init as init_notifications
+init_notifications(socketio)
 
 # ======================================================================
 # ERROR HANDLERS
@@ -405,6 +425,19 @@ def monitor_inactive_users():
 monitor_thread = threading.Thread(target=monitor_inactive_users, daemon=True)
 monitor_thread.start()
 print("[MONITOR] Started inactive user monitoring thread")
+
+# ── Periodic token cleanup (every 6 hours) ───────────────────────────
+def _periodic_token_cleanup():
+    from services.session_manager import cleanup_expired_tokens
+    while True:
+        time.sleep(6 * 3600)
+        try:
+            cleanup_expired_tokens()
+        except Exception as e:
+            print(f"[CLEANUP] Token cleanup error: {e}")
+
+threading.Thread(target=_periodic_token_cleanup, daemon=True).start()
+print("[CLEANUP] Started periodic token cleanup thread")
 
 # ── Initialize messaging enhancement services ────────────────────────
 try:

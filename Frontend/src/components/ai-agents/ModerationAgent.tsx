@@ -266,7 +266,7 @@ export default function ModerationAgent() {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}>
+      <div className="flex-1 overflow-y-auto">
         {/* Error Display */}
         {error && (
           <div className="m-5 p-4 rounded-xl border flex items-start gap-3 bg-red-500/10 border-red-500/30">

@@ -273,7 +273,7 @@ export default function SummarizerAgent() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}>
+      <div className="flex-1 overflow-y-auto">
 
         {/* ── Scheduler Config Panel (admins only) ────────────────── */}
         {showScheduleConfig && isAdmin && (

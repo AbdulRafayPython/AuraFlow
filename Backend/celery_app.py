@@ -67,6 +67,8 @@ celery_app.conf.update(
 
     # Broker settings
     broker_connection_retry_on_startup=True,
+    broker_connection_retry=False,          # Don't retry on .delay() — fail fast
+    broker_connection_timeout=4,            # 4s timeout for broker connect
     broker_transport_options={
         'visibility_timeout': 300,      # 5 min visibility timeout
     },

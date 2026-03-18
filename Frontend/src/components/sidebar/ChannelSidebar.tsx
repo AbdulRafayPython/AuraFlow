@@ -337,7 +337,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
             </div>
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto px-2 py-3 scrollbar-thin scrollbar-thumb-slate-600 relative z-[5]">
+            <div className="flex-1 overflow-y-auto px-2 py-3 relative z-[5]">
               {/* Loading State */}
               {isLoadingCommunities && (
                 <div className="flex justify-center py-8">
@@ -593,21 +593,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
           </button>
         )}
 
-        <style>{`
-          .scrollbar-thin::-webkit-scrollbar {
-            width: 6px;
-          }
-          .scrollbar-thin::-webkit-scrollbar-track {
-            background: transparent;
-          }
-          .scrollbar-thin::-webkit-scrollbar-thumb {
-            background: rgba(100, 116, 139, 0.4);
-            border-radius: 10px;
-          }
-          .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-            background: rgba(100, 116, 139, 0.6);
-          }
-        `}</style>
+
       </div>
 
       {/* Add Members Modal - Only render when community exists */}

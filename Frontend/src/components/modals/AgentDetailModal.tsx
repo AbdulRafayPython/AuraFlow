@@ -268,7 +268,7 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({
         </div>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-6 pt-3 pb-6" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}>
+        <div className="flex-1 overflow-y-auto px-6 pt-3 pb-6">
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="w-6 h-6 animate-spin text-[hsl(var(--theme-accent-primary))]" />

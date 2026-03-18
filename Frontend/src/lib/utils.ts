@@ -30,3 +30,26 @@ export function getAvatarUrl(avatarUrl: string | null | undefined, username: str
   return `${API_SERVER}${path}`;
 }
 
+/** Format a call-log JSON content string into a human-readable preview. */
+export function formatCallPreview(content: string): string {
+  try {
+    const { call_type, status, duration } = JSON.parse(content);
+    const icon = call_type === 'video' ? '📹' : '📞';
+    const label =
+      status === 'attended' ? `Call · ${formatCallDuration(duration || 0)}`
+      : status === 'missed' ? 'Missed call'
+      : status === 'rejected' ? 'Declined'
+      : 'Cancelled';
+    return `${icon} ${label}`;
+  } catch {
+    return '📞 Call';
+  }
+}
+
+function formatCallDuration(seconds: number): string {
+  if (seconds < 60) return `0:${seconds.toString().padStart(2, '0')}`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+

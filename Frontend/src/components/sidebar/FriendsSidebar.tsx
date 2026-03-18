@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useFriends } from "../../contexts/FriendsContext";
 import { useAuth } from "../../contexts/AuthContext";
-import { getAvatarUrl } from "@/lib/utils";
+import { getAvatarUrl, formatCallPreview } from "@/lib/utils";
 import { 
   Users, Plus, Home, ChevronRight, LogOut, Moon, Sun, Settings, 
   User, Bell, Shield, Palette, HelpCircle, MessageSquare, ChevronDown, 
@@ -21,6 +21,7 @@ import { useUnreadCounts } from "@/hooks/useUnreadCounts";
 import authService from "@/services/authService";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 import { API_SERVER } from "@/config/api";
+import { NotificationButton } from "@/components/NotificationButton";
 
 export interface CommunityFormData {
   name: string;
@@ -371,6 +372,13 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
           )}
         </div>
 
+        {/* Notifications */}
+        <NotificationButton placement="sidebar" onNavigate={(view) => {
+          if (view === 'friends') navigate('/friends');
+          else if (view === 'dm') navigate('/');
+          else if (view === 'community') { /* stay — user is likely already viewing */ }
+        }} />
+
         <div className="h-0.5 w-8 rounded-full bg-gradient-to-r from-transparent via-[hsl(var(--theme-border-default))] to-transparent" />
 
         {/* Communities */}
@@ -537,7 +545,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                 </div>
 
                 {/* Menu Items */}
-                <div className="p-2 max-h-72 overflow-y-auto scrollbar scrollbar-thumb-[hsl(var(--theme-border-default))] scrollbar-track-transparent">
+                <div className="p-2 max-h-72 overflow-y-auto">
                   <button 
                     onClick={() => { setShowProfileMenu(false); navigate('/settings'); }} 
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] group"
@@ -628,7 +636,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto scrollbar scrollbar-thumb-[hsl(var(--theme-border-default))] scrollbar-track-transparent">
+          <div className="flex-1 overflow-y-auto">
             {/* Conversations Section */}
             <div className="px-3 py-3">
               <button 
@@ -697,7 +705,10 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                               </div>
                               {conv.last_message && (
                                 <div className={`text-xs truncate ${dmUnread > 0 ? 'font-semibold text-[hsl(var(--theme-text-secondary))]' : 'text-[hsl(var(--theme-text-muted))]'}`}>
-                                  {conv.last_message.sender_id === currentUser?.id ? 'You: ' : ''}{conv.last_message.content}
+                                  {conv.last_message.sender_id === currentUser?.id ? 'You: ' : ''}
+                                  {conv.last_message.message_type === 'call'
+                                    ? formatCallPreview(conv.last_message.content)
+                                    : conv.last_message.content}
                                 </div>
                               )}
                             </div>

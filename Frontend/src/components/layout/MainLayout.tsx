@@ -283,7 +283,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
             </div>
           </div>
         ) : currentView === "home" ? (
-          <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}>
+          <div className="flex-1 overflow-y-auto">
             <HomePage />
           </div>
         ) : currentView === "friends" ? (
