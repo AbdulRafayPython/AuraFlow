@@ -40,7 +40,7 @@ export function useBrowserNotifications() {
   }, [isAuthenticated]);
 
   const canNotify = () =>
-    document.hidden && permissionRef.current === 'granted' && 'Notification' in window;
+    (document.hidden || !document.hasFocus()) && permissionRef.current === 'granted' && 'Notification' in window;
 
   const show = (title: string, body: string, tag: string, icon?: string, autoCloseMs = AUTO_CLOSE_MS) => {
     if (!canNotify()) return;

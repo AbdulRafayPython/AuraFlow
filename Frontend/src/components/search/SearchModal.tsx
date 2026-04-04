@@ -2,6 +2,7 @@
 // Production-grade: debounce, keyboard nav, scope filters, result highlights, recent searches
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, X, Hash, MessageSquare, Clock, ArrowRight, Loader2, Filter } from 'lucide-react';
 import { searchService, type SearchResult } from '@/services/searchService';
 import { getAvatarUrl } from '@/lib/utils';
@@ -162,9 +163,9 @@ const SearchModal: React.FC<SearchModalProps> = ({
   const showRecent = !query && recentSearches.length > 0;
   const showEmpty = query.length >= 2 && !isLoading && results.length === 0;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center pt-[15vh] bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+      className="fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh] bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
       onClick={handleBackdrop}
     >
       <div className="w-full max-w-2xl mx-4 bg-[hsl(var(--theme-bg-elevated))] rounded-xl shadow-2xl border border-[hsl(var(--theme-border-subtle))] overflow-hidden animate-in slide-in-from-top-4 duration-200">
@@ -354,7 +355,8 @@ const SearchModal: React.FC<SearchModalProps> = ({
           </span>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

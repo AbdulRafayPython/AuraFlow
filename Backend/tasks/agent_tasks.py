@@ -873,32 +873,27 @@ def check_user_summary_schedules(self):
                             """, (schedule['id'],))
                             conn2.commit()
 
-                        # Try to deliver via socket if user is online
+                        # Use Redis-backed SocketIO to emit from Celery worker
+                        # (current_app.extensions is NOT available in Celery context)
+                        REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+                        from flask_socketio import SocketIO as CelerySocketIO
+                        sio = CelerySocketIO(message_queue=REDIS_URL)
+
+                        # Deliver summary result to user's personal room
                         try:
-                            from flask import current_app
-                            socketio = current_app.extensions.get('socketio')
-                            if socketio:
-                                from routes.sockets import user_socket_sessions
-                                # Get username for this user_id
-                                with conn2.cursor() as cur2:
-                                    cur2.execute("SELECT username FROM users WHERE id = %s", (schedule['user_id'],))
-                                    u = cur2.fetchone()
-                                if u:
-                                    user_sid = user_socket_sessions.get(u['username'])
-                                    if user_sid:
-                                        socketio.emit('summary_result', {
-                                            'channel_id': schedule['channel_id'],
-                                            'content': content,
-                                            'method': result.get('method', 'extractive'),
-                                            'message_count': result.get('message_count', 0),
-                                            'created_at': now.isoformat(),
-                                            'scheduled': True,
-                                        }, room=user_sid, namespace='/')
-                                        print(f"[USER_SCHEDULES] ✅ Delivered to {u['username']} via socket")
+                            sio.emit('summary_result', {
+                                'channel_id': schedule['channel_id'],
+                                'content': content,
+                                'method': result.get('method', 'extractive'),
+                                'message_count': result.get('message_count', 0),
+                                'created_at': now.isoformat(),
+                                'scheduled': True,
+                            }, room=f"user_{schedule['user_id']}", namespace='/')
+                            print(f"[USER_SCHEDULES] ✅ Delivered summary to user_{schedule['user_id']} via Redis-backed socket")
                         except Exception as sock_err:
                             print(f"[USER_SCHEDULES] Socket delivery failed (will be fetched later): {sock_err}")
 
-                        # Send persistent notification (DB + socket + web push)
+                        # Send persistent notification (DB + web push) and emit via socket
                         try:
                             from services.notification_service import create_notification
                             msg_count = result.get('message_count', 0)
@@ -910,16 +905,25 @@ def check_user_summary_schedules(self):
                                 icon_url='/AuraflowLogo.png',
                                 link=f"/community/{schedule['community_id']}",
                                 related_id=schedule['channel_id'],
-                                emit=False,  # Don't rely on service's _socketio (may be None in Celery)
+                                emit=False,  # _socketio is None in Celery, we emit manually below
                             )
-                            # Emit notification via the socketio we already have
-                            if notif and socketio:
-                                socketio.emit(
+                            # Emit notification event via Redis-backed SocketIO
+                            if notif:
+                                sio.emit(
                                     'notification', notif,
                                     room=f"user_{schedule['user_id']}",
                                     namespace='/',
                                 )
                                 print(f"[USER_SCHEDULES] 🔔 Notification emitted for user {schedule['user_id']}")
+
+                                # Also trigger web push for when the tab is closed/minimized
+                                try:
+                                    from services.notification_service import _send_web_push, _webpush
+                                    if _webpush:
+                                        _send_web_push(schedule['user_id'], notif)
+                                        print(f"[USER_SCHEDULES] 📲 Web push sent for user {schedule['user_id']}")
+                                except Exception as push_err:
+                                    print(f"[USER_SCHEDULES] Web push failed (non-critical): {push_err}")
                         except Exception as notif_err:
                             print(f"[USER_SCHEDULES] Notification failed: {notif_err}")
                     finally:

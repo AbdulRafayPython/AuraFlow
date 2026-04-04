@@ -191,11 +191,10 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
             <button
               key={item.id}
               onClick={() => setActiveSection(item.id as 'servers' | 'agents')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                activeSection === item.id
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeSection === item.id
                   ? 'bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))]'
                   : 'text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]'
-              }`}
+                }`}
             >
               <item.icon className="w-5 h-5" />
               {item.label}
@@ -210,35 +209,31 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
           /* AI Agents Section — full page matching Servers layout */
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Sticky Navigation Bar */}
-            <div className={`sticky top-0 z-30 transition-all duration-300 ${
-              isScrolled
+            <div className={`sticky top-0 z-30 transition-all duration-300 ${isScrolled
                 ? 'bg-[hsl(var(--theme-bg-primary))] shadow-lg border-b border-[hsl(var(--theme-border-default)/0.3)]'
                 : !isDarkMode
                   ? 'bg-[hsl(var(--theme-bg-primary)/0.85)] backdrop-blur-sm shadow-sm'
                   : 'bg-transparent'
-            }`}>
-              <div className={`h-12 flex items-center justify-center border-b transition-colors duration-300 ${
-                isScrolled
+              }`}>
+              <div className={`h-12 flex items-center justify-center border-b transition-colors duration-300 ${isScrolled
                   ? 'border-[hsl(var(--theme-border-default)/0.3)]'
                   : !isDarkMode
                     ? 'border-[hsl(var(--theme-border-default)/0.2)]'
                     : 'border-white/5'
-              }`}>
+                }`}>
                 <div className="flex items-center gap-2">
-                  <Bot className={`w-5 h-5 transition-colors duration-300 ${
-                    isScrolled
+                  <Bot className={`w-5 h-5 transition-colors duration-300 ${isScrolled
                       ? 'text-[hsl(var(--theme-text-secondary))]'
                       : !isDarkMode
                         ? 'text-[hsl(var(--theme-text-primary))]'
                         : 'text-white/80'
-                  }`} />
-                  <span className={`text-sm font-semibold ${
-                    isScrolled
+                    }`} />
+                  <span className={`text-sm font-semibold ${isScrolled
                       ? 'text-[hsl(var(--theme-text-primary))]'
                       : !isDarkMode
                         ? 'text-[hsl(var(--theme-text-primary))]'
                         : 'text-white'
-                  }`}>AI Agents</span>
+                    }`}>AI Agents</span>
                 </div>
               </div>
             </div>
@@ -280,7 +275,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                     BUILT-IN INTELLIGENCE<br />FOR YOUR COMMUNITY
                   </h1>
                   <p className="text-white/70 text-[15px] max-w-lg">
-                    Seven specialized agents that work behind the scenes — moderating, summarizing, and keeping your community healthy.
+                    Seven specialized agents that work behind the scenes moderating, summarizing, and keeping your community healthy.
                   </p>
                 </div>
               </div>
@@ -634,381 +629,373 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
             </div>
           </div>
         ) : (
-        <>
-        {/* Sticky Navigation Bar */}
-        <div 
-          className={`sticky top-0 z-30 transition-all duration-300 ${
-            isScrolled 
-              ? 'bg-[hsl(var(--theme-bg-primary))] shadow-lg border-b border-[hsl(var(--theme-border-default)/0.3)]' 
-              : !isDarkMode 
-                ? 'bg-[hsl(var(--theme-bg-primary)/0.85)] backdrop-blur-sm shadow-sm' 
-                : 'bg-transparent'
-          }`}
-        >
-          {/* Top Header */}
-          <div className={`h-12 flex items-center justify-center border-b transition-colors duration-300 ${
-            isScrolled 
-              ? 'border-[hsl(var(--theme-border-default)/0.3)]' 
-              : !isDarkMode 
-                ? 'border-[hsl(var(--theme-border-default)/0.2)]' 
-                : 'border-white/5'
-          }`}>
-            <div className="flex items-center gap-2">
-              <Compass className={`w-5 h-5 transition-colors duration-300 ${
-                isScrolled 
-                  ? 'text-[hsl(var(--theme-text-secondary))]' 
-                  : !isDarkMode 
-                    ? 'text-[hsl(var(--theme-text-primary))]' 
-                    : 'text-white/80'
-              }`} />
-              <span className={`text-sm font-semibold ${
-                isScrolled 
-                  ? 'text-[hsl(var(--theme-text-primary))]' 
-                  : !isDarkMode 
-                    ? 'text-[hsl(var(--theme-text-primary))]' 
-                    : 'text-white'
-              }`}>Discover</span>
-            </div>
-          </div>
-
-          {/* Category Navigation */}
-          <div className="px-3 sm:px-6 py-2 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-none flex-1 min-w-0">
-              <Home className={`w-5 h-5 mr-2 sm:mr-3 flex-shrink-0 transition-colors duration-300 ${
-                isScrolled 
-                  ? 'text-[hsl(var(--theme-text-secondary))]' 
-                  : !isDarkMode 
-                    ? 'text-[hsl(var(--theme-text-secondary))]' 
-                    : 'text-white/90'
-              }`} />
-              {CATEGORIES.map(cat => (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`flex-shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
-                    selectedCategory === cat.id
-                      ? isScrolled 
-                        ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]' 
-                        : !isDarkMode
-                          ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]'
-                          : 'bg-white/15 text-white'
-                      : isScrolled 
-                        ? 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]' 
-                        : !isDarkMode
-                          ? 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
-                          : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Search */}
-            <div className="relative w-36 sm:w-48 flex-shrink-0">
-              <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors duration-300 ${
-                isScrolled 
-                  ? 'text-[hsl(var(--theme-text-muted))]' 
-                  : !isDarkMode 
-                    ? 'text-[hsl(var(--theme-text-muted))]' 
-                    : 'text-white/40'
-              }`} />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => handleSearch(e.target.value)}
-                placeholder="Search"
-                className={`w-full pl-9 pr-3 py-1.5 rounded text-sm border-none focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] transition-all ${
-                  isScrolled || !isDarkMode
-                    ? 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]' 
-                    : 'bg-[#1e1f22]/60 text-white placeholder-white/40'
+          <>
+            {/* Sticky Navigation Bar */}
+            <div
+              className={`sticky top-0 z-30 transition-all duration-300 ${isScrolled
+                  ? 'bg-[hsl(var(--theme-bg-primary))] shadow-lg border-b border-[hsl(var(--theme-border-default)/0.3)]'
+                  : !isDarkMode
+                    ? 'bg-[hsl(var(--theme-bg-primary)/0.85)] backdrop-blur-sm shadow-sm'
+                    : 'bg-transparent'
                 }`}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Scrollable Content Area */}
-        <div 
-          ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto" 
-          style={{ background: 'hsl(var(--theme-bg-primary))', scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}
-          onScroll={(e) => {
-            const scrollTop = (e.target as HTMLDivElement).scrollTop;
-            setIsScrolled(scrollTop > 10);
-          }}
-        >
-          {/* Hero Section - Now scrollable */}
-          <div className="relative">
-            {/* Hero Background - Blue/Purple gradient like Discord */}
-            <div 
-              className="absolute inset-0"
-              style={{
-                background: 'linear-gradient(140deg, #5865f2 0%, #7289da 15%, #5865f2 30%, #4752c4 50%, #3c45a5 70%, #2d3494 85%, #1e2371 100%)',
-              }}
-            />
-            
-            {/* Decorative blur elements */}
-            <div className="absolute inset-0 overflow-hidden">
-              <div className="absolute right-0 top-0 w-[500px] h-[500px] bg-[#eb459e]/15 rounded-full blur-[100px]" />
-              <div className="absolute -left-20 bottom-0 w-[400px] h-[400px] bg-[#5865f2]/40 rounded-full blur-[80px]" />
-            </div>
-
-            {/* Hero Content - Reduced height */}
-            <div className="relative z-10 px-4 sm:px-8 pt-6 sm:pt-8 pb-8 sm:pb-12">
-              <h1 
-                className="text-2xl sm:text-4xl lg:text-[48px] font-extrabold text-white mb-3 leading-[1.1] tracking-tight"
-                style={{ 
-                  fontFamily: "'Ginto', 'Helvetica Neue', Helvetica, Arial, sans-serif",
-                  fontStyle: 'italic',
-                  fontWeight: 900,
-                  letterSpacing: '-0.5px',
-                }}
-              >
-                FIND YOUR COMMUNITY<br />ON AURAFLOW
-              </h1>
-              <p className="text-white/70 text-[15px] max-w-lg">
-                From gaming, to music, to learning, there's a place for you.
-              </p>
-            </div>
-          </div>
-
-          {/* Content Below Hero */}
-          <div style={{ background: 'hsl(var(--theme-bg-primary))' }}>
-            {isLoading ? (
-              <div className="flex items-center justify-center h-64">
-                <Loader2 className="w-8 h-8 animate-spin text-[hsl(var(--theme-accent-primary))]" />
-              </div>
-            ) : (
-              <div className="p-6">
-                {/* Featured Communities */}
-                {selectedCategory === 'home' && !searchTerm && featuredCommunities.length > 0 && (
-                <div className="mb-10">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-base font-semibold text-[hsl(var(--theme-text-primary))]">
-                      Featured Servers
-                    </h2>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {featuredCommunities.map((community) => {
-                      const logoUrl = getCommunityLogoUrl(community);
-                      const bannerUrl = getCommunityBannerUrl(community);
-                      return (
-                        <div
-                          key={community.id}
-                          className="group relative rounded-lg overflow-hidden bg-[hsl(var(--theme-bg-secondary))] hover:shadow-xl transition-all duration-300 cursor-pointer"
-                          onClick={() => handleJoin(community.id)}
-                        >
-                          {/* Banner Image/Gradient */}
-                          <div className="relative h-36 overflow-hidden">
-                            {bannerUrl ? (
-                              <img 
-                                src={bannerUrl} 
-                                alt={`${community.name} banner`}
-                                className="absolute inset-0 w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div 
-                                className="absolute inset-0"
-                                style={{
-                                  background: `linear-gradient(135deg, ${community.color || '#5865f2'} 0%, #eb459f 50%, #fee75c 100%)`,
-                                }}
-                              />
-                            )}
-                            {/* Overlay gradient for text readability */}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                            {/* Decorative shapes (only when no banner) */}
-                            {!bannerUrl && (
-                              <div className="absolute inset-0 opacity-30">
-                                <div className="absolute right-0 top-0 w-32 h-32 bg-white/20 rounded-full -translate-y-1/2 translate-x-1/2" />
-                                <div className="absolute left-1/4 bottom-0 w-24 h-24 bg-black/10 rounded-full translate-y-1/2" />
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Community Icon */}
-                          <div className="absolute left-4 top-[108px] w-12 h-12 rounded-2xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg">
-                            {logoUrl ? (
-                              <img src={logoUrl} alt={community.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <div
-                                className="w-full h-full flex items-center justify-center text-white font-bold text-sm"
-                                style={{ backgroundColor: community.color || '#5865f2' }}
-                              >
-                                {community.icon || getInitials(community.name)}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Content */}
-                          <div className="pt-8 pb-4 px-4">
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <Verified className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                              <h3 className="font-semibold text-[hsl(var(--theme-text-primary))] truncate text-sm">
-                                {community.name}
-                              </h3>
-                            </div>
-
-                            <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
-                              {community.description || 'A great community to join!'}
-                            </p>
-
-                            <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
-                              <div className="flex items-center gap-1">
-                                <Users className="w-3 h-3" />
-                                <span>{formatMemberCount(community.member_count || 0)} Members</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Loading overlay when joining */}
-                          {joiningId === community.id && (
-                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-sm">
-                              <Loader2 className="w-6 h-6 animate-spin text-white" />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+            >
+              {/* Top Header */}
+              <div className={`h-12 flex items-center justify-center border-b transition-colors duration-300 ${isScrolled
+                  ? 'border-[hsl(var(--theme-border-default)/0.3)]'
+                  : !isDarkMode
+                    ? 'border-[hsl(var(--theme-border-default)/0.2)]'
+                    : 'border-white/5'
+                }`}>
+                <div className="flex items-center gap-2">
+                  <Compass className={`w-5 h-5 transition-colors duration-300 ${isScrolled
+                      ? 'text-[hsl(var(--theme-text-secondary))]'
+                      : !isDarkMode
+                        ? 'text-[hsl(var(--theme-text-primary))]'
+                        : 'text-white/80'
+                    }`} />
+                  <span className={`text-sm font-semibold ${isScrolled
+                      ? 'text-[hsl(var(--theme-text-primary))]'
+                      : !isDarkMode
+                        ? 'text-[hsl(var(--theme-text-primary))]'
+                        : 'text-white'
+                    }`}>Discover</span>
                 </div>
-                )}
+              </div>
 
-                {/* All Communities */}
-                <div>
-                <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] mb-5 flex items-center gap-2">
-                  {searchTerm ? (
-                    <>
-                      <Search className="w-5 h-5 text-[hsl(var(--theme-text-muted))]" />
-                      Search Results
-                    </>
-                  ) : (
-                    <>
-                      <TrendingUp className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
-                      Popular Communities
-                    </>
-                  )}
-                </h2>
+              {/* Category Navigation */}
+              <div className="px-3 sm:px-6 py-2 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-none flex-1 min-w-0">
+                  <Home className={`w-5 h-5 mr-2 sm:mr-3 flex-shrink-0 transition-colors duration-300 ${isScrolled
+                      ? 'text-[hsl(var(--theme-text-secondary))]'
+                      : !isDarkMode
+                        ? 'text-[hsl(var(--theme-text-secondary))]'
+                        : 'text-white/90'
+                    }`} />
+                  {CATEGORIES.map(cat => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setSelectedCategory(cat.id)}
+                      className={`flex-shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${selectedCategory === cat.id
+                          ? isScrolled
+                            ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]'
+                            : !isDarkMode
+                              ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]'
+                              : 'bg-white/15 text-white'
+                          : isScrolled
+                            ? 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
+                            : !isDarkMode
+                              ? 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
+                              : 'text-white/80 hover:text-white hover:bg-white/10'
+                        }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
 
-                {communities.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-16">
-                    <Compass className="w-16 h-16 text-[hsl(var(--theme-text-muted))] mb-4" />
-                    <p className="text-lg font-medium text-[hsl(var(--theme-text-secondary))]">
-                      {searchTerm ? 'No communities found' : 'No communities available yet'}
-                    </p>
-                    <p className="text-sm text-[hsl(var(--theme-text-muted))] mt-1">
-                      {searchTerm ? 'Try a different search term' : 'Be the first to create one!'}
-                    </p>
+                {/* Search */}
+                <div className="relative w-36 sm:w-48 flex-shrink-0">
+                  <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors duration-300 ${isScrolled
+                      ? 'text-[hsl(var(--theme-text-muted))]'
+                      : !isDarkMode
+                        ? 'text-[hsl(var(--theme-text-muted))]'
+                        : 'text-white/40'
+                    }`} />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    placeholder="Search"
+                    className={`w-full pl-9 pr-3 py-1.5 rounded text-sm border-none focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] transition-all ${isScrolled || !isDarkMode
+                        ? 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]'
+                        : 'bg-[#1e1f22]/60 text-white placeholder-white/40'
+                      }`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Scrollable Content Area */}
+            <div
+              ref={scrollContainerRef}
+              className="flex-1 overflow-y-auto"
+              style={{ background: 'hsl(var(--theme-bg-primary))', scrollbarWidth: 'thin', scrollbarColor: 'hsl(var(--theme-bg-tertiary)) transparent' }}
+              onScroll={(e) => {
+                const scrollTop = (e.target as HTMLDivElement).scrollTop;
+                setIsScrolled(scrollTop > 10);
+              }}
+            >
+              {/* Hero Section - Now scrollable */}
+              <div className="relative">
+                {/* Hero Background - Blue/Purple gradient like Discord */}
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background: 'linear-gradient(140deg, #5865f2 0%, #7289da 15%, #5865f2 30%, #4752c4 50%, #3c45a5 70%, #2d3494 85%, #1e2371 100%)',
+                  }}
+                />
+
+                {/* Decorative blur elements */}
+                <div className="absolute inset-0 overflow-hidden">
+                  <div className="absolute right-0 top-0 w-[500px] h-[500px] bg-[#eb459e]/15 rounded-full blur-[100px]" />
+                  <div className="absolute -left-20 bottom-0 w-[400px] h-[400px] bg-[#5865f2]/40 rounded-full blur-[80px]" />
+                </div>
+
+                {/* Hero Content - Reduced height */}
+                <div className="relative z-10 px-4 sm:px-8 pt-6 sm:pt-8 pb-8 sm:pb-12">
+                  <h1
+                    className="text-2xl sm:text-4xl lg:text-[48px] font-extrabold text-white mb-3 leading-[1.1] tracking-tight"
+                    style={{
+                      fontFamily: "'Ginto', 'Helvetica Neue', Helvetica, Arial, sans-serif",
+                      fontStyle: 'italic',
+                      fontWeight: 900,
+                      letterSpacing: '-0.5px',
+                    }}
+                  >
+                    FIND YOUR COMMUNITY<br />ON AURAFLOW
+                  </h1>
+                  <p className="text-white/70 text-[15px] max-w-lg">
+                    From gaming, to music, to learning, there's a place for you.
+                  </p>
+                </div>
+              </div>
+
+              {/* Content Below Hero */}
+              <div style={{ background: 'hsl(var(--theme-bg-primary))' }}>
+                {isLoading ? (
+                  <div className="flex items-center justify-center h-64">
+                    <Loader2 className="w-8 h-8 animate-spin text-[hsl(var(--theme-accent-primary))]" />
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {communities.map((community) => {
-                      const logoUrl = getCommunityLogoUrl(community);
-                      const bannerUrl = getCommunityBannerUrl(community);
-                      return (
-                        <div
-                          key={community.id}
-                          className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-[hsl(var(--theme-accent-primary)/0.5)] transition-all duration-300 hover:shadow-lg"
-                        >
-                          {/* Banner */}
-                          <div className="relative h-28 overflow-hidden">
-                            {bannerUrl ? (
-                              <img 
-                                src={bannerUrl} 
-                                alt={`${community.name} banner`}
-                                className="absolute inset-0 w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div 
-                                className="absolute inset-0"
-                                style={{ 
-                                  background: community.color 
-                                    ? `linear-gradient(135deg, ${community.color}, ${community.color}88)` 
-                                    : 'linear-gradient(135deg, hsl(var(--theme-accent-primary)), hsl(var(--theme-accent-secondary)))' 
-                                }}
-                              />
-                            )}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                          </div>
-
-                          {/* Community Icon */}
-                          <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg">
-                            {logoUrl ? (
-                              <img src={logoUrl} alt={community.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <div
-                                className="w-full h-full flex items-center justify-center text-white font-bold"
-                                style={{ backgroundColor: community.color || '#5865f2' }}
-                              >
-                                {community.icon || getInitials(community.name)}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Content */}
-                          <div className="pt-8 pb-4 px-4">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-bold text-[hsl(var(--theme-text-primary))] truncate text-sm">
-                                {community.name}
-                              </h3>
-                              {(community.member_count || 0) >= 100 && (
-                                <Verified className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                              )}
-                            </div>
-
-                            <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
-                              {community.description || 'A community on AuraFlow'}
-                            </p>
-
-                            <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
-                              <div className="flex items-center gap-1">
-                                <Users className="w-3 h-3" />
-                                <span>{formatMemberCount(community.member_count || 0)} Members</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Hover overlay */}
-                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
-                            <button
-                              onClick={() => handleJoin(community.id)}
-                              disabled={joiningId === community.id}
-                              className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-lg hover:scale-105 transition-all duration-200 disabled:opacity-60 flex items-center gap-2"
-                            >
-                              {joiningId === community.id ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                  Joining...
-                                </>
-                              ) : (
-                                <>
-                                  <Plus className="w-4 h-4" />
-                                  Join
-                                </>
-                              )}
-                            </button>
-                          </div>
+                  <div className="p-6">
+                    {/* Featured Communities */}
+                    {selectedCategory === 'home' && !searchTerm && featuredCommunities.length > 0 && (
+                      <div className="mb-10">
+                        <div className="flex items-center justify-between mb-4">
+                          <h2 className="text-base font-semibold text-[hsl(var(--theme-text-primary))]">
+                            Featured Servers
+                          </h2>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
 
-                {/* Load more */}
-                {hasMore && communities.length > 0 && (
-                  <div ref={observerTarget} className="py-8 flex justify-center">
-                    {isLoadingMore && (
-                      <Loader2 className="w-6 h-6 animate-spin text-[hsl(var(--theme-accent-primary))]" />
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {featuredCommunities.map((community) => {
+                            const logoUrl = getCommunityLogoUrl(community);
+                            const bannerUrl = getCommunityBannerUrl(community);
+                            return (
+                              <div
+                                key={community.id}
+                                className="group relative rounded-lg overflow-hidden bg-[hsl(var(--theme-bg-secondary))] hover:shadow-xl transition-all duration-300 cursor-pointer"
+                                onClick={() => handleJoin(community.id)}
+                              >
+                                {/* Banner Image/Gradient */}
+                                <div className="relative h-36 overflow-hidden">
+                                  {bannerUrl ? (
+                                    <img
+                                      src={bannerUrl}
+                                      alt={`${community.name} banner`}
+                                      className="absolute inset-0 w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <div
+                                      className="absolute inset-0"
+                                      style={{
+                                        background: `linear-gradient(135deg, ${community.color || '#5865f2'} 0%, #eb459f 50%, #fee75c 100%)`,
+                                      }}
+                                    />
+                                  )}
+                                  {/* Overlay gradient for text readability */}
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                                  {/* Decorative shapes (only when no banner) */}
+                                  {!bannerUrl && (
+                                    <div className="absolute inset-0 opacity-30">
+                                      <div className="absolute right-0 top-0 w-32 h-32 bg-white/20 rounded-full -translate-y-1/2 translate-x-1/2" />
+                                      <div className="absolute left-1/4 bottom-0 w-24 h-24 bg-black/10 rounded-full translate-y-1/2" />
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Community Icon */}
+                                <div className="absolute left-4 top-[108px] w-12 h-12 rounded-2xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg">
+                                  {logoUrl ? (
+                                    <img src={logoUrl} alt={community.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div
+                                      className="w-full h-full flex items-center justify-center text-white font-bold text-sm"
+                                      style={{ backgroundColor: community.color || '#5865f2' }}
+                                    >
+                                      {community.icon || getInitials(community.name)}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Content */}
+                                <div className="pt-8 pb-4 px-4">
+                                  <div className="flex items-center gap-1.5 mb-1">
+                                    <Verified className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                                    <h3 className="font-semibold text-[hsl(var(--theme-text-primary))] truncate text-sm">
+                                      {community.name}
+                                    </h3>
+                                  </div>
+
+                                  <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
+                                    {community.description || 'A great community to join!'}
+                                  </p>
+
+                                  <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                                    <div className="flex items-center gap-1">
+                                      <Users className="w-3 h-3" />
+                                      <span>{formatMemberCount(community.member_count || 0)} Members</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Loading overlay when joining */}
+                                {joiningId === community.id && (
+                                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-sm">
+                                    <Loader2 className="w-6 h-6 animate-spin text-white" />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
+
+                    {/* All Communities */}
+                    <div>
+                      <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] mb-5 flex items-center gap-2">
+                        {searchTerm ? (
+                          <>
+                            <Search className="w-5 h-5 text-[hsl(var(--theme-text-muted))]" />
+                            Search Results
+                          </>
+                        ) : (
+                          <>
+                            <TrendingUp className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
+                            Popular Communities
+                          </>
+                        )}
+                      </h2>
+
+                      {communities.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16">
+                          <Compass className="w-16 h-16 text-[hsl(var(--theme-text-muted))] mb-4" />
+                          <p className="text-lg font-medium text-[hsl(var(--theme-text-secondary))]">
+                            {searchTerm ? 'No communities found' : 'No communities available yet'}
+                          </p>
+                          <p className="text-sm text-[hsl(var(--theme-text-muted))] mt-1">
+                            {searchTerm ? 'Try a different search term' : 'Be the first to create one!'}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                          {communities.map((community) => {
+                            const logoUrl = getCommunityLogoUrl(community);
+                            const bannerUrl = getCommunityBannerUrl(community);
+                            return (
+                              <div
+                                key={community.id}
+                                className="group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-[hsl(var(--theme-accent-primary)/0.5)] transition-all duration-300 hover:shadow-lg"
+                              >
+                                {/* Banner */}
+                                <div className="relative h-28 overflow-hidden">
+                                  {bannerUrl ? (
+                                    <img
+                                      src={bannerUrl}
+                                      alt={`${community.name} banner`}
+                                      className="absolute inset-0 w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <div
+                                      className="absolute inset-0"
+                                      style={{
+                                        background: community.color
+                                          ? `linear-gradient(135deg, ${community.color}, ${community.color}88)`
+                                          : 'linear-gradient(135deg, hsl(var(--theme-accent-primary)), hsl(var(--theme-accent-secondary)))'
+                                      }}
+                                    />
+                                  )}
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                                </div>
+
+                                {/* Community Icon */}
+                                <div className="absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg">
+                                  {logoUrl ? (
+                                    <img src={logoUrl} alt={community.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div
+                                      className="w-full h-full flex items-center justify-center text-white font-bold"
+                                      style={{ backgroundColor: community.color || '#5865f2' }}
+                                    >
+                                      {community.icon || getInitials(community.name)}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Content */}
+                                <div className="pt-8 pb-4 px-4">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <h3 className="font-bold text-[hsl(var(--theme-text-primary))] truncate text-sm">
+                                      {community.name}
+                                    </h3>
+                                    {(community.member_count || 0) >= 100 && (
+                                      <Verified className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                                    )}
+                                  </div>
+
+                                  <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
+                                    {community.description || 'A community on AuraFlow'}
+                                  </p>
+
+                                  <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                                    <div className="flex items-center gap-1">
+                                      <Users className="w-3 h-3" />
+                                      <span>{formatMemberCount(community.member_count || 0)} Members</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Hover overlay */}
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
+                                  <button
+                                    onClick={() => handleJoin(community.id)}
+                                    disabled={joiningId === community.id}
+                                    className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-lg hover:scale-105 transition-all duration-200 disabled:opacity-60 flex items-center gap-2"
+                                  >
+                                    {joiningId === community.id ? (
+                                      <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Joining...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Plus className="w-4 h-4" />
+                                        Join
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Load more */}
+                      {hasMore && communities.length > 0 && (
+                        <div ref={observerTarget} className="py-8 flex justify-center">
+                          {isLoadingMore && (
+                            <Loader2 className="w-6 h-6 animate-spin text-[hsl(var(--theme-accent-primary))]" />
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
-                </div>
               </div>
-            )}
-          </div>
-        </div>
-        </>
+            </div>
+          </>
         )}
       </div>
 
@@ -1022,7 +1009,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
           }}
           agentType={selectedAgentType}
           mode="discover"
-          onSuccess={() => {}}
+          onSuccess={() => { }}
         />
       )}
 
@@ -1035,7 +1022,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
             setTimeout(() => setSettingsAgentType(null), 300);
           }}
           agentType={settingsAgentType}
-          onSuccess={() => {}}
+          onSuccess={() => { }}
         />
       )}
     </div>

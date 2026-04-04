@@ -208,7 +208,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
       style={{ background: 'var(--theme-bg-gradient)' }}
     >
       {/* Desktop: Friends Sidebar - Always Visible */}
-      <div className="hidden md:flex flex-shrink-0 relative z-[200]">
+      <div className="hidden md:flex flex-shrink-0 relative z-30">
         <FriendsSidebar 
           onNavigate={handleNavigation} 
           currentView={currentView} 
@@ -220,7 +220,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
       {/* Desktop: Channel Sidebar - Show when community is selected and not on agent/discover page */}
       {currentView === "dashboard" && hasCommunitySelected && !isAgentPage && !isDiscoverPage && (
-        <div className="hidden md:flex flex-shrink-0 relative z-[50]">
+        <div className="hidden md:flex flex-shrink-0 relative z-20">
           <ChannelSidebar 
             onNavigate={handleNavigation}
             onMembersModalChange={setIsMembersModalOpen}
@@ -274,7 +274,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative z-[10]">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
         {isAgentPage || isDiscoverPage || currentView === "not-found" ? (
           // Agent/Discover/NotFound pages take full width
           <div className="flex-1 overflow-hidden">

@@ -350,7 +350,7 @@ export default function Home() {
         {/* ── Footer ── */}
         <footer className="text-center pb-8 pt-4">
           <p className="text-[11px] uppercase tracking-widest text-[hsl(var(--theme-text-muted)/0.5)]">
-            © 2026 AuraFlow Protocol &bull; Designed for Professionals
+            © 2026 AuraFlow Protocol
           </p>
         </footer>
       </main>
