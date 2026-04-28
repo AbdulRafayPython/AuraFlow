@@ -2,7 +2,8 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
-from utils import get_avatar_url
+from utils import get_avatar_url, get_user_id
+from services.redis_client import get_channel_membership, set_channel_membership
 import logging
 
 log = logging.getLogger(__name__)
@@ -46,20 +47,26 @@ def update_my_status():
         if not updates:
             return jsonify({'error': 'No fields to update'}), 400
 
-        params.append(username)
-
         with conn.cursor() as cur:
+            # FIX 1: Resolve user_id via cache
+            user_id = get_user_id(username, cur)
+            if not user_id:
+                return jsonify({'error': 'User not found'}), 404
+
+            # FIX 5: UPDATE by PK (id) instead of username — avoids a full index scan
+            # when username is not the clustered key.
+            params.append(user_id)
             cur.execute(
-                f"UPDATE users SET {', '.join(updates)} WHERE username = %s",
+                f"UPDATE users SET {', '.join(updates)} WHERE id = %s",
                 params
             )
             conn.commit()
 
-            # Return updated status
+            # Return updated status using id (consistent with the UPDATE above)
             cur.execute("""
                 SELECT status, custom_status, custom_status_emoji
-                FROM users WHERE username = %s
-            """, (username,))
+                FROM users WHERE id = %s
+            """, (user_id,))
             user = cur.fetchone()
 
         return jsonify({
@@ -137,10 +144,8 @@ def get_user_profile(username):
             if not target:
                 return jsonify({'error': 'User not found'}), 404
 
-            # Get current user id
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_username,))
-            current_user = cur.fetchone()
-            current_user_id = current_user['id'] if current_user else None
+            # FIX 1: Use cached get_user_id for the current viewer
+            current_user_id = get_user_id(current_username, cur)
 
             # Check friendship status
             friendship_status = 'none'
@@ -235,11 +240,10 @@ def get_unread_counts():
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            user_id = get_user_id(username, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
         # Use unread tracker service if available
         try:
@@ -252,22 +256,26 @@ def get_unread_counts():
 
         # Fallback to DB query
         with conn.cursor() as cur:
-            # Channel unreads
+            # FIX 8: Replace correlated per-row COUNT subquery with a single JOIN.
+            # The original query ran "SELECT COUNT(*)" once per channel row, scaling
+            # linearly with the number of channels. The JOIN version scans messages
+            # once across all channels for this user.
             cur.execute("""
-                SELECT 
-                    cm.channel_id, ch.community_id,
+                SELECT
+                    cm.channel_id,
+                    ch.community_id,
                     COALESCE(crs.last_read_message_id, 0) AS last_read_id,
-                    (
-                        SELECT COUNT(*) FROM messages m
-                        WHERE m.channel_id = cm.channel_id
-                          AND m.id > COALESCE(crs.last_read_message_id, 0)
-                          AND m.sender_id != %s
-                    ) AS unread_count
+                    COUNT(m.id) AS unread_count
                 FROM channel_members cm
                 JOIN channels ch ON cm.channel_id = ch.id
-                LEFT JOIN channel_read_status crs 
+                LEFT JOIN channel_read_status crs
                     ON crs.channel_id = cm.channel_id AND crs.user_id = %s
+                LEFT JOIN messages m
+                    ON m.channel_id = cm.channel_id
+                    AND m.id > COALESCE(crs.last_read_message_id, 0)
+                    AND m.sender_id != %s
                 WHERE cm.user_id = %s
+                GROUP BY cm.channel_id, ch.community_id, crs.last_read_message_id
             """, (user_id, user_id, user_id))
 
             channels = {}
@@ -330,18 +338,22 @@ def mark_channel_read():
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            user_id = get_user_id(username, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
-            # Verify user is a member of this channel
-            cur.execute(
-                "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
-                (channel_id, user_id)
-            )
-            if not cur.fetchone():
+            # FIX 9: Check channel membership via Redis cache
+            cached_member = get_channel_membership(channel_id, user_id)
+            if cached_member is None:
+                cur.execute(
+                    "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
+                    (channel_id, user_id)
+                )
+                is_member = cur.fetchone() is not None
+                set_channel_membership(channel_id, user_id, is_member)
+                cached_member = is_member
+            if not cached_member:
                 return jsonify({'error': 'Not a member of this channel'}), 403
 
             # If no message_id given, use the latest message in channel

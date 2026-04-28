@@ -6,6 +6,8 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
 from datetime import datetime
 from services.notification_service import create_notification
+# FIX 1: Use cached user-id lookup to eliminate repeated DB hits
+from utils import get_user_id
 
 log = logging.getLogger(__name__)
 
@@ -26,14 +28,12 @@ def send_friend_request():
 
         conn = get_db_connection()
         with conn.cursor() as cur:
-            # Get sender ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            sender_row = cur.fetchone()
-            if not sender_row:
+            # FIX 1: Use cached get_user_id for the sender
+            sender_id = get_user_id(current_user, cur)
+            if not sender_id:
                 return jsonify({'error': 'Sender not found'}), 404
-            sender_id = sender_row['id']
 
-            # Get receiver ID
+            # Get receiver ID (target is a different user \u2014 still needs DB fetch)
             cur.execute("SELECT id, username, display_name, avatar_url FROM users WHERE username = %s", (target_username,))
             receiver_row = cur.fetchone()
             if not receiver_row:
@@ -276,11 +276,10 @@ def get_pending_requests():
         current_user = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached get_user_id — skips DB on warm Redis cache
+            user_id = get_user_id(current_user, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Incoming requests (received from others)
             cur.execute("""
@@ -331,11 +330,10 @@ def get_sent_requests():
         current_user = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached get_user_id — skips DB on warm Redis cache
+            user_id = get_user_id(current_user, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Outgoing requests (sent by current user)
             cur.execute("""
@@ -388,11 +386,10 @@ def accept_friend_request(request_id):
         current_user = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached get_user_id — skips DB on warm Redis cache
+            user_id = get_user_id(current_user, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             cur.execute("""
                 SELECT sender_id, receiver_id, status 
@@ -501,11 +498,10 @@ def _update_request_status(request_id, status, role_field):
         current_user = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached get_user_id — skips DB on warm Redis cache
+            user_id = get_user_id(current_user, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Fetch the request BEFORE updating so we know who to notify
             cur.execute("""
@@ -579,11 +575,10 @@ def remove_friend(friend_id):
         current_user = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached get_user_id — skips DB on warm Redis cache
+            user_id = get_user_id(current_user, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             cur.execute("""
                 DELETE FROM friends 
@@ -634,11 +629,10 @@ def block_friend(friend_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get current user id
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached get_user_id — skips DB on warm Redis cache
+            user_id = get_user_id(current_user, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             if user_id == friend_id:
                 return jsonify({'error': 'Cannot block yourself'}), 400
@@ -700,11 +694,10 @@ def get_blocked_friends():
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get current user id
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached get_user_id — skips DB on warm Redis cache
+            user_id = get_user_id(current_user, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Get blocked users
             cur.execute("""
@@ -745,11 +738,10 @@ def unblock_friend(friend_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get current user id
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached get_user_id — skips DB on warm Redis cache
+            user_id = get_user_id(current_user, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Check if blocked
             cur.execute("SELECT 1 FROM blocked_friends WHERE blocker_id = %s AND blocked_id = %s", (user_id, friend_id))

@@ -5,6 +5,15 @@ from database import get_db_connection
 from utils import get_avatar_url, get_user_id
 from utils.encryption import encrypt as _encrypt, decrypt as _decrypt
 from services.notification_service import create_notification
+# FIX 9: Cache channel membership checks
+from services.redis_client import get_channel_membership, set_channel_membership
+# Channel message list cache (Redis List — eliminates DB hit on channel open)
+from services.redis_client import (
+    get_channel_messages_cache,
+    push_channel_message_cache,
+    seed_channel_messages_cache,
+    invalidate_channel_messages_cache,
+)
 from datetime import datetime
 import re
 import sys
@@ -498,16 +507,29 @@ def get_channel_messages(channel_id):
         offset = max(request.args.get('offset', 0, type=int), 0)
 
         current_user = get_jwt_identity()
+
+        # ── Redis cache hit (offset=0 only) ──────────────────────────────────
+        if offset == 0:
+            cached = get_channel_messages_cache(channel_id)
+            if cached is not None:
+                log.debug(f"[MSG-CACHE] HIT channel={channel_id} ({len(cached)} msgs)")
+                return jsonify(cached), 200
+
         conn = get_db_connection()
         with conn.cursor() as cur:
             user_id = get_user_id(current_user, cur)
             if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
 
-            # Check channel access
-            cur.execute("SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
-                        (channel_id, user_id))
-            if not cur.fetchone():
+            # FIX 9: Check channel membership via Redis cache
+            cached_member = get_channel_membership(channel_id, user_id)
+            if cached_member is None:
+                cur.execute("SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
+                            (channel_id, user_id))
+                is_member = cur.fetchone() is not None
+                set_channel_membership(channel_id, user_id, is_member)
+                cached_member = is_member
+            if not cached_member:
                 return jsonify({'error': 'Access denied'}), 403
 
             # Fetch messages with reply-to preview
@@ -563,6 +585,11 @@ def get_channel_messages(channel_id):
             }} if m.get('reply_to') and m.get('reply_author') else {}),
         } for m in rows]
         
+        # ── Seed Redis cache on first DB fetch (offset=0) ───────────────────
+        if offset == 0:
+            seed_channel_messages_cache(channel_id, result)
+            log.debug(f"[MSG-CACHE] SEED channel={channel_id} ({len(result)} msgs)")
+
         return jsonify(result), 200
 
     except Exception as e:
@@ -629,9 +656,15 @@ def send_message():
             community_id = channel_row['community_id']
             log.info(f"[HTTP SEND] Channel {channel_id} in community {community_id}")
 
-            cur.execute("SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
-                        (channel_id, user_id))
-            if not cur.fetchone():
+            # FIX 9: Check channel membership via Redis cache
+            cached_member = get_channel_membership(channel_id, user_id)
+            if cached_member is None:
+                cur.execute("SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
+                            (channel_id, user_id))
+                is_member = cur.fetchone() is not None
+                set_channel_membership(channel_id, user_id, is_member)
+                cached_member = is_member
+            if not cached_member:
                 return jsonify({'error': 'Access denied'}), 403
 
             # Check block list first
@@ -839,6 +872,25 @@ def send_message():
                 log.info(f"[SOCKET-EMIT] Emitting message_received (id={msg['id']}) to channel_{channel_id}")
                 socketio.emit('message_received', payload, room=f"channel_{channel_id}", namespace='/')
                 log.info(f"[SOCKET-EMIT] Emit complete for message {msg['id']}")
+
+                # Push to message cache so next channel open is served from Redis
+                cache_msg = {
+                    'id': msg['id'],
+                    'channel_id': msg['channel_id'],
+                    'sender_id': user_id,
+                    'content': content,
+                    'message_type': msg['message_type'],
+                    'reply_to': msg['reply_to'],
+                    'created_at': msg['created_at'].isoformat(),
+                    'author': msg['username'],
+                    'display_name': msg.get('display_name') or msg['username'],
+                    'avatar_url': get_avatar_url(msg['username'], msg['avatar_url']),
+                    'is_blocked': False,
+                    'is_pinned': False,
+                    **(({'reply_to_preview': rtp}) if rtp else {}),
+                }
+                push_channel_message_cache(channel_id, cache_msg)
+
                 _emit_unread_tracking(socketio, channel_id, community_id, user_id, message_id, content)
 
                 # @mention + reply notifications (fire-and-forget)
@@ -1253,7 +1305,7 @@ def delete_message(message_id):
             if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
 
-            cur.execute("SELECT sender_id FROM messages WHERE id = %s", (message_id,))
+            cur.execute("SELECT sender_id, channel_id FROM messages WHERE id = %s", (message_id,))
             msg = cur.fetchone()
             if not msg:
                 return jsonify({'error': 'Message not found'}), 404
@@ -1263,6 +1315,8 @@ def delete_message(message_id):
             cur.execute("DELETE FROM messages WHERE id = %s", (message_id,))
 
         conn.commit()
+        # Invalidate cache so the deleted message is gone on next channel open
+        invalidate_channel_messages_cache(msg['channel_id'])
         return jsonify({'message': 'Message deleted'}), 200
 
     except Exception as e:
@@ -1294,7 +1348,7 @@ def edit_message(message_id):
             if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
 
-            cur.execute("SELECT sender_id FROM messages WHERE id = %s", (message_id,))
+            cur.execute("SELECT sender_id, channel_id FROM messages WHERE id = %s", (message_id,))
             msg = cur.fetchone()
             if not msg:
                 return jsonify({'error': 'Message not found'}), 404
@@ -1312,9 +1366,9 @@ def edit_message(message_id):
             updated = cur.fetchone()
 
         conn.commit()
+        # Invalidate cache so the edited content is correct on next channel open
+        invalidate_channel_messages_cache(updated['channel_id'])
         return jsonify({
-            'id': updated['id'],
-            'channel_id': updated['channel_id'],
             'sender_id': updated['sender_id'],
             'content': _decrypt(updated['content']) if updated['content'] else updated['content'],
             'message_type': updated['message_type'],

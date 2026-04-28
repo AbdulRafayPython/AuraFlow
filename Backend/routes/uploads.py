@@ -6,7 +6,9 @@
 from flask import Blueprint, jsonify, request, send_from_directory
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
-from utils import get_avatar_url
+from utils import get_avatar_url, get_user_id
+# FIX 9: Cache channel membership checks
+from services.redis_client import get_channel_membership, set_channel_membership
 import os
 import uuid
 import logging
@@ -112,11 +114,10 @@ def upload_channel_file():
         # Auth + access checks
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            user_id = get_user_id(current_user, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
             cur.execute("SELECT id, community_id FROM channels WHERE id = %s", (int(channel_id),))
             channel = cur.fetchone()
@@ -124,11 +125,17 @@ def upload_channel_file():
                 return jsonify({'error': 'Channel not found'}), 404
             community_id = channel['community_id']
 
-            cur.execute(
-                "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
-                (int(channel_id), user_id)
-            )
-            if not cur.fetchone():
+            # FIX 9: Check channel membership via Redis cache
+            cached_member = get_channel_membership(int(channel_id), user_id)
+            if cached_member is None:
+                cur.execute(
+                    "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
+                    (int(channel_id), user_id)
+                )
+                is_member = cur.fetchone() is not None
+                set_channel_membership(int(channel_id), user_id, is_member)
+                cached_member = is_member
+            if not cached_member:
                 return jsonify({'error': 'Access denied'}), 403
 
             # Check block list
@@ -270,11 +277,10 @@ def upload_dm_file():
 
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            sender_id = get_user_id(current_user, cur)
+            if not sender_id:
                 return jsonify({'error': 'User not found'}), 404
-            sender_id = user['id']
 
             cur.execute("SELECT id FROM users WHERE id = %s", (int(receiver_id),))
             if not cur.fetchone():

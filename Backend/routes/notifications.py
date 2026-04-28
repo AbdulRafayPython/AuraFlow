@@ -11,6 +11,8 @@ from services.notification_service import (
     delete_notification,
     delete_all_notifications,
 )
+# FIX 1: Use cached get_user_id to eliminate repeated DB lookups
+from utils import get_user_id
 import config as _cfg
 
 log = logging.getLogger(__name__)
@@ -96,20 +98,16 @@ def remove_all_notifications():
 # ── Helper ───────────────────────────────────────────────────────────
 
 def _current_user_id():
-    """Resolve JWT username → user_id."""
-    conn = None
+    """
+    Resolve JWT username → user_id.
+    FIX 1: Uses Redis-cached get_user_id \u2014 no DB hit on warm cache.
+    """
     try:
         username = get_jwt_identity()
-        conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            row = cur.fetchone()
-            return row["id"] if row else None
+        # get_user_id opens its own connection when no cursor is provided
+        return get_user_id(username)
     except Exception:
         return None
-    finally:
-        if conn:
-            conn.close()
 
 
 # ─── Web Push subscription endpoints ─────────────────────────────────

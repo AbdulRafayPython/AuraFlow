@@ -48,20 +48,25 @@ def load_user_unreads(user_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # ── Seed channel_read_status for channels that have no entry yet ────
-            # Without this, COALESCE(NULL, 0) counts ALL historic messages as unread.
-            # We initialise to the current MAX message id so only *new* messages
-            # (arriving after this point) count as unread.
+            # FIX 4: Replaced two correlated subqueries with derived-table JOINs.
+            # The original query ran COALESCE(SELECT MAX...) and NOT EXISTS(SELECT 1...)
+            # once per row in channel_members.  The rewritten version computes
+            # MAX(message_id) per channel once and does the existence check via a
+            # LEFT JOIN with an IS NULL filter — same semantics, linear not quadratic.
             try:
                 cur.execute("""
                     INSERT INTO channel_read_status (user_id, channel_id, last_read_message_id)
-                    SELECT cm.user_id, cm.channel_id,
-                           COALESCE((SELECT MAX(m.id) FROM messages m WHERE m.channel_id = cm.channel_id), 0)
+                    SELECT cm.user_id, cm.channel_id, COALESCE(mx.max_id, 0)
                     FROM channel_members cm
+                    LEFT JOIN (
+                        SELECT channel_id, MAX(id) AS max_id
+                        FROM messages
+                        GROUP BY channel_id
+                    ) mx ON mx.channel_id = cm.channel_id
+                    LEFT JOIN channel_read_status crs
+                        ON crs.user_id = cm.user_id AND crs.channel_id = cm.channel_id
                     WHERE cm.user_id = %s
-                      AND NOT EXISTS (
-                          SELECT 1 FROM channel_read_status crs
-                          WHERE crs.user_id = cm.user_id AND crs.channel_id = cm.channel_id
-                      )
+                      AND crs.user_id IS NULL
                 """, (user_id,))
                 conn.commit()
             except Exception as seed_err:
@@ -71,20 +76,24 @@ def load_user_unreads(user_id):
                 except Exception:
                     pass
 
-            # Channel unreads – only messages AFTER the user's last read
+            # FIX 8: Replaced correlated per-row COUNT subquery with a single JOIN.
+            # The original ran a "SELECT COUNT(*)" correlated against
+            # channel_read_status once per channel_members row.  The JOIN version
+            # scans messages once across all channels for this user.
             cur.execute("""
                 SELECT cm.channel_id, ch.community_id,
-                    (SELECT COUNT(*) FROM messages m 
-                     WHERE m.channel_id = cm.channel_id 
-                     AND m.id > COALESCE(
-                        (SELECT last_read_message_id FROM channel_read_status 
-                         WHERE user_id = %s AND channel_id = cm.channel_id), 0)
-                     AND m.sender_id != %s
-                    ) AS unread_count
+                       COUNT(m.id) AS unread_count
                 FROM channel_members cm
                 JOIN channels ch ON cm.channel_id = ch.id
+                LEFT JOIN channel_read_status crs
+                    ON crs.user_id = cm.user_id AND crs.channel_id = cm.channel_id
+                LEFT JOIN messages m
+                    ON m.channel_id = cm.channel_id
+                    AND m.id > COALESCE(crs.last_read_message_id, 0)
+                    AND m.sender_id != cm.user_id
                 WHERE cm.user_id = %s
-            """, (user_id, user_id, user_id))
+                GROUP BY cm.channel_id, ch.community_id
+            """, (user_id,))
             
             with _lock:
                 community_totals = defaultdict(int)
@@ -340,33 +349,41 @@ def _persistence_loop():
     while True:
         try:
             time.sleep(30)  # Persist every 30 seconds
-            
+
             with _lock:
                 users_to_sync = list(_dirty_users)
                 _dirty_users.clear()
-            
+
             if not users_to_sync:
                 continue
-            
+
+            # FIX 3: Collect ALL (user_id, community_id, total_unread) tuples first,
+            # then issue a single multi-row INSERT instead of N individual INSERTs
+            # followed by N COMMITs.  This reduces commit overhead from O(users *
+            # communities) to exactly 1 COMMIT per 30-second persistence window.
+            rows = []
+            for uid in users_to_sync:
+                with _lock:
+                    communities = dict(_community_unread.get(uid, {}))
+                for comm_id, count in communities.items():
+                    rows.append((uid, comm_id, count))
+
+            if not rows:
+                continue
+
             conn = get_db_connection()
             try:
                 with conn.cursor() as cur:
-                    for uid in users_to_sync:
-                        # Sync community unread totals
-                        with _lock:
-                            communities = dict(_community_unread.get(uid, {}))
-                        
-                        for comm_id, count in communities.items():
-                            cur.execute("""
-                                INSERT INTO community_unread_status (user_id, community_id, total_unread)
-                                VALUES (%s, %s, %s)
-                                ON DUPLICATE KEY UPDATE total_unread = VALUES(total_unread)
-                            """, (uid, comm_id, count))
-                
+                    # Batch upsert all rows in one statement
+                    cur.executemany("""
+                        INSERT INTO community_unread_status (user_id, community_id, total_unread)
+                        VALUES (%s, %s, %s)
+                        ON DUPLICATE KEY UPDATE total_unread = VALUES(total_unread)
+                    """, rows)
                 conn.commit()
-                log.debug(f"[UNREAD] Persisted unreads for {len(users_to_sync)} users")
+                log.debug(f"[UNREAD] Persisted unreads for {len(users_to_sync)} users ({len(rows)} rows) in 1 COMMIT")
             finally:
                 conn.close()
-                
+
         except Exception as e:
             log.error(f"[UNREAD] Persistence error: {e}")

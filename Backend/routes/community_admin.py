@@ -14,6 +14,9 @@ from services.notification_service import create_notification
 from datetime import datetime, timedelta
 from functools import wraps
 import logging
+# FIX 1/6: Cached user-id and role lookups
+from utils import get_user_id
+from services.redis_client import get_member_role, set_member_role, invalidate_member_role
 
 log = logging.getLogger(__name__)
 
@@ -36,26 +39,30 @@ def require_community_owner(f):
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                user = cur.fetchone()
-                if not user:
+                # FIX 1: Use cached get_user_id — no raw DB lookup needed
+                user_id = get_user_id(username, cur)
+                if not user_id:
                     return jsonify({'error': 'User not found'}), 404
-                
-                # Check if user is owner or admin of this specific community
-                cur.execute("""
-                    SELECT role FROM community_members 
-                    WHERE user_id = %s AND community_id = %s AND role IN ('owner', 'admin')
-                """, (user['id'], community_id))
-                
-                membership = cur.fetchone()
-                if not membership:
+
+                # FIX 6: Cache community role to avoid repeated membership scans
+                cached_role = get_member_role(community_id, user_id)
+                if cached_role is None:
+                    cur.execute("""
+                        SELECT role FROM community_members 
+                        WHERE user_id = %s AND community_id = %s AND role IN ('owner', 'admin')
+                    """, (user_id, community_id))
+                    membership = cur.fetchone()
+                    cached_role = membership['role'] if membership else ''
+                    set_member_role(community_id, user_id, cached_role)
+
+                if not cached_role:
                     return jsonify({'error': 'Admin access required for this community'}), 403
-                
+
                 # Attach user info to request
-                request.admin_user_id = user['id']
+                request.admin_user_id = user_id
                 request.admin_username = username
-                request.admin_role = membership['role']
-                
+                request.admin_role = cached_role
+
         finally:
             conn.close()
         
@@ -79,22 +86,32 @@ def get_owned_communities():
         conn = get_db_connection()
         
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            user_id = get_user_id(username, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
             
+            # FIX 2: Replace correlated subqueries with derived-table JOINs so the
+            # count is computed once per community, not once per row.
             cur.execute("""
                 SELECT 
                     c.id, c.name, c.icon, c.color, c.logo_url, c.description,
                     cm.role,
-                    (SELECT COUNT(*) FROM community_members WHERE community_id = c.id) as member_count,
-                    (SELECT COUNT(*) FROM channels WHERE community_id = c.id) as channel_count
+                    COALESCE(mc.cnt, 0) as member_count,
+                    COALESCE(cc.cnt, 0) as channel_count
                 FROM communities c
                 INNER JOIN community_members cm ON c.id = cm.community_id
+                LEFT JOIN (
+                    SELECT community_id, COUNT(*) AS cnt
+                    FROM community_members GROUP BY community_id
+                ) mc ON mc.community_id = c.id
+                LEFT JOIN (
+                    SELECT community_id, COUNT(*) AS cnt
+                    FROM channels GROUP BY community_id
+                ) cc ON cc.community_id = c.id
                 WHERE cm.user_id = %s AND cm.role IN ('owner', 'admin')
                 ORDER BY c.name
-            """, (user['id'],))
+            """, (user_id,))
             
             communities = cur.fetchall()
             

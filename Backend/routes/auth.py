@@ -13,6 +13,9 @@ from services.session_manager import (
     blocklist_access_token, check_refresh_rate_limit
 )
 from config import JWT_REFRESH_TOKEN_EXPIRES_DAYS
+# FIX 1: Use cached user-id helper to eliminate repeated DB lookups
+from utils import get_user_id, invalidate_user_id_cache
+from services.redis_client import cache_get, cache_set, cache_delete
 import secrets
 from datetime import datetime, timedelta
 from utils import get_avatar_url, format_user_data
@@ -147,18 +150,29 @@ def login():
             # ── END ────────────────────────────────────────────────
 
             token = create_access_token(identity=row['username'])
-            
+
+            # FIX 1: Seed the user-id Redis cache now — avoids DB lookup on every
+            # subsequent request from this user during the session.
+            cache_set(f"user:id:{row['username']}", row['id'], ttl=3600)
+
             # Determine user role: system_admin > admin (community owner) > user
             system_role = row.get('role') or 'user'
-            
+
             if system_role == 'system_admin':
                 role = 'system_admin'
             else:
-                cur.execute(
-                    "SELECT 1 FROM community_members WHERE user_id = %s AND role = 'owner' LIMIT 1",
-                    (row['id'],)
-                )
-                is_community_owner = cur.fetchone() is not None
+                # FIX 6: Cache the "is owner" flag to avoid a repeated membership scan.
+                _owner_key = f"user:is_owner:{row['id']}"
+                _cached_owner = cache_get(_owner_key)
+                if _cached_owner is not None:
+                    is_community_owner = _cached_owner
+                else:
+                    cur.execute(
+                        "SELECT 1 FROM community_members WHERE user_id = %s AND role = 'owner' LIMIT 1",
+                        (row['id'],)
+                    )
+                    is_community_owner = cur.fetchone() is not None
+                    cache_set(_owner_key, is_community_owner, ttl=300)
                 role = 'admin' if is_community_owner else 'user'
 
             # ── Create refresh token & session (reuse existing connection) ──
@@ -201,10 +215,13 @@ def update_first_login():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE users SET is_first_login = %s WHERE username = %s",
-                (0, current_user)
-            )
+            # FIX 5: Use cached user_id (PK) for the UPDATE instead of scanning by username
+            user_id = get_user_id(current_user, cur)
+            if user_id:
+                cur.execute(
+                    "UPDATE users SET is_first_login = %s WHERE id = %s",
+                    (0, user_id)
+                )
         conn.commit()
     finally:
         conn.close()
@@ -221,14 +238,18 @@ def logout():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            # Get user ID for session operations
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            user_id = user_row['id'] if user_row else None
+            # FIX 1: Use cached get_user_id — no raw DB lookup needed
+            user_id = get_user_id(current_user, cur)
 
         conn.commit()
     finally:
         conn.close()
+
+    # Invalidate the user-id cache on logout so a deactivated account cannot
+    # reuse a stale cached ID after token expiry.
+    if user_id:
+        invalidate_user_id_cache(current_user)
+        cache_delete(f"user:is_owner:{user_id}")
 
     if user_id:
         # Blocklist the current access token so it can't be reused
@@ -260,10 +281,11 @@ def get_me():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
+            # FIX 1: Include 'role' in the SELECT to eliminate the extra query below
             cur.execute(
                 """
                 SELECT id, username, email, display_name, bio, avatar_url,
-                      status, custom_status, is_first_login
+                      status, custom_status, is_first_login, role
                 FROM users 
                 WHERE username = %s
                 """,
@@ -272,21 +294,30 @@ def get_me():
             row = cur.fetchone()
             if not row:
                 return jsonify({'error': 'User not found'}), 404
+
+            # FIX 1: Seed user-id cache while we already have the row in memory
+            cache_set(f"user:id:{current_user}", row['id'], ttl=3600)
             
             # Determine user role: system_admin > admin (community owner) > user
             user_id = row['id']
-            cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
-            user_role_row = cur.fetchone()
-            system_role = user_role_row['role'] if user_role_row else 'user'
-            
+            # role is already in the SELECT above — no second query needed
+            system_role = row.get('role') or 'user'
+
             if system_role == 'system_admin':
                 role = 'system_admin'
             else:
-                cur.execute(
-                    "SELECT 1 FROM community_members WHERE user_id = %s AND role = 'owner' LIMIT 1",
-                    (user_id,)
-                )
-                is_community_owner = cur.fetchone() is not None
+                # FIX 6: Cache the "is owner" flag to avoid a repeated membership scan
+                _owner_key = f"user:is_owner:{user_id}"
+                _cached_owner = cache_get(_owner_key)
+                if _cached_owner is not None:
+                    is_community_owner = _cached_owner
+                else:
+                    cur.execute(
+                        "SELECT 1 FROM community_members WHERE user_id = %s AND role = 'owner' LIMIT 1",
+                        (user_id,)
+                    )
+                    is_community_owner = cur.fetchone() is not None
+                    cache_set(_owner_key, is_community_owner, ttl=300)
                 role = 'admin' if is_community_owner else 'user'
     finally:
         conn.close()
@@ -687,11 +718,10 @@ def refresh():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached lookup — skips DB on warm cache
+            user_id = get_user_id(current_user, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
     finally:
         conn.close()
 
@@ -729,11 +759,11 @@ def get_sessions():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached lookup — skips DB on warm cache
+            user_row_id = get_user_id(current_user, cur)
+            if not user_row_id:
                 return jsonify({'error': 'User not found'}), 404
-            sessions = get_active_sessions(user_row['id'])
+            sessions = get_active_sessions(user_row_id)
     finally:
         conn.close()
 
@@ -756,14 +786,14 @@ def revoke_session_endpoint():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached lookup — skips DB on warm cache
+            _uid = get_user_id(current_user, cur)
+            if not _uid:
                 return jsonify({'error': 'User not found'}), 404
     finally:
         conn.close()
 
-    success = revoke_session_by_id(session_id, user_row['id'])
+    success = revoke_session_by_id(session_id, _uid)
     if success:
         return jsonify({'message': 'Session revoked'}), 200
     return jsonify({'error': 'Session not found or already revoked'}), 404
@@ -780,14 +810,14 @@ def revoke_all_sessions_endpoint():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached lookup — skips DB on warm cache
+            _uid = get_user_id(current_user, cur)
+            if not _uid:
                 return jsonify({'error': 'User not found'}), 404
     finally:
         conn.close()
 
-    count = revoke_all_sessions(user_row['id'])
+    count = revoke_all_sessions(_uid)
     return jsonify({'message': f'Revoked {count} sessions', 'revoked_count': count}), 200
 
 
@@ -827,12 +857,11 @@ def get_notification_settings():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached lookup — skips DB on warm cache
+            user_id = get_user_id(current_user, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
 
-            user_id = user_row['id']
             cur.execute("SELECT * FROM user_notification_settings WHERE user_id = %s", (user_id,))
             row = cur.fetchone()
 
@@ -873,12 +902,10 @@ def update_notification_settings():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user_row = cur.fetchone()
-            if not user_row:
+            # FIX 1: Use cached lookup — skips DB on warm cache
+            user_id = get_user_id(current_user, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-
-            user_id = user_row['id']
 
             # Upsert: ensure row exists
             cur.execute(

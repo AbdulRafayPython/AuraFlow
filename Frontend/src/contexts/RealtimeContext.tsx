@@ -608,7 +608,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentCommunity, loadChannels]);
 
-  // Handle channel changes
+  // Handle channel changes — dep is currentChannel?.id (a primitive) so that
+  // metadata-only updates (name/description via channel_updated socket event)
+  // do NOT re-trigger a full message reload.
   useEffect(() => {
     if (currentChannel) {
       currentChannelRef.current = currentChannel;
@@ -637,7 +639,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         socketService.leaveChannel();
       }
     };
-  }, [currentChannel, loadMessages]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentChannel?.id]);
 
   const loadMoreMessages = useCallback(async () => {
     if (currentChannel && !isLoadingMessages && messageOffset > 0) {

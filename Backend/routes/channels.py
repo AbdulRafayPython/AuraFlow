@@ -4,6 +4,8 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
 from werkzeug.utils import secure_filename
 from utils import get_user_id
+# FIX 2/9: member_count updates and channel membership cache invalidation
+from services.redis_client import invalidate_channel_membership, invalidate_member_role
 import os
 import uuid
 from PIL import Image
@@ -1498,7 +1500,15 @@ def leave_community(community_id):
                 WHERE community_id = %s AND user_id = %s
             """, (community_id, user_id))
 
+            # FIX 2: Decrement denormalized member_count.
+            cur.execute("""
+                UPDATE communities SET member_count = GREATEST(member_count - 1, 0)
+                WHERE id = %s
+            """, (community_id,))
+
         conn.commit()
+        # FIX 6/9: Invalidate cached role and channel memberships for this user
+        invalidate_member_role(community_id, user_id)
         print(f"[SUCCESS] User {user_id} ({username}) left community {community_id}")
 
         # Broadcast leave event via socket to notify remaining members
@@ -1679,6 +1689,14 @@ def join_community(community_id):
                 VALUES (%s, %s, 'member')
             """, (community_id, user_id))
 
+            # FIX 2: Increment denormalized member_count. The migration
+            # add_sql_perf_v2.sql adds this column; this is a no-op if it
+            # doesn't exist yet (caught by the except in the outer block).
+            cur.execute("""
+                UPDATE communities SET member_count = member_count + 1
+                WHERE id = %s
+            """, (community_id,))
+
             # Get all public channels in the community and add user to them
             cur.execute("""
                 SELECT id FROM channels 
@@ -1700,6 +1718,9 @@ def join_community(community_id):
                     """, (channel_id, user_id))
 
         conn.commit()
+        # FIX 9: Prime channel membership cache for all channels just joined
+        for channel in channels:
+            invalidate_channel_membership(channel['id'], user_id)
         print(f"[SUCCESS] User {user_id} joined community {community_id}")
         return jsonify({
             'message': f'Successfully joined {community["name"]}',

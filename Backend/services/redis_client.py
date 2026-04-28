@@ -220,3 +220,116 @@ def redis_health():
         }
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
+
+
+# ── Channel Membership Cache ─────────────────────────────────────────
+# FIX 9: Cache "SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?"
+# Avoids 51+ repeated membership checks per diagnostic window.
+# TTL=120s — short enough to reflect join/leave within 2 minutes.
+
+def get_channel_membership(channel_id, user_id):
+    """Return cached membership bool, or None if not in cache."""
+    return cache_get(f"channel_member:{channel_id}:{user_id}")
+
+
+def set_channel_membership(channel_id, user_id, is_member):
+    """Cache channel membership result (TTL=120s)."""
+    cache_set(f"channel_member:{channel_id}:{user_id}", is_member, ttl=120)
+
+
+def invalidate_channel_membership(channel_id, user_id):
+    """Invalidate channel membership cache entry (call on join/leave)."""
+    cache_delete(f"channel_member:{channel_id}:{user_id}")
+
+
+# ── Community Member Role Cache ───────────────────────────────────────
+# FIX 6: Cache "SELECT 1 FROM community_members WHERE user_id=? AND role=? LIMIT 1"
+# Avoids 48+ role-check queries per diagnostic window.
+# TTL=300s — acceptable staleness for a role promotion/demotion.
+
+def get_member_role(community_id, user_id):
+    """Return cached role string or None if not in cache."""
+    return cache_get(f"member_role:{community_id}:{user_id}")
+
+
+def set_member_role(community_id, user_id, role):
+    """Cache community member role (TTL=300s)."""
+    cache_set(f"member_role:{community_id}:{user_id}", role, ttl=300)
+
+
+def invalidate_member_role(community_id, user_id):
+    """Invalidate role cache (call on role change, kick, or leave)."""
+    cache_delete(f"member_role:{community_id}:{user_id}")
+
+
+# ── Channel Message Cache ─────────────────────────────────────────────────────
+# Stores the last 100 messages per channel as a Redis List (newest = head).
+# Key: channel_msgs:{channel_id}  |  TTL: 30 min (refreshed on every push)
+# Eliminates the DB round-trip for GET /messages/channel/{id}?offset=0
+# (the 541-call hot path from the slow-query diagnosis).
+#
+# Layout: LPUSH prepends new messages; LRANGE 0 N returns newest-first,
+# matching the existing DB ORDER BY created_at DESC so the frontend reverse()
+# call continues to work without change.
+
+_MSGS_KEY = "channel_msgs:{}"
+_MSGS_MAX = 100       # keep last 100 messages per channel
+_MSGS_TTL = 1800      # 30 minutes idle expiry
+
+
+def get_channel_messages_cache(channel_id):
+    """Return list of message dicts (newest-first), or None on cache miss."""
+    r = get_redis()
+    if r is None:
+        return None
+    try:
+        raw = r.lrange(f"channel_msgs:{channel_id}", 0, _MSGS_MAX - 1)
+        if not raw:
+            return None
+        return [json.loads(m) for m in raw]
+    except Exception:
+        return None
+
+
+def push_channel_message_cache(channel_id, msg_dict):
+    """Prepend a newly sent message to the channel cache (atomic pipeline)."""
+    r = get_redis()
+    if r is None:
+        return
+    try:
+        key = f"channel_msgs:{channel_id}"
+        pipe = r.pipeline()
+        pipe.lpush(key, json.dumps(msg_dict, default=str))
+        pipe.ltrim(key, 0, _MSGS_MAX - 1)
+        pipe.expire(key, _MSGS_TTL)
+        pipe.execute()
+    except Exception:
+        pass
+
+
+def seed_channel_messages_cache(channel_id, msgs_list):
+    """Seed cache from DB results.
+
+    msgs_list must be newest-first (DB ORDER BY created_at DESC).
+    RPUSH in that order so LRANGE returns newest-first, consistent with
+    future LPUSH calls from push_channel_message_cache.
+    """
+    r = get_redis()
+    if r is None:
+        return
+    try:
+        key = f"channel_msgs:{channel_id}"
+        pipe = r.pipeline()
+        pipe.delete(key)
+        for msg in msgs_list:
+            pipe.rpush(key, json.dumps(msg, default=str))
+        pipe.ltrim(key, 0, _MSGS_MAX - 1)
+        pipe.expire(key, _MSGS_TTL)
+        pipe.execute()
+    except Exception:
+        pass
+
+
+def invalidate_channel_messages_cache(channel_id):
+    """Invalidate the channel message cache (call on delete/edit/pin)."""
+    cache_delete(f"channel_msgs:{channel_id}")

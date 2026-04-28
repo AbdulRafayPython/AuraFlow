@@ -4,7 +4,11 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
-from utils import get_avatar_url
+from utils import get_avatar_url, get_user_id
+# FIX 9: Cache channel membership checks
+from services.redis_client import get_channel_membership, set_channel_membership
+# Invalidate message list cache when pin state changes
+from services.redis_client import invalidate_channel_messages_cache
 from datetime import datetime, timedelta
 import logging
 import time
@@ -47,17 +51,21 @@ def get_pinned_messages(channel_id):
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            user_id = get_user_id(username, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
 
-            # Verify channel access
-            cur.execute(
-                "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
-                (channel_id, user['id'])
-            )
-            if not cur.fetchone():
+            # FIX 9: Check channel membership via Redis cache
+            _cached_m = get_channel_membership(channel_id, user_id)
+            if _cached_m is None:
+                cur.execute(
+                    "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
+                    (channel_id, user_id)
+                )
+                _cached_m = cur.fetchone() is not None
+                set_channel_membership(channel_id, user_id, _cached_m)
+            if not _cached_m:
                 return jsonify({'error': 'Access denied'}), 403
 
             cur.execute("""
@@ -129,16 +137,21 @@ def get_active_pin(channel_id):
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            user_id = get_user_id(username, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
 
-            cur.execute(
-                "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
-                (channel_id, user['id'])
-            )
-            if not cur.fetchone():
+            # FIX 9: Check channel membership via Redis cache
+            _cached_m = get_channel_membership(channel_id, user_id)
+            if _cached_m is None:
+                cur.execute(
+                    "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
+                    (channel_id, user_id)
+                )
+                _cached_m = cur.fetchone() is not None
+                set_channel_membership(channel_id, user_id, _cached_m)
+            if not _cached_m:
                 return jsonify({'error': 'Access denied'}), 403
 
             cur.execute("""
@@ -220,11 +233,10 @@ def pin_message():
 
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            user_id = get_user_id(username, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
             # Verify user is a member of the channel's community
             cur.execute("""
@@ -297,6 +309,8 @@ def pin_message():
                 (message_id,)
             )
             conn.commit()
+            # Invalidate message cache so is_pinned flag is fresh on next open
+            invalidate_channel_messages_cache(channel_id)
 
             # Schedule timer expiration
             try:
@@ -367,11 +381,10 @@ def unpin_message():
 
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            user_id = get_user_id(username, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
             # Verify user is a member of the channel's community
             cur.execute("""
@@ -401,6 +414,8 @@ def unpin_message():
             cur.execute("DELETE FROM pinned_messages WHERE id = %s", (pin_id,))
             cur.execute("UPDATE messages SET is_pinned = FALSE WHERE id = %s", (message_id,))
             conn.commit()
+            # Invalidate message cache so is_pinned flag is fresh on next open
+            invalidate_channel_messages_cache(channel_id)
 
             # Cancel any pending timer
             try:
@@ -446,11 +461,10 @@ def get_dm_pinned_messages(other_user_id):
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            user_id = get_user_id(username, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
             cur.execute("""
                 SELECT 
@@ -512,11 +526,10 @@ def get_dm_active_pin(other_user_id):
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            user_id = get_user_id(username, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
             cur.execute("""
                 SELECT 
@@ -600,11 +613,10 @@ def pin_dm_message():
 
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            user_id = get_user_id(username, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
             # Verify message belongs to this DM conversation
             cur.execute("""
@@ -738,11 +750,10 @@ def unpin_dm_message():
 
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            # FIX 1: Use cached get_user_id
+            user_id = get_user_id(username, cur)
+            if not user_id:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
             # ── PERMISSION CHECK: Only the pinner can unpin ──
             cur.execute("""

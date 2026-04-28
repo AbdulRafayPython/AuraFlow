@@ -9,6 +9,9 @@ import sys
 import os
 import time
 from collections import defaultdict
+# FIX 1: Use cached user-id helper and Redis seed on connect
+from utils import get_user_id
+from services.redis_client import cache_set as _redis_cache_set
 
 # Add agents directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -257,16 +260,17 @@ def register_socket_events(socketio):
 
             conn = get_db_connection()
             with conn.cursor() as cur:
-                # Get user ID
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                user_row = cur.fetchone()
-                if not user_row:
+                # FIX 1: Use cached get_user_id; also seed Redis so HTTP handlers
+                # skip the DB on the first request after this socket connection.
+                user_id = get_user_id(username, cur)
+                if not user_id:
                     log.error(f"[SOCKET] User not found: {username}")
                     disconnect()
                     return
-                
-                user_id = user_row['id']
-                
+
+                # Also write to Redis for cross-worker cache sharing
+                _redis_cache_set(f"user:id:{username}", user_id, ttl=3600)
+
                 # Cache user_id so typing / DM handlers skip the DB lookup
                 user_id_cache[username] = user_id
                 
@@ -298,12 +302,12 @@ def register_socket_events(socketio):
                 log.info(f"[SOCKET] 📍 SID: {request.sid} is now in room: {personal_room}")
                 log.info(f"[SOCKET] 🏠 All rooms for {username}: {user_rooms[username]}")
                 
-                # Update user status
+                # FIX 5: UPDATE by PK (id) instead of username for the online status
                 cur.execute("""
                     UPDATE users
                     SET status = 'online', last_seen = NOW()
-                    WHERE username = %s
-                """, (username,))
+                    WHERE id = %s
+                """, (user_id,))
             conn.commit()
 
             # Register with presence service
@@ -420,12 +424,10 @@ def register_socket_events(socketio):
 
             conn = get_db_connection()
             with conn.cursor() as cur:
-                # Get user ID
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                user_result = cur.fetchone()
-                
-                if user_result:
-                    user_id = user_result['id']
+                # FIX 1: Use cached get_user_id
+                user_id = get_user_id(username, cur)
+
+                if user_id:
                     
                     # Get all active voice channels this user is in
                     cur.execute("""
@@ -563,13 +565,11 @@ def register_socket_events(socketio):
             # Verify user can access the channel
             conn = get_db_connection()
             with conn.cursor() as cur:
-                # Get user_id and channel community
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                user_row = cur.fetchone()
-                if not user_row:
+                # FIX 1: Use cached get_user_id
+                user_id = get_user_id(username, cur)
+                if not user_id:
                     log.warning(f"[SOCKET] User {username} not found when joining channel {channel_id}")
                     return
-                user_id = user_row['id']
 
                 cur.execute("SELECT community_id FROM channels WHERE id = %s", (channel_id,))
                 channel_row = cur.fetchone()
@@ -932,13 +932,8 @@ def register_socket_events(socketio):
             user_id = data.get('user_id')
             log.info(f"[SOCKET] 🚪 {username} joining DM with user_id: {user_id}")
             
-            # Get current user's ID
-            conn = get_db_connection()
-            with conn.cursor() as cur:
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                result = cur.fetchone()
-                current_user_id = result['id'] if result else None
-            
+            # FIX 1: Use cached get_user_id (avoids DB per DM join/leave)
+            current_user_id = user_id_cache.get(username) or get_user_id(username)
             if not current_user_id:
                 log.error(f"[SOCKET] Could not find user ID for {username}")
                 return
@@ -968,13 +963,8 @@ def register_socket_events(socketio):
             user_id = data.get('user_id')
             log.info(f"[SOCKET] {username} leaving DM with user_id: {user_id}")
             
-            # Get current user's ID
-            conn = get_db_connection()
-            with conn.cursor() as cur:
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                result = cur.fetchone()
-                current_user_id = result['id'] if result else None
-            
+            # FIX 1: Use cached get_user_id (avoids DB per DM join/leave)
+            current_user_id = user_id_cache.get(username) or get_user_id(username)
             if not current_user_id:
                 log.error(f"[SOCKET] Could not find user ID for {username}")
                 return
@@ -1006,17 +996,10 @@ def register_socket_events(socketio):
             # Use cached user ID (populated on connect) — avoids DB hit per keystroke
             current_user_id = user_id_cache.get(username)
             if not current_user_id:
-                # Fallback: fetch from DB and cache
-                conn = get_db_connection()
-                try:
-                    with conn.cursor() as cur:
-                        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                        result = cur.fetchone()
-                        current_user_id = result['id'] if result else None
-                        if current_user_id:
-                            user_id_cache[username] = current_user_id
-                finally:
-                    conn.close()
+                # FIX 1: Use cached get_user_id as fallback
+                current_user_id = get_user_id(username)
+                if current_user_id:
+                    user_id_cache[username] = current_user_id
             
             if not current_user_id:
                 log.error(f"[SOCKET] Could not find user ID for {username}")
@@ -1394,12 +1377,10 @@ def register_socket_events(socketio):
 
             conn = get_db_connection()
             with conn.cursor() as cur:
-                # Get user ID
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                user_result = cur.fetchone()
-                
-                if user_result:
-                    user_id = user_result['id']
+                # FIX 1: Use cached get_user_id
+                user_id = get_user_id(username, cur)
+
+                if user_id:
                     
                     # Delete from voice_participants completely
                     cur.execute("""
@@ -1575,11 +1556,13 @@ def register_socket_events(socketio):
             # Update voice_sessions in database
             conn = get_db_connection()
             with conn.cursor() as cur:
+                # FIX 1: Use cached user_id instead of subquery
+                _uid = user_id_cache.get(username) or get_user_id(username)
                 cur.execute("""
                     UPDATE voice_sessions 
                     SET is_muted = %s, is_deaf = %s, last_activity = CURRENT_TIMESTAMP
-                    WHERE channel_id = %s AND user_id = (SELECT id FROM users WHERE username = %s)
-                """, (is_muted, is_deaf, channel_id, username))
+                    WHERE channel_id = %s AND user_id = %s
+                """, (is_muted, is_deaf, channel_id, _uid))
                 conn.commit()
                 log.info(f"[VOICE] Updated voice_sessions for {username}: muted={is_muted}, deaf={is_deaf}")
 
@@ -2081,24 +2064,14 @@ def register_socket_events(socketio):
     active_calls = {}
 
     def _get_user_id(username):
-        """Get user id from username."""
-        # Fast path: cache
+        """Get user id from username. FIX 1: delegates to Redis-cached helper."""
+        # Fast path: in-process cache
         if username in user_id_cache:
             return user_id_cache[username]
-        try:
-            conn = get_db_connection()
-            with conn.cursor() as cur:
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                row = cur.fetchone()
-                uid = row['id'] if row else None
-                if uid:
-                    user_id_cache[username] = uid
-                return uid
-        except Exception:
-            return None
-        finally:
-            if conn:
-                conn.close()
+        uid = get_user_id(username)
+        if uid:
+            user_id_cache[username] = uid
+        return uid
 
     def _persist_call_log(caller_id, callee_id, call_type, status, duration, call_id):
         """Insert a call log entry into direct_messages for BOTH participants.
