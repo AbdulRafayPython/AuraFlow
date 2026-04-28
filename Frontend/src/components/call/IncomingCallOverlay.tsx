@@ -34,7 +34,7 @@ const IncomingCallOverlay: React.FC = () => {
             if (callState !== 'ringing') { n.close(); clearInterval(check); }
           }, 500);
           setTimeout(() => { n.close(); clearInterval(check); }, 30000);
-        } catch {}
+        } catch { /* ignore notification errors */ }
       }
     } else {
       setVisible(false);

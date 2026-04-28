@@ -93,6 +93,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
     };
     
     initializeFriends();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const tabs = [

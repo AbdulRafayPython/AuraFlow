@@ -191,7 +191,7 @@ class CallWebRTCService {
   private async flushPendingCandidates() {
     if (!this.pc) return;
     for (const c of this.pendingCandidates) {
-      try { await this.pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+      try { await this.pc.addIceCandidate(new RTCIceCandidate(c)); } catch { /* ignore stale candidates */ }
     }
     this.pendingCandidates = [];
   }

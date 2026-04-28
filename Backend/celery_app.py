@@ -15,9 +15,13 @@ Usage:
 """
 
 import os
+import sys
 from celery import Celery
 from celery.schedules import crontab
 from dotenv import load_dotenv
+
+# Ensure Backend/ is on sys.path so 'services', 'tasks', etc. are importable
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 load_dotenv()
 
@@ -28,7 +32,7 @@ celery_app = Celery(
     'auraflow',
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=['tasks.agent_tasks']
+    include=['tasks.agent_tasks', 'tasks.email_tasks']
 )
 
 # ── Celery Configuration ─────────────────────────────────────────────
@@ -106,11 +110,18 @@ celery_app.conf.beat_schedule = {
         'schedule': crontab(minute='*'),             # Every minute — checks for due user schedules
         'options': {'queue': 'periodic'},
     },
+    'flush-moderation-buffers': {
+        'task': 'tasks.agent_tasks.flush_moderation_buffers',
+        'schedule': 30.0,                             # Every 30 seconds — flush stale mod buffers
+        'options': {'queue': 'high_priority'},
+    },
 }
 
 # ── Task Routing ──────────────────────────────────────────────────────
 celery_app.conf.task_routes = {
-    'tasks.agent_tasks.moderate_message_task': {'queue': 'high_priority'},
+    'tasks.agent_tasks.batch_moderation_task': {'queue': 'high_priority'},
+    'tasks.agent_tasks.flush_moderation_buffers': {'queue': 'high_priority'},
+    'tasks.agent_tasks.gemini_review_task': {'queue': 'high_priority'},
     'tasks.agent_tasks.track_mood_task': {'queue': 'default'},
     'tasks.agent_tasks.summarize_channel_task': {'queue': 'default'},
     'tasks.agent_tasks.analyze_focus_task': {'queue': 'default'},

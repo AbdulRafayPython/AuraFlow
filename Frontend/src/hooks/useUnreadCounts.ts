@@ -178,7 +178,6 @@ export function useUnreadCounts() {
       }
     },
     // user?.id is stable across renders; re-create only if it changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [user?.id],
   );
 
@@ -200,14 +199,12 @@ export function useUnreadCounts() {
           communities: { ...prev.communities },
         };
         if (data.channel_id != null && data.channel_unread != null) {
-          // Server says the channel count is X — trust it (server-authoritative).
-          // Only apply if it's >= our current count (avoid regressing after optimistic update).
+          // Server says the channel count is X — trust it unconditionally.
+          // This handles cross-device mark-read (server emits 0, must be applied).
           const current = prev.channels[data.channel_id] || 0;
-          if (data.channel_unread >= current) {
-            const delta = data.channel_unread - current;
-            next.channels[data.channel_id] = data.channel_unread;
-            next.totalChannelUnread = Math.max(0, prev.totalChannelUnread + delta);
-          }
+          const delta = data.channel_unread - current;
+          next.channels[data.channel_id] = data.channel_unread;
+          next.totalChannelUnread = Math.max(0, prev.totalChannelUnread + delta);
         }
         if (data.community_id != null && data.community_unread != null) {
           next.communities[data.community_id] = data.community_unread;

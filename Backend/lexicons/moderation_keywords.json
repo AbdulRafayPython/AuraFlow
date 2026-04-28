@@ -237,7 +237,7 @@
         "suar", "suwar", "suwwar", "soor", "sooar",
         "ullu", "ullu ka patha", "ullu ka pattha", "ullu ke pathe",
         "haraamzaada", "haraamzaade", "haraamzadi",
-        "kamina", "kaminey", "kamini", "kameena", "kameeni",
+        "kamina", "kaminey", "kamine", "kamini", "kameena", "kameene", "kameeni", "kaminay",
         "saala", "saale", "saali", "sala", "sale", "sali",
         "bhadwa", "bhadwe", "bhadwi", "bhadva",
         "chinaal", "chinal", "chinaliya",
@@ -1373,6 +1373,48 @@
         "track you", "trackyou", "track you down",
         "find you", "findyou", "ill find you",
         "get you", "getyou", "ill get you"
+      ]
+    },
+    "roman_urdu_threats": {
+      "severe": [
+        "jaan se maar", "jaan se marunga", "jaan se mardunga", "jaan se mardung",
+        "jaan se mar dunga", "jan se maar", "jan se marunga", "jan se mardunga",
+        "maar dunga", "maardunga", "maar dalunga", "maar daalonga",
+        "marunga", "mardunga", "mardung", "mar dunga",
+        "qatal", "qatal kar dunga", "qatal karunga",
+        "khatam kar dunga", "khatam karunga", "khatam krdonga",
+        "maut de dunga", "maut donga", "maut ka saman",
+        "zinda nahi chorunga", "zinda nahi chhorunga", "zinda nhi chorunga",
+        "goli maar dunga", "goli mardunga", "goli marunga",
+        "chaku maar dunga", "chaku mardunga", "chaqu maar",
+        "sar phod dunga", "sar phoddunga", "sar tod dunga", "sar todunga",
+        "haddiya tod dunga", "haddi tod dunga", "haddiyan todunga",
+        "tabah kar dunga", "tabah karunga", "barbad kar dunga", "barbad karunga",
+        "udda dunga", "uda dunga", "udadonga",
+        "jalaa dunga", "jala dunga", "jaladunga",
+        "zinda jalaa dunga", "zinda jala dunga",
+        "gala daba dunga", "gala ghont dunga",
+        "tang tod dunga", "tangen todunga",
+        "munh tod dunga", "muh tod dunga", "muh todunga"
+      ],
+      "moderate": [
+        "maar khayega", "maar khaega", "pitega", "pitunga",
+        "peet dunga", "peetunga", "dhulai karunga", "dhulai kar dunga",
+        "thappad marunga", "thappad maar dunga", "tamacha marunga",
+        "mukka marunga", "mukka mardunga", "ghusa marunga",
+        "laat marunga", "lat marunga", "joota marunga", "juta marunga",
+        "koot dunga", "koot ke rakh dunga",
+        "dho dunga", "dho ke rakh dunga",
+        "cheer dunga", "cheer dalunga",
+        "pel dunga", "peldunga", "thokunga",
+        "dekh lunga tujhe", "dekh lena", "dekh lunga",
+        "bahar mil", "bahar aa", "bahar aaja",
+        "aaja samne", "samne aa", "samne aaja",
+        "ruk ja", "rukja", "ruk abhi",
+        "tere ko dekhta hun", "tujhe dekh lunga",
+        "chorunga nahi", "nahi chorunga", "nhi chorunga",
+        "bachke reh", "bach ke rehna", "bach ke reh",
+        "khabar daar", "khabardaar"
       ]
     },
     "self_harm_mentions": {

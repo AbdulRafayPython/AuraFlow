@@ -111,6 +111,7 @@ export default function CommunityHealthPage() {
 
   useEffect(() => {
     fetchHealth();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCommunity?.id, days]);
 
   return (

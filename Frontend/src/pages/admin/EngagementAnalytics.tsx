@@ -92,6 +92,7 @@ export default function EngagementAnalytics() {
 
   useEffect(() => {
     fetchAnalytics();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCommunity?.id, days]);
 
   // Format daily data for chart

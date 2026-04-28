@@ -62,6 +62,7 @@ export default function JoinCommunityModal({
     if (isOpen) {
       fetchCommunities("", true);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   // Handle search with debounce

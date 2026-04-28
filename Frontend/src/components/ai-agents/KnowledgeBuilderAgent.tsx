@@ -56,6 +56,7 @@ export default function KnowledgeBuilderAgent() {
       setExtractionResult(null);
       setError(null);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCommunity?.id]);
 
   const loadKnowledgeInsights = async () => {

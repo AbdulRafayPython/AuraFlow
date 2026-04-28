@@ -1,13 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import authService from '../services/authService';
-import { Loader2, X, Eye, EyeOff, CheckCircle2, XCircle, Info, Mail } from 'lucide-react';
+import type { User } from '../types';
+import { Loader2, X, Eye, EyeOff, CheckCircle2, XCircle, Mail, User as UserIcon, Lock, Bot, Users, FileText, Shield } from 'lucide-react';
 
 type Mode = 'login' | 'signup';
 
 interface AuthCardProps {
   mode: Mode;
   onModeChange: (mode: Mode) => void;
-  onAuth: () => void;
+  onAuth: (user?: User) => void;
 }
 
 // Loading overlay with static logo and surrounding spinner
@@ -227,9 +228,9 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 rounded-lg shadow-2xl w-full max-w-md relative animate-fade-in">
+      <div className="auth-modal rounded-2xl shadow-2xl w-full max-w-md relative animate-fade-in border border-white/[0.06]">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-700">
+        <div className="flex items-center justify-between p-6 border-b border-white/[0.06]">
           <h2 className="text-xl font-semibold text-white">
             {step === 'email' && 'Reset Password'}
             {step === 'otp' && 'Verify OTP'}
@@ -252,16 +253,19 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 Enter your email address and we'll send you an OTP to reset your password.
               </p>
               <div className="space-y-2">
-                <label className="block text-xs font-semibold text-gray-300 uppercase">
+                <label className="auth-label">
                   Email Address <span className="text-red-400">*</span>
                 </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-900/80 border border-slate-700 rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-                  placeholder="Enter your email"
-                />
+                <div className="auth-input-wrapper">
+                  <Mail className="auth-input-icon" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="auth-input"
+                    placeholder="Enter your email"
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -273,7 +277,7 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 We've sent a 6-digit OTP to <span className="text-white font-medium">{email}</span>
               </p>
               <div className="space-y-2">
-                <label className="block text-xs font-semibold text-gray-300 uppercase">
+                <label className="auth-label">
                   Enter OTP <span className="text-red-400">*</span>
                 </label>
                 <input
@@ -281,7 +285,7 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   value={otp}
                   onChange={(e) => setOtp(e.target.value)}
                   maxLength={6}
-                  className="w-full px-3 py-2.5 bg-slate-900/80 border border-slate-700 rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors text-center text-2xl tracking-widest"
+                  className="auth-input text-center text-2xl tracking-widest"
                   placeholder="000000"
                 />
               </div>
@@ -301,42 +305,48 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 Create a new password for your account.
               </p>
               <div className="space-y-2">
-                <label className="block text-xs font-semibold text-gray-300 uppercase">
+                <label className="auth-label">
                   New Password <span className="text-red-400">*</span>
                 </label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-900/80 border border-slate-700 rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-                  placeholder="Enter new password"
-                />
+                <div className="auth-input-wrapper">
+                  <Lock className="auth-input-icon" />
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="auth-input"
+                    placeholder="Enter new password"
+                  />
+                </div>
               </div>
               <div className="space-y-2">
-                <label className="block text-xs font-semibold text-gray-300 uppercase">
+                <label className="auth-label">
                   Confirm Password <span className="text-red-400">*</span>
                 </label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-900/80 border border-slate-700 rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-                  placeholder="Confirm new password"
-                />
+                <div className="auth-input-wrapper">
+                  <Lock className="auth-input-icon" />
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="auth-input"
+                    placeholder="Confirm new password"
+                  />
+                </div>
               </div>
             </div>
           )}
 
           {/* Error Message */}
           {error && (
-            <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-400">
+            <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-sm text-red-400">
               {error}
             </div>
           )}
 
           {/* Success Message */}
           {success && (
-            <div className="mt-4 p-3 bg-green-500/10 border border-green-500/30 rounded text-sm text-green-400">
+            <div className="mt-4 p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-sm text-green-400">
               {success}
             </div>
           )}
@@ -349,7 +359,7 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               else if (step === 'reset') handleResetPassword();
             }}
             disabled={loading}
-            className="w-full mt-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
+            className="auth-btn-primary w-full mt-6"
           >
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
             {loading ? 'Processing...' : (
@@ -368,7 +378,7 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 const Login: React.FC<{ 
   onSwitchToSignup: () => void; 
   darkMode?: boolean; 
-  onAuth: () => void;
+  onAuth: (user?: User) => void;
   onForgotPassword: () => void;
   onLoadingChange: (loading: boolean) => void;
 }> = ({ onSwitchToSignup, darkMode, onAuth, onForgotPassword, onLoadingChange }) => {
@@ -413,9 +423,9 @@ const Login: React.FC<{
     onLoadingChange(true);
     authService
       .login({ username: email, password })
-      .then(() => {
-        // Keep loading true during transition to app
-        onAuth();
+      .then((data: any) => {
+        // Pass user data directly — skips redundant /api/me call
+        onAuth(data?.user);
       })
       .catch((err: any) => {
         setLoading(false);
@@ -441,40 +451,61 @@ const Login: React.FC<{
     }
   };
 
+  const handleGoogleLogin = () => {
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    window.location.href = `${backendUrl}/api/auth/google`;
+  };
+
   return (
-    <div className="w-full animate-fade-in">
-      <div className="text-center mb-4">
-        <h1 className="text-2xl font-semibold text-white mb-1">Welcome back!</h1>
+    <div className="w-full auth-animate-in">
+      {/* Logo */}
+      <div className="flex items-center gap-3 mb-3">
+        <img src="/AuraflowLogo.png" alt="AuraFlow" className="w-9 h-9" />
+        <div>
+          <h2 className="text-white font-bold text-lg leading-tight">AuraFlow</h2>
+          <p className="text-xs text-indigo-400 font-medium">AI-Powered Communication</p>
+        </div>
+      </div>
+
+      {/* Welcome heading */}
+      <div className="mb-5">
+        <h1 className="text-[26px] font-bold text-white mb-1">Welcome back!</h1>
         <p className="text-gray-400 text-sm">We're so excited to see you again!</p>
       </div>
 
-      <div className="space-y-4" onKeyDown={handleKeyPress}>
+      <div className="space-y-3" onKeyDown={handleKeyPress}>
+        {/* Email field */}
         <div className="space-y-2">
-          <label className="block text-xs font-semibold text-gray-300 uppercase">Email or Username <span className="text-red-400">*</span></label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.email ? 'border-red-500' : 'border-slate-900'
-              } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
-          />
+          <label className="auth-label">EMAIL OR USERNAME</label>
+          <div className={`auth-input-wrapper ${errors.email ? 'auth-input-wrapper--error' : ''}`}>
+            <UserIcon className="auth-input-icon" />
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="auth-input"
+              placeholder="Enter your email or username"
+            />
+          </div>
           {errors.email && <p className="text-xs text-red-400">{errors.email}</p>}
         </div>
 
+        {/* Password field */}
         <div className="space-y-2">
-          <label className="block text-xs font-semibold text-gray-300 uppercase">Password <span className="text-red-400">*</span></label>
-          <div className="relative">
+          <label className="auth-label">PASSWORD</label>
+          <div className={`auth-input-wrapper ${errors.password ? 'auth-input-wrapper--error' : ''}`}>
+            <Lock className="auth-input-icon" />
             <input
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className={`w-full px-3 py-2.5 pr-10 bg-slate-900/80 border ${errors.password ? 'border-red-500' : 'border-slate-900'
-                } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
+              className="auth-input"
+              placeholder="Enter your password"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+              className="auth-input-toggle"
               tabIndex={-1}
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -483,25 +514,47 @@ const Login: React.FC<{
           {errors.password && <p className="text-xs text-red-400">{errors.password}</p>}
         </div>
 
+        {/* Forgot password */}
         <button 
           type="button"
           onClick={onForgotPassword}
-          className="text-sm text-indigo-400 hover:underline"
+          className="auth-link text-sm"
         >
           Forgot your password?
         </button>
 
+        {/* Submit button */}
         <button
           onClick={handleSubmit}
           disabled={loading}
-          className="w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
+          className="auth-btn-primary w-full"
         >
           {loading && <Loader2 className="h-4 w-4 animate-spin" />}
           {loading ? 'Logging in...' : 'Log In'}
         </button>
 
+        {/* Divider */}
+        <div className="auth-divider">
+          <span>OR</span>
+        </div>
+
+        {/* Google */}
+        <button 
+          onClick={handleGoogleLogin}
+          className="auth-btn-google w-full"
+        >
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+          </svg>
+          Continue with Google
+        </button>
+
+        {/* Error messages */}
         {errors.general && (
-          <div className={`text-sm mt-2 p-3 rounded border ${unverifiedEmail ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+          <div className={`text-sm p-3 rounded-xl border ${unverifiedEmail ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
             <div className="flex items-start gap-2">
               {unverifiedEmail ? <Mail className="w-4 h-4 mt-0.5 flex-shrink-0" /> : <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />}
               <div className="flex-1">
@@ -529,9 +582,10 @@ const Login: React.FC<{
           </div>
         )}
 
-        <p className="text-sm text-gray-400">
-          Need an account?{' '}
-          <button onClick={onSwitchToSignup} className="text-indigo-400 hover:underline">
+        {/* Register link */}
+        <p className="text-sm text-gray-400 text-center">
+          Don't have an account?{' '}
+          <button onClick={onSwitchToSignup} className="auth-link font-medium">
             Register
           </button>
         </p>
@@ -546,7 +600,7 @@ const passwordRules = [
   { key: 'upper', label: 'One uppercase letter', test: (p: string) => /[A-Z]/.test(p) },
   { key: 'lower', label: 'One lowercase letter', test: (p: string) => /[a-z]/.test(p) },
   { key: 'digit', label: 'One digit', test: (p: string) => /\d/.test(p) },
-  { key: 'special', label: 'One special character (!@#$…)', test: (p: string) => /[!@#$%^&*()\-_=+\[\]{}|;:'",.<>?/`~\\]/.test(p) },
+  { key: 'special', label: 'One special character (!@#$…)', test: (p: string) => /[!@#$%^&*()\-_=+[\]{}|;:'",.<>?/`~\\]/.test(p) },
 ];
 
 const getStrengthLevel = (password: string) => {
@@ -558,11 +612,11 @@ const getStrengthLevel = (password: string) => {
   return { level: 4, label: 'Very Strong', color: 'bg-emerald-500' };
 };
 
-const emailRegex = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 const usernameRegex = /^[a-zA-Z0-9_]+$/;
 
 // Signup Component
-const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth: () => void }> = ({ onSwitchToLogin, darkMode, onAuth }) => {
+const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth: (user?: User) => void }> = ({ onSwitchToLogin, darkMode, onAuth }) => {
   const [formData, setFormData] = useState({ email: '', displayName: '', username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -675,7 +729,7 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
   // ── Verification pending screen ─────────────────────────────────
   if (verificationPending) {
     return (
-      <div className="w-full animate-fade-in flex flex-col items-center justify-center h-[520px] text-center px-4">
+      <div className="w-full auth-animate-in flex flex-col items-center justify-center h-[520px] text-center px-4">
         <div className="w-16 h-16 rounded-full bg-indigo-500/20 flex items-center justify-center mb-4">
           <Mail className="w-8 h-8 text-indigo-400" />
         </div>
@@ -705,7 +759,7 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
 
         <button
           onClick={onSwitchToLogin}
-          className="w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded transition-colors"
+          className="auth-btn-primary w-full"
         >
           Go to Login
         </button>
@@ -715,65 +769,80 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
 
   // ── Signup form ──────────────────────────────────────────────────
   return (
-    <div className="w-full animate-fade-in h-[520px] flex flex-col">
-      <div className="text-center mb-6">
-        <h1 className="text-2xl font-semibold text-white mb-2">Create an account</h1>
+    <div className="w-full auth-animate-in h-[520px] flex flex-col">
+      {/* Logo */}
+      <div className="flex items-center gap-3 mb-6">
+        <img src="/AuraflowLogo.png" alt="AuraFlow" className="w-10 h-10" />
+        <div>
+          <h2 className="text-white font-bold text-lg leading-tight">AuraFlow</h2>
+          <p className="text-xs text-indigo-400 font-medium">AI-Powered Communication</p>
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <h1 className="text-[28px] font-bold text-white mb-1">Create an account</h1>
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
-        <div className="space-y-5 pb-2" onKeyDown={handleKeyPress}>
+        <div className="space-y-4 pb-2" onKeyDown={handleKeyPress}>
           <div className="space-y-2">
-            <label className="block text-xs font-semibold text-gray-300 uppercase">Email <span className="text-red-400">*</span></label>
-            <input
-              type="email"
-              value={formData.email}
-              onChange={(e) => handleChange('email', e.target.value)}
-              placeholder="you@example.com"
-              className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.email ? 'border-red-500' : 'border-slate-900'
-                } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
-            />
+            <label className="auth-label">EMAIL <span className="text-red-400">*</span></label>
+            <div className={`auth-input-wrapper ${errors.email ? 'auth-input-wrapper--error' : ''}`}>
+              <Mail className="auth-input-icon" />
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => handleChange('email', e.target.value)}
+                placeholder="you@example.com"
+                className="auth-input"
+              />
+            </div>
             {errors.email && <p className="text-xs text-red-400">{errors.email}</p>}
           </div>
 
           <div className="space-y-2">
-            <label className="block text-xs font-semibold text-gray-300 uppercase">Display Name <span className="text-red-400">*</span></label>
-            <input
-              type="text"
-              value={formData.displayName}
-              onChange={(e) => handleChange('displayName', e.target.value)}
-              className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.displayName ? 'border-red-500' : 'border-slate-900'
-                } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
-            />
+            <label className="auth-label">DISPLAY NAME <span className="text-red-400">*</span></label>
+            <div className={`auth-input-wrapper ${errors.displayName ? 'auth-input-wrapper--error' : ''}`}>
+              <UserIcon className="auth-input-icon" />
+              <input
+                type="text"
+                value={formData.displayName}
+                onChange={(e) => handleChange('displayName', e.target.value)}
+                className="auth-input"
+              />
+            </div>
             {errors.displayName && <p className="text-xs text-red-400">{errors.displayName}</p>}
           </div>
 
           <div className="space-y-2">
-            <label className="block text-xs font-semibold text-gray-300 uppercase">Username <span className="text-red-400">*</span></label>
-            <input
-              type="text"
-              value={formData.username}
-              onChange={(e) => handleChange('username', e.target.value)}
-              placeholder="letters, numbers, underscores"
-              className={`w-full px-3 py-2.5 bg-slate-900/80 border ${errors.username ? 'border-red-500' : 'border-slate-900'
-                } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
-            />
+            <label className="auth-label">USERNAME <span className="text-red-400">*</span></label>
+            <div className={`auth-input-wrapper ${errors.username ? 'auth-input-wrapper--error' : ''}`}>
+              <UserIcon className="auth-input-icon" />
+              <input
+                type="text"
+                value={formData.username}
+                onChange={(e) => handleChange('username', e.target.value)}
+                placeholder="letters, numbers, underscores"
+                className="auth-input"
+              />
+            </div>
             {errors.username && <p className="text-xs text-red-400">{errors.username}</p>}
           </div>
 
           <div className="space-y-2">
-            <label className="block text-xs font-semibold text-gray-300 uppercase">Password <span className="text-red-400">*</span></label>
-            <div className="relative">
+            <label className="auth-label">PASSWORD <span className="text-red-400">*</span></label>
+            <div className={`auth-input-wrapper ${errors.password ? 'auth-input-wrapper--error' : ''}`}>
+              <Lock className="auth-input-icon" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={formData.password}
                 onChange={(e) => handleChange('password', e.target.value)}
-                className={`w-full px-3 py-2.5 pr-10 bg-slate-900/80 border ${errors.password ? 'border-red-500' : 'border-slate-900'
-                  } rounded text-gray-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors`}
+                className="auth-input"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                className="auth-input-toggle"
                 tabIndex={-1}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -824,7 +893,7 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
                 type="checkbox"
                 checked={agreedToTerms}
                 onChange={(e) => setAgreedToTerms(e.target.checked)}
-                className="w-4 h-4 mt-0.5 text-indigo-500 bg-slate-900/80 border-slate-700 rounded focus:ring-indigo-500"
+                className="w-4 h-4 mt-0.5 text-indigo-500 bg-[#1a1a3e] border-white/10 rounded focus:ring-indigo-500"
               />
               <span className="text-xs text-gray-400">
                 I have read and agree to AuraFlow's Terms of Service and Privacy Policy.
@@ -836,17 +905,17 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
+            className="auth-btn-primary w-full"
           >
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
             {loading ? 'Creating account...' : 'Continue'}
           </button>
 
-          <button onClick={onSwitchToLogin} className="text-indigo-400 hover:underline text-sm">
+          <button onClick={onSwitchToLogin} className="auth-link text-sm">
             Already have an account?
           </button>
           {errors.general && (
-            <div className="text-sm text-red-400 mt-2 p-3 bg-red-500/10 border border-red-500/30 rounded">
+            <div className="text-sm text-red-400 mt-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl">
               {errors.general}
             </div>
           )}
@@ -856,336 +925,116 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
   );
 };
 
-// Animation timeline types
-type AnimationStep = 'entering' | 'user-typing' | 'user-message' | 'analyzing' | 'insights-ready' | 'agent-responding' | 'tips-appearing' | 'loop-reset';
-
-// Premium Desktop Mockup Branding Animation Component - Half screen appearing from right
-const BrandingAnimation: React.FC = () => {
-  const [step, setStep] = useState<AnimationStep>('entering');
-  const [showTyping, setShowTyping] = useState(false);
-  const [userMessage, setUserMessage] = useState<{ visible: boolean; status: 'sending' | 'sent' | 'delivered' }>({ visible: false, status: 'sending' });
-  const [agentMessage, setAgentMessage] = useState(false);
-  const [showTips, setShowTips] = useState(false);
-
-  const userText = "Can someone summarize what we discussed?";
-  const agentText = "📋 Summary: The team agreed on the new feature timeline and assigned tasks for next sprint.";
-
-  React.useEffect(() => {
-    const timeouts: NodeJS.Timeout[] = [];
-    
-    const runTimeline = () => {
-      setStep('entering');
-      setShowTyping(false);
-      setUserMessage({ visible: false, status: 'sending' });
-      setAgentMessage(false);
-      setShowTips(false);
-
-      timeouts.push(setTimeout(() => setStep('user-typing'), 600));
-      timeouts.push(setTimeout(() => setShowTyping(true), 600));
-      timeouts.push(setTimeout(() => {
-        setShowTyping(false);
-        setStep('user-message');
-        setUserMessage({ visible: true, status: 'sending' });
-      }, 1200));
-      timeouts.push(setTimeout(() => setUserMessage(prev => ({ ...prev, status: 'sent' })), 1500));
-      timeouts.push(setTimeout(() => setUserMessage(prev => ({ ...prev, status: 'delivered' })), 1800));
-      timeouts.push(setTimeout(() => setStep('analyzing'), 2000));
-      timeouts.push(setTimeout(() => setStep('insights-ready'), 3500));
-      timeouts.push(setTimeout(() => {
-        setStep('agent-responding');
-        setAgentMessage(true);
-      }, 3800));
-      timeouts.push(setTimeout(() => {
-        setStep('tips-appearing');
-        setShowTips(true);
-      }, 5000));
-      timeouts.push(setTimeout(() => setStep('loop-reset'), 8000));
-      timeouts.push(setTimeout(runTimeline, 8500));
-    };
-
-    runTimeline();
-    return () => timeouts.forEach(clearTimeout);
-  }, []);
-
-  const isAnalyzing = step === 'analyzing';
-  const isReady = ['insights-ready', 'agent-responding', 'tips-appearing'].includes(step);
-
-  return (
-    <div 
-      className={`absolute -right-8 top-1/2 -translate-y-1/2 w-[340px] transition-all duration-700 ease-out ${
-        step === 'entering' ? 'opacity-0 translate-x-20' : 'opacity-100 translate-x-0'
-      }`}
-    >
-      {/* Glow effect */}
-      <div className="absolute -inset-3 bg-gradient-to-l from-purple-500/20 via-indigo-500/15 to-transparent rounded-2xl blur-xl" />
-      
-      {/* Desktop Window */}
-      <div className="relative bg-slate-900/95 backdrop-blur-xl rounded-l-2xl border-l border-t border-b border-slate-700/60 shadow-2xl shadow-purple-900/40 overflow-hidden">
-        {/* Window Title Bar */}
-        <div className="flex items-center justify-between px-3 py-2 bg-slate-800/90 border-b border-slate-700/50">
-          <div className="flex gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-red-500/80" />
-            <div className="w-2 h-2 rounded-full bg-yellow-500/80" />
-            <div className="w-2 h-2 rounded-full bg-green-500/80" />
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-4 h-4 rounded overflow-hidden">
-              <img src="/AuraflowLogo.png" alt="AuraFlow" className="w-full h-full object-cover" />
-            </div>
-            <span className="text-[10px] text-gray-300 font-medium">AuraFlow</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[8px] text-gray-500">Online</span>
-          </div>
-        </div>
-
-        {/* Main Content */}
-        <div className="flex h-[260px]">
-          {/* Mini Sidebar */}
-          <div className="w-11 bg-slate-800/60 border-r border-slate-700/30 flex flex-col items-center py-2 gap-1.5">
-            {[
-              { gradient: 'from-indigo-500 to-purple-600', icon: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z', active: true },
-              { gradient: 'from-emerald-500 to-teal-600', icon: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5z', active: false },
-              { gradient: 'from-orange-500 to-red-500', icon: 'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z', active: false },
-            ].map((item, i) => (
-              <div
-                key={i}
-                className={`w-8 h-8 rounded-xl bg-gradient-to-br ${item.gradient} flex items-center justify-center transition-all ${
-                  item.active ? 'ring-2 ring-white/30 shadow-lg' : 'opacity-50 hover:opacity-70'
-                }`}
-              >
-                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d={item.icon}/>
-                </svg>
-              </div>
-            ))}
-            <div className="w-6 h-px bg-slate-700 my-1" />
-            <div className="w-8 h-8 rounded-xl bg-slate-700/50 flex items-center justify-center border border-dashed border-slate-600 opacity-60">
-              <span className="text-gray-400 text-sm">+</span>
-            </div>
-          </div>
-
-          {/* Channel List */}
-          <div className="w-[90px] bg-slate-800/40 border-r border-slate-700/30 flex flex-col text-[8px]">
-            <div className="px-2 py-2 border-b border-slate-700/30">
-              <span className="font-semibold text-white flex items-center gap-1 text-[9px]">
-                <svg className="w-3 h-3 text-indigo-400" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
-                </svg>
-                Dev Team
-              </span>
-            </div>
-            <div className="flex-1 p-1.5 space-y-0.5 overflow-hidden">
-              <div className="px-1 py-0.5 text-gray-500 uppercase" style={{ fontSize: '6px' }}>Channels</div>
-              {['general', 'standup', 'random'].map((ch, i) => (
-                <div key={ch} className={`px-1.5 py-1 rounded flex items-center gap-1 ${i === 1 ? 'bg-indigo-500/20 text-indigo-300' : 'text-gray-400'}`}>
-                  <span className="opacity-50">#</span>
-                  <span className="truncate">{ch}</span>
-                </div>
-              ))}
-              <div className="px-1 py-0.5 text-gray-500 uppercase mt-1.5" style={{ fontSize: '6px' }}>AI Agents</div>
-              {[
-                { name: 'Summarizer', color: 'text-blue-400', bg: 'bg-blue-500/10', active: true },
-                { name: 'Mood', color: 'text-pink-400', bg: 'bg-pink-500/10', active: false },
-                { name: 'Moderator', color: 'text-orange-400', bg: 'bg-orange-500/10', active: false },
-              ].map((agent) => (
-                <div key={agent.name} className={`px-1.5 py-1 rounded flex items-center gap-1 ${agent.active ? `${agent.bg} ${agent.color} border border-current/20` : 'text-gray-500'}`}>
-                  <svg className="w-2 h-2" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
-                  </svg>
-                  <span className="truncate">{agent.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Chat Area */}
-          <div className="flex-1 flex flex-col bg-slate-900/70 min-w-0">
-            {/* Chat Header */}
-            <div className="px-2 py-1.5 border-b border-slate-700/30 flex items-center gap-2">
-              <span className="text-gray-500 text-[9px]">#</span>
-              <span className="text-[9px] font-medium text-white">standup</span>
-              <div className="ml-auto px-1.5 py-0.5 bg-blue-500/10 rounded text-[7px] text-blue-400 border border-blue-500/20">
-                AI Active
-              </div>
-            </div>
-
-            {/* Messages */}
-            <div className="flex-1 p-2 flex flex-col gap-1.5 overflow-hidden">
-              <div className="flex-1" />
-              
-              {/* Typing */}
-              <div className={`flex justify-end transition-all duration-200 ${showTyping ? 'opacity-100' : 'opacity-0 h-0'}`}>
-                <div className="flex gap-0.5 px-2 py-1.5 bg-slate-700/50 rounded-lg rounded-br-sm">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} className="w-1 h-1 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 80}ms` }} />
-                  ))}
-                </div>
-              </div>
-
-              {/* User Message */}
-              <div className={`flex justify-end transition-all duration-400 ${userMessage.visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
-                <div className="max-w-[90%]">
-                  <div className="px-2.5 py-1.5 rounded-xl rounded-br-sm bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-purple-500/20">
-                    <p className="text-[8px] leading-relaxed">{userText}</p>
-                  </div>
-                  <div className="flex items-center justify-end gap-0.5 mt-0.5 pr-0.5">
-                    <span className="text-[6px] text-gray-500">2:34 PM</span>
-                    <svg className={`w-2 h-2 transition-colors ${userMessage.status === 'delivered' ? 'text-blue-400' : 'text-gray-500'}`} fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/>
-                    </svg>
-                  </div>
-                </div>
-              </div>
-
-              {/* Analysis */}
-              <div className={`transition-all duration-300 ${isAnalyzing || isReady ? 'opacity-100' : 'opacity-0 h-0'}`}>
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/70 rounded-lg border border-slate-700/40">
-                  <div className={isAnalyzing ? 'animate-pulse' : ''}>
-                    <svg className={`w-3 h-3 ${isReady ? 'text-emerald-400' : 'text-blue-400'}`} fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/>
-                    </svg>
-                  </div>
-                  <span className={`text-[7px] ${isReady ? 'text-emerald-400' : 'text-gray-400'}`}>
-                    {isAnalyzing ? 'Summarizer analyzing...' : '✓ Summary ready'}
-                  </span>
-                  {isAnalyzing && (
-                    <div className="flex-1 h-0.5 bg-slate-700 rounded-full overflow-hidden ml-1">
-                      <div className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-500 rounded-full animate-shimmer" style={{ width: '100%', backgroundSize: '200% 100%' }} />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Agent Response */}
-              <div className={`transition-all duration-400 ${agentMessage ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
-                <div className="flex items-start gap-1.5">
-                  <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/30">
-                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1 mb-0.5">
-                      <span className="text-[8px] font-medium text-blue-400">Summarizer</span>
-                      <span className="text-[6px] text-gray-500">AI</span>
-                    </div>
-                    <div className="px-2 py-1.5 rounded-xl rounded-tl-sm bg-slate-700/80 border border-slate-600/30">
-                      <p className="text-[8px] text-gray-200 leading-relaxed">{agentText}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Tips */}
-              <div className={`flex gap-1 ml-6 transition-all duration-400 ${showTips ? 'opacity-100' : 'opacity-0'}`}>
-                {['View full', 'Share'].map((tip, i) => (
-                  <div key={tip} className="flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-700/50 rounded-full border border-slate-600/20 text-[7px] text-gray-400">
-                    <svg className="w-2 h-2 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
-                      <path d={i === 0 ? "M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" : "M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"}/>
-                    </svg>
-                    {tip}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Branding Section - Half screen mockup appearing from right edge
+// ── Right Panel Branding Section ──────────────────────────────────
 const BrandingSection: React.FC = () => (
-  <div className="hidden lg:block w-[360px] border-l border-slate-700/50 bg-gradient-to-br from-purple-900/20 via-indigo-900/15 to-slate-900/30 relative overflow-hidden">
+  <div className="auth-branding">
     {/* Background effects */}
-    <div className="absolute inset-0 pointer-events-none">
-      <div className="absolute top-10 right-0 w-32 h-32 bg-purple-500/20 rounded-full filter blur-3xl" />
-      <div className="absolute bottom-10 left-0 w-24 h-24 bg-indigo-500/15 rounded-full filter blur-3xl" />
-      <div className="absolute top-1/2 -translate-y-1/2 right-0 w-20 h-40 bg-blue-500/10 rounded-full filter blur-3xl" />
-      {/* Grid pattern */}
-      <div 
-        className="absolute inset-0 opacity-[0.02]"
-        style={{
-          backgroundImage: `linear-gradient(rgba(139, 92, 246, 0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(139, 92, 246, 0.5) 1px, transparent 1px)`,
-          backgroundSize: '24px 24px'
-        }}
-      />
+    <div className="auth-branding__bg">
+      <div className="auth-branding__glow auth-branding__glow--1" />
+      <div className="auth-branding__glow auth-branding__glow--2" />
     </div>
+    
 
-    <div className="relative z-10 h-full flex flex-col p-5">
-      {/* Header */}
-      <div className="flex items-center gap-2.5 mb-3">
-        <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/30 via-purple-500/20 to-transparent rounded-full blur-lg" />
-          <img src="/AuraflowLogo.png" alt="AuraFlow" className="w-14 h-14 drop-shadow-lg relative" />
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-white">AuraFlow</h3>
-          <p className="text-[10px] text-gray-400">AI-Powered Communication</p>
-        </div>
+    <div className="auth-branding__content">
+      {/* Badge */}
+      <br />
+      <div className="auth-branding__badge">
+        AI-Powered Communication
       </div>
 
-      {/* Desktop mockup container - positioned to overflow right */}
-      <div className="flex-1 relative min-h-0">
-        <BrandingAnimation />
-      </div>
+      {/* Headline */}
+      <h2 className="auth-branding__headline">
+        Smart conversations.<br />
+        Smarter <span className="auth-branding__highlight">outcomes.</span>
+      </h2>
 
-      {/* Feature badges */}
-      <div className="flex flex-wrap gap-1.5 mt-3">
-        {[
-          { icon: '📝', label: 'Summarize' },
-          { icon: '😊', label: 'Mood' },
-          { icon: '🛡️', label: 'Moderate' },
-          { icon: '💚', label: 'Wellness' },
-        ].map((f) => (
-          <div 
-            key={f.label}
-            className="flex items-center gap-1 px-2 py-1 bg-slate-800/60 backdrop-blur-sm rounded-full border border-slate-700/40"
-          >
-            <span className="text-[10px]">{f.icon}</span>
-            <span className="text-[9px] text-gray-400">{f.label}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Tagline */}
-      <p className="text-[9px] text-gray-500 mt-2 text-center">
-        Smart communication with intelligent AI agents
+      <p className="auth-branding__subtext">
+        AuraFlow combines intelligent AI agents with real-time communication to help teams move faster and work smarter.
       </p>
+
+      <br />
+
+      {/* Feature list */}
+      <div className="auth-branding__features">
+        <div className="auth-branding__feature">
+          <div className="auth-branding__feature-icon auth-branding__feature-icon--agents">
+            <Bot className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h4 className="auth-branding__feature-title">AI Agents</h4>
+            <p className="auth-branding__feature-desc">Intelligent agents that understand and respond contextually.</p>
+          </div>
+        </div>
+
+        <div className="auth-branding__feature">
+          <div className="auth-branding__feature-icon auth-branding__feature-icon--collab">
+            <Users className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h4 className="auth-branding__feature-title">Real-time Collaboration</h4>
+            <p className="auth-branding__feature-desc">Work together seamlessly with your team in real-time.</p>
+          </div>
+        </div>
+
+        <div className="auth-branding__feature">
+          <div className="auth-branding__feature-icon auth-branding__feature-icon--summaries">
+            <FileText className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h4 className="auth-branding__feature-title">Smart Summaries</h4>
+            <p className="auth-branding__feature-desc">Get AI-generated summaries and action items instantly.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Robot image */}
+      <div className="auth-branding__robot-container">
+        <img 
+          src="/ai-robot-mascot.png" 
+          alt="AuraFlow AI Assistant" 
+          className="auth-branding__robot"
+        />
+      </div>
+
+      {/* Status bar */}
+      <div className="auth-branding__status">
+        <span className="auth-branding__status-dot" />
+        <span className="auth-branding__status-text">All systems operational</span>
+        <span className="auth-branding__status-sep">•</span>
+        <Shield className="w-3 h-3 text-gray-400" />
+        <span className="auth-branding__status-text">99.9% uptime</span>
+      </div>
     </div>
   </div>
 );
 
 // Main AuthCard component
 const AuthCard: React.FC<AuthCardProps> = ({ mode, onModeChange, onAuth }) => {
-  const [darkMode, setDarkMode] = useState(true);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   return (
-    <div className={darkMode ? 'dark' : ''}>
+    <>
       {/* Full-page loading overlay */}
       <LoadingOverlay isVisible={isLoggingIn} />
       
-      <div className="w-full max-w-5xl">
-        <div className="flex backdrop-blur-xl bg-slate-800/95 dark:bg-slate-800/95 rounded-lg shadow-2xl overflow-hidden min-h-[420px]">
-          <div className="w-full lg:w-[520px] p-6">
+      <div className="auth-card">
+        <div className="auth-card__inner">
+          {/* Left panel - Form */}
+          <div className="auth-card__form-panel">
             {mode === 'login' ? (
               <Login 
                 onSwitchToSignup={() => onModeChange('signup')} 
-                darkMode={darkMode} 
                 onAuth={onAuth}
                 onForgotPassword={() => setShowForgotPassword(true)}
                 onLoadingChange={setIsLoggingIn}
               />
             ) : (
-              <Signup onSwitchToLogin={() => onModeChange('login')} darkMode={darkMode} onAuth={onAuth} />
+              <Signup onSwitchToLogin={() => onModeChange('login')} onAuth={onAuth} />
             )}
           </div>
 
+          {/* Right panel - Branding */}
           <BrandingSection />
         </div>
       </div>
@@ -1196,39 +1045,446 @@ const AuthCard: React.FC<AuthCardProps> = ({ mode, onModeChange, onAuth }) => {
       )}
 
       <style>{`
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(10px); }
+        /* ─── Auth Card Container ──────────────────────── */
+        .auth-card {
+          width: 100%;
+          max-width: 1100px;
+        }
+
+        .auth-card__inner {
+          display: flex;
+          border-radius: 20px;
+          overflow: hidden;
+          background: rgba(15, 12, 41, 0.85);
+          backdrop-filter: blur(40px);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          box-shadow: 
+            0 25px 60px rgba(0, 0, 0, 0.5),
+            0 0 100px rgba(88, 52, 180, 0.08),
+            inset 0 1px 0 rgba(255, 255, 255, 0.04);
+          min-height: 0;
+        }
+
+        /* ─── Form Panel (Left) ────────────────────────── */
+        .auth-card__form-panel {
+          width: 100%;
+          padding: 20px 32px;
+        }
+
+        @media (min-width: 1024px) {
+          .auth-card__form-panel {
+            width: 40%;
+            flex-shrink: 0;
+          }
+        }
+
+        /* ─── Shared Input Styles ──────────────────────── */
+        .auth-label {
+          display: block;
+          font-size: 11px;
+          font-weight: 700;
+          color: rgba(255, 255, 255, 0.7);
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .auth-input-wrapper {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          background: rgba(18, 15, 50, 0.8);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 12px;
+          padding: 0 14px;
+          transition: all 0.2s ease;
+        }
+
+        .auth-input-wrapper:focus-within {
+          border-color: rgba(99, 102, 241, 0.6);
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        .auth-input-wrapper--error {
+          border-color: rgba(239, 68, 68, 0.5) !important;
+        }
+
+        .auth-input-icon {
+          width: 16px;
+          height: 16px;
+          color: rgba(255, 255, 255, 0.25);
+          flex-shrink: 0;
+        }
+
+        .auth-input {
+          flex: 1;
+          background: transparent;
+          border: none;
+          outline: none;
+          color: #e2e8f0;
+          font-size: 14px;
+          padding: 10px 0;
+          width: 100%;
+        }
+
+        .auth-input::placeholder {
+          color: rgba(255, 255, 255, 0.25);
+        }
+
+        .auth-input-toggle {
+          color: rgba(255, 255, 255, 0.3);
+          transition: color 0.2s;
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 0;
+        }
+
+        .auth-input-toggle:hover {
+          color: rgba(255, 255, 255, 0.6);
+        }
+
+        /* ─── Buttons ──────────────────────────────────── */
+        .auth-btn-primary {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 10px 24px;
+          background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
+          color: white;
+          font-size: 14px;
+          font-weight: 600;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.25s ease;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .auth-btn-primary::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
+          opacity: 0;
+          transition: opacity 0.25s ease;
+        }
+
+        .auth-btn-primary:hover::before {
+          opacity: 1;
+        }
+
+        .auth-btn-primary:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+        }
+
+        .auth-btn-primary:active {
+          transform: translateY(0);
+        }
+
+        .auth-btn-primary:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none !important;
+          box-shadow: none !important;
+        }
+
+        .auth-btn-primary > * {
+          position: relative;
+          z-index: 1;
+        }
+
+        .auth-btn-google {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          padding: 12px 24px;
+          background: rgba(18, 15, 50, 0.6);
+          color: rgba(255, 255, 255, 0.8);
+          font-size: 14px;
+          font-weight: 500;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 12px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .auth-btn-google:hover {
+          background: rgba(25, 22, 60, 0.8);
+          border-color: rgba(255, 255, 255, 0.18);
+        }
+
+        /* ─── Links ────────────────────────────────────── */
+        .auth-link {
+          color: #818cf8;
+          background: none;
+          border: none;
+          cursor: pointer;
+          transition: color 0.2s;
+          padding: 0;
+        }
+
+        .auth-link:hover {
+          color: #a5b4fc;
+          text-decoration: underline;
+        }
+
+        /* ─── Divider ──────────────────────────────────── */
+        .auth-divider {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          color: rgba(255, 255, 255, 0.2);
+          font-size: 12px;
+          font-weight: 500;
+        }
+
+        .auth-divider::before,
+        .auth-divider::after {
+          content: '';
+          flex: 1;
+          height: 1px;
+          background: rgba(255, 255, 255, 0.08);
+        }
+
+        /* ─── Modal ────────────────────────────────────── */
+        .auth-modal {
+          background: rgba(15, 12, 41, 0.95);
+          backdrop-filter: blur(40px);
+        }
+
+        /* ─── Branding Section (Right Panel) ───────────── */
+        .auth-branding {
+          display: none;
+          position: relative;
+          flex: 1;
+          overflow: hidden;
+          border-left: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        @media (min-width: 1024px) {
+          .auth-branding {
+            display: block;
+          }
+        }
+
+        .auth-branding__bg {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+        }
+
+        .auth-branding__glow {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(80px);
+        }
+
+        .auth-branding__glow--1 {
+          top: -50px;
+          right: -80px;
+          width: 300px;
+          height: 300px;
+          background: rgba(99, 52, 200, 0.15);
+        }
+
+        .auth-branding__glow--2 {
+          bottom: -60px;
+          left: -40px;
+          width: 250px;
+          height: 250px;
+          background: rgba(59, 46, 180, 0.1);
+        }
+
+        .auth-branding__content {
+          position: relative;
+          z-index: 2;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          padding: 20px 22px 16px;
+        }
+
+        .auth-branding__badge {
+          display: inline-flex;
+          align-self: flex-start;
+          padding: 5px 12px;
+          background: rgba(99, 102, 241, 0.15);
+          border: 1px solid rgba(99, 102, 241, 0.25);
+          border-radius: 20px;
+          color: #a5b4fc;
+          font-size: 12px;
+          font-weight: 500;
+          margin-bottom: 12px;
+        }
+
+        .auth-branding__headline {
+          font-size: 24px;
+          font-weight: 800;
+          color: white;
+          line-height: 1.2;
+          margin-bottom: 6px;
+        }
+
+        .auth-branding__highlight {
+          background: linear-gradient(135deg, #22c55e, #10b981);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+
+        .auth-branding__subtext {
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.45);
+          line-height: 1.5;
+          margin-bottom: 14px;
+          max-width: 370px;
+        }
+
+        /* ─── Features ─────────────────────────────────── */
+        .auth-branding__features {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          margin-bottom: auto;
+          max-width: 280px;
+          position: relative;
+          z-index: 3;
+        }
+
+        .auth-branding__feature {
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+        }
+
+        .auth-branding__feature-icon {
+          width: 40px;
+          height: 40px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .auth-branding__feature-icon--agents {
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        }
+
+        .auth-branding__feature-icon--collab {
+          background: linear-gradient(135deg, #7c3aed, #a855f7);
+        }
+
+        .auth-branding__feature-icon--summaries {
+          background: linear-gradient(135deg, #4f46e5, #6366f1);
+        }
+
+        .auth-branding__feature-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: white;
+          margin-bottom: 2px;
+        }
+
+        .auth-branding__feature-desc {
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.4);
+          line-height: 1.4;
+        }
+
+        /* ─── Robot Image ──────────────────────────────── */
+        .auth-branding__robot-container {
+          position: absolute;
+          top: 50%;
+          right: -110px;
+          transform: translateY(-45%);
+          width: 580px;
+          height: 580px;
+          pointer-events: none;
+          opacity: 1;
+          z-index: 1;
+        }
+
+        .auth-branding__robot {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          filter: drop-shadow(0 0 60px rgba(99, 102, 241, 0.3));
+          animation: auth-robot-float 6s ease-in-out infinite;
+        }
+
+        @keyframes auth-robot-float {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
+        }
+
+        /* ─── Status Bar ───────────────────────────────── */
+        .auth-branding__status {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 14px;
+          background: rgba(12, 10, 35, 0.6);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 20px;
+          align-self: flex-start;
+          margin-top: 14px;
+          position: relative;
+          z-index: 3;
+        }
+
+        .auth-branding__status-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #22c55e;
+          box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+        }
+
+        .auth-branding__status-text {
+          font-size: 11px;
+          color: rgba(255, 255, 255, 0.5);
+        }
+
+        .auth-branding__status-sep {
+          color: rgba(255, 255, 255, 0.15);
+          font-size: 10px;
+        }
+
+        /* ─── Animations ───────────────────────────────── */
+        @keyframes auth-fade-in {
+          from { opacity: 0; transform: translateY(12px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        .animate-fade-in { animation: fade-in 0.3s ease-out; }
-        
-        @keyframes float {
-          0%, 100% { transform: translateY(0) rotate(0deg); }
-          50% { transform: translateY(-20px) rotate(5deg); }
+
+        .auth-animate-in {
+          animation: auth-fade-in 0.4s ease-out;
         }
-        .animate-float { animation: float 6s ease-in-out infinite; }
-        .animate-float-delayed { animation: float 8s ease-in-out infinite reverse; }
-        
-        @keyframes pulse-slow {
-          0%, 100% { opacity: 0.4; transform: scale(1); }
-          50% { opacity: 0.7; transform: scale(1.05); }
+
+        .animate-fade-in {
+          animation: auth-fade-in 0.3s ease-out;
         }
-        .animate-pulse-slow { animation: pulse-slow 4s ease-in-out infinite; }
-        
-        @keyframes wave {
-          0%, 100% { height: 4px; }
-          50% { height: 14px; }
+
+        /* ─── Scrollbar ────────────────────────────────── */
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 4px;
         }
-        
-        @keyframes shimmer {
-          0% { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
         }
-        .animate-shimmer {
-          animation: shimmer 2s linear infinite;
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.2);
         }
       `}</style>
-    </div>
+    </>
   );
 };
 

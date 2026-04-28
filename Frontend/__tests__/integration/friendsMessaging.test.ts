@@ -138,7 +138,7 @@ describe('Friends & Messaging System Integration', () => {
     });
 
     it('should edit message', async () => {
-      let mockMessage: DirectMessage = {
+      const mockMessage: DirectMessage = {
         id: 1,
         sender_id: 1,
         receiver_id: 2,

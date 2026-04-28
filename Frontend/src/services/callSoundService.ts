@@ -85,8 +85,8 @@ class CallSoundService {
       this.loopTimeout = null;
     }
     for (const node of this.activeNodes) {
-      try { node.oscillator?.stop(); } catch {}
-      try { node.gain?.disconnect(); } catch {}
+      try { node.oscillator?.stop(); } catch { /* ignore */ }
+      try { node.gain?.disconnect(); } catch { /* ignore */ }
       if (node.timeout) clearTimeout(node.timeout);
     }
     this.activeNodes = [];
@@ -107,7 +107,7 @@ class CallSoundService {
       osc.start(now);
       osc.stop(now + duration + 0.05);
       this.activeNodes.push({ oscillator: osc, gain });
-    } catch {}
+    } catch { /* ignore audio context errors */ }
   }
 
   private _playToneSequence(steps: ({ freq: number; duration: number } | { pause: number })[], volume: number) {

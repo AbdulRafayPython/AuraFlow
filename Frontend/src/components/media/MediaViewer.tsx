@@ -88,6 +88,7 @@ const MediaViewer: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, closeViewer, nextMedia, prevMedia]);
 
   // Prevent body scroll when open

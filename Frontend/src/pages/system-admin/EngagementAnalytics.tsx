@@ -64,6 +64,7 @@ export default function SysEngagementAnalytics() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchAnalytics(); }, [days]);
 
   const totalMessages = dailyData.reduce((sum, d) => sum + (d.messages || 0), 0);

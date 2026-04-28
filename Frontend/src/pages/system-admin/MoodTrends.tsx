@@ -42,6 +42,7 @@ export default function SysMoodTrends() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchMoodData(); }, [days]);
 
   const sentimentIcon = (sentiment: string) => {

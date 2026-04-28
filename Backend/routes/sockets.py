@@ -324,7 +324,6 @@ def register_socket_events(socketio):
                 log.error(f"[SOCKET] ❌ Failed to import unread_tracker")
             except Exception as e:
                 log.error(f"[SOCKET] ❌ Failed to load/emit initial_unreads: {e}", exc_info=True)
-            conn.commit()
 
             socketio.emit('user_status', {
                 'username': username,
@@ -375,6 +374,7 @@ def register_socket_events(socketio):
             
             # Clean up stored auth data
             _socket_auth.pop(request.sid, None)
+            _socket_rate_buckets.pop(request.sid, None)
             
             # Try to get username from session first, then from token
             username = None
@@ -746,8 +746,12 @@ def register_socket_events(socketio):
                     if is_blocked:
                         log.info(f"[SOCKET] User {username} is BLOCKED in community {community_id}")
             
-            # 🛡️ SMART MODERATION CHECK — Only if moderation agent is installed for community
+            # 🛡️ BATCH MODERATION — instant-check → broadcast → Redis buffer → Gemini batch
+            # Messages broadcast INSTANTLY (only extreme content blocked pre-broadcast).
+            # All messages pushed to a per-channel Redis buffer.
+            # When buffer reaches 10 msgs or 30s timeout, Celery batch-reviews with Gemini.
             moderation_installed = False
+            final_action = 'allow'
             if community_id:
                 try:
                     chk_conn = get_db_connection()
@@ -759,182 +763,98 @@ def register_socket_events(socketio):
                         moderation_installed = chk_cur.fetchone() is not None
                     chk_conn.close()
                 except Exception:
-                    moderation_installed = True  # Fail-safe: moderate if can't check
+                    moderation_installed = True
 
-            if moderation_installed:
-                moderation_result = moderation_agent.moderate_message(
-                    text=content,
-                    user_id=user_id,
-                    channel_id=channel_id,
-                    message_id=message_id,
-                    log=True
-                )
-                # Track moderation usage
-                try:
-                    u_conn = get_db_connection()
-                    with u_conn.cursor() as u_cur:
-                        u_cur.execute("""
-                            UPDATE community_agents
-                            SET usage_count = usage_count + 1, last_active = NOW()
-                            WHERE community_id = %s AND agent_type = 'moderation'
-                        """, (community_id,))
-                    u_conn.commit()
-                    u_conn.close()
-                except Exception:
-                    pass
-            else:
-                moderation_result = {'action': 'allow', 'severity': 'none', 'confidence': 0, 'reasons': []}
-            
-            log.info(f"[MODERATION] Message {message_id} checked: {moderation_result['action']} (confidence: {moderation_result['confidence']})")
-            
-            # Add moderation data and blocked status to message
+            instant_result = None
+            if moderation_installed and content:
+                instant_result = moderation_agent.instant_check(content)
+                if instant_result.get('block'):
+                    final_action = 'block'
+
             message['moderation'] = {
-                'action': moderation_result['action'],
-                'severity': moderation_result['severity'],
-                'confidence': moderation_result['confidence'],
-                'reasons': moderation_result.get('reasons', [])
+                'action': final_action,
+                'severity': 'high' if final_action == 'block' else 'none',
+                'confidence': 1.0 if final_action == 'block' else 0,
+                'reasons': [instant_result['reason']] if final_action == 'block' and instant_result else [],
+                'violation_count': 0,
+                'message': None,
+                'explanation': '',
+                'pending_ai_review': moderation_installed and final_action == 'allow'
             }
             message['is_blocked'] = is_blocked
 
             room = f"channel_{channel_id}"
-            log.info(f"[SOCKET] Broadcasting to room: {room}")
             
             # 🤖 AI COMMAND HANDLING
             if content.strip().startswith('/'):
                 log.info(f"[COMMAND] Detected command: {content}")
                 try:
                     command_result = handle_ai_command(content, username, user_id, channel_id, community_id)
-                    log.info(f"[COMMAND] Handler returned: {command_result}")
-                    
                     if command_result:
-                        log.info(f"[COMMAND] Emitting command_result to {request.sid}")
-                        # Send command result back to user
                         emit('command_result', command_result, room=request.sid)
-                        log.info(f"[COMMAND] command_result emitted successfully")
-                        
-                        # Also broadcast the command message itself
                         emit('message_received', {
-                            **message,
-                            'author': username
+                            **message, 'author': username
                         }, room=room, include_self=True)
-                        log.info(f"[COMMAND] message_received broadcasted to room {room}")
                         return
-                    else:
-                        log.info(f"[COMMAND] Handler returned None, treating as regular message")
                 except Exception as cmd_error:
-                    log.error(f"[COMMAND] Error handling command: {cmd_error}", exc_info=True)
+                    log.error(f"[COMMAND] Error: {cmd_error}", exc_info=True)
                     emit('command_result', {
-                        'type': 'error',
-                        'success': False,
+                        'type': 'error', 'success': False,
                         'error': f'Command failed: {str(cmd_error)}'
                     }, room=request.sid)
             
-            # Handle different moderation actions
-            if moderation_result['action'] == 'block':
-                # 🚫 BLOCK: Don't broadcast, notify sender only
-                log.warning(f"[MODERATION] ⚠️ Message BLOCKED from {username}: {moderation_result['reasons']}")
+            # ── BROADCAST or BLOCK ──
+            if final_action == 'block':
+                # Extreme content — don't broadcast
                 emit('message_blocked', {
                     'message_id': message_id,
-                    'reason': 'Your message was blocked due to: ' + ', '.join(moderation_result['reasons']),
-                    'severity': moderation_result['severity'],
+                    'reason': 'Your message was blocked: ' + (instant_result.get('reason', 'extreme content') if instant_result else 'policy violation'),
+                    'severity': 'high',
                     'appeal_available': True
                 })
-                
-                # Notify moderators
-                emit('moderation_alert', {
-                    'message_id': message_id,
-                    'user_id': user_id,
-                    'username': username,
-                    'channel_id': channel_id,
-                    'content': content[:100] + '...' if len(content) > 100 else content,
-                    'action': 'blocked',
-                    'reasons': moderation_result['reasons'],
-                    'severity': moderation_result['severity'],
-                    'timestamp': datetime.now().isoformat()
-                }, room='moderators', broadcast=True)
-                
-                # Notify community owners about moderation action
                 if community_id:
                     socketio.emit('moderation_action_logged', {
-                        'community_id': community_id,
-                        'channel_id': channel_id,
-                        'action': 'block',
-                        'severity': moderation_result['severity'],
+                        'community_id': community_id, 'channel_id': channel_id,
+                        'action': 'block', 'severity': 'high',
                         'timestamp': datetime.now().isoformat()
                     }, room=f"community_{community_id}", namespace='/')
-                
-            elif moderation_result['action'] == 'flag':
-                # ⚠️ FLAG: Allow but notify moderators
-                log.warning(f"[MODERATION] ⚠️ Message FLAGGED from {username}: {moderation_result['reasons']}")
-                log.info(f"[SOCKET] Emitting message_received to room {room}")
-                emit('message_received', {
-                    **message,
-                    'author': username
-                }, room=room, include_self=True)
-                
-                # Notify moderators for review
-                emit('moderation_alert', {
-                    'message_id': message_id,
-                    'user_id': user_id,
-                    'username': username,
-                    'channel_id': channel_id,
-                    'content': content[:100] + '...' if len(content) > 100 else content,
-                    'action': 'flagged',
-                    'reasons': moderation_result['reasons'],
-                    'severity': moderation_result['severity'],
-                    'timestamp': datetime.now().isoformat()
-                }, room='moderators', broadcast=True)
-                
-                # Notify community owners about moderation action
-                if community_id:
-                    socketio.emit('moderation_action_logged', {
-                        'community_id': community_id,
-                        'channel_id': channel_id,
-                        'action': 'flag',
-                        'severity': moderation_result['severity'],
-                        'timestamp': datetime.now().isoformat()
-                    }, room=f"community_{community_id}", namespace='/')
-                
-            elif moderation_result['action'] == 'warn':
-                # ⚠️ WARN: Allow but send warning to user
-                log.info(f"[MODERATION] ⚠️ Message WARNING for {username}")
-                log.info(f"[SOCKET] Emitting message_received to room {room}")
-                emit('message_received', {
-                    **message,
-                    'author': username
-                }, room=room, include_self=True)
-                
-                emit('moderation_warning', {
-                    'message_id': message_id,
-                    'warning': 'Your message contains content that may violate community guidelines.',
-                    'reasons': moderation_result['reasons']
-                })
-                
-                # Notify community owners about moderation action
-                if community_id:
-                    socketio.emit('moderation_action_logged', {
-                        'community_id': community_id,
-                        'channel_id': channel_id,
-                        'action': 'warn',
-                        'severity': moderation_result['severity'],
-                        'timestamp': datetime.now().isoformat()
-                    }, room=f"community_{community_id}", namespace='/')
-                
+                # Log the instant block
+                try:
+                    moderation_agent.log_moderation_action(
+                        user_id, channel_id, content, 'block', 'high',
+                        [instant_result.get('reason', 'extreme_content')] if instant_result else ['extreme_content'],
+                        1.0, message_id
+                    )
+                except Exception:
+                    pass
             else:
-                # ✅ CLEAN: Normal broadcast
-                log.info(f"[SOCKET] Emitting message_received to room {room}")
+                # ✅ BROADCAST INSTANTLY — Gemini will review in batch later
                 emit('message_received', {
-                    **message,
-                    'author': username
+                    **message, 'author': username
                 }, room=room, include_self=True)
-                log.info(f"[SOCKET] ✓ Message {message_id} broadcast complete")
-            
+                
+                # Push to Redis buffer for batch Gemini review
+                if moderation_installed and content and message_id:
+                    try:
+                        import time as _time
+                        buf_len = moderation_agent.push_to_buffer(channel_id, {
+                            'msg_id': message_id,
+                            'user_id': user_id,
+                            'username': username,
+                            'content': content[:1000],
+                            'timestamp': _time.time()
+                        })
+                        
+                        # Check if we should trigger a batch review
+                        if buf_len >= moderation_agent.BATCH_SIZE:
+                            from tasks.agent_tasks import batch_moderation_task
+                            batch_moderation_task.delay(channel_id, community_id)
+                            log.info(f"[MODERATION] Batch triggered for channel {channel_id} ({buf_len} msgs)")
+                    except Exception as buf_err:
+                        log.warning(f"[MODERATION] Buffer push failed: {buf_err}")
+
             # ── Real-time unread delivery ──────────────────────────────────
-            # Only track unreads for messages that are actually delivered
-            if moderation_result['action'] != 'block':
-                # PRIMARY: Emit lightweight channel_activity to community room
-                # This is the reliable real-time path — community rooms are joined
-                # on connect and proven to work. The frontend filters locally.
+            if final_action != 'block':
                 if community_id:
                     socketio.emit('channel_activity', {
                         'channel_id': channel_id,
@@ -950,20 +870,18 @@ def register_socket_events(socketio):
                         'community_color': community_color,
                         'content_preview': (content[:120] + '…') if len(content) > 120 else content,
                     }, room=f"community_{community_id}", namespace='/')
-                    log.info(f"[UNREAD] channel_activity emitted to community_{community_id} for channel {channel_id}")
 
-                # SECONDARY: Update in-memory cache + per-user room emit (backup)
                 try:
                     from services.unread_tracker import increment_channel_unread
                     increment_channel_unread(channel_id, user_id, community_id)
                 except Exception as unread_err:
                     log.warning(f"[UNREAD] increment_channel_unread failed: {unread_err}")
 
-            log.info(f"[SOCKET] Message from {username} to channel {channel_id} - Action: {moderation_result['action']}")
+            log.info(f"[SOCKET] Message from {username} to channel {channel_id} - Action: {final_action}")
 
             # 🤖 AGENT AUTO-EXECUTION (fire-and-forget via Celery)
             # Only dispatch for text messages that weren't blocked
-            if content and moderation_result['action'] != 'block' and not content.strip().startswith('/'):
+            if content and final_action != 'block' and not content.strip().startswith('/'):
                 # Mood tracking — personal agent
                 try:
                     from tasks.agent_tasks import track_mood_task
@@ -2054,7 +1972,7 @@ def register_socket_events(socketio):
                                 INSERT INTO channel_read_status (user_id, channel_id, last_read_message_id)
                                 VALUES (%s, %s, %s)
                                 ON DUPLICATE KEY UPDATE
-                                    last_read_message_id = GREATEST(last_read_message_id, VALUES(last_read_message_id)),
+                                    last_read_message_id = GREATEST(COALESCE(last_read_message_id, 0), VALUES(last_read_message_id)),
                                     last_read_at = CURRENT_TIMESTAMP
                             """, (user_id, channel_id, message_id))
                     conn.commit()
@@ -2097,7 +2015,7 @@ def register_socket_events(socketio):
             
             # Notify the sender that their messages were read
             socketio.emit('dm_messages_read', {
-                'reader_id': user_id,
+                'user_id': user_id,
                 'reader_username': username,
             }, room=f"user_{other_user_id}", namespace='/')
             
@@ -2118,7 +2036,9 @@ def register_socket_events(socketio):
                 return
             
             try:
-                from services.unread_tracker import get_user_unreads
+                from services.unread_tracker import load_user_unreads, get_user_unreads, _channel_unread
+                if user_id not in _channel_unread:
+                    load_user_unreads(user_id)
                 unreads = get_user_unreads(user_id)
                 emit('initial_unreads', unreads)
             except ImportError:
@@ -2265,6 +2185,17 @@ def register_socket_events(socketio):
             socketio.emit('receive_direct_message', msg, to=f"user_{call['caller_id']}", namespace='/')
             socketio.emit('receive_direct_message', msg, to=f"user_{call['callee_id']}", namespace='/')
             log.info(f"[CALL] Call log emitted: {status} (call_id={call.get('call_id')}, msg_id={msg['id']})")
+
+            # Queue batched email notification for missed calls
+            if status == 'missed':
+                try:
+                    from services.email_batch_service import queue_email_notification
+                    queue_email_notification(call['callee_id'], 'missed_call', {
+                        'sender_name': call.get('caller', 'Someone'),
+                        'preview': f"Missed {call.get('type', 'audio')} call",
+                    })
+                except Exception:
+                    pass
         else:
             log.error(f"[CALL] Failed to create call log for status={status}, call_id={call.get('call_id')}")
         return msg

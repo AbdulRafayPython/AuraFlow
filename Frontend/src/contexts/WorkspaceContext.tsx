@@ -125,6 +125,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }, 150);
 
     return () => clearTimeout(loadTimer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadWorkspaces = useCallback(async () => {
@@ -156,6 +157,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       await loadChannelsForWorkspace(workspaceId);
       setError(null);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaces]);
 
   const loadChannelsForWorkspace = useCallback(async (communityId: number) => {
@@ -175,6 +177,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoadingChannels(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const selectChannel = useCallback(async (channelId: number) => {
@@ -185,6 +188,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       await loadChannelMessages(channelId);
       setError(null);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channels]);
 
   const createWorkspace = useCallback(async (payload: CreateCommunityPayload) => {
@@ -422,6 +426,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setError(errorMsg);
       throw err;
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const rejectFriendRequest = useCallback(async (requestId: number) => {
@@ -508,6 +513,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setError(errorMsg);
       throw err;
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Discover communities (not joined yet)

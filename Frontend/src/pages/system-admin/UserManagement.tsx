@@ -109,6 +109,7 @@ export default function SysUserManagement() {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, search, currentPage]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);

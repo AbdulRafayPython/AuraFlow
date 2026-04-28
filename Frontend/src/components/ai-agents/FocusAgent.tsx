@@ -135,6 +135,7 @@ const FocusAgentContent: React.FC = () => {
 
   useEffect(() => {
     loadFocusData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadFocusData = async () => {

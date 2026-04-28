@@ -7,7 +7,7 @@ import { getAvatarUrl, formatCallPreview } from "@/lib/utils";
 import { 
   Users, Plus, Home, ChevronRight, LogOut, Moon, Sun, Settings, 
   User, Bell, Shield, Palette, HelpCircle, MessageSquare, ChevronDown, 
-  Search, Sparkles, Hash, Volume2, Compass
+  Search, Command, Hash, Volume2, Compass
 } from "lucide-react";
 import CreateCommunityModal from "../modals/CreateCommunityModal";
 import FriendProfileModal from "../modals/FriendProfileModal";
@@ -262,7 +262,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   return (
     <>
     <div 
-      className={`flex-shrink-0 h-full flex transition-all duration-300 relative ${showLogoutDialog || isMembersModalOpen || isCommunityManagementModalOpen ? 'blur-[2px] pointer-events-none' : ''}`}
+      className={`flex-shrink-0 h-full flex transition-all duration-300 relative ${showLogoutDialog || isMembersModalOpen || isCommunityManagementModalOpen || showFriendProfileModal ? 'blur-[2px] pointer-events-none' : ''}`}
       style={{ 
         overflow: 'visible',
         background: 'var(--theme-sidebar-gradient)'
@@ -458,7 +458,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                 onClick={() => setShowCreateCommunityModal(true)}
                 className="w-full px-4 py-2.5 text-xs font-semibold text-left transition-all whitespace-nowrap text-emerald-400 hover:bg-[hsl(var(--theme-bg-hover))] flex items-center gap-2"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <Compass className="w-3.5 h-3.5" />
                 Create
               </button>
               <div className="h-px bg-[hsl(var(--theme-border-default))]" />
@@ -619,7 +619,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
           {/* Header */}
           <div className="px-4 py-4 border-b border-[hsl(var(--theme-border-default)/0.3)] relative z-[5]">
             <h2 className="text-lg font-bold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
+              <Command className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
               Quick Access
             </h2>
             

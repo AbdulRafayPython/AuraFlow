@@ -3,6 +3,29 @@ Utils Package
 =============
 Utility functions and helpers
 """
+from services.redis_client import cache_get, cache_set
+
+_USER_ID_TTL = 3600  # 1 hour — user IDs are immutable
+
+
+def get_user_id(username, cur):
+    """
+    Return the integer user ID for a username.
+    Cached in Redis for 1 hour to avoid a DB hit on every authenticated request.
+    Falls back to a DB query when Redis is unavailable or cache is cold.
+    """
+    cache_key = f"user:id:{username}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+    cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+    row = cur.fetchone()
+    if row is None:
+        return None
+    user_id = row['id']
+    cache_set(cache_key, user_id, ttl=_USER_ID_TTL)
+    return user_id
+
 
 def get_avatar_url(username, custom_url=None):
     """

@@ -119,11 +119,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
                 ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/40 scale-105'
                 : 'bg-[hsl(var(--theme-bg-secondary))] hover:bg-gradient-to-br hover:from-amber-500 hover:to-orange-600 text-[hsl(var(--theme-text-muted))] hover:text-white hover:scale-105 hover:shadow-lg'
             }`
-          : `relative p-2 rounded-lg transition-all duration-200 ${
-              isDarkMode
-                ? 'hover:bg-slate-700 text-gray-300 hover:text-white'
-                : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
-            } ${isOpen ? (isDarkMode ? 'bg-slate-700' : 'bg-gray-100') : ''}`
+          : `relative p-2 rounded-lg transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] ${isOpen ? 'bg-[hsl(var(--theme-bg-hover))]' : ''}`
         }
         title="Notifications"
       >
@@ -167,30 +163,20 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
               isSidebar
                 ? 'left-[calc(100%+12px)] top-0 w-80 sm:w-96 origin-top-left'
                 : 'right-0 mt-2 w-80 sm:w-96 origin-top-right'
-            } max-h-[480px] overflow-hidden rounded-xl shadow-2xl z-[9999] border transform transition-all duration-200 ${
-              isDarkMode
-                ? 'bg-slate-800 border-slate-700'
-                : 'bg-white border-gray-200'
-            }`}
+            } max-h-[480px] overflow-hidden rounded-xl shadow-2xl z-[9999] border transform transition-all duration-200 bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]`}
             style={{
               animation: isSidebar ? 'slideRight 0.2s ease-out' : 'slideDown 0.2s ease-out',
             }}
           >
             {/* Header */}
-            <div className={`px-4 py-3 border-b sticky top-0 z-10 ${
-              isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-gray-100 bg-white'
-            }`}>
+            <div className={`px-4 py-3 border-b sticky top-0 z-10 border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))]`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <h3 className={`font-semibold text-base ${
-                    isDarkMode ? 'text-white' : 'text-gray-900'
-                  }`}>
+                  <h3 className="font-semibold text-base text-[hsl(var(--theme-text-primary))]">
                     Notifications
                   </h3>
                   {unreadCount > 0 && (
-                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                      isDarkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700'
-                    }`}>
+                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-accent-primary))]">
                       {unreadCount} new
                     </span>
                   )}
@@ -203,11 +189,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
                         e.stopPropagation();
                         markAllAsRead();
                       }}
-                      className={`p-1.5 rounded-lg transition-colors ${
-                        isDarkMode
-                          ? 'hover:bg-slate-700 text-gray-400 hover:text-blue-400'
-                          : 'hover:bg-gray-100 text-gray-500 hover:text-blue-600'
-                      }`}
+                      className="p-1.5 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))]"
                       title="Mark all as read"
                     >
                       <CheckCheck className="w-4 h-4" />
@@ -217,11 +199,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
                         e.stopPropagation();
                         clearAll();
                       }}
-                      className={`p-1.5 rounded-lg transition-colors ${
-                        isDarkMode
-                          ? 'hover:bg-slate-700 text-gray-400 hover:text-red-400'
-                          : 'hover:bg-gray-100 text-gray-500 hover:text-red-600'
-                      }`}
+                      className="p-1.5 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-red-400"
                       title="Clear all"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -235,37 +213,25 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
             <div className="overflow-y-auto max-h-[380px]">
               {sortedNotifications.length === 0 ? (
                 <div className="px-4 py-12 text-center">
-                  <div className={`w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center ${
-                    isDarkMode ? 'bg-slate-700' : 'bg-gray-100'
-                  }`}>
-                    <Bell className={`w-8 h-8 ${
-                      isDarkMode ? 'text-gray-500' : 'text-gray-400'
-                    }`} />
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center bg-[hsl(var(--theme-bg-secondary))]">
+                    <Bell className="w-8 h-8 text-[hsl(var(--theme-text-muted))]" />
                   </div>
-                  <p className={`text-sm font-medium ${
-                    isDarkMode ? 'text-gray-300' : 'text-gray-700'
-                  }`}>
+                  <p className="text-sm font-medium text-[hsl(var(--theme-text-secondary))]">
                     All caught up!
                   </p>
-                  <p className={`text-xs mt-1 ${
-                    isDarkMode ? 'text-gray-500' : 'text-gray-500'
-                  }`}>
+                  <p className="text-xs mt-1 text-[hsl(var(--theme-text-muted))]">
                     No notifications to show
                   </p>
                 </div>
               ) : (
-                <div className={`divide-y ${isDarkMode ? 'divide-slate-700/50' : 'divide-gray-100'}`}>
+                <div className="divide-y divide-[hsl(var(--theme-border-default)/0.5)]">
                   {sortedNotifications.map((notification) => (
                     <div
                       key={notification.id}
                       className={`group px-4 py-3 transition-colors cursor-pointer relative ${
                         !notification.read
-                          ? isDarkMode
-                            ? 'bg-blue-500/5 hover:bg-blue-500/10'
-                            : 'bg-blue-50/50 hover:bg-blue-50'
-                          : isDarkMode
-                            ? 'hover:bg-slate-700/50'
-                            : 'hover:bg-gray-50'
+                          ? 'bg-[hsl(var(--theme-accent-primary)/0.05)] hover:bg-[hsl(var(--theme-accent-primary)/0.1)]'
+                          : 'hover:bg-[hsl(var(--theme-bg-hover))]'
                       }`}
                       onClick={() => handleNotificationClick(notification)}
                     >
@@ -329,39 +295,29 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
                             <img
                               src={getAvatarUrl(notification.from.avatar_url, notification.from.username)}
                               alt={notification.from.display_name || notification.from.username}
-                              className="w-10 h-10 rounded-full object-cover ring-2 ring-white dark:ring-slate-700"
+                              className="w-10 h-10 rounded-full object-cover ring-2 ring-[hsl(var(--theme-bg-elevated))]"
                             />
                           ) : (
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ring-2 ring-white dark:ring-slate-700 ${
-                              isDarkMode ? 'bg-slate-600' : 'bg-gray-100'
-                            }`}>
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ring-2 ring-[hsl(var(--theme-bg-elevated))] bg-[hsl(var(--theme-bg-secondary))]`}>
                               {getNotificationIcon(notification.type)}
                             </div>
                           )}
                           
                           {/* Type indicator */}
-                          <div className={`absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full flex items-center justify-center ring-2 ${
-                            isDarkMode ? 'ring-slate-800 bg-slate-700' : 'ring-white bg-white shadow-sm'
-                          }`}>
+                          <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full flex items-center justify-center ring-2 ring-[hsl(var(--theme-bg-elevated))] bg-[hsl(var(--theme-bg-secondary))]">
                             {getNotificationIcon(notification.type)}
                           </div>
                         </div>
 
                         {/* Content */}
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium leading-tight ${
-                            isDarkMode ? 'text-white' : 'text-gray-900'
-                          }`}>
+                          <p className="text-sm font-medium leading-tight text-[hsl(var(--theme-text-primary))]">
                             {notification.title}
                           </p>
-                          <p className={`text-xs mt-0.5 line-clamp-2 leading-relaxed ${
-                            isDarkMode ? 'text-gray-400' : 'text-gray-600'
-                          }`}>
+                          <p className="text-xs mt-0.5 line-clamp-2 leading-relaxed text-[hsl(var(--theme-text-muted))]">
                             {notification.message}
                           </p>
-                          <p className={`text-[10px] mt-1.5 font-medium uppercase tracking-wide ${
-                            isDarkMode ? 'text-gray-500' : 'text-gray-400'
-                          }`}>
+                          <p className="text-[10px] mt-1.5 font-medium uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
                             {formatTimestamp(notification.timestamp)}
                           </p>
                         </div>
@@ -379,11 +335,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
                               e.stopPropagation();
                               clearNotification(notification.id);
                             }}
-                            className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-all ${
-                              isDarkMode
-                                ? 'hover:bg-slate-600 text-gray-500 hover:text-gray-300'
-                                : 'hover:bg-gray-200 text-gray-400 hover:text-gray-600'
-                            }`}
+                            className="p-1 rounded opacity-0 group-hover:opacity-100 transition-all hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -397,19 +349,13 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
 
             {/* Footer */}
             {sortedNotifications.length > 0 && (
-              <div className={`px-4 py-2.5 border-t text-center ${
-                isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-gray-100 bg-gray-50/50'
-              }`}>
+              <div className="px-4 py-2.5 border-t text-center border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated)/0.5)]">
                 <button
                   onClick={() => {
                     // Could navigate to a full notifications page
                     setIsOpen(false);
                   }}
-                  className={`text-xs font-medium transition-colors ${
-                    isDarkMode
-                      ? 'text-blue-400 hover:text-blue-300'
-                      : 'text-blue-600 hover:text-blue-700'
-                  }`}
+                  className="text-xs font-medium transition-colors text-[hsl(var(--theme-accent-primary))] hover:text-[hsl(var(--theme-accent-primary)/0.8)]"
                 >
                   View all notifications
                 </button>

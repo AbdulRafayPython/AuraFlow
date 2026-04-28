@@ -47,6 +47,7 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
     if (mode === "join") {
       loadCommunities();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
   // Debounced search
@@ -58,6 +59,7 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
     }, 300);
 
     return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
   const loadCommunities = async (search: string = "") => {

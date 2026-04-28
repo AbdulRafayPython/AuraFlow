@@ -15,6 +15,20 @@ class DirectMessageService {
     };
   }
 
+  // Get last message per conversation partner
+  async getConversations(): Promise<Array<{ partner_id: number; last_message: DirectMessage }>> {
+    try {
+      const response = await axios.get<Array<{ partner_id: number; last_message: DirectMessage }>>(
+        `${API_BASE}/messages/direct/conversations`,
+        this.getAuthHeaders()
+      );
+      return response.data;
+    } catch (error) {
+      console.error('[directMessageService] Error fetching conversations:', error);
+      return [];
+    }
+  }
+
   // Get direct messages with a user
   async getDirectMessages(
     userId: number,

@@ -53,6 +53,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const [menuOpen, setMenuOpen] = useState<number | null>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const prevMessagesLengthRef = useRef(0);
+  const isInitialLoadRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -72,6 +73,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
   // Call
   const { initiateCall, callState } = useCall();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const calleePeer: CallPeer = {
     id: userId,
     username,
@@ -230,6 +232,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
     };
 
     loadReactions();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enrichedMessages.length]); // Only depend on length, not full array
 
   // Socket.IO listener — single event carries full aggregation
@@ -272,6 +275,12 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [reactionPickerMessageId, menuOpen]);
 
+  // Reset initial-load flag when conversation changes
+  useEffect(() => {
+    isInitialLoadRef.current = true;
+    prevMessagesLengthRef.current = 0;
+  }, [userId]);
+
   useEffect(() => {
     // Check if user is near bottom before auto-scrolling
     const container = messagesContainerRef.current;
@@ -279,12 +288,21 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
     const hasNewMessage = enrichedMessages.length > prevMessagesLengthRef.current;
-    
+
+    // Detect initial load for this conversation
+    const isInitial = isInitialLoadRef.current && enrichedMessages.length > 0;
+    if (isInitial) {
+      isInitialLoadRef.current = false;
+    }
+
     // Update the previous length
     prevMessagesLengthRef.current = enrichedMessages.length;
 
-    // Only auto-scroll if user is near bottom or if it's a new message from current user
-    if (isNearBottom || (hasNewMessage && enrichedMessages.length > 0 && enrichedMessages[enrichedMessages.length - 1]?.sender_id === currentUserId)) {
+    if (isInitial) {
+      // Jump instantly to bottom on first load
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+      setNewMessageCount(0);
+    } else if (isNearBottom || (hasNewMessage && enrichedMessages.length > 0 && enrichedMessages[enrichedMessages.length - 1]?.sender_id === currentUserId)) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       setNewMessageCount(0);
     } else if (hasNewMessage && !isNearBottom) {

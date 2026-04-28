@@ -336,6 +336,14 @@ def mark_channel_read():
                 return jsonify({'error': 'User not found'}), 404
             user_id = user['id']
 
+            # Verify user is a member of this channel
+            cur.execute(
+                "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
+                (channel_id, user_id)
+            )
+            if not cur.fetchone():
+                return jsonify({'error': 'Not a member of this channel'}), 403
+
             # If no message_id given, use the latest message in channel
             if not message_id:
                 cur.execute(
@@ -350,7 +358,7 @@ def mark_channel_read():
                     INSERT INTO channel_read_status (user_id, channel_id, last_read_message_id)
                     VALUES (%s, %s, %s)
                     ON DUPLICATE KEY UPDATE
-                        last_read_message_id = GREATEST(last_read_message_id, VALUES(last_read_message_id)),
+                        last_read_message_id = GREATEST(COALESCE(last_read_message_id, 0), VALUES(last_read_message_id)),
                         last_read_at = CURRENT_TIMESTAMP
                 """, (user_id, channel_id, message_id))
                 conn.commit()

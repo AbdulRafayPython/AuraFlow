@@ -109,7 +109,7 @@ const navItems: NavItem[] = [
 
 // Role check for community admin access
 function isCommunityAdmin(role?: string): boolean {
-  return role === 'admin' || role === 'community_admin' || role === 'owner';
+  return role === 'admin' || role === 'community_admin' || role === 'owner' || role === 'system_admin';
 }
 
 export default function AdminLayout() {

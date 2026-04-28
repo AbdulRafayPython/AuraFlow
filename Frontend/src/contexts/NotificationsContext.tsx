@@ -7,11 +7,37 @@ import { formatCallPreview } from '@/lib/utils';
 
 // Generate a pleasant notification chime using Web Audio API (no file dependency)
 let _audioCtx: AudioContext | null = null;
+
+// Pre-initialize AudioContext on first user gesture so it's in 'running' state
+function ensureAudioContext() {
+  if (!_audioCtx) {
+    try {
+      _audioCtx = new AudioContext();
+    } catch {
+      // Web Audio not available
+    }
+  }
+  if (_audioCtx?.state === 'suspended') {
+    _audioCtx.resume().catch(() => {});
+  }
+}
+
+// Listen for first user interaction to unlock AudioContext
+if (typeof window !== 'undefined') {
+  const unlockAudio = () => {
+    ensureAudioContext();
+    window.removeEventListener('click', unlockAudio);
+    window.removeEventListener('keydown', unlockAudio);
+  };
+  window.addEventListener('click', unlockAudio, { once: true });
+  window.addEventListener('keydown', unlockAudio, { once: true });
+}
+
 function playNotificationSound() {
   try {
-    if (!_audioCtx) _audioCtx = new AudioContext();
+    ensureAudioContext();
     const ctx = _audioCtx;
-    if (ctx.state === 'suspended') ctx.resume();
+    if (!ctx || ctx.state !== 'running') return;
 
     const now = ctx.currentTime;
     const gain = ctx.createGain();
@@ -145,7 +171,19 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       setNotifications(prev => {
         // Merge: keep server-sourced as canonical, add any local-only ones that don't collide
         const serverIds = new Set(serverNotifs.map(n => n.id));
-        const localOnly = prev.filter(n => !n.serverId && !serverIds.has(n.id));
+        // Build lookup of server notifications by type + related_id to dedup
+        // against local notifications created from real-time events (e.g. DMs)
+        const serverRelatedKeys = new Set(
+          serverNotifs
+            .filter(n => n.data?.related_id)
+            .map(n => `${n.type}-${n.data.related_id}`)
+        );
+        const localOnly = prev.filter(n => {
+          if (n.serverId || serverIds.has(n.id)) return false;
+          // Skip local notifications that match a server notification by type + message ID
+          if (n.data?.id && serverRelatedKeys.has(`${n.type}-${n.data.id}`)) return false;
+          return true;
+        });
         const merged = [...serverNotifs, ...localOnly].slice(0, 50);
         merged.forEach(n => processedIdsRef.current.add(n.id));
         return merged;
@@ -183,15 +221,28 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       const notif = serverToLocal(row);
       if (processedIdsRef.current.has(notif.id)) return;
       processedIdsRef.current.add(notif.id);
+      // Register related_id key so that dedicated CustomEvent listeners
+      // (friendRequestReceived, newMessageReceived, etc.) won't duplicate
+      if (row.related_id) {
+        processedIdsRef.current.add(`${notif.type}-related-${row.related_id}`);
+      }
       setNotifications(prev => [notif, ...prev].slice(0, 50));
       playNotificationSound();
     };
 
+    // Refresh notifications when socket reconnects to catch any missed events
+    const handleSocketReconnect = () => {
+      console.log('[NotificationsContext] Socket reconnected, refreshing notifications');
+      refreshFromServer();
+    };
+
     window.addEventListener('server-notification', handleServerNotification as EventListener);
+    window.addEventListener('socket-reconnected', handleSocketReconnect);
     return () => {
       window.removeEventListener('server-notification', handleServerNotification as EventListener);
+      window.removeEventListener('socket-reconnected', handleSocketReconnect);
     };
-  }, [isAuthenticated, serverToLocal]);
+  }, [isAuthenticated, serverToLocal, refreshFromServer]);
 
   // Save notifications to storage whenever they change
   useEffect(() => {
@@ -211,6 +262,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     return () => {
       window.removeEventListener('community-removal-notification', handleCommunityRemoval as EventListener);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Add notification with duplicate prevention
@@ -218,9 +270,17 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     // Generate a unique ID based on notification content for deduplication
     const contentHash = `${notification.type}-${notification.from?.id || ''}-${notification.data?.request_id || notification.data?.id || Date.now()}`;
     
-    // Check if we've already processed this notification
+    // Check if we've already processed this notification (either by content hash
+    // or if a server-notification already arrived for the same type+related_id)
     if (processedIdsRef.current.has(contentHash)) {
       console.log('[NotificationsContext] Duplicate notification ignored:', contentHash);
+      return '';
+    }
+    
+    // Also check if a server-pushed notification already covers this
+    const dataId = notification.data?.request_id || notification.data?.id;
+    if (dataId && processedIdsRef.current.has(`${notification.type}-related-${dataId}`)) {
+      console.log('[NotificationsContext] Duplicate (server already handled):', notification.type, dataId);
       return '';
     }
     

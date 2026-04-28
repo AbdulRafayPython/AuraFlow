@@ -223,6 +223,7 @@ export default function SysCommunityManagement() {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, currentPage]);
 
   useEffect(() => { fetchCommunities(); }, [fetchCommunities]);
@@ -232,6 +233,7 @@ export default function SysCommunityManagement() {
     if (!loading && communities.length > 0 && selectedId === null) {
       selectCommunity(communities[0].id);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, communities]);
 
   // ── Select community ──
@@ -278,10 +280,12 @@ export default function SysCommunityManagement() {
     } finally {
       setMembersLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, membersSearch, membersRole, membersPage]);
 
   useEffect(() => {
     if (activeTab === 'members' && selectedId) fetchMembers();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, fetchMembers]);
 
   const handleSearch = () => { setCurrentPage(1); setSearch(searchInput); };

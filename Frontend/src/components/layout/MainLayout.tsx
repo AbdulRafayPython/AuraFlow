@@ -19,7 +19,7 @@ interface MainLayoutProps {
 
 export default function MainLayout({ children }: MainLayoutProps) {
   const { isDarkMode } = useTheme();
-  const { currentCommunity, selectCommunity, currentChannel, selectChannel, channels, communities } = useRealtime();
+  const { currentCommunity, selectCommunity, currentChannel, selectChannel, channels, communities, isLoadingCommunities } = useRealtime();
   const { selectConversation } = useDirectMessages();
   const { friends } = useFriends();
   const location = useLocation();
@@ -58,6 +58,10 @@ export default function MainLayout({ children }: MainLayoutProps) {
         const exists = communities.find(c => c.id === communityId);
         if (exists) {
           selectCommunity(communityId);
+        } else if (!isLoadingCommunities && communities.length > 0) {
+          // Communities finished loading but this one isn't in the list
+          // User was likely removed/blocked — redirect to home
+          navigate('/', { replace: true });
         }
       }
     } else if (currentView !== "dashboard" && currentView !== "agent" && currentView !== "discover") {
@@ -66,7 +70,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
         selectCommunity(null);
       }
     }
-  }, [params.communityId, communities, currentView]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.communityId, communities, currentView, isLoadingCommunities]);
 
   // --- URL → State sync: channel (after channels are loaded) ---
   // --- URL → State sync: channel (after channels are loaded) ---
@@ -108,6 +113,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
         }
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentView, params.userId, friends]);
 
   // Listen for navigate-home events from RealtimeContext (community deleted/left/removed)
@@ -127,6 +133,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
     };
     window.addEventListener('auraflow:open-dm', handler);
     return () => window.removeEventListener('auraflow:open-dm', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [friends]);
 
   // Detect mobile screen size

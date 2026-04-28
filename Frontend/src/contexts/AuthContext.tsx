@@ -3,6 +3,22 @@ import authService from '../services/authService';
 import { connectSocket, disconnectSocket } from '../socket';
 import { API_URL } from '@/config/api';
 
+interface NotificationSettings {
+  // In-app notification toggles
+  notify_direct_messages: boolean;
+  notify_channel_messages: boolean;
+  notify_friend_requests: boolean;
+  notify_friend_online: boolean;
+  notification_sounds: boolean;
+  // Email notification toggles
+  email_alerts_enabled: boolean;
+  email_dms_and_calls: boolean;
+  email_community_messages: boolean;
+  email_agent_notifications: boolean;
+  email_agent_summaries: boolean;
+  email_batch_interval_minutes: number;
+}
+
 interface User {
   id?: number;  // Add user ID
   username: string;
@@ -13,7 +29,8 @@ interface User {
   avatar_url?: string;
   role?: string;
   statusMessage?: string;
-  is_first_login: boolean;  
+  is_first_login: boolean;
+  notification_settings?: NotificationSettings;
 }
 
 interface AuthContextType {
@@ -51,6 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .catch(() => {
           localStorage.removeItem('token');
           localStorage.removeItem('refresh_token');
+          localStorage.removeItem('cached_communities');
           setIsAuthenticated(false);
           setUser(null);
           
@@ -72,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('token');
       localStorage.removeItem('refresh_token');
       localStorage.removeItem('auraflow_user');
+      localStorage.removeItem('cached_communities');
       setUser(null);
       setIsAuthenticated(false);
     };
@@ -164,6 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('token');
       localStorage.removeItem('refresh_token');
       localStorage.removeItem('auraflow_user');
+      localStorage.removeItem('cached_communities');
       setUser(null);
       setIsAuthenticated(false);
     }

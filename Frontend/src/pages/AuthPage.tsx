@@ -1,79 +1,31 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import AuthCard from "@/components/AuthCard";
+import type { User } from "@/types";
 
 interface AuthPageProps {
-  onAuth: () => void;
+  onAuth: (user?: User) => void;
 }
 
 const AuthPage = ({ onAuth }: AuthPageProps) => {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
 
-  // Memoize particles to prevent re-renders
-  const particles = useMemo(() => 
-    [...Array(30)].map((_, i) => ({
-      id: i,
-      width: 2 + Math.random() * 4,
-      height: 2 + Math.random() * 4,
-      r: 150 + Math.random() * 105,
-      g: 100 + Math.random() * 155,
-      opacity: 0.3 + Math.random() * 0.4,
-      left: Math.random() * 100,
-      top: Math.random() * 100,
-      delay: Math.random() * 5,
-      duration: 8 + Math.random() * 12,
-      blur: 4 + Math.random() * 8
-    })), []);
-
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[#1a0b2e]">
-      {/* Deep purple futuristic background */}
-      <div className="absolute inset-0 overflow-hidden">
-        {/* Base gradient - deep purple tones */}
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1a0b2e] via-[#2d1b69] to-[#0f0a1e]" />
+    <div className="auth-page">
+      {/* Deep space background */}
+      <div className="auth-page__bg">
+        {/* Base gradient */}
+        <div className="auth-page__bg-base" />
         
-        {/* Large glowing orbs - purple/blue */}
-        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-purple-600/40 rounded-full filter blur-[120px] animate-blob" />
-        <div className="absolute top-1/3 right-1/4 w-[400px] h-[400px] bg-indigo-500/30 rounded-full filter blur-[100px] animate-blob animation-delay-2000" />
-        <div className="absolute bottom-1/4 left-1/2 w-[350px] h-[350px] bg-blue-600/25 rounded-full filter blur-[90px] animate-blob animation-delay-4000" />
+        {/* Subtle star dots */}
+        <div className="auth-page__stars" />
         
-        {/* Smaller accent glows */}
-        <div className="absolute top-[15%] right-[35%] w-32 h-32 bg-purple-400/50 rounded-full filter blur-[60px]" />
-        <div className="absolute bottom-[20%] right-[15%] w-24 h-24 bg-indigo-400/40 rounded-full filter blur-[50px]" />
-        <div className="absolute top-[60%] left-[10%] w-20 h-20 bg-blue-400/35 rounded-full filter blur-[40px]" />
-        
-        {/* Floating particles - stars effect */}
-        <div className="absolute inset-0">
-          {particles.map((p) => (
-            <div
-              key={p.id}
-              className="absolute rounded-full animate-float"
-              style={{
-                width: `${p.width}px`,
-                height: `${p.height}px`,
-                background: `rgba(${p.r}, ${p.g}, 255, ${p.opacity})`,
-                left: `${p.left}%`,
-                top: `${p.top}%`,
-                animationDelay: `${p.delay}s`,
-                animationDuration: `${p.duration}s`,
-                boxShadow: `0 0 ${p.blur}px rgba(147, 112, 219, 0.6)`
-              }}
-            />
-          ))}
-        </div>
-
-        {/* Subtle texture overlay */}
-        <div className="absolute inset-0 opacity-[0.03]">
-          <div className="absolute inset-0" style={{
-            backgroundImage: `radial-gradient(circle at 2px 2px, rgba(147, 112, 219, 0.4) 1px, transparent 0)`,
-            backgroundSize: '60px 60px'
-          }} />
-        </div>
-
-        {/* Vignette effect */}
-        <div className="absolute inset-0 bg-gradient-radial from-transparent via-transparent to-[#0a0515]/60" />
+        {/* Large ambient glows */}
+        <div className="auth-page__glow auth-page__glow--1" />
+        <div className="auth-page__glow auth-page__glow--2" />
+        <div className="auth-page__glow auth-page__glow--3" />
       </div>
       
-      <div className="relative z-10">
+      <div className="auth-page__content">
         <AuthCard 
           mode={authMode}
           onModeChange={setAuthMode}
@@ -82,31 +34,81 @@ const AuthPage = ({ onAuth }: AuthPageProps) => {
       </div>
 
       <style>{`
-        @keyframes blob {
+        .auth-page {
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px;
+          position: relative;
+          overflow: hidden;
+          background: #0a0a1a;
+        }
+
+        .auth-page__bg {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+        }
+
+        .auth-page__bg-base {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(135deg, #0d0b2e 0%, #141042 30%, #0c0a24 60%, #0a0818 100%);
+        }
+
+        .auth-page__stars {
+          position: absolute;
+          inset: 0;
+          opacity: 0.04;
+          background-image: radial-gradient(circle at 2px 2px, rgba(180, 160, 255, 0.5) 1px, transparent 0);
+          background-size: 80px 80px;
+        }
+
+        .auth-page__glow {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(100px);
+          animation: auth-float 12s ease-in-out infinite;
+        }
+
+        .auth-page__glow--1 {
+          top: 10%;
+          left: 20%;
+          width: 500px;
+          height: 500px;
+          background: rgba(88, 52, 180, 0.15);
+        }
+
+        .auth-page__glow--2 {
+          bottom: 10%;
+          right: 15%;
+          width: 400px;
+          height: 400px;
+          background: rgba(49, 46, 180, 0.12);
+          animation-delay: -4s;
+        }
+
+        .auth-page__glow--3 {
+          top: 50%;
+          left: 60%;
+          width: 300px;
+          height: 300px;
+          background: rgba(100, 60, 200, 0.08);
+          animation-delay: -8s;
+        }
+
+        .auth-page__content {
+          position: relative;
+          z-index: 10;
+          width: 100%;
+          max-width: 1100px;
+        }
+
+        @keyframes auth-float {
           0%, 100% { transform: translate(0, 0) scale(1); }
-          33% { transform: translate(30px, -50px) scale(1.1); }
-          66% { transform: translate(-20px, 20px) scale(0.9); }
-        }
-        .animate-blob {
-          animation: blob 7s infinite;
-        }
-        .animation-delay-2000 {
-          animation-delay: 2s;
-        }
-        .animation-delay-4000 {
-          animation-delay: 4s;
-        }
-        @keyframes float {
-          0%, 100% { transform: translateY(0) translateX(0); opacity: 0; }
-          10% { opacity: 0.3; }
-          50% { transform: translateY(-100px) translateX(50px); opacity: 0.6; }
-          90% { opacity: 0.3; }
-        }
-        .animate-float {
-          animation: float linear infinite;
-        }
-        .bg-gradient-radial {
-          background: radial-gradient(ellipse at center, var(--tw-gradient-stops));
+          33% { transform: translate(25px, -35px) scale(1.05); }
+          66% { transform: translate(-15px, 15px) scale(0.95); }
         }
       `}</style>
     </div>

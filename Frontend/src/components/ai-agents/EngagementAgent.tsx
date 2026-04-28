@@ -63,6 +63,7 @@ export default function EngagementAgent() {
     loadEngagementMetrics();
     loadEngagementHistory();
     loadConversationStarters('general');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadEngagementMetrics = async () => {

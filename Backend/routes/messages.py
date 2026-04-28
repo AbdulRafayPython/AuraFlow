@@ -1,8 +1,8 @@
-﻿# routes/messages.py (Fixed + Enhanced with get_db_connection())
+# routes/messages.py (Fixed + Enhanced with get_db_connection())
 from flask import jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
-from utils import get_avatar_url
+from utils import get_avatar_url, get_user_id
 from utils.encryption import encrypt as _encrypt, decrypt as _decrypt
 from services.notification_service import create_notification
 from datetime import datetime
@@ -13,7 +13,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
-# Moderation agent is used on every message â€” lazy singleton
+# Moderation agent is used on every message — lazy singleton
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 _moderation_agent = None
@@ -26,7 +26,7 @@ def _get_moderation_agent():
     return _moderation_agent
 
 
-# ── @mention + reply notification helpers ────────────────────────────
+# -- @mention + reply notification helpers ----------------------------
 _MENTION_RE = re.compile(r'@(\w+)')
 
 
@@ -54,14 +54,32 @@ def _notify_mentions(content, sender_id, sender_username, channel_id, community_
                     row = cur.fetchone()
                     if not row or row['id'] == sender_id:
                         continue
+                    # Only notify users who are members of the community
+                    cur.execute(
+                        "SELECT 1 FROM community_members WHERE community_id = %s AND user_id = %s",
+                        (community_id, row['id'])
+                    )
+                    if not cur.fetchone():
+                        continue
                     create_notification(
                         user_id=row['id'],
                         type='mention',
                         title=f'Mentioned in #{channel_name}',
-                        body=f'{sender_username} mentioned you in #{channel_name} · {community_name}',
+                        body=f'{sender_username} mentioned you in #{channel_name} � {community_name}',
                         link=f'/community/{community_id}/channel/{channel_id}',
                         related_id=message_id,
                     )
+                    # Queue batched email notification for mention
+                    try:
+                        from services.email_batch_service import queue_email_notification
+                        queue_email_notification(row['id'], 'mention', {
+                            'sender_name': sender_username,
+                            'preview': f'mentioned you in #{channel_name}',
+                            'community_name': community_name,
+                            'channel_name': channel_name,
+                        })
+                    except Exception:
+                        pass
         finally:
             conn.close()
     except Exception as e:
@@ -95,7 +113,7 @@ def _notify_reply(reply_to_id, sender_id, sender_username, channel_id, community
                     user_id=parent['sender_id'],
                     type='reply',
                     title=f'Reply in #{channel_name}',
-                    body=f'{sender_username} replied to your message in #{channel_name} · {community_name}',
+                    body=f'{sender_username} replied to your message in #{channel_name} � {community_name}',
                     link=f'/community/{community_id}/channel/{channel_id}',
                     related_id=message_id,
                 )
@@ -240,7 +258,7 @@ def _emit_unread_tracking(socketio, channel_id, community_id, sender_id, message
 def handle_ai_command(content: str, username: str, user_id: int, channel_id: int, community_id: int = None):
     """Handle AI commands from chat (/summarize, /help, etc.)
     
-    /summarize is ephemeral â€” only the sender sees the result (not saved to DB).
+    /summarize is ephemeral — only the sender sees the result (not saved to DB).
     Returns a dict with 'ephemeral': True for private delivery.
     """
     try:
@@ -326,7 +344,7 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                         return {
                             'type': 'mood',
                             'success': False,
-                            'error': 'Mood Tracker is not activated. Activate it from Explore â†’ Personal Agents.'
+                            'error': 'Mood Tracker is not activated. Activate it from Explore → Personal Agents.'
                         }
             finally:
                 if conn:
@@ -341,20 +359,20 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                 confidence = result.get('confidence', 0)
                 message_count = result.get('messages_analyzed', result.get('message_count', 0))
                 
-                mood_emoji = {'happy': 'ðŸ˜Š', 'sad': 'ðŸ˜¢', 'angry': 'ðŸ˜ ', 'neutral': 'ðŸ˜',
-                              'excited': 'ðŸ¤©', 'anxious': 'ðŸ˜°', 'calm': 'ðŸ˜Œ', 'frustrated': 'ðŸ˜¤'}.get(mood, 'ðŸŽ­')
+                mood_emoji = {'happy': '😊', 'sad': '😢', 'angry': '😠', 'neutral': '😐',
+                              'excited': '🤩', 'anxious': '😰', 'calm': '😌', 'frustrated': '😤'}.get(mood, '🎭')
                 
                 response_text = f"{mood_emoji} **Your Mood Analysis** (last {time_period}h)\n\n"
-                response_text += f"â€¢ **Overall Mood:** {mood.capitalize()}\n"
-                response_text += f"â€¢ **Confidence:** {confidence:.0%}\n"
-                response_text += f"â€¢ **Messages Analyzed:** {message_count}\n"
+                response_text += f"• **Overall Mood:** {mood.capitalize()}\n"
+                response_text += f"• **Confidence:** {confidence:.0%}\n"
+                response_text += f"• **Messages Analyzed:** {message_count}\n"
                 
                 if result.get('emotions'):
                     emotions = ', '.join(result['emotions'][:5])
-                    response_text += f"â€¢ **Detected Emotions:** {emotions}\n"
+                    response_text += f"• **Detected Emotions:** {emotions}\n"
                 
                 if result.get('trend'):
-                    response_text += f"â€¢ **Trend:** {result['trend']}\n"
+                    response_text += f"• **Trend:** {result['trend']}\n"
                 
                 return {
                     'type': 'mood',
@@ -389,7 +407,7 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                         return {
                             'type': 'wellness',
                             'success': False,
-                            'error': 'Wellness Agent is not activated. Activate it from Explore â†’ Personal Agents.'
+                            'error': 'Wellness Agent is not activated. Activate it from Explore → Personal Agents.'
                         }
             finally:
                 if conn:
@@ -403,23 +421,23 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                 score = result.get('wellness_score', result.get('score', 0))
                 status = result.get('status', 'unknown')
                 
-                status_emoji = {'excellent': 'ðŸŒŸ', 'good': 'âœ¨', 'moderate': 'ðŸ’›',
-                                'concerning': 'âš ï¸', 'critical': 'ðŸš¨'}.get(status, 'ðŸ’«')
+                status_emoji = {'excellent': '🌟', 'good': '✨', 'moderate': '💛',
+                                'concerning': '⚠️', 'critical': '🚨'}.get(status, '💫')
                 
                 response_text = f"{status_emoji} **Your Wellness Check**\n\n"
-                response_text += f"â€¢ **Wellness Score:** {score}/100\n"
-                response_text += f"â€¢ **Status:** {status.capitalize()}\n"
+                response_text += f"• **Wellness Score:** {score}/100\n"
+                response_text += f"• **Status:** {status.capitalize()}\n"
                 
                 if result.get('activity_level'):
-                    response_text += f"â€¢ **Activity Level:** {result['activity_level'].capitalize()}\n"
+                    response_text += f"• **Activity Level:** {result['activity_level'].capitalize()}\n"
                 
                 if result.get('suggestions'):
                     response_text += "\n**Suggestions:**\n"
                     for suggestion in result['suggestions'][:3]:
-                        response_text += f"  ðŸ’¡ {suggestion}\n"
+                        response_text += f"  💡 {suggestion}\n"
                 
                 if result.get('break_recommended'):
-                    response_text += "\nðŸ§˜ *Consider taking a short break!*"
+                    response_text += "\n🧘 *Consider taking a short break!*"
                 
                 return {
                     'type': 'wellness',
@@ -442,14 +460,14 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                 'message': """**AuraFlow AI Commands:**
 
 **Personal Agent Commands:**
-â€¢ `/summarize [count]` - Summarize recent messages (default: 100)
-â€¢ `/mood [hours]` - Analyze your mood over a time period (default: 24h)
-â€¢ `/wellness` - Check your current wellness score and get suggestions
+• `/summarize [count]` - Summarize recent messages (default: 100)
+• `/mood [hours]` - Analyze your mood over a time period (default: 24h)
+• `/wellness` - Check your current wellness score and get suggestions
 
 **General:**
-â€¢ `/help` - Show this help message
+• `/help` - Show this help message
 
-*Personal agents must be activated from Explore â†’ Personal Agents to use their commands.*"""
+*Personal agents must be activated from Explore → Personal Agents to use their commands.*"""
             }
         
         else:
@@ -482,11 +500,9 @@ def get_channel_messages(channel_id):
         current_user = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user = cur.fetchone()
-            if not user:
+            user_id = get_user_id(current_user, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
             # Check channel access
             cur.execute("SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
@@ -601,11 +617,9 @@ def send_message():
 
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user = cur.fetchone()
-            if not user:
+            user_id = get_user_id(current_user, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
             log.info(f"[HTTP SEND] User ID: {user_id}")
 
             cur.execute("SELECT id, community_id FROM channels WHERE id = %s", (channel_id,))
@@ -645,9 +659,9 @@ def send_message():
             violation_count = membership_row.get('violation_count') or 0
             user_role = membership_row['role'] if membership_row else 'member'
 
-            # ðŸ¤– AI COMMAND DETECTION - Check before any processing
+            # 🤖 AI COMMAND DETECTION - Check before any processing
             if content.strip().startswith('/'):
-                log.info(f"[HTTP] âœ… COMMAND DETECTED: {content}")
+                log.info(f"[HTTP] ✅ COMMAND DETECTED: {content}")
                 try:
                     from flask import current_app
                     socketio = current_app.extensions.get('socketio')
@@ -667,14 +681,14 @@ def send_message():
                             'channel_id': channel_id,
                             'status': 'generating'
                         }, room=user_sid, namespace='/')
-                        log.info(f"[HTTP] âœ… Typing indicator sent to {current_user}")
+                        log.info(f"[HTTP] ✅ Typing indicator sent to {current_user}")
 
                     command_result = handle_ai_command(content, current_user, user_id, channel_id, community_id)
-                    log.info(f"[HTTP] âœ… Command handler returned: {command_result}")
+                    log.info(f"[HTTP] ✅ Command handler returned: {command_result}")
                     
                     if command_result:
-                        # â”€â”€ Ephemeral commands (e.g. /summarize) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                        # Don't save to DB, don't broadcast â€” emit privately to sender only
+                        # ── Ephemeral commands (e.g. /summarize) ─────────────
+                        # Don't save to DB, don't broadcast — emit privately to sender only
                         if command_result.get('ephemeral'):
                             if socketio and user_sid:
                                 socketio.emit('summary_result', {
@@ -684,14 +698,14 @@ def send_message():
                                     'message_count': command_result.get('message_count', 0),
                                     'created_at': datetime.now().isoformat(),
                                 }, room=user_sid, namespace='/')
-                                log.info(f"[HTTP] âœ… Ephemeral summary sent privately to {current_user}")
+                                log.info(f"[HTTP] ✅ Ephemeral summary sent privately to {current_user}")
 
                             return jsonify({
                                 'command_result': command_result,
                                 'ephemeral': True,
                             }), 200
 
-                        # â”€â”€ Non-ephemeral commands (/mood, /wellness, /help) â”€
+                        # ── Non-ephemeral commands (/mood, /wellness, /help) ─
                         # Save command message and broadcast as before
                         cur.execute("""
                             INSERT INTO messages (channel_id, sender_id, content, message_type, reply_to)
@@ -699,7 +713,7 @@ def send_message():
                         """, (channel_id, user_id, content, 'text', reply_to or None))
                         message_id = cur.lastrowid
                         conn.commit()
-                        log.info(f"[HTTP] âœ… Command message saved with ID {message_id}")
+                        log.info(f"[HTTP] ✅ Command message saved with ID {message_id}")
 
                         if socketio:
                             msg_payload = {
@@ -737,9 +751,9 @@ def send_message():
                             'command_result': command_result
                         }), 201
                     else:
-                        log.info(f"[HTTP] âš ï¸  Command handler returned None, treating as regular message")
+                        log.info(f"[HTTP] ⚠️  Command handler returned None, treating as regular message")
                 except Exception as cmd_error:
-                    log.error(f"[HTTP] âŒ Command error: {cmd_error}", exc_info=True)
+                    log.error(f"[HTTP] ❌ Command error: {cmd_error}", exc_info=True)
                     return jsonify({
                         'error': f'Command failed: {str(cmd_error)}',
                         'command_result': {
@@ -751,320 +765,143 @@ def send_message():
 
             # OWNER: Still moderate but log that owner sent it
             if user_role == 'owner':
-                log.info(f"[HTTP SEND] Owner {current_user} message â€” moderation still applied")
+                log.info(f"[HTTP SEND] Owner {current_user} message — moderation still applied")
 
-            moderation_result = _get_moderation_agent().moderate_message(content, user_id, channel_id, log=False)
-
-            # Escalation ladder
-            final_action = 'allow'
-            user_message = None
-            if moderation_result['action'] != 'allow':
-                violation_count += 1
-                cur.execute(
-                    "UPDATE community_members SET violation_count = %s WHERE community_id = %s AND user_id = %s",
-                    (violation_count, community_id, user_id)
-                )
-
-                if violation_count == 1:
-                    final_action = 'warn'
-                    user_message = 'Warning issued. Continued violations will lead to removal.'
-                elif violation_count == 2:
-                    final_action = 'remove_message'
-                    user_message = 'Message removed due to repeated violations.'
-                elif violation_count == 3:
-                    final_action = 'remove_user'
-                    user_message = 'You were removed from this community for repeated violations.'
-                else:
-                    final_action = 'block_user'
-                    user_message = 'You were blocked from this community for repeated violations.'
-            else:
-                final_action = 'allow'
-
-            # Actions that still allow the message to go through
-            if final_action in ['allow', 'warn']:
-                cur.execute("""
-                    INSERT INTO messages (channel_id, sender_id, content, message_type, reply_to)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (channel_id, user_id, _encrypt(content), message_type, reply_to or None))
-                message_id = cur.lastrowid
-
-                cur.execute("""
-                    SELECT m.*, u.username, u.display_name, u.avatar_url
-                    FROM messages m
-                    JOIN users u ON m.sender_id = u.id
-                    WHERE m.id = %s
-                """, (message_id,))
-                msg = cur.fetchone()
-                
-                conn.commit()
-
-                # Broadcast over socket so all channel members receive instantly
-                from flask import current_app
-                socketio = current_app.extensions.get('socketio')
-                if socketio:
-                    rtp = _get_channel_reply_preview(cur, msg['reply_to'])
-                    payload = {
-                        'id': msg['id'],
-                        'channel_id': msg['channel_id'],
-                        'sender_id': user_id,
-                        'content': content,  # broadcast plaintext (DB stores encrypted)
-                        'message_type': msg['message_type'],
-                        'reply_to': msg['reply_to'],
-                        'created_at': msg['created_at'].isoformat(),
-                        'author': msg['username'],
-                        'avatar': get_avatar_url(msg['username'], msg['avatar_url']),
-                        'is_blocked': False,
-                        'moderation': {
-                            'action': final_action,
-                            'severity': moderation_result['severity'],
-                            'flagged': final_action == 'warn',
-                            'reasons': moderation_result.get('reasons', []),
-                            'violation_count': violation_count
-                        },
-                        **(({'reply_to_preview': rtp}) if rtp else {}),
-                    }
-                    log.info(f"[SOCKET-EMIT] Emitting message_received (id={msg['id']}) to channel_{channel_id} and community_{community_id}")
-                    socketio.emit('message_received', payload, room=f"channel_{channel_id}", namespace='/')
-                    socketio.emit('message_received', payload, room=f"community_{community_id}", namespace='/')
-                    log.info(f"[SOCKET-EMIT] Emit complete for message {msg['id']}")
-                    _emit_unread_tracking(socketio, channel_id, community_id, user_id, message_id, content)
-
-                    # @mention + reply notifications (fire-and-forget)
-                    import threading
-                    threading.Thread(target=_notify_mentions, args=(content, user_id, msg['username'], channel_id, community_id, message_id), daemon=True).start()
-                    threading.Thread(target=_notify_reply, args=(reply_to, user_id, msg['username'], channel_id, community_id, message_id), daemon=True).start()
-                else:
-                    log.warning("[SOCKET-EMIT] socketio extension not found — message_received NOT emitted!")
-
-                if final_action != 'allow':
-                    _get_moderation_agent().log_moderation_action(
-                        user_id, channel_id, content, final_action,
-                        moderation_result['severity'], moderation_result.get('reasons', []),
-                        moderation_result.get('confidence', 0), message_id
-                    )
-
-                # ðŸ¤– Agent auto-execution (fire-and-forget)
-                _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_type)
-
-                avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
-                return jsonify({
-                    'message': {
-                        'id': msg['id'],
-                        'channel_id': msg['channel_id'],
-                        'sender_id': user_id,
-                        'content': content,  # return plaintext
-                        'message_type': msg['message_type'],
-                        'reply_to': msg['reply_to'],
-                        'created_at': msg['created_at'].isoformat(),
-                        'author': msg['username'],
-                        'display_name': msg['display_name'] or msg['username'],
-                        'avatar_url': avatar_url,
-                        'is_blocked': False,
-                        'moderation': {
-                            'action': final_action,
-                            'severity': moderation_result['severity'],
-                            'flagged': final_action == 'warn',
-                            'reasons': moderation_result.get('reasons', []),
-                            'violation_count': violation_count
-                        }
-                    },
-                    'moderation': {
-                        'action': final_action,
-                        'severity': moderation_result['severity'],
-                        'reasons': moderation_result.get('reasons', []),
-                        'message': user_message,
-                        'violation_count': violation_count
-                    }
-                }), 201
-
-            # Remove message (no insert)
-            if final_action == 'remove_message':
+            # -- Batch moderation: instant-check only, Gemini reviews in batch later --
+            try:
+                _get_moderation_agent()
+                moderation_installed = True
+            except Exception:
+                moderation_installed = False
+            instant_result = _get_moderation_agent().instant_check(content) if moderation_installed else {'block': False, 'reason': ''}
+            
+            if instant_result.get('block'):
+                # Extreme content � block immediately, don't insert
                 conn.commit()
                 _get_moderation_agent().log_moderation_action(
-                    user_id, channel_id, content, 'remove_message',
-                    moderation_result['severity'], moderation_result.get('reasons', []),
-                    moderation_result.get('confidence', 0), None
+                    user_id, channel_id, content, 'block', 'high',
+                    [instant_result.get('reason', 'extreme_content')], 1.0, None
                 )
                 return jsonify({
                     'moderation': {
-                        'action': 'remove_message',
-                        'severity': moderation_result['severity'],
-                        'reasons': moderation_result.get('reasons', []),
-                        'message': user_message,
+                        'action': 'block',
+                        'severity': 'high',
+                        'reasons': [instant_result.get('reason', 'extreme_content')],
+                        'message': 'Your message was blocked due to extreme content.',
                         'violation_count': violation_count
                     }
                 }), 200
 
-            # Remove user from community and all its channels
-            if final_action == 'remove_user':
-                # Get community details for notification
-                cur.execute("""
-                    SELECT name, logo_url, color, icon 
-                    FROM communities WHERE id = %s
-                """, (community_id,))
-                community_data = cur.fetchone()
-                
-                # Add to blocked_users table so they can't rejoin
-                cur.execute(
-                    "INSERT IGNORE INTO blocked_users (community_id, user_id) VALUES (%s, %s)",
-                    (community_id, user_id)
-                )
-                print(f"[DEBUG] Inserted into blocked_users: community_id={community_id}, user_id={user_id}")
-                
-                cur.execute(
-                    "DELETE FROM channel_members WHERE user_id = %s AND channel_id IN (SELECT id FROM channels WHERE community_id = %s)",
-                    (user_id, community_id)
-                )
-                cur.execute(
-                    "DELETE FROM community_members WHERE community_id = %s AND user_id = %s",
-                    (community_id, user_id)
-                )
-                conn.commit()
-                print(f"[DEBUG] Committed: User {user_id} removed from community {community_id}")
-                
-                # Verify the insert worked
-                cur.execute("""
-                    SELECT id FROM blocked_users 
-                    WHERE community_id = %s AND user_id = %s
-                """, (community_id, user_id))
-                blocked_record = cur.fetchone()
-                if blocked_record:
-                    print(f"[DEBUG] âœ“ Verified blocked_users record exists: {blocked_record}")
-                else:
-                    print(f"[ERROR] âœ— blocked_users record NOT FOUND after insert!")
-                
-                # Emit socket event to disconnect user from community with notification data
-                from flask_socketio import emit
-                from flask import current_app
-                socketio = current_app.extensions['socketio']
-                
-                emit('community:removed', {
-                    'community_id': community_id,
-                    'user_id': user_id,
-                    'reason': 'violation',
-                    'message': user_message,
-                    'notification': {
-                        'community_name': community_data['name'] if community_data else 'Community',
-                        'community_logo': community_data['logo_url'] if community_data else None,
-                        'community_color': community_data['color'] if community_data else '#8B5CF6',
-                        'community_icon': community_data['icon'] if community_data else 'AF'
-                    }
-                }, to=f"user_{user_id}", namespace='/')
-                
-                # Notify all community members that this user was removed (so they can update UI)
-                socketio.emit('user_blocked_from_community', {
-                    'community_id': community_id,
-                    'user_id': user_id,
-                    'blocked_at': datetime.now().isoformat()
-                }, room=f"community_{community_id}", namespace='/')
-                
-                # Persist removal notification
-                try:
-                    cname = community_data['name'] if community_data else 'Community'
-                    create_notification(
-                        user_id=user_id,
-                        type='community_removal',
-                        title='Removed from Community',
-                        body=f'You were removed from {cname} due to repeated violations',
-                        icon_url=community_data.get('logo_url') if community_data else None,
-                        link='/',
-                        related_id=community_id,
-                    )
-                except Exception:
-                    pass
-
-                _get_moderation_agent().log_moderation_action(
-                    user_id, channel_id, content, 'remove_user',
-                    'high', moderation_result.get('reasons', []),
-                    moderation_result.get('confidence', 0), None
-                )
-                return jsonify({
-                    'moderation': {
-                        'action': 'remove_user',
-                        'severity': 'high',
-                        'reasons': moderation_result.get('reasons', []),
-                        'message': user_message,
-                        'violation_count': violation_count,
-                        'removed_from_community': True
-                    }
-                }), 403
-
-            # Block user (default case once count >= 4)
-            # Get community details for notification
+            # -- Allow: insert message and broadcast --
+            final_action = 'allow'
             cur.execute("""
-                SELECT name, logo_url, color, icon 
-                FROM communities WHERE id = %s
-            """, (community_id,))
-            community_data = cur.fetchone()
+                INSERT INTO messages (channel_id, sender_id, content, message_type, reply_to)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (channel_id, user_id, _encrypt(content), message_type, reply_to or None))
+            message_id = cur.lastrowid
+
+            cur.execute("""
+                SELECT m.*, u.username, u.display_name, u.avatar_url
+                FROM messages m
+                JOIN users u ON m.sender_id = u.id
+                WHERE m.id = %s
+            """, (message_id,))
+            msg = cur.fetchone()
             
-            cur.execute(
-                "INSERT IGNORE INTO blocked_users (community_id, user_id) VALUES (%s, %s)",
-                (community_id, user_id)
-            )
-            print(f"[DEBUG] Inserted into blocked_users: community_id={community_id}, user_id={user_id}")
-            
-            cur.execute(
-                "DELETE FROM channel_members WHERE user_id = %s AND channel_id IN (SELECT id FROM channels WHERE community_id = %s)",
-                (user_id, community_id)
-            )
-            cur.execute(
-                "DELETE FROM community_members WHERE community_id = %s AND user_id = %s",
-                (community_id, user_id)
-            )
             conn.commit()
-            print(f"[DEBUG] Committed: User {user_id} blocked from community {community_id}")
-            
-            # Verify the insert worked
-            cur.execute("""
-                SELECT id FROM blocked_users 
-                WHERE community_id = %s AND user_id = %s
-            """, (community_id, user_id))
-            blocked_record = cur.fetchone()
-            if blocked_record:
-                print(f"[DEBUG] âœ“ Verified blocked_users record exists: {blocked_record}")
-            else:
-                print(f"[ERROR] âœ— blocked_users record NOT FOUND after insert!")
-            
-            # Emit socket event to disconnect user from community with notification data
-            from flask_socketio import emit
+
+            # Broadcast over socket so all channel members receive instantly
             from flask import current_app
-            socketio = current_app.extensions['socketio']
-            
-            emit('community:removed', {
-                'community_id': community_id,
-                'user_id': user_id,
-                'reason': 'blocked',
-                'message': 'You were blocked from this community for repeated violations.',
-                'notification': {
-                    'community_name': community_data['name'] if community_data else 'Community',
-                    'community_logo': community_data['logo_url'] if community_data else None,
-                    'community_color': community_data['color'] if community_data else '#8B5CF6',
-                    'community_icon': community_data['icon'] if community_data else 'AF'
+            socketio = current_app.extensions.get('socketio')
+            if socketio:
+                rtp = _get_channel_reply_preview(cur, msg['reply_to'])
+                payload = {
+                    'id': msg['id'],
+                    'channel_id': msg['channel_id'],
+                    'sender_id': user_id,
+                    'content': content,  # broadcast plaintext (DB stores encrypted)
+                    'message_type': msg['message_type'],
+                    'reply_to': msg['reply_to'],
+                    'created_at': msg['created_at'].isoformat(),
+                    'author': msg['username'],
+                    'avatar': get_avatar_url(msg['username'], msg['avatar_url']),
+                    'is_blocked': False,
+                    'moderation': {
+                        'action': 'allow',
+                        'severity': 'none',
+                        'flagged': False,
+                        'reasons': [],
+                        'violation_count': violation_count,
+                        'pending_ai_review': moderation_installed
+                    },
+                    **(({'reply_to_preview': rtp}) if rtp else {}),
                 }
-            }, to=f"user_{user_id}", namespace='/')
-            
-            # Notify all community members that this user was blocked (so they can update UI)
-            socketio.emit('user_blocked_from_community', {
-                'community_id': community_id,
-                'user_id': user_id,
-                'blocked_at': datetime.now().isoformat()
-            }, room=f"community_{community_id}", namespace='/')
-            
-            _get_moderation_agent().log_moderation_action(
-                user_id, channel_id, content, 'block_user',
-                'high', moderation_result.get('reasons', []),
-                moderation_result.get('confidence', 0), None
-            )
+                log.info(f"[SOCKET-EMIT] Emitting message_received (id={msg['id']}) to channel_{channel_id}")
+                socketio.emit('message_received', payload, room=f"channel_{channel_id}", namespace='/')
+                log.info(f"[SOCKET-EMIT] Emit complete for message {msg['id']}")
+                _emit_unread_tracking(socketio, channel_id, community_id, user_id, message_id, content)
+
+                # @mention + reply notifications (fire-and-forget)
+                import threading
+                threading.Thread(target=_notify_mentions, args=(content, user_id, msg['username'], channel_id, community_id, message_id), daemon=True).start()
+                threading.Thread(target=_notify_reply, args=(reply_to, user_id, msg['username'], channel_id, community_id, message_id), daemon=True).start()
+            else:
+                log.warning("[SOCKET-EMIT] socketio extension not found � message_received NOT emitted!")
+
+            # Push to Redis buffer for batch Gemini review
+            if moderation_installed and content and message_id:
+                try:
+                    import time as _time
+                    mod_agent = _get_moderation_agent()
+                    buf_len = mod_agent.push_to_buffer(channel_id, {
+                        'msg_id': message_id,
+                        'user_id': user_id,
+                        'username': current_user,
+                        'content': content[:1000],
+                        'timestamp': _time.time()
+                    })
+                    log.info(f"[MODERATION] Buffer push OK for channel {channel_id}, buf_len={buf_len}")
+                    if buf_len >= mod_agent.BATCH_SIZE:
+                        from tasks.agent_tasks import batch_moderation_task
+                        batch_moderation_task.delay(channel_id, community_id)
+                        log.info(f"[MODERATION] Batch triggered for channel {channel_id} ({buf_len} msgs)")
+                except Exception as buf_err:
+                    log.warning(f"[MODERATION] Buffer push failed: {buf_err}")
+
+            # Agent auto-execution (fire-and-forget)
+            _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_type)
+
+            avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
             return jsonify({
+                'message': {
+                    'id': msg['id'],
+                    'channel_id': msg['channel_id'],
+                    'sender_id': user_id,
+                    'content': content,
+                    'message_type': msg['message_type'],
+                    'reply_to': msg['reply_to'],
+                    'created_at': msg['created_at'].isoformat(),
+                    'author': msg['username'],
+                    'display_name': msg['display_name'] or msg['username'],
+                    'avatar_url': avatar_url,
+                    'is_blocked': False,
+                    'moderation': {
+                        'action': 'allow',
+                        'severity': 'none',
+                        'flagged': False,
+                        'reasons': [],
+                        'violation_count': violation_count,
+                        'pending_ai_review': moderation_installed
+                    }
+                },
                 'moderation': {
-                    'action': 'block_user',
-                    'severity': 'high',
-                    'reasons': moderation_result.get('reasons', []),
-                    'message': user_message,
-                    'violation_count': violation_count,
-                    'blocked': True
+                    'action': 'allow',
+                    'severity': 'none',
+                    'reasons': [],
+                    'message': None,
+                    'violation_count': violation_count
                 }
-            }), 403
+            }), 201
 
     except Exception as e:
         print(f"[ERROR] send_message: {e}")
@@ -1089,11 +926,9 @@ def get_direct_messages(user_id):
         current_user = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user = cur.fetchone()
-            if not user:
+            current_user_id = get_user_id(current_user, cur)
+            if current_user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            current_user_id = user['id']
 
             cur.execute("""
                 SELECT 
@@ -1159,6 +994,67 @@ def get_direct_messages(user_id):
 
 
 # =====================================
+# GET DM CONVERSATIONS (last message per partner)
+# =====================================
+@jwt_required()
+def get_dm_conversations():
+    conn = None
+    try:
+        current_user = get_jwt_identity()
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            uid = get_user_id(current_user, cur)
+            if uid is None:
+                return jsonify({'error': 'User not found'}), 404
+
+            # Most recent message per conversation partner
+            cur.execute("""
+                SELECT
+                    dm.id, dm.sender_id, dm.receiver_id, dm.content, dm.message_type,
+                    dm.created_at, dm.is_read,
+                    CASE WHEN dm.sender_id = %s THEN dm.receiver_id ELSE dm.sender_id END AS partner_id
+                FROM direct_messages dm
+                INNER JOIN (
+                    SELECT MAX(id) AS max_id
+                    FROM direct_messages
+                    WHERE sender_id = %s OR receiver_id = %s
+                    GROUP BY LEAST(sender_id, receiver_id), GREATEST(sender_id, receiver_id)
+                ) latest ON dm.id = latest.max_id
+                ORDER BY dm.created_at DESC
+            """, (uid, uid, uid))
+            rows = cur.fetchall()
+
+        result = []
+        for m in rows:
+            content = m['content']
+            if content:
+                try:
+                    content = _decrypt(content)
+                except Exception:
+                    pass
+            result.append({
+                'partner_id': m['partner_id'],
+                'last_message': {
+                    'id': m['id'],
+                    'sender_id': m['sender_id'],
+                    'receiver_id': m['receiver_id'],
+                    'content': content,
+                    'message_type': m['message_type'],
+                    'created_at': m['created_at'].isoformat() if m['created_at'] else None,
+                    'is_read': bool(m['is_read']),
+                }
+            })
+        return jsonify(result), 200
+
+    except Exception as e:
+        print(f"[ERROR] get_dm_conversations: {e}")
+        return jsonify({'error': 'Failed to get conversations'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
 # SEND DIRECT MESSAGE
 # =====================================
 @jwt_required()
@@ -1180,11 +1076,9 @@ def send_direct_message():
 
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            sender = cur.fetchone()
-            if not sender:
+            sender_id = get_user_id(current_user, cur)
+            if sender_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            sender_id = sender['id']
 
             cur.execute("SELECT 1 FROM users WHERE id = %s", (receiver_id,))
             if not cur.fetchone():
@@ -1234,7 +1128,9 @@ def send_direct_message():
                         'message_type': parent['message_type'],
                     }
 
-        # Persist DM notification for receiver
+        # Persist DM notification for receiver (emit=False to avoid duplicate �
+        # the real-time notification is handled by the frontend via the
+        # receive_direct_message socket event ? newMessageReceived CustomEvent)
         try:
             sender_display = msg['display_name'] or msg['username']
             preview = content[:80] if message_type == 'text' else f'Sent a {message_type}'
@@ -1246,9 +1142,22 @@ def send_direct_message():
                 icon_url=msg['avatar_url'],
                 link=f'/dm/{sender_id}',
                 related_id=message_id,
+                emit=False,
             )
         except Exception as notif_err:
             log.warning(f"[DM] Notification persistence failed: {notif_err}")
+
+        # Queue batched email notification for receiver
+        try:
+            from services.email_batch_service import queue_email_notification
+            sender_display = msg['display_name'] or msg['username']
+            preview = content[:80] if message_type == 'text' else f'Sent a {message_type}'
+            queue_email_notification(receiver_id, 'dm', {
+                'sender_name': sender_display,
+                'preview': preview,
+            })
+        except Exception as email_err:
+            log.warning(f"[DM] Email batch queue failed: {email_err}")
 
         return jsonify({
             'id': msg['id'],
@@ -1301,11 +1210,9 @@ def mark_as_read():
 
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user = cur.fetchone()
-            if not user:
+            user_id = get_user_id(current_user, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
             placeholders = ','.join(['%s'] * len(message_ids))
             query = f"""
@@ -1342,11 +1249,9 @@ def delete_message(message_id):
         current_user = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user = cur.fetchone()
-            if not user:
+            user_id = get_user_id(current_user, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
             cur.execute("SELECT sender_id FROM messages WHERE id = %s", (message_id,))
             msg = cur.fetchone()
@@ -1385,11 +1290,9 @@ def edit_message(message_id):
 
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
-            user = cur.fetchone()
-            if not user:
+            user_id = get_user_id(current_user, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
             cur.execute("SELECT sender_id FROM messages WHERE id = %s", (message_id,))
             msg = cur.fetchone()
@@ -1430,3 +1333,4 @@ def edit_message(message_id):
     finally:
         if conn:
             conn.close()
+

@@ -7,6 +7,7 @@ RESTful endpoints for AI agent functionalities
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
+from utils import get_user_id
 import json
 
 # Create blueprint
@@ -85,11 +86,9 @@ def summarize_channel(channel_id):
         # Get user ID
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # Check channel access
             cur.execute("""
@@ -153,11 +152,9 @@ def get_channel_summaries(channel_id):
         # Get user ID and check access
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # Check channel access
             cur.execute("""
@@ -205,11 +202,9 @@ def get_summary(summary_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # Get summary with access check
             cur.execute("""
@@ -288,13 +283,12 @@ def track_mood(user_id):
         # Get requesting user's ID
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            requester = cur.fetchone()
-            if not requester:
+            requester_id = get_user_id(username, cur)
+            if requester_id is None:
                 return jsonify({'error': 'User not found'}), 404
             
             # Users can only track their own mood (privacy)
-            if requester['id'] != user_id:
+            if requester_id != user_id:
                 return jsonify({'error': 'Unauthorized'}), 403
         
         conn.close()
@@ -334,13 +328,12 @@ def get_mood_history(user_id):
         # Get requesting user's ID
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            requester = cur.fetchone()
-            if not requester:
+            requester_id = get_user_id(username, cur)
+            if requester_id is None:
                 return jsonify({'error': 'User not found'}), 404
             
             # Users can only view their own mood history
-            if requester['id'] != user_id:
+            if requester_id != user_id:
                 return jsonify({'error': 'Unauthorized'}), 403
         
         conn.close()
@@ -413,13 +406,12 @@ def get_mood_trends(user_id):
         # Verify user access
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            requester = cur.fetchone()
-            if not requester:
+            requester_id = get_user_id(username, cur)
+            if requester_id is None:
                 return jsonify({'error': 'User not found'}), 404
             
             # Users can only view their own trends
-            if requester['id'] != user_id:
+            if requester_id != user_id:
                 return jsonify({'error': 'Unauthorized'}), 403
         
         conn.close()
@@ -453,13 +445,12 @@ def reanalyze_mood_history(user_id):
         # Verify user access
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            requester = cur.fetchone()
-            if not requester:
+            requester_id = get_user_id(username, cur)
+            if requester_id is None:
                 return jsonify({'error': 'User not found'}), 404
             
             # Users can only re-analyze their own data
-            if requester['id'] != user_id:
+            if requester_id != user_id:
                 return jsonify({'error': 'Unauthorized'}), 403
         
         conn.close()
@@ -526,12 +517,11 @@ def get_mood_recommendations(user_id):
         # Verify user access
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            requester = cur.fetchone()
-            if not requester:
+            requester_id = get_user_id(username, cur)
+            if requester_id is None:
                 return jsonify({'error': 'User not found'}), 404
             
-            if requester['id'] != user_id:
+            if requester_id != user_id:
                 return jsonify({'error': 'Unauthorized'}), 403
         
         conn.close()
@@ -560,12 +550,11 @@ def get_mood_insights(user_id):
         # Verify user access
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            requester = cur.fetchone()
-            if not requester:
+            requester_id = get_user_id(username, cur)
+            if requester_id is None:
                 return jsonify({'error': 'User not found'}), 404
             
-            if requester['id'] != user_id:
+            if requester_id != user_id:
                 return jsonify({'error': 'Unauthorized'}), 403
         
         conn.close()
@@ -600,11 +589,9 @@ def check_moderation():
         # Get user ID
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
         conn.close()
         
         # Run moderation
@@ -636,11 +623,9 @@ def get_moderation_history():
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # OWNER-ONLY CHECK: Only community owners can view moderation logs
             cur.execute("""
@@ -733,11 +718,9 @@ def get_moderation_stats():
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # OWNER-ONLY CHECK
             cur.execute("""
@@ -839,12 +822,9 @@ def analyze_engagement():
         # Get user ID
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
-                conn.close()
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # If no channel_id provided, try to get user's default/first channel
             if not channel_id:
@@ -921,11 +901,9 @@ def get_engagement_metrics(channel_id):
         # Check access
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             cur.execute("""
                 SELECT 1 FROM channel_members 
@@ -991,11 +969,9 @@ def get_engagement_trends(channel_id):
         # Check access
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             cur.execute("""
                 SELECT 1 FROM channel_members 
@@ -1119,11 +1095,9 @@ def log_activity():
         # Get user ID
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
         conn.close()
         
         success = _get_agent("engagement").log_activity_usage(
@@ -1171,11 +1145,9 @@ def check_wellness():
         
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
         conn.close()
         
         result = _get_agent("wellness").check_user_wellness(user_id)
@@ -1204,11 +1176,9 @@ def analyze_wellness():
         
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
         conn.close()
         
         data = request.get_json() or {}
@@ -1478,11 +1448,9 @@ def get_wellness_recommendations():
         
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
         conn.close()
         
         # Get current wellness state
@@ -1596,12 +1564,11 @@ def get_wellness_insights(user_id):
         
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            requester = cur.fetchone()
-            if not requester:
+            requester_id = get_user_id(username, cur)
+            if requester_id is None:
                 return jsonify({'error': 'User not found'}), 404
             
-            if requester['id'] != user_id:
+            if requester_id != user_id:
                 return jsonify({'error': 'Unauthorized'}), 403
         conn.close()
         
@@ -1642,11 +1609,9 @@ def get_wellness_history():
         
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
         conn.close()
         
         limit = request.args.get('limit', 10, type=int)
@@ -1680,11 +1645,9 @@ def get_wellness_trends():
         
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
         conn.close()
         
         days = request.args.get('days', 7, type=int)
@@ -1948,11 +1911,9 @@ def get_knowledge_base(channel_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # Check if user is member of the channel
             cur.execute("""
@@ -2047,12 +2008,9 @@ def get_knowledge_insights():
         }
         with conn.cursor() as cur:
             # Validate membership in the community
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
-                conn.close()
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             cur.execute(
                 """
@@ -2167,12 +2125,9 @@ def get_knowledge_topics():
         topics_counter = {}
         with conn.cursor() as cur:
             # Validate membership in the community
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
-                conn.close()
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             cur.execute(
                 """
                 SELECT 1 FROM community_members
@@ -2250,11 +2205,9 @@ def get_knowledge_base(channel_id):
         # Check access
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             cur.execute("""
                 SELECT 1 FROM channel_members 
@@ -2355,11 +2308,9 @@ def extract_knowledge_channel(channel_id):
         # Access checks
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             cur.execute(
                 """
@@ -2432,11 +2383,9 @@ def extract_knowledge_time():
 
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Ensure membership in the requested community
             cur.execute(
@@ -2519,11 +2468,9 @@ def search_knowledge():
         # Basic access validation if channel_id provided
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             if channel_id:
                 cur.execute(
                     """
@@ -2646,12 +2593,10 @@ def analyze_focus():
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
-                print(f"[AGENTS API] User not found: {username}")
+            user_id = get_user_id(username, cur)
+            if user_id is None:
+                print(f'[AGENTS API] User not found: {username}')
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Resolve channel if not provided: pick most recent channel the user chatted in
             if not channel_id:
@@ -2842,13 +2787,9 @@ def get_knowledge_stats():
         # Get user ID
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            
-            if not user:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            
-            user_id = user['id']
             
             # Verify community membership
             cur.execute("""
@@ -2928,13 +2869,9 @@ def get_recent_knowledge():
         # Get user ID
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            
-            if not user:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            
-            user_id = user['id']
             
             # Verify community membership
             cur.execute("""

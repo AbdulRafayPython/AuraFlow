@@ -75,6 +75,7 @@ export function useBrowserNotifications() {
       show(displayName, body, `dm-${data.sender_id}`, icon);
     });
     return unsub;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, user?.id]);
 
   // ── Channel Messages (community) ───────────────────────────────────
@@ -99,6 +100,7 @@ export function useBrowserNotifications() {
     };
     window.addEventListener('channelMessageReceived', handler);
     return () => window.removeEventListener('channelMessageReceived', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   // ── Friend Requests ─────────────────────────────────────────────────
@@ -119,6 +121,7 @@ export function useBrowserNotifications() {
     };
     window.addEventListener('friendRequestReceived', handler);
     return () => window.removeEventListener('friendRequestReceived', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   // ── Friend Request Accepted ─────────────────────────────────────────
@@ -139,6 +142,7 @@ export function useBrowserNotifications() {
     };
     window.addEventListener('friendRequestAccepted', handler);
     return () => window.removeEventListener('friendRequestAccepted', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   // ── Community Removal ───────────────────────────────────────────────
@@ -158,14 +162,21 @@ export function useBrowserNotifications() {
     };
     window.addEventListener('community-removal-notification', handler);
     return () => window.removeEventListener('community-removal-notification', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
-  // ── Server-pushed notifications (mention, reply, etc.) ──────────────
+  // ── Server-pushed notifications (mention, reply, summary, etc.) ─────
+  // Only handle types NOT already covered by dedicated listeners above
+  // (DM messages, channel messages, friend requests, friend accepted, community removal
+  //  are all handled by their own listeners)
   useEffect(() => {
     if (!isAuthenticated) return;
+    const handledTypes = new Set(['message', 'channel_message', 'friend_request', 'friend_accepted', 'community_removal']);
     const handler = (e: Event) => {
       const d = (e as CustomEvent).detail;
       if (!d) return;
+      // Skip types already handled by dedicated browser notification listeners
+      if (handledTypes.has(d.type)) return;
       const icon = resolveUrl(d.icon_url) || APP_ICON;
       show(
         d.title || 'AuroFlow',
@@ -176,6 +187,7 @@ export function useBrowserNotifications() {
     };
     window.addEventListener('server-notification', handler);
     return () => window.removeEventListener('server-notification', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   // ── Service Worker click routing ────────────────────────────────────

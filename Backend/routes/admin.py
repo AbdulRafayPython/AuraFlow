@@ -3560,3 +3560,245 @@ def get_platform_stats():
     finally:
         if conn:
             conn.close()
+
+
+# =====================================
+# AUDIT LOGS
+# =====================================
+
+@admin_bp.route('/system/audit-logs', methods=['GET'])
+@jwt_required()
+@require_true_system_admin
+def get_audit_logs():
+    """Get paginated list of all admin actions. System admin only."""
+    conn = None
+    try:
+        action_type = request.args.get('action_type')
+        search = request.args.get('search', '')
+        limit = min(request.args.get('limit', 20, type=int), 100)
+        offset = max(request.args.get('offset', 0, type=int), 0)
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            where_clauses = []
+            params = []
+
+            if action_type:
+                where_clauses.append("aa.action_type = %s")
+                params.append(action_type)
+
+            if search:
+                where_clauses.append(
+                    "(admin_u.username LIKE %s OR admin_u.display_name LIKE %s "
+                    "OR target_u.username LIKE %s OR target_u.display_name LIKE %s)"
+                )
+                s = f"%{search}%"
+                params.extend([s, s, s, s])
+
+            where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+            # Count
+            cur.execute(f"""
+                SELECT COUNT(*) as c
+                FROM admin_actions aa
+                JOIN users admin_u ON aa.admin_id = admin_u.id
+                JOIN users target_u ON aa.target_user_id = target_u.id
+                {where_sql}
+            """, params)
+            total = cur.fetchone()['c']
+
+            # Fetch page
+            cur.execute(f"""
+                SELECT
+                    aa.id, aa.action_type, aa.reason,
+                    aa.details, aa.created_at,
+                    admin_u.username as admin_username,
+                    admin_u.display_name as admin_display_name,
+                    target_u.username as target_username,
+                    target_u.display_name as target_display_name
+                FROM admin_actions aa
+                JOIN users admin_u ON aa.admin_id = admin_u.id
+                JOIN users target_u ON aa.target_user_id = target_u.id
+                {where_sql}
+                ORDER BY aa.created_at DESC
+                LIMIT %s OFFSET %s
+            """, params + [limit, offset])
+            rows = cur.fetchall()
+
+            logs = [{
+                'id': r['id'],
+                'admin_username': r['admin_username'],
+                'admin_display_name': r['admin_display_name'],
+                'target_username': r['target_username'],
+                'target_display_name': r['target_display_name'],
+                'action_type': r['action_type'],
+                'reason': r['reason'],
+                'details': r['details'],
+                'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+            } for r in rows]
+
+            return jsonify({
+                'success': True,
+                'logs': logs,
+                'total': total,
+                'pagination': {
+                    'total': total,
+                    'limit': limit,
+                    'offset': offset,
+                    'has_more': offset + limit < total,
+                }
+            }), 200
+    except Exception as e:
+        log.error(f"[ADMIN] Error fetching audit logs: {e}")
+        return jsonify({'error': 'Failed to fetch audit logs'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# PLATFORM SETTINGS
+# =====================================
+
+# Canonical platform settings schema
+PLATFORM_SETTINGS_DEFAULTS = {
+    'registration_enabled': True,
+    'maintenance_mode': False,
+    'max_communities_per_user': 10,
+    'max_channels_per_community': 50,
+    'max_file_size_mb': 10,
+    'message_rate_limit': 30,
+    'auto_moderation_enabled': True,
+    'moderation_sensitivity': 'medium',
+    'auto_ban_threshold': 5,
+    'email_notifications_enabled': True,
+}
+
+# Backward-compatible aliases from earlier seed/UI drift
+PLATFORM_SETTINGS_ALIASES = {
+    'allow_registration': 'registration_enabled',
+    'rate_limit_per_minute': 'message_rate_limit',
+}
+
+
+def _normalize_platform_settings_input(payload):
+    """Normalize incoming payload to canonical settings with validation."""
+    raw = dict(payload or {})
+    nested = raw.pop('settings', None)
+    raw.pop('success', None)
+    if isinstance(nested, dict):
+        # Prefer nested settings object while preserving compatible top-level keys.
+        raw.update(nested)
+    valid = {}
+    rejected = []
+
+    for in_key, value in (raw or {}).items():
+        key = PLATFORM_SETTINGS_ALIASES.get(in_key, in_key)
+        if key not in PLATFORM_SETTINGS_DEFAULTS:
+            rejected.append(in_key)
+            continue
+
+        try:
+            if key in ('registration_enabled', 'maintenance_mode', 'auto_moderation_enabled', 'email_notifications_enabled'):
+                if not isinstance(value, bool):
+                    raise ValueError('must be boolean')
+                valid[key] = value
+            elif key in ('max_communities_per_user', 'max_channels_per_community', 'max_file_size_mb', 'message_rate_limit', 'auto_ban_threshold'):
+                if not isinstance(value, int):
+                    raise ValueError('must be integer')
+                if value < 1:
+                    raise ValueError('must be >= 1')
+                valid[key] = value
+            elif key == 'moderation_sensitivity':
+                if value not in ('low', 'medium', 'high'):
+                    raise ValueError('must be one of low|medium|high')
+                valid[key] = value
+        except ValueError:
+            rejected.append(in_key)
+
+    return valid, rejected
+
+@admin_bp.route('/system/platform-settings', methods=['GET'])
+@jwt_required()
+@require_true_system_admin
+def get_platform_settings():
+    """Get platform configuration settings. System admin only."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT setting_key, setting_value FROM platform_settings")
+            rows = cur.fetchall()
+            settings = dict(PLATFORM_SETTINGS_DEFAULTS)
+            for r in rows:
+                raw_key = r['setting_key']
+                key = PLATFORM_SETTINGS_ALIASES.get(raw_key, raw_key)
+                if key not in PLATFORM_SETTINGS_DEFAULTS:
+                    # Ignore unknown keys to prevent bad data from leaking to clients.
+                    continue
+
+                val = r['setting_value']
+                # Try parsing as JSON for booleans/numbers
+                try:
+                    settings[key] = json.loads(val)
+                except (json.JSONDecodeError, TypeError):
+                    settings[key] = val
+            return jsonify({'success': True, 'settings': settings}), 200
+    except Exception as e:
+        log.error(f"[ADMIN] Error fetching platform settings: {e}")
+        # Return empty defaults if table doesn't exist yet
+        return jsonify({'success': True, 'settings': {}}), 200
+    finally:
+        if conn:
+            conn.close()
+
+
+@admin_bp.route('/system/platform-settings', methods=['PUT'])
+@jwt_required()
+@require_true_system_admin
+def update_platform_settings():
+    """Update platform configuration settings. System admin only."""
+    conn = None
+    try:
+        data = request.get_json() or {}
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        normalized, rejected = _normalize_platform_settings_input(data)
+        if not normalized:
+            return jsonify({'error': 'No valid platform settings provided', 'rejected_keys': rejected}), 400
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Ensure table exists
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS platform_settings (
+                    setting_key VARCHAR(100) PRIMARY KEY,
+                    setting_value TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                )
+            """)
+
+            for key, value in normalized.items():
+                str_value = json.dumps(value) if isinstance(value, (bool, int, float, list, dict)) else str(value)
+                cur.execute("""
+                    INSERT INTO platform_settings (setting_key, setting_value)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+                """, (key, str_value))
+
+            conn.commit()
+            return jsonify({
+                'success': True,
+                'message': 'Settings updated',
+                'updated_keys': list(normalized.keys()),
+                'rejected_keys': rejected,
+            }), 200
+    except Exception as e:
+        log.error(f"[ADMIN] Error updating platform settings: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to update settings'}), 500
+    finally:
+        if conn:
+            conn.close()

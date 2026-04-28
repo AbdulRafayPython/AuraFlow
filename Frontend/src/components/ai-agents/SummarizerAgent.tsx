@@ -37,6 +37,7 @@ export default function SummarizerAgent() {
     if (currentChannel) {
       loadExistingSummaries();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChannel]);
 
   // Load scheduler settings for admins
@@ -44,6 +45,7 @@ export default function SummarizerAgent() {
     if (currentCommunity?.id && isAdmin) {
       loadScheduleSettings();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCommunity?.id, isAdmin]);
 
   const loadScheduleSettings = async () => {

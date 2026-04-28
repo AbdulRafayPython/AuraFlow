@@ -133,6 +133,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
       socketService.getSocket()?.off('user_joined_voice', refreshOnChange);
       socketService.getSocket()?.off('user_left_voice', refreshOnChange);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceChannels.length]);
 
   // Fetch community members when current community changes
@@ -142,6 +143,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
     } else {
       setCommunityMembers([]);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCommunity?.id]);
 
   const loadMembers = async () => {

@@ -2,7 +2,12 @@ import { API_SERVER } from '@/config/api';
 
 const API_BASE = API_SERVER;
 
-type Json = Record<string, any> | null;
+type Json = Record<string, unknown> | null;
+
+export interface ApiError extends Error {
+  status: number;
+  data: Json;
+}
 
 function getToken(): string | null {
   try {
@@ -62,7 +67,7 @@ function tryRefresh(): Promise<string | null> {
 }
 // ─── End Silent Token Refresh ──────────────────────────────────────
 
-async function request(path: string, opts: { method?: string; body?: any; noAuth?: boolean; _retry?: boolean } = {}) {
+async function request(path: string, opts: { method?: string; body?: unknown; noAuth?: boolean; _retry?: boolean } = {}) {
   const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
   const headers: Record<string, string> = {
     'ngrok-skip-browser-warning': 'true',
@@ -121,7 +126,12 @@ async function request(path: string, opts: { method?: string; body?: any; noAuth
   }
 
   if (!res.ok) {
-    const err: any = new Error((data && (data as any).error) || (data && (data as any).message) || res.statusText || 'Request failed');
+    const err = new Error(
+      (data && (data as Record<string, string>).error) ||
+      (data && (data as Record<string, string>).message) ||
+      res.statusText ||
+      'Request failed'
+    ) as ApiError;
     err.status = res.status;
     err.data = data;
     throw err;
@@ -134,16 +144,20 @@ export async function get(path: string, opts: { noAuth?: boolean } = {}) {
   return await request(path, { method: 'GET', noAuth: opts.noAuth });
 }
 
-export async function post(path: string, body?: any, opts: { noAuth?: boolean } = {}) {
+export async function post(path: string, body?: unknown, opts: { noAuth?: boolean } = {}) {
   return await request(path, { method: 'POST', body, noAuth: opts.noAuth });
 }
 
-export async function put(path: string, body?: any, opts: { noAuth?: boolean } = {}) {
+export async function put(path: string, body?: unknown, opts: { noAuth?: boolean } = {}) {
   return await request(path, { method: 'PUT', body, noAuth: opts.noAuth });
+}
+
+export async function patch(path: string, body?: unknown, opts: { noAuth?: boolean } = {}) {
+  return await request(path, { method: 'PATCH', body, noAuth: opts.noAuth });
 }
 
 export async function del(path: string, opts: { noAuth?: boolean } = {}) {
   return await request(path, { method: 'DELETE', noAuth: opts.noAuth });
 }
 
-export default { get, post, put, del };
+export default { get, post, put, patch, del };

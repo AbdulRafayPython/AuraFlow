@@ -10,6 +10,7 @@ import EmojiPickerButton from "@/components/EmojiPickerButton";
 import ReactionPicker from "@/components/ReactionPicker";
 import MessageReactions from "@/components/MessageReactions";
 import { ModerationBadge } from "@/components/ModerationBadge";
+import { ModerationWarningBanner } from "@/components/ModerationWarningBanner";
 import { reactionService } from "@/services/reactionService";
 import { socket } from "@/socket";
 import { SocketDebugPanel } from "@/components/SocketDebugPanel";
@@ -34,10 +35,7 @@ import { aiAgentService } from "@/services/aiAgentService";
 import type { Message } from "@/types";
 import type { SearchResult } from "@/services/searchService";
 
-interface DashboardProps {
-}
-
-export default function Dashboard({}: DashboardProps) {
+export default function Dashboard() {
   const { isDarkMode, toggleTheme, currentTheme, setTheme, themes } = useTheme();
   const { user: authUser } = useAuth();
   const {
@@ -69,7 +67,7 @@ export default function Dashboard({}: DashboardProps) {
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -182,6 +180,7 @@ export default function Dashboard({}: DashboardProps) {
     if (messages.length > 0) {
       loadReactions();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length]); // Only depend on length, not full array
 
   // Socket.IO reaction listener — single event carries full aggregation
@@ -314,6 +313,7 @@ export default function Dashboard({}: DashboardProps) {
       if (!cancelled) setSavedSummaries(summaries);
     }).catch(() => {});
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChannel?.id]);
 
   // --- Fetch pinned count + active pin when channel changes ---
@@ -327,12 +327,14 @@ export default function Dashboard({}: DashboardProps) {
       if (!cancelled) setActivePin(pin);
     }).catch(() => {});
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChannel?.id]);
 
   // --- Mark channel as read when switching (socket-driven, replaces HTTP) ---
   useEffect(() => {
     if (!currentChannel || messages.length === 0) return;
     markChRead(currentChannel.id, currentCommunity?.id ? Number(currentCommunity.id) : undefined);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChannel?.id, messages.length, markChRead, currentCommunity?.id]);
 
   // --- Socket listeners for pins (banner + count + is_pinned sync) ---
@@ -382,6 +384,7 @@ export default function Dashboard({}: DashboardProps) {
       socket.off('message_unpinned', handleUnpinned);
       socket.off('pin_expired', handlePinExpired);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChannel?.id]);
 
   // --- Ctrl+K global search shortcut ---
@@ -855,7 +858,7 @@ export default function Dashboard({}: DashboardProps) {
 
       {/* Header - Discord Style with Theme Support */}
       <header
-        className="h-12 flex items-center justify-between border-b shadow-sm relative z-30 backdrop-blur-md border-[hsl(var(--theme-border-default)/0.5)] transition-colors duration-300"
+        className="h-12 flex items-center justify-between border-b shadow-sm relative z-10 backdrop-blur-md border-[hsl(var(--theme-border-default)/0.5)] transition-colors duration-300"
         style={{ background: 'hsl(var(--theme-header-bg) / 0.85)' }}
       >
         <div className="flex items-center h-full">
@@ -1236,6 +1239,20 @@ export default function Dashboard({}: DashboardProps) {
                           })()}
                         </div>
                         
+                        {/* Moderation Warning Banner — visible to all */}
+                        {msg.moderation && msg.moderation.action !== 'allow' && (
+                          <ModerationWarningBanner
+                            action={msg.moderation.action}
+                            severity={msg.moderation.severity}
+                            reasons={msg.moderation.reasons}
+                            username={authorName}
+                            violationCount={msg.moderation.violation_count}
+                            maxViolations={3}
+                            message={msg.moderation.message}
+                            explanation={msg.moderation.explanation}
+                          />
+                        )}
+
                         {/* Reactions Display */}
                         {(messageReactions[msg.id]?.length > 0 || hoveredMessageId === msg.id) && (
                           <div className="flex flex-wrap items-center gap-1 mt-1">
@@ -1707,7 +1724,7 @@ export default function Dashboard({}: DashboardProps) {
                             try {
                               await aiAgentService.deleteMySummary(s.id);
                               setSavedSummaries(prev => prev.filter(x => x.id !== s.id));
-                            } catch {}
+                            } catch { /* ignore delete error */ }
                           }}
                           className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 text-[hsl(var(--theme-text-muted))] hover:text-red-400 transition-all"
                           title="Delete summary"

@@ -59,23 +59,28 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
   const messagesRef = useRef<DirectMessage[]>([]);
   const addMessageRef = useRef<any>(null);
 
-  // Initialize conversations from friends list
+  // Initialize conversations from friends list — preserve existing last_message
   useEffect(() => {
     if (friends && friends.length > 0) {
-      const newConversations: Conversation[] = friends.map(friend => ({
-        user_id: friend.id,
-        user: {
-          id: friend.id,
-          username: friend.username,
-          display_name: friend.display_name,
-          avatar_url: friend.avatar_url,
-          email: ''  // Add required field
-        } as User,
-        unread_count: 0,
-        last_message_time: new Date().toISOString(),
-        last_message: undefined
-      }));
-      setConversations(newConversations);
+      setConversations(prev => {
+        const existingMap = new Map(prev.map(c => [c.user_id, c]));
+        return friends.map(friend => {
+          const existing = existingMap.get(friend.id);
+          return {
+            user_id: friend.id,
+            user: {
+              id: friend.id,
+              username: friend.username,
+              display_name: friend.display_name,
+              avatar_url: friend.avatar_url,
+              email: ''
+            } as User,
+            unread_count: existing?.unread_count ?? 0,
+            last_message_time: existing?.last_message_time ?? new Date().toISOString(),
+            last_message: existing?.last_message
+          };
+        });
+      });
     }
   }, [friends]);
 
@@ -95,12 +100,43 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     }
   }, [authUser?.id]);
 
+  // On mount: fetch last message per conversation to populate Recent Messages sidebar
+  useEffect(() => {
+    if (!authUser?.id) return;
+    directMessageService.getConversations().then(data => {
+      if (!data.length) return;
+      setConversations(prev => {
+        const updates = new Map(data.map(d => [d.partner_id, d.last_message]));
+        return prev.map(c => {
+          const lastMsg = updates.get(c.user_id);
+          if (lastMsg && (!c.last_message || lastMsg.id > (c.last_message.id ?? 0))) {
+            return { ...c, last_message: lastMsg, last_message_time: lastMsg.created_at };
+          }
+          return c;
+        });
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser?.id]);
+
   // Fetch conversations
   const getConversations = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      console.log("Fetching conversations...");
+      const data = await directMessageService.getConversations();
+      if (data.length) {
+        setConversations(prev => {
+          const updates = new Map(data.map(d => [d.partner_id, d.last_message]));
+          return prev.map(c => {
+            const lastMsg = updates.get(c.user_id);
+            if (lastMsg) {
+              return { ...c, last_message: lastMsg, last_message_time: lastMsg.created_at };
+            }
+            return c;
+          });
+        });
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || "Failed to fetch conversations");
     } finally {
@@ -132,6 +168,17 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
       const msgs = await directMessageService.getDirectMessages(userId);
       setMessages(msgs);
       messagesRef.current = msgs;
+
+      // Update last_message in conversations from the freshly loaded messages
+      // API returns DESC order, so msgs[0] is the most recent
+      if (msgs.length > 0) {
+        const lastMsg = msgs[0];
+        setConversations(prev => prev.map(c =>
+          c.user_id === userId
+            ? { ...c, last_message: lastMsg, last_message_time: lastMsg.created_at }
+            : c
+        ));
+      }
 
       // Join DM socket room
       socketService.joinDMConversation(userId);
@@ -225,6 +272,7 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
         throw err;
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
@@ -238,6 +286,7 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
       setError(err.response?.data?.message || "Failed to delete message");
       throw err;
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Edit message
@@ -250,6 +299,7 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
       setError(err.response?.data?.message || "Failed to edit message");
       throw err;
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Mark as read
@@ -261,6 +311,7 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     } catch (err: any) {
       console.error("Error marking message as read:", err);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Mark all as read
@@ -348,7 +399,10 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
       addMessage(newMessage);
       
       // Emit notification event for new messages from others
-      if (message.sender_id !== currentUserId && typeof window !== 'undefined') {
+      // Skip if user is currently viewing this DM conversation
+      const activeConv = currentConversationRef.current;
+      const isViewingThisDM = activeConv && activeConv.user_id === message.sender_id;
+      if (message.sender_id !== currentUserId && !isViewingThisDM && typeof window !== 'undefined') {
         const notificationEvent = new CustomEvent('newMessageReceived', {
           detail: {
             ...newMessage,

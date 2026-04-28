@@ -41,9 +41,9 @@ function formatTime(iso: string): string {
 
 export const CallMessageBubble: React.FC<Props> = ({ content, isSent, createdAt }) => {
   const log = useMemo(() => parseCallLog(content), [content]);
-  if (!log) return null;
 
-  const { call_type, status, duration } = log;
+  const call_type = log?.call_type;
+  const status = log?.status;
 
   const label = useMemo(() => {
     switch (status) {
@@ -66,6 +66,10 @@ export const CallMessageBubble: React.FC<Props> = ({ content, isSent, createdAt 
     if (status === 'rejected') return PhoneOff;
     return call_type === 'video' ? Video : Phone;
   }, [status, isSent, call_type]);
+
+  if (!log) return null;
+
+  const { duration } = log;
 
   const isNegative = status === 'missed' || status === 'rejected' || status === 'canceled';
   const isAttended = status === 'attended';

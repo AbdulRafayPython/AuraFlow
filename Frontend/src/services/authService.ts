@@ -171,6 +171,8 @@ export const authService = {
   getSessions,
   revokeSession,
   revokeAllSessions,
+  getNotificationSettings,
+  updateNotificationSettings,
 };
 
 export default authService;
@@ -187,4 +189,14 @@ export async function revokeSession(sessionId: number) {
 
 export async function revokeAllSessions() {
   return await api.post(`${AUTH_PREFIX}/sessions/revoke-all`);
+}
+
+// ─── Notification Settings ────────────────────────────────────────
+
+export async function getNotificationSettings() {
+  return await api.get(`${AUTH_PREFIX}/users/settings/notifications`);
+}
+
+export async function updateNotificationSettings(settings: Record<string, boolean | number>) {
+  return await api.patch(`${AUTH_PREFIX}/users/settings/notifications`, settings);
 }

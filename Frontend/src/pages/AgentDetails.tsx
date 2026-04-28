@@ -209,6 +209,34 @@ export default function AgentDetails() {
 
   const agent = getAgentConfig();
 
+  // Fetch logs — must be declared before any conditional return (Rules of Hooks)
+  const fetchLogs = useCallback(async (page = 1) => {
+    if (!agentId) return;
+    setLogsLoading(true);
+    try {
+      const result = await aiAgentService.getAgentLogs({
+        agent_type: agentId === 'mood' ? 'mood_tracker' : agentId === 'knowledge' ? 'knowledge_builder' : agentId,
+        status: logFilter === 'all' ? undefined : logFilter,
+        page,
+        limit: 10,
+      });
+      setLogs(result.logs || []);
+      setTotalLogPages(result.pagination?.pages || 1);
+      setLogsPage(page);
+    } catch (err) {
+      console.error('Failed to fetch logs:', err);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [agentId, logFilter]);
+
+  // Load logs when section is expanded
+  useEffect(() => {
+    if (expandedSections.has('logs')) {
+      fetchLogs(1);
+    }
+  }, [expandedSections, fetchLogs]);
+
   if (!agent) {
     return (
       <div 
@@ -241,34 +269,6 @@ export default function AgentDetails() {
       return newSet;
     });
   };
-
-  // Fetch logs
-  const fetchLogs = useCallback(async (page = 1) => {
-    if (!agentId) return;
-    setLogsLoading(true);
-    try {
-      const result = await aiAgentService.getAgentLogs({
-        agent_type: agentId === 'mood' ? 'mood_tracker' : agentId === 'knowledge' ? 'knowledge_builder' : agentId,
-        status: logFilter === 'all' ? undefined : logFilter,
-        page,
-        limit: 10,
-      });
-      setLogs(result.logs || []);
-      setTotalLogPages(result.pagination?.pages || 1);
-      setLogsPage(page);
-    } catch (err) {
-      console.error('Failed to fetch logs:', err);
-    } finally {
-      setLogsLoading(false);
-    }
-  }, [agentId, logFilter]);
-
-  // Load logs when section is expanded
-  useEffect(() => {
-    if (expandedSections.has('logs')) {
-      fetchLogs(1);
-    }
-  }, [expandedSections, fetchLogs]);
 
   const handleSave = async () => {
     setSavingSettings(true);

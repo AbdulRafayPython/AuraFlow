@@ -24,6 +24,8 @@ import {
   Bell,
   Sun,
   Moon,
+  Settings,
+  ScrollText,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
@@ -43,6 +45,8 @@ const navItems: NavItem[] = [
   { title: 'Analytics', href: '/system-admin/analytics/engagement', icon: BarChart3 },
   { title: 'Reports', href: '/system-admin/reports', icon: FileText },
   { title: 'AI Agents', href: '/system-admin/agents', icon: Brain },
+  { title: 'Audit Logs', href: '/system-admin/audit-logs', icon: ScrollText },
+  { title: 'Settings', href: '/system-admin/settings', icon: Settings },
 ];
 
 export default function SystemAdminLayout() {

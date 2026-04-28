@@ -134,6 +134,7 @@ export default function FlaggedContent() {
 
   useEffect(() => {
     fetchFlaggedMessages();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCommunity?.id, currentPage, severity, flagType, status]);
 
   const handleAction = async () => {

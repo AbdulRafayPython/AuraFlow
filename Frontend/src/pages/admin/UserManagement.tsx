@@ -113,6 +113,7 @@ export default function UserManagement() {
 
   useEffect(() => {
     fetchUsers();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCommunity?.id, currentPage, status, role, search]);
 
   const handleSearch = (e: React.FormEvent) => {

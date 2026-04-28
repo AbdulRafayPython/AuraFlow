@@ -95,6 +95,7 @@ export function useVoiceRecorder(maxDuration = 300): UseVoiceRecorderReturn {
         URL.revokeObjectURL(state.audioUrl);
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cleanup]);
 
   // Audio visualization loop

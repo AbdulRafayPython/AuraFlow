@@ -100,6 +100,34 @@
 
 ---
 
+
+#  New Tasks
+
+1- ~~email notification (user control for email notification) (pause notification)~~ ✅ Done
+2-system admin completion
+
+## ✅ Email Notification Batching & Preferences (Completed)
+
+* ✅ Database: Added `notification_settings` JSON column to `users` table
+* ✅ Backend API: `GET /api/users/settings/notifications` — fetch user prefs (merged with defaults)
+* ✅ Backend API: `PATCH /api/users/settings/notifications` — partial update with validation
+* ✅ `get_me()` endpoint now returns `notification_settings` in user payload
+* ✅ Email Batch Service (`services/email_batch_service.py`) — Redis-backed 5-min debounce queue
+* ✅ Celery Task (`tasks/email_tasks.py`) — `process_email_batch` drains queue, renders HTML digest, sends via SMTP
+* ✅ Digest registered in `celery_app.py` includes array
+* ✅ Event triggers wired up:
+  * DMs → `queue_email_notification(receiver, 'dm', ...)`
+  * Mentions → `queue_email_notification(user, 'mention', ...)`
+  * Missed calls → `queue_email_notification(callee, 'missed_call', ...)`
+  * Agent summaries → `queue_email_notification(user, 'summary_ready', ...)`
+* ✅ Frontend Settings page: "Email Notifications" card with master switch + per-type toggles
+  * Fetches settings from backend on mount
+  * Debounced save (600 ms) on each toggle change
+  * Visual save status feedback (✓ Saved / Failed)
+* ✅ `appService.ts` — added `patch()` method
+* ✅ `authService.ts` — added `getNotificationSettings()` / `updateNotificationSettings()`
+* ✅ `AuthContext.tsx` — User interface includes `notification_settings`
+
 # ⚠️ Partial / Needs Improvement
 
 ## 🔐 Security
@@ -141,5 +169,15 @@
 6. Production deployment (pending)
 7. Quick Access default OFF fix (quick fix)
 8. System-wide RBAC roles table (enhancement)
+
+
+System admin functionlity need to be updated and applied fully and all the standard admin controls need to be added in the system admin
+
+
+Then their will be dedicated page for community admin(owner) to handle his channel. The option should be dedicated in the setting option where it says switch to community admin(owner) dashboard. 
+
+the sytem admin route should remain same so make sure system admin and community admin(owner) both are different.
+
+
 
 

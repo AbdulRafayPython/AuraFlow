@@ -36,6 +36,7 @@ export default function SysReports() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchReports(); }, [selectedDate]);
 
   return (

@@ -52,6 +52,8 @@ export interface Message {
     reasons?: string[];
     violation_count?: number;
     message?: string;
+    explanation?: string;
+    pending_ai_review?: boolean;
     flagged?: boolean;
     removed_from_community?: boolean;
     blocked?: boolean;

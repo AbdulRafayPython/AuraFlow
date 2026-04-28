@@ -317,6 +317,7 @@ export const CallAudioRenderer: React.FC = () => {
     // Cleanup: stop playback when stream is gone
     return () => {
       if (audioRef.current) {
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         audioRef.current.srcObject = null;
       }
     };

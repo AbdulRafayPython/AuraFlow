@@ -100,6 +100,7 @@ export default function SysCommunityHealth() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchHealth(); }, [days]);
 
   const tabs = ['Overview', 'Members', 'Channels', 'Settings'];

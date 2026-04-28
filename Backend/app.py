@@ -14,7 +14,8 @@ from routes.auth import (
     signup, login, logout, update_first_login, get_me,
     reset_password, forgot_password, verify_otp_endpoint, update_profile,
     verify_email, resend_verification,
-    refresh, get_sessions, revoke_session_endpoint, revoke_all_sessions_endpoint
+    refresh, get_sessions, revoke_session_endpoint, revoke_all_sessions_endpoint,
+    get_notification_settings, update_notification_settings
 )
 from routes.channels import (
     get_communities, get_community_channels, get_friends,
@@ -34,6 +35,7 @@ from routes.channels import (
 from routes.messages import (
     get_channel_messages, send_message,
     get_direct_messages, send_direct_message,
+    get_dm_conversations,
     mark_as_read, delete_message, edit_message
 )
 from routes.friends import (
@@ -122,7 +124,11 @@ except Exception:
     pass  # Tables may not exist yet on first run
 # ── End Session Management ───────────────────────────────────────────
 
-# Initialize SocketIO — auto-detect async mode (eventlet if available, otherwise threading)
+# Initialize SocketIO with Redis message_queue for cross-process emit from Celery
+# Use threading mode locally (no monkey-patching needed); production uses gevent via wsgi.py
+REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
+import sys
+_async_mode = 'gevent' if 'gevent' in sys.modules else 'threading'
 socketio = SocketIO(
     app, 
     cors_allowed_origins=_ALLOWED_ORIGINS,
@@ -130,6 +136,8 @@ socketio = SocketIO(
     engineio_logger=False,
     ping_timeout=25,
     ping_interval=15,
+    message_queue=REDIS_URL,
+    async_mode=_async_mode,
 )
 
 # ======================================================================
@@ -153,6 +161,10 @@ app.route("/api/token/refresh", methods=["POST"])(refresh)
 app.route("/api/sessions", methods=["GET"])(get_sessions)
 app.route("/api/sessions/revoke", methods=["POST"])(revoke_session_endpoint)
 app.route("/api/sessions/revoke-all", methods=["POST"])(revoke_all_sessions_endpoint)
+
+# ── Notification Settings Routes ─────────────────────────────────────
+app.route("/api/users/settings/notifications", methods=["GET"])(get_notification_settings)
+app.route("/api/users/settings/notifications", methods=["PATCH"])(update_notification_settings)
 
 # ======================================================================
 # COMMUNITY & CHANNEL ROUTES
@@ -192,6 +204,7 @@ app.route("/api/channels/community/add-member", methods=["POST"])(add_community_
 # ======================================================================
 app.route("/api/messages/channel/<int:channel_id>", methods=["GET"])(get_channel_messages)
 app.route("/api/messages/send", methods=["POST"])(send_message)
+app.route("/api/messages/direct/conversations", methods=["GET"])(get_dm_conversations)
 app.route("/api/messages/direct/<int:user_id>", methods=["GET"])(get_direct_messages)
 app.route("/api/messages/direct/send", methods=["POST"])(send_direct_message)
 app.route("/api/messages/read", methods=["POST"])(mark_as_read)
@@ -606,9 +619,17 @@ def user_schedule_checker():
         except Exception as e:
             print(f"[USER_SCHEDULES] Loop error: {e}")
 
-schedule_thread = threading.Thread(target=user_schedule_checker, daemon=True)
-schedule_thread.start()
-print("[USER_SCHEDULES] Started schedule checker thread")
+_enable_inprocess_schedule_checker = os.getenv('ENABLE_INPROCESS_SCHEDULE_CHECKER')
+if _enable_inprocess_schedule_checker is None:
+    # Safe default: enabled only in local/dev unless explicitly configured.
+    _enable_inprocess_schedule_checker = '1' if not _cfg.IS_PRODUCTION else '0'
+
+if str(_enable_inprocess_schedule_checker).lower() in ('1', 'true', 'yes', 'on'):
+    schedule_thread = threading.Thread(target=user_schedule_checker, daemon=True)
+    schedule_thread.start()
+    print("[USER_SCHEDULES] Started schedule checker thread")
+else:
+    print("[USER_SCHEDULES] In-process schedule checker disabled")
 
 # ======================================================================
 # RUN APPLICATION
@@ -629,7 +650,8 @@ if __name__ == "__main__":
         app, 
         debug=not os.getenv('FLASK_ENV') == 'production', 
         host='0.0.0.0', 
-        port=port
+        port=port,
+        allow_unsafe_werkzeug=True
     )
 
 

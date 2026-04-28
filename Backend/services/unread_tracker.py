@@ -55,7 +55,7 @@ def load_user_unreads(user_id):
                 cur.execute("""
                     INSERT INTO channel_read_status (user_id, channel_id, last_read_message_id)
                     SELECT cm.user_id, cm.channel_id,
-                           (SELECT MAX(m.id) FROM messages m WHERE m.channel_id = cm.channel_id)
+                           COALESCE((SELECT MAX(m.id) FROM messages m WHERE m.channel_id = cm.channel_id), 0)
                     FROM channel_members cm
                     WHERE cm.user_id = %s
                       AND NOT EXISTS (
@@ -220,19 +220,29 @@ def mark_channel_read(user_id, channel_id, message_id=None):
             if not message_id:
                 cur.execute("SELECT MAX(id) AS max_id FROM messages WHERE channel_id = %s", (channel_id,))
                 result = cur.fetchone()
-                message_id = result['max_id'] if result else 0
+                message_id = result['max_id'] if (result and result['max_id']) else 0
             
             if message_id:
                 cur.execute("""
                     INSERT INTO channel_read_status (user_id, channel_id, last_read_message_id)
                     VALUES (%s, %s, %s)
                     ON DUPLICATE KEY UPDATE
-                        last_read_message_id = GREATEST(last_read_message_id, VALUES(last_read_message_id)),
+                        last_read_message_id = GREATEST(COALESCE(last_read_message_id, 0), VALUES(last_read_message_id)),
                         last_read_at = CURRENT_TIMESTAMP
                 """, (user_id, channel_id, message_id))
                 conn.commit()
         
         community_id = _channel_community_map.get(channel_id)
+        if not community_id:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT community_id FROM channels WHERE id = %s", (channel_id,))
+                    ch_row = cur.fetchone()
+                    if ch_row:
+                        community_id = ch_row['community_id']
+                        _channel_community_map[channel_id] = community_id
+            except Exception:
+                pass
         
         with _lock:
             old_count = _channel_unread[user_id].get(channel_id, 0)

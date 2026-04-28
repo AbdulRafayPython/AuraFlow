@@ -31,6 +31,7 @@ export default function ModerationAgent() {
       loadModerationHistory();
       loadModerationStats();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, currentCommunity?.id, isOwner]); // Re-run when community or role changes
 
   // Listen for real-time moderation actions
@@ -51,6 +52,7 @@ export default function ModerationAgent() {
     return () => {
       unsubscribe();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCommunity?.id, isOwner]);
 
   const loadModerationHistory = async () => {

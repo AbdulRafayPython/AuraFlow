@@ -90,6 +90,7 @@ export default function Reports() {
 
   useEffect(() => {
     fetchReports();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, selectedCommunity?.id]);
 
   const exportReport = (type: 'daily' | 'weekly') => {

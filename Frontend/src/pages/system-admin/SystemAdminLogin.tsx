@@ -83,13 +83,13 @@ export default function SystemAdminLogin() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl overflow-hidden shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.25)] mb-4">
             <img src="/AuraflowLogo.png" alt="AuraFlow" className="h-full w-full object-cover" />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>AuroFlow</h1>
+          <h1 className="text-2xl font-bold text-[hsl(var(--theme-text-primary))] tracking-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>AuroFlow</h1>
           <p className="text-sm text-[hsl(var(--theme-text-secondary))] mt-1">System Administration</p>
         </div>
 
         <div className="bg-[hsl(var(--theme-bg-secondary)/0.8)] border border-[hsl(var(--theme-border-default))] rounded-2xl p-8 shadow-2xl" style={{ backdropFilter: 'blur(12px)' }}>
           <div className="text-center mb-6">
-            <h2 className="text-xl font-bold text-white">Admin Sign In</h2>
+            <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))]">Admin Sign In</h2>
             <p className="text-sm text-[hsl(var(--theme-text-secondary))] mt-1">Enter your administrator credentials to continue</p>
           </div>
 
@@ -111,7 +111,7 @@ export default function SystemAdminLogin() {
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 placeholder="Enter your username or email"
-                className="w-full bg-[hsl(var(--theme-bg-primary))] border border-[hsl(var(--theme-border-default))] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-[hsl(var(--theme-text-muted))] focus:border-[hsl(var(--theme-accent-primary))] focus:ring-1 focus:ring-[hsl(var(--theme-accent-primary)/0.2)] focus:outline-none transition-all"
+                className="w-full bg-[hsl(var(--theme-bg-primary))] border border-[hsl(var(--theme-border-default))] rounded-xl px-4 py-2.5 text-sm text-[hsl(var(--theme-text-primary))] placeholder:text-[hsl(var(--theme-text-muted))] focus:border-[hsl(var(--theme-accent-primary))] focus:ring-1 focus:ring-[hsl(var(--theme-accent-primary)/0.2)] focus:outline-none transition-all"
                 disabled={loading}
                 autoComplete="username"
               />
@@ -128,7 +128,7 @@ export default function SystemAdminLogin() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full bg-[hsl(var(--theme-bg-primary))] border border-[hsl(var(--theme-border-default))] rounded-xl px-4 py-2.5 pr-10 text-sm text-white placeholder:text-[hsl(var(--theme-text-muted))] focus:border-[hsl(var(--theme-accent-primary))] focus:ring-1 focus:ring-[hsl(var(--theme-accent-primary)/0.2)] focus:outline-none transition-all"
+                  className="w-full bg-[hsl(var(--theme-bg-primary))] border border-[hsl(var(--theme-border-default))] rounded-xl px-4 py-2.5 pr-10 text-sm text-[hsl(var(--theme-text-primary))] placeholder:text-[hsl(var(--theme-text-muted))] focus:border-[hsl(var(--theme-accent-primary))] focus:ring-1 focus:ring-[hsl(var(--theme-accent-primary)/0.2)] focus:outline-none transition-all"
                   disabled={loading}
                   autoComplete="current-password"
                 />

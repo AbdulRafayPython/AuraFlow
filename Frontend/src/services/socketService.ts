@@ -64,6 +64,7 @@ type DirectMessageHandler = (message: DirectMessageEvent) => void;
 type FriendRequestHandler = (request: FriendRequestEvent) => void;
 type FriendStatusHandler = (data: { friend_id: number; status: string; request_id?: number }) => void;
 type ModerationActionHandler = (data: { community_id: number; channel_id: number; action: string; severity: string; timestamp: string }) => void;
+type ModerationInlineHandler = (data: { message_id: number; user_id: number; username: string; channel_id: number; warning_text?: string; flag_text?: string; reason?: string; violation_count: number; max_violations?: number; reasons: string[]; severity: string; timestamp: string; removed_by?: string }) => void;
 type CommandResultHandler = (data: { type: string; success: boolean; summary?: string; key_points?: string[]; method?: string; error?: string }) => void;
 type UnreadUpdateHandler = (data: { channel_id?: number; community_id?: number; channel_unread?: number; community_unread?: number; total_unread?: number }) => void;
 type DMUnreadUpdateHandler = (data: { sender_id: number; unread_count: number; total_dm_unread: number; total_unread: number }) => void;
@@ -79,6 +80,7 @@ class SocketService {
   private token: string | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
+  private hasConnectedOnce = false;
   private messageHandlers: MessageHandler[] = [];
   private statusHandlers: StatusHandler[] = [];
   private typingHandlers: TypingHandler[] = [];
@@ -93,6 +95,10 @@ class SocketService {
   private friendRequestHandlers: FriendRequestHandler[] = [];
   private friendStatusHandlers: FriendStatusHandler[] = [];
   private moderationActionHandlers: ModerationActionHandler[] = [];
+  private moderationWarnInlineHandlers: ModerationInlineHandler[] = [];
+  private moderationFlagInlineHandlers: ModerationInlineHandler[] = [];
+  private moderationUserRemovedHandlers: ModerationInlineHandler[] = [];
+  private moderationRetroactiveHandlers: ((data: { message_id: number; channel_id: number; user_id: number; username: string; action: string; severity: string; reasons: string[]; explanation: string; violation_count: number; banner_text: string; timestamp: string }) => void)[] = [];
   private commandResultHandlers: CommandResultHandler[] = [];
   private unreadUpdateHandlers: UnreadUpdateHandler[] = [];
   private dmUnreadUpdateHandlers: DMUnreadUpdateHandler[] = [];
@@ -192,6 +198,12 @@ class SocketService {
       this.socket?.emit('join_friend_status');
       // Request fresh unread snapshot on every reconnect
       this.socket?.emit('get_unreads');
+
+      // Notify listeners to refresh notifications only on actual reconnects
+      if (this.hasConnectedOnce && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('socket-reconnected'));
+      }
+      this.hasConnectedOnce = true;
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -295,6 +307,30 @@ class SocketService {
     this.socket.on('moderation_action_logged', (data: { community_id: number; channel_id: number; action: string; severity: string; timestamp: string }) => {
       console.log('[SOCKET] 🛡️ Moderation action logged:', data);
       this.moderationActionHandlers.forEach(handler => handler(data));
+    });
+
+    // Moderation inline warning (Strike 1)
+    this.socket.on('moderation_warn_inline', (data: any) => {
+      console.log('[SOCKET] ⚠️ Moderation inline warning:', data);
+      this.moderationWarnInlineHandlers.forEach(handler => handler(data));
+    });
+
+    // Moderation inline flag (Strike 2)
+    this.socket.on('moderation_flag_inline', (data: any) => {
+      console.log('[SOCKET] 🚩 Moderation inline flag:', data);
+      this.moderationFlagInlineHandlers.forEach(handler => handler(data));
+    });
+
+    // Moderation user removed (Strike 3)
+    this.socket.on('moderation_user_removed', (data: any) => {
+      console.log('[SOCKET] 🚫 Moderation user removed:', data);
+      this.moderationUserRemovedHandlers.forEach(handler => handler(data));
+    });
+
+    // Moderation retroactive (async Gemini review flagged a message after broadcast)
+    this.socket.on('moderation_retroactive', (data: any) => {
+      console.log('[SOCKET] 🤖 Gemini retroactive moderation:', data);
+      this.moderationRetroactiveHandlers.forEach(handler => handler(data));
     });
 
     // AI command result event (for chat commands like /summarize)
@@ -924,6 +960,34 @@ class SocketService {
     };
   }
 
+  onModerationWarnInline(handler: ModerationInlineHandler) {
+    this.moderationWarnInlineHandlers.push(handler);
+    return () => {
+      this.moderationWarnInlineHandlers = this.moderationWarnInlineHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onModerationFlagInline(handler: ModerationInlineHandler) {
+    this.moderationFlagInlineHandlers.push(handler);
+    return () => {
+      this.moderationFlagInlineHandlers = this.moderationFlagInlineHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onModerationUserRemoved(handler: ModerationInlineHandler) {
+    this.moderationUserRemovedHandlers.push(handler);
+    return () => {
+      this.moderationUserRemovedHandlers = this.moderationUserRemovedHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onModerationRetroactive(handler: (data: { message_id: number; channel_id: number; user_id: number; username: string; action: string; severity: string; reasons: string[]; explanation: string; violation_count: number; banner_text: string; timestamp: string }) => void) {
+    this.moderationRetroactiveHandlers.push(handler);
+    return () => {
+      this.moderationRetroactiveHandlers = this.moderationRetroactiveHandlers.filter(h => h !== handler);
+    };
+  }
+
   onCommandResult(handler: CommandResultHandler) {
     this.commandResultHandlers.push(handler);
     return () => {
@@ -1003,6 +1067,7 @@ class SocketService {
       this.socket = null;
       this.currentChannel = null;
       this.listenersAttached = false;
+      this.hasConnectedOnce = false;
       console.log('[SOCKET] 🔌 Disconnected manually');
     }
   }

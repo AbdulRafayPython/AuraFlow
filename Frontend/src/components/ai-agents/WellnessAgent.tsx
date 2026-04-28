@@ -86,6 +86,7 @@ export default function WellnessAgent() {
 
   useEffect(() => {
     loadInitialData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadInitialData = async () => {

@@ -1,23 +1,29 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTheme, THEMES, ThemeId } from "@/contexts/ThemeContext";
 import { useFriends } from "@/contexts/FriendsContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useRealtime } from "@/hooks/useRealtime";
 import { getAvatarUrl } from "@/lib/utils";
 import { 
   Settings as SettingsIcon, Shield, Lock, Bell, Palette, Moon, Sun, Volume2, 
   Download, Ban, Trash2, AlertCircle, User as UserIcon, Camera, X, Save, Mail, 
   Check, Sparkles, ChevronRight, Edit3, Globe, Eye, EyeOff, Key, Smartphone,
-  MessageSquare, Users, Zap, Monitor, VolumeX, Volume1, ArrowRight, RefreshCw, Bot
+  MessageSquare, Users, Zap, Monitor, VolumeX, Volume1, ArrowRight, RefreshCw, Bot,
+  Crown, BarChart3, Building2, ShieldCheck, ExternalLink
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 import PersonalAgentsPanel from "@/components/ai-agents/PersonalAgentsPanel";
+import { API_SERVER } from "@/config/api";
 
 export default function Settings() {
   const { isDarkMode, toggleTheme, currentTheme, setTheme, themes } = useTheme();
   const isBasicTheme = currentTheme === 'basic';
   const { blockedUsers, getBlockedUsers, unblockUser } = useFriends();
   const { user, updateProfile } = useAuth();
-  const [activeTab, setActiveTab] = useState<"profile" | "appearance" | "general" | "privacy" | "notifications" | "blocked" | "agents">("profile");
+  const { communities } = useRealtime();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<"profile" | "appearance" | "general" | "privacy" | "notifications" | "blocked" | "agents" | "community-admin">("profile");
   const [isLoadingBlocked, setIsLoadingBlocked] = useState(false);
   const [showUnblockConfirm, setShowUnblockConfirm] = useState(false);
   const [selectedBlockedUserId, setSelectedBlockedUserId] = useState<number | null>(null);
@@ -46,6 +52,7 @@ export default function Settings() {
     if (activeTab === "blocked" && blockedUsers.length === 0) {
       loadBlockedUsers();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   const loadBlockedUsers = async () => {
@@ -151,7 +158,11 @@ export default function Settings() {
     return getAvatarUrl(user?.avatar_url, user?.username || 'default');
   };
 
-  const tabs = [
+  // Check if user owns any communities
+  const ownedCommunities = communities.filter(c => c.role === 'owner');
+  const isSystemAdmin = user?.role === 'system_admin';
+
+  const tabs: Array<{ id: typeof activeTab; label: string; icon: any; description: string; count?: number }> = [
     { id: "profile" as const, label: "Profile", icon: UserIcon, description: "Manage your public profile" },
     { id: "appearance" as const, label: "Appearance", icon: Palette, description: "Customize your theme" },
     { id: "general" as const, label: "General", icon: SettingsIcon, description: "Language & accessibility" },
@@ -159,6 +170,7 @@ export default function Settings() {
     { id: "notifications" as const, label: "Notifications", icon: Bell, description: "Manage alerts" },
     { id: "agents" as const, label: "AI Agents", icon: Bot, description: "Personal AI assistants" },
     { id: "blocked" as const, label: "Blocked", icon: Ban, count: blockedUsers.length, description: "Blocked users" },
+    ...(ownedCommunities.length > 0 ? [{ id: "community-admin" as const, label: "Community Admin", icon: Crown, description: "Manage your communities" }] : []),
   ];
 
   // Modern Toggle Switch Component
@@ -715,28 +727,107 @@ export default function Settings() {
 
   // Notification Settings
   const NotificationSettings = () => {
+    // In-app notification state
     const [dmNotifs, setDmNotifs] = useState(true);
     const [channelNotifs, setChannelNotifs] = useState(true);
     const [friendRequests, setFriendRequests] = useState(true);
     const [friendOnline, setFriendOnline] = useState(false);
     const [sounds, setSounds] = useState(true);
+
+    // Email notification state
+    const [emailEnabled, setEmailEnabled] = useState(true);
+    const [emailDms, setEmailDms] = useState(true);
+    const [emailCommunity, setEmailCommunity] = useState(false);
+    const [emailAgentNotifs, setEmailAgentNotifs] = useState(true);
+    const [emailAgentSummaries, setEmailAgentSummaries] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+
+    // Load ALL notification settings from backend
+    useEffect(() => {
+      const loadSettings = async () => {
+        try {
+          const { getNotificationSettings } = await import('@/services/authService');
+          const settings = await getNotificationSettings();
+          if (settings) {
+            // In-app settings
+            setDmNotifs(settings.notify_direct_messages ?? true);
+            setChannelNotifs(settings.notify_channel_messages ?? true);
+            setFriendRequests(settings.notify_friend_requests ?? true);
+            setFriendOnline(settings.notify_friend_online ?? false);
+            setSounds(settings.notification_sounds ?? true);
+            // Email settings
+            setEmailEnabled(settings.email_alerts_enabled ?? true);
+            setEmailDms(settings.email_dms_and_calls ?? true);
+            setEmailCommunity(settings.email_community_messages ?? false);
+            setEmailAgentNotifs(settings.email_agent_notifications ?? true);
+            setEmailAgentSummaries(settings.email_agent_summaries ?? true);
+          }
+        } catch (err) {
+          console.error('Failed to load notification settings:', err);
+        }
+      };
+      loadSettings();
+    }, []);
+
+    // Debounced save to backend (unified for all settings)
+    const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const saveSettings = (overrides: Record<string, boolean | number>) => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      setIsSaving(true);
+      setSaveStatus('idle');
+
+      saveTimeoutRef.current = setTimeout(async () => {
+        try {
+          const { updateNotificationSettings } = await import('@/services/authService');
+          await updateNotificationSettings(overrides);
+          setSaveStatus('saved');
+          setTimeout(() => setSaveStatus('idle'), 2000);
+        } catch (err) {
+          console.error('Failed to save notification settings:', err);
+          setSaveStatus('error');
+          setTimeout(() => setSaveStatus('idle'), 3000);
+        } finally {
+          setIsSaving(false);
+        }
+      }, 600);
+    };
+
+    // In-app toggle helpers
+    const toggleDmNotifs = () => { const next = !dmNotifs; setDmNotifs(next); saveSettings({ notify_direct_messages: next }); };
+    const toggleChannelNotifs = () => { const next = !channelNotifs; setChannelNotifs(next); saveSettings({ notify_channel_messages: next }); };
+    const toggleFriendRequests = () => { const next = !friendRequests; setFriendRequests(next); saveSettings({ notify_friend_requests: next }); };
+    const toggleFriendOnline = () => { const next = !friendOnline; setFriendOnline(next); saveSettings({ notify_friend_online: next }); };
+    const toggleSounds = () => { const next = !sounds; setSounds(next); saveSettings({ notification_sounds: next }); };
+
+    // Email toggle helpers
+    const toggleEmailEnabled = () => { const next = !emailEnabled; setEmailEnabled(next); saveSettings({ email_alerts_enabled: next }); };
+    const toggleEmailDms = () => { const next = !emailDms; setEmailDms(next); saveSettings({ email_dms_and_calls: next }); };
+    const toggleEmailCommunity = () => { const next = !emailCommunity; setEmailCommunity(next); saveSettings({ email_community_messages: next }); };
+    const toggleEmailAgentNotifs = () => { const next = !emailAgentNotifs; setEmailAgentNotifs(next); saveSettings({ email_agent_notifications: next }); };
+    const toggleEmailAgentSummaries = () => { const next = !emailAgentSummaries; setEmailAgentSummaries(next); saveSettings({ email_agent_summaries: next }); };
     
     return (
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <SettingsCard title="Messages" description="Notification preferences for messages">
+        <SettingsCard title="Messages" description={
+          saveStatus === 'saved' ? '✓ Saved'
+          : saveStatus === 'error' ? 'Failed to save'
+          : 'Notification preferences for messages'
+        }>
           <SettingRow 
             icon={MessageSquare} 
             title="Direct Messages"
             description="Notify me about direct messages"
           >
-            <ToggleSwitch enabled={dmNotifs} onChange={() => setDmNotifs(!dmNotifs)} />
+            <ToggleSwitch enabled={dmNotifs} onChange={toggleDmNotifs} />
           </SettingRow>
           <SettingRow 
             icon={Users} 
             title="Channel Messages"
             description="Notify me about channel messages"
           >
-            <ToggleSwitch enabled={channelNotifs} onChange={() => setChannelNotifs(!channelNotifs)} />
+            <ToggleSwitch enabled={channelNotifs} onChange={toggleChannelNotifs} />
           </SettingRow>
         </SettingsCard>
 
@@ -746,14 +837,14 @@ export default function Settings() {
             title="Friend Requests"
             description="Notify me about new friend requests"
           >
-            <ToggleSwitch enabled={friendRequests} onChange={() => setFriendRequests(!friendRequests)} />
+            <ToggleSwitch enabled={friendRequests} onChange={toggleFriendRequests} />
           </SettingRow>
           <SettingRow 
             icon={Zap} 
             title="Friend Online Status"
             description="Notify me when friends come online"
           >
-            <ToggleSwitch enabled={friendOnline} onChange={() => setFriendOnline(!friendOnline)} />
+            <ToggleSwitch enabled={friendOnline} onChange={toggleFriendOnline} />
           </SettingRow>
         </SettingsCard>
 
@@ -763,8 +854,59 @@ export default function Settings() {
             title="Notification Sounds"
             description="Play sounds for notifications"
           >
-            <ToggleSwitch enabled={sounds} onChange={() => setSounds(!sounds)} />
+            <ToggleSwitch enabled={sounds} onChange={toggleSounds} />
           </SettingRow>
+        </SettingsCard>
+
+        {/* Email Notifications — persisted to backend */}
+        <SettingsCard 
+          title="Email Notifications" 
+          description={
+            saveStatus === 'saved' ? '✓ Saved' 
+            : saveStatus === 'error' ? 'Failed to save' 
+            : 'Receive email digests for missed activity'
+          }
+        >
+          <SettingRow 
+            icon={Mail} 
+            title="Send Email Notifications"
+            description="Master switch — turn off to stop all email alerts"
+          >
+            <ToggleSwitch enabled={emailEnabled} onChange={toggleEmailEnabled} />
+          </SettingRow>
+          
+          {emailEnabled && (
+            <>
+              <SettingRow 
+                icon={MessageSquare} 
+                title="Direct Messages & Missed Calls"
+                description="Email me about unread DMs and missed calls"
+              >
+                <ToggleSwitch enabled={emailDms} onChange={toggleEmailDms} />
+              </SettingRow>
+              <SettingRow 
+                icon={Users} 
+                title="Community Channel Mentions"
+                description="Email me when I'm mentioned in community channels"
+              >
+                <ToggleSwitch enabled={emailCommunity} onChange={toggleEmailCommunity} />
+              </SettingRow>
+              <SettingRow 
+                icon={Zap} 
+                title="Agent Notifications"
+                description="Email me about AI agent activity"
+              >
+                <ToggleSwitch enabled={emailAgentNotifs} onChange={toggleEmailAgentNotifs} />
+              </SettingRow>
+              <SettingRow 
+                icon={Bot} 
+                title="Agent Summaries"
+                description="Email me when scheduled summaries are ready"
+              >
+                <ToggleSwitch enabled={emailAgentSummaries} onChange={toggleEmailAgentSummaries} />
+              </SettingRow>
+            </>
+          )}
         </SettingsCard>
       </div>
     );
@@ -839,19 +981,143 @@ export default function Settings() {
     </div>
   );
 
+  // Community Admin Settings
+  const CommunityAdminSettings = () => {
+    const handleOpenCommunityDashboard = (communityId: number) => {
+      localStorage.setItem('selectedDashboardCommunity', communityId.toString());
+      navigate('/admin');
+    };
+
+    return (
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {/* Header Card */}
+        <div className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent border-amber-500/20">
+          <div className="p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="p-3 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 shadow-lg shadow-amber-500/25">
+                <Crown className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">Community Administration</h3>
+                <p className="text-sm text-[hsl(var(--theme-text-muted))]">Manage communities you own</p>
+              </div>
+            </div>
+            <p className="text-sm text-[hsl(var(--theme-text-secondary))] leading-relaxed">
+              Access the admin dashboard for your communities to manage members, moderate content, view analytics, and configure settings.
+            </p>
+          </div>
+        </div>
+
+        {/* Communities List */}
+        <SettingsCard title="Your Communities" description="Select a community to open its admin dashboard">
+          <div className="space-y-1 p-1">
+            {ownedCommunities.map((community) => {
+              const logoUrl = community.logo_url ? `${API_SERVER}${community.logo_url}` : null;
+              return (
+                <button
+                  key={community.id}
+                  onClick={() => handleOpenCommunityDashboard(community.id)}
+                  className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-[hsl(var(--theme-bg-hover))] transition-all duration-300 group"
+                >
+                  {/* Community Icon */}
+                  <div 
+                    className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden flex-shrink-0 shadow-md"
+                    style={{ backgroundColor: !logoUrl ? (community.color || '#8B5CF6') : 'hsl(var(--theme-bg-secondary))' }}
+                  >
+                    {logoUrl ? (
+                      <img src={logoUrl} alt={community.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-white text-lg font-bold">
+                        {community.icon || community.name.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 text-left min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-[hsl(var(--theme-text-primary))] truncate">{community.name}</p>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex-shrink-0">
+                        <Crown className="w-2.5 h-2.5" />
+                        Owner
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-xs text-[hsl(var(--theme-text-muted))] flex items-center gap-1">
+                        <Users className="w-3 h-3" /> {community.member_count ?? 0} members
+                      </span>
+                      <span className="text-xs text-[hsl(var(--theme-text-muted))]">
+                        {community.channel_count ?? 0} channels
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Arrow */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-xs text-[hsl(var(--theme-text-muted))] hidden sm:block group-hover:text-[hsl(var(--theme-accent-primary))] transition-colors">Open Dashboard</span>
+                    <ExternalLink className="w-4 h-4 text-[hsl(var(--theme-text-muted))] group-hover:text-[hsl(var(--theme-accent-primary))] transition-colors" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </SettingsCard>
+
+        {/* Quick Info */}
+        <div className="flex items-start gap-3 p-4 rounded-2xl bg-[hsl(var(--theme-accent-primary)/0.05)] border border-[hsl(var(--theme-accent-primary)/0.15)]">
+          <BarChart3 className="w-5 h-5 flex-shrink-0 mt-0.5 text-[hsl(var(--theme-accent-primary))]" />
+          <div>
+            <p className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">Dashboard Features</p>
+            <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-1">
+              Analytics, moderation tools, member management, AI agent configuration, community health metrics, and detailed reports.
+            </p>
+          </div>
+        </div>
+
+        {/* System Admin Link (only for system admins) */}
+        {isSystemAdmin && (
+          <SettingsCard title="System Administration" description="Platform-wide administrative access">
+            <button
+              onClick={() => navigate('/system-admin')}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-[hsl(var(--theme-bg-hover))] transition-all duration-300 group"
+            >
+              <div className="p-3 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 shadow-lg shadow-red-500/25">
+                <ShieldCheck className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1 text-left">
+                <p className="font-semibold text-[hsl(var(--theme-text-primary))]">System Admin Panel</p>
+                <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">Platform-wide user management, moderation, and analytics</p>
+              </div>
+              <ExternalLink className="w-5 h-5 text-[hsl(var(--theme-text-muted))] group-hover:text-[hsl(var(--theme-accent-primary))] transition-colors" />
+            </button>
+          </SettingsCard>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="flex h-full bg-[hsl(var(--theme-bg-primary))] transition-colors duration-300">
       {/* Sidebar */}
       <div className="hidden md:flex w-72 flex-shrink-0 border-r bg-[hsl(var(--theme-bg-secondary)/0.5)] border-[hsl(var(--theme-border-default)/0.3)] backdrop-blur-sm">
         <div className="w-full p-6 flex flex-col">
           {/* Header */}
-          <div className="flex items-center gap-3 mb-8">
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.3)]">
-              <SettingsIcon className="w-5 h-5 text-white" />
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.3)]">
+                <SettingsIcon className="w-5 h-5 text-white" />
+              </div>
+              <h1 className="text-xl font-bold text-[hsl(var(--theme-text-primary))]">
+                Settings
+              </h1>
             </div>
-            <h1 className="text-xl font-bold text-[hsl(var(--theme-text-primary))]">
-              Settings
-            </h1>
+            <button
+              onClick={() => navigate(-1)}
+              className="p-2 rounded-xl text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))] transition-all duration-200"
+              title="Close settings"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
           {/* Navigation */}
@@ -888,7 +1154,18 @@ export default function Settings() {
           </nav>
 
           {/* Footer */}
-          <div className="pt-4 border-t border-[hsl(var(--theme-border-default)/0.3)]">
+          <div className="pt-4 border-t border-[hsl(var(--theme-border-default)/0.3)] space-y-3">
+            {/* System Admin Quick Link (only visible if user is system_admin and doesn't own communities) */}
+            {isSystemAdmin && ownedCommunities.length === 0 && (
+              <button
+                onClick={() => navigate('/system-admin')}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>System Admin Panel</span>
+                <ExternalLink className="w-3 h-3 ml-auto" />
+              </button>
+            )}
             <p className="text-xs text-[hsl(var(--theme-text-muted))] text-center">
               AuraFlow v1.0.0
             </p>
@@ -898,27 +1175,36 @@ export default function Settings() {
 
       {/* Mobile Tab Selector */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 border-b border-[hsl(var(--theme-border-default)/0.3)] bg-[hsl(var(--theme-bg-secondary)/0.95)] backdrop-blur-lg">
-        <div className="flex overflow-x-auto px-4 py-3 gap-2 no-scrollbar">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 ${isBasicTheme ? 'rounded-md' : 'rounded-xl'} text-sm font-medium whitespace-nowrap transition-all duration-300 ${
-                  isActive
-                    ? isBasicTheme
-                      ? "bg-[hsl(var(--theme-accent-primary))] text-white"
-                      : "bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg"
-                    : "text-[hsl(var(--theme-text-muted))] bg-[hsl(var(--theme-bg-tertiary))]"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+        <div className="flex items-center px-4 py-3 gap-2">
+          <div className="flex overflow-x-auto gap-2 flex-1 no-scrollbar">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-2 ${isBasicTheme ? 'rounded-md' : 'rounded-xl'} text-sm font-medium whitespace-nowrap transition-all duration-300 ${
+                    isActive
+                      ? isBasicTheme
+                        ? "bg-[hsl(var(--theme-accent-primary))] text-white"
+                        : "bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg"
+                      : "text-[hsl(var(--theme-text-muted))] bg-[hsl(var(--theme-bg-tertiary))]"
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            onClick={() => navigate(-1)}
+            className="flex-shrink-0 p-2 rounded-xl text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))] transition-all duration-200"
+            title="Close settings"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
@@ -943,6 +1229,7 @@ export default function Settings() {
           {activeTab === "notifications" && <NotificationSettings />}
           {activeTab === "agents" && <PersonalAgentsPanel />}
           {activeTab === "blocked" && <BlockedUsersSettings />}
+          {activeTab === "community-admin" && <CommunityAdminSettings />}
         </div>
       </div>
 

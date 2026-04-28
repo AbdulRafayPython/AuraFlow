@@ -123,7 +123,7 @@ def login():
                 """
                 SELECT id, username, email, display_name, bio, avatar_url, 
                        status, custom_status, is_first_login, password,
-                       email_verified
+                       email_verified, role
                 FROM users 
                 WHERE username = %s OR email = %s
                 """,
@@ -149,9 +149,7 @@ def login():
             token = create_access_token(identity=row['username'])
             
             # Determine user role: system_admin > admin (community owner) > user
-            cur.execute("SELECT role FROM users WHERE id = %s", (row['id'],))
-            user_role_row = cur.fetchone()
-            system_role = user_role_row['role'] if user_role_row else 'user'
+            system_role = row.get('role') or 'user'
             
             if system_role == 'system_admin':
                 role = 'system_admin'
@@ -162,28 +160,24 @@ def login():
                 )
                 is_community_owner = cur.fetchone() is not None
                 role = 'admin' if is_community_owner else 'user'
+
+            # ── Create refresh token & session (reuse existing connection) ──
+            refresh_token = create_refresh_token(identity=row['username'])
+            refresh_decoded = decode_token(refresh_token)
+            refresh_jti = refresh_decoded['jti']
+            device_info = request.headers.get('User-Agent', 'Unknown')[:500]
+            ip_address = request.remote_addr
+            refresh_expires = datetime.utcnow() + timedelta(days=JWT_REFRESH_TOKEN_EXPIRES_DAYS)
+            token_family = str(uuid.uuid4())
+            cur.execute("""
+                INSERT INTO refresh_tokens
+                    (jti, user_id, token_family, device_info, ip_address, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (refresh_jti, row['id'], token_family, device_info, ip_address, refresh_expires))
+
         conn.commit()
     finally:
         conn.close()
-
-    # ── Create refresh token & session ─────────────────────────────
-    refresh_token = create_refresh_token(identity=row['username'])
-    refresh_decoded = decode_token(refresh_token)
-    refresh_jti = refresh_decoded['jti']
-
-    device_info = request.headers.get('User-Agent', 'Unknown')[:500]
-    ip_address = request.remote_addr
-    refresh_expires = datetime.utcnow() + timedelta(days=JWT_REFRESH_TOKEN_EXPIRES_DAYS)
-
-    create_session(
-        user_id=row['id'],
-        username=row['username'],
-        refresh_jti=refresh_jti,
-        refresh_expires=refresh_expires,
-        device_info=device_info,
-        ip_address=ip_address
-    )
-    # ── END ────────────────────────────────────────────────────────
 
     # 🔥 FIX: Use format_user_data helper for consistent avatar URL
     user_data = format_user_data(row)
@@ -269,7 +263,7 @@ def get_me():
             cur.execute(
                 """
                 SELECT id, username, email, display_name, bio, avatar_url,
-                       status, custom_status, is_first_login
+                      status, custom_status, is_first_login
                 FROM users 
                 WHERE username = %s
                 """,
@@ -301,6 +295,22 @@ def get_me():
     user_data = format_user_data(row)
     user_data['is_first_login'] = bool(row.get('is_first_login', False))
     user_data['role'] = role
+
+    # Include notification settings from normalized table
+    conn2 = get_db_connection()
+    try:
+        with conn2.cursor() as cur2:
+            cur2.execute("SELECT * FROM user_notification_settings WHERE user_id = %s", (user_data['id'],))
+            ns_row = cur2.fetchone()
+            if ns_row:
+                user_data['notification_settings'] = {
+                    col: bool(ns_row[col]) if col != 'email_batch_interval_minutes' else ns_row[col]
+                    for col in NOTIFICATION_COLUMNS
+                }
+            else:
+                user_data['notification_settings'] = dict(NOTIFICATION_DEFAULTS)
+    finally:
+        conn2.close()
     
     print(f"[GET_ME] User: {user_data['username']}, Role: {user_data['role']}")
 
@@ -779,3 +789,124 @@ def revoke_all_sessions_endpoint():
 
     count = revoke_all_sessions(user_row['id'])
     return jsonify({'message': f'Revoked {count} sessions', 'revoked_count': count}), 200
+
+
+# ======================================================================
+# NOTIFICATION SETTINGS ENDPOINTS (normalized table)
+# ======================================================================
+
+# All columns in user_notification_settings (except PKs and timestamps)
+NOTIFICATION_COLUMNS = [
+    "notify_direct_messages", "notify_channel_messages", "notify_friend_requests",
+    "notify_friend_online", "notification_sounds",
+    "email_alerts_enabled", "email_dms_and_calls", "email_community_messages",
+    "email_agent_notifications", "email_agent_summaries", "email_batch_interval_minutes",
+]
+
+NOTIFICATION_DEFAULTS = {
+    "notify_direct_messages": True,
+    "notify_channel_messages": True,
+    "notify_friend_requests": True,
+    "notify_friend_online": False,
+    "notification_sounds": True,
+    "email_alerts_enabled": True,
+    "email_dms_and_calls": True,
+    "email_community_messages": False,
+    "email_agent_notifications": True,
+    "email_agent_summaries": True,
+    "email_batch_interval_minutes": 5,
+}
+
+ALLOWED_NOTIFICATION_KEYS = set(NOTIFICATION_COLUMNS)
+
+
+@jwt_required()
+def get_notification_settings():
+    """GET /api/users/settings/notifications — return the user's notification prefs."""
+    current_user = get_jwt_identity()
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+
+            user_id = user_row['id']
+            cur.execute("SELECT * FROM user_notification_settings WHERE user_id = %s", (user_id,))
+            row = cur.fetchone()
+
+            if not row:
+                # Auto-create default row
+                cur.execute("INSERT INTO user_notification_settings (user_id) VALUES (%s)", (user_id,))
+                conn.commit()
+                result = dict(NOTIFICATION_DEFAULTS)
+            else:
+                result = {col: bool(row[col]) if col != 'email_batch_interval_minutes' else row[col]
+                          for col in NOTIFICATION_COLUMNS}
+    finally:
+        conn.close()
+
+    return jsonify(result), 200
+
+
+@jwt_required()
+def update_notification_settings():
+    """PATCH /api/users/settings/notifications — update notification prefs (partial)."""
+    current_user = get_jwt_identity()
+    data = request.get_json() or {}
+
+    # Only allow known keys
+    clean = {k: v for k, v in data.items() if k in ALLOWED_NOTIFICATION_KEYS}
+    if not clean:
+        return jsonify({'error': 'No valid notification settings provided'}), 400
+
+    # Validate types
+    for key, val in clean.items():
+        if key == 'email_batch_interval_minutes':
+            if not isinstance(val, int) or val < 1 or val > 60:
+                return jsonify({'error': f'{key} must be an integer between 1 and 60'}), 400
+        else:
+            if not isinstance(val, bool):
+                return jsonify({'error': f'{key} must be a boolean'}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username = %s", (current_user,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+
+            user_id = user_row['id']
+
+            # Upsert: ensure row exists
+            cur.execute(
+                "INSERT IGNORE INTO user_notification_settings (user_id) VALUES (%s)",
+                (user_id,)
+            )
+
+            # Build SET clause dynamically
+            set_parts = [f"{k} = %s" for k in clean.keys()]
+            values = [int(v) if isinstance(v, bool) else v for v in clean.values()]
+            values.append(user_id)
+
+            cur.execute(
+                f"UPDATE user_notification_settings SET {', '.join(set_parts)} WHERE user_id = %s",
+                tuple(values)
+            )
+        conn.commit()
+
+        # Read back full settings
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM user_notification_settings WHERE user_id = %s", (user_id,))
+            row = cur.fetchone()
+            result = {col: bool(row[col]) if col != 'email_batch_interval_minutes' else row[col]
+                      for col in NOTIFICATION_COLUMNS}
+    except Exception as e:
+        logging.error(f"[NOTIF SETTINGS] Update failed: {e}")
+        return jsonify({'error': 'Failed to update notification settings'}), 500
+    finally:
+        conn.close()
+
+    return jsonify(result), 200

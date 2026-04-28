@@ -181,6 +181,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
     };
 
     loadSettings();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, agentType, communityId]);
 
   // Load personal schedules + communities + channels for summarizer

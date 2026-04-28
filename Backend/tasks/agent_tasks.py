@@ -132,48 +132,291 @@ def _increment_usage(table, agent_type, id_col, id_val):
 # ON-DEMAND TASKS
 # ======================================================================
 
-@celery_app.task(name='tasks.agent_tasks.moderate_message_task', bind=True, max_retries=2, rate_limit='60/m')
-def moderate_message_task(self, text, user_id, channel_id, community_id=None):
+@celery_app.task(name='tasks.agent_tasks.batch_moderation_task', bind=True, max_retries=1, rate_limit='30/m')
+def batch_moderation_task(self, channel_id, community_id):
     """
-    Auto-moderate a message using the Moderation Agent.
-    Triggered on every new channel message if moderation is installed.
+    Batch Gemini moderation: drain the Redis buffer for a channel,
+    send all messages to Gemini for contextual review, and emit
+    retroactive moderation events for any flagged messages.
     """
     start = time.time()
     try:
-        # Resolve community if not provided
-        if community_id is None:
-            community_id = _get_community_for_channel(channel_id)
-        
-        if community_id is None:
-            return {'status': 'skipped', 'reason': 'no_community'}
-        
-        # Check if moderation agent is installed for this community
-        if not _is_agent_installed(community_id, 'moderation'):
-            return {'status': 'skipped', 'reason': 'not_installed'}
-        
         from agents.moderation import ModerationAgent
         agent = ModerationAgent()
-        result = agent.moderate_message(text, user_id, channel_id)
+        
+        # Drain the buffer atomically
+        messages = agent.drain_buffer(channel_id)
+        if not messages:
+            return {'status': 'empty', 'channel_id': channel_id}
+        
+        print(f"[BATCH_MOD] Processing {len(messages)} messages for channel {channel_id}")
+        
+        # Send batch to Gemini
+        verdicts = agent.batch_gemini_review(messages)
         
         elapsed = time.time() - start
-        _log_agent_action(
-            'moderation', 'moderate_message',
-            {'text': text[:200], 'user_id': user_id, 'channel_id': channel_id},
-            result, 'success', elapsed,
-            community_id=community_id, user_id=user_id
-        )
-        _increment_usage('community_agents', 'moderation', 'community_id', community_id)
         
-        return result
+        # None = Gemini failure (timeout/503/error) → re-buffer for retry
+        if verdicts is None:
+            print(f"[BATCH_MOD] Gemini failed for channel {channel_id}, re-buffering {len(messages)} msgs for retry")
+            for msg in messages:
+                agent.push_to_buffer(channel_id, msg)
+            _log_agent_action(
+                'moderation', 'batch_review',
+                {'channel_id': channel_id, 'message_count': len(messages)},
+                {'result': 'gemini_failed_rebuffered'}, 'error', elapsed,
+                community_id=community_id
+            )
+            return {'status': 'gemini_failed', 'channel_id': channel_id, 'rebuffered': len(messages)}
+        
+        if not verdicts:
+            # All clean
+            _log_agent_action(
+                'moderation', 'batch_review',
+                {'channel_id': channel_id, 'message_count': len(messages)},
+                {'result': 'all_clean'}, 'success', elapsed,
+                community_id=community_id
+            )
+            return {'status': 'all_clean', 'channel_id': channel_id, 'reviewed': len(messages)}
+        
+        # Process each violation
+        from flask_socketio import SocketIO as FlaskSocketIO
+        REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+        sio = FlaskSocketIO(message_queue=REDIS_URL)
+        room = f"channel_{channel_id}"
+        
+        for v in verdicts:
+            msg_id = v['msg_id']
+            user_id = v['user_id']
+            username = v.get('username', 'Unknown')
+            action = v['action']
+            severity = v['severity']
+            reasons = [v.get('category', 'unknown')]
+            explanation = v.get('explanation', '')
+            
+            # Read and update violation_count
+            violation_count = 0
+            try:
+                conn = get_db_connection()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT violation_count FROM community_members WHERE community_id = %s AND user_id = %s FOR UPDATE",
+                        (community_id, user_id)
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        violation_count = (row.get('violation_count') or 0) + 1
+                        cur.execute(
+                            "UPDATE community_members SET violation_count = %s WHERE community_id = %s AND user_id = %s",
+                            (violation_count, community_id, user_id)
+                        )
+                    cur.execute("""
+                        UPDATE community_agents
+                        SET usage_count = usage_count + 1, last_active = NOW()
+                        WHERE community_id = %s AND agent_type = 'moderation'
+                    """, (community_id,))
+                conn.commit()
+                conn.close()
+            except Exception as db_err:
+                print(f"[BATCH_MOD] DB update failed for user {user_id}: {db_err}")
+            
+            # 3-strike escalation
+            if violation_count >= 3:
+                final_action = 'remove_user'
+                user_message = f'@{username} has been removed from this community by the Moderation Agent for repeated violations.'
+            elif violation_count == 2:
+                final_action = 'flag'
+                user_message = f'@{username}, your content has been flagged for repeated violations (2/3). One more violation will result in removal.'
+            elif violation_count == 1:
+                final_action = 'warn'
+                user_message = f'@{username}, this message may violate community guidelines ({", ".join(reasons)}). Please be mindful.'
+            else:
+                final_action = action
+                user_message = f'@{username}, this message was flagged by AI review ({", ".join(reasons)}).'
+            
+            # Emit retroactive events
+            _emit_moderation_event(
+                sio, final_action, room, channel_id, community_id,
+                msg_id, user_id, username, severity, reasons,
+                explanation, violation_count, user_message
+            )
+            
+            # Log moderation action
+            agent.log_moderation_action(
+                user_id, channel_id, v.get('content', '')[:500],
+                final_action, severity, reasons,
+                v.get('confidence', 0.5), msg_id
+            )
+            
+            print(f"[BATCH_MOD] Retroactive {final_action} for msg {msg_id} by {username}")
+        
+        _log_agent_action(
+            'moderation', 'batch_review',
+            {'channel_id': channel_id, 'message_count': len(messages)},
+            {'flagged': len(verdicts), 'actions': [v['action'] for v in verdicts]},
+            'success', elapsed, community_id=community_id
+        )
+        
+        return {
+            'status': 'actioned',
+            'channel_id': channel_id,
+            'reviewed': len(messages),
+            'flagged': len(verdicts)
+        }
         
     except Exception as e:
         elapsed = time.time() - start
+        print(f"[BATCH_MOD] Error: {e}")
         _log_agent_action(
-            'moderation', 'moderate_message',
-            {'text': text[:200], 'user_id': user_id, 'channel_id': channel_id},
+            'moderation', 'batch_review',
+            {'channel_id': channel_id},
             {'error': str(e)}, 'error', elapsed,
-            community_id=community_id, user_id=user_id
+            community_id=community_id
         )
+        raise self.retry(exc=e)
+
+
+@celery_app.task(name='tasks.agent_tasks.flush_moderation_buffers')
+def flush_moderation_buffers():
+    """
+    Periodic task (runs every 30s via Celery Beat).
+    Finds channel buffers that have timed out and dispatches batch tasks.
+    """
+    try:
+        from agents.moderation import ModerationAgent
+        agent = ModerationAgent()
+        stale_channels = agent.get_stale_channels()
+        
+        if not stale_channels:
+            return {'flushed': 0}
+        
+        print(f"[BATCH_MOD] Flushing {len(stale_channels)} stale buffers")
+        
+        for channel_id in stale_channels:
+            community_id = _get_community_for_channel(channel_id)
+            if community_id:
+                # Check if moderation agent is installed
+                if _is_agent_installed(community_id, 'moderation'):
+                    batch_moderation_task.delay(channel_id, community_id)
+        
+        return {'flushed': len(stale_channels)}
+    except Exception as e:
+        print(f"[BATCH_MOD] Flush error: {e}")
+        return {'error': str(e)}
+
+
+def _emit_moderation_event(sio, final_action, room, channel_id, community_id,
+                           msg_id, user_id, username, severity, reasons,
+                           explanation, violation_count, user_message):
+    """Helper to emit retroactive moderation socket events."""
+    try:
+        if final_action == 'remove_user':
+            # Remove user from community (3rd strike)
+            community_data = None
+            try:
+                rm_conn = get_db_connection()
+                with rm_conn.cursor() as rm_cur:
+                    rm_cur.execute("SELECT name, logo_url, color, icon FROM communities WHERE id = %s", (community_id,))
+                    community_data = rm_cur.fetchone()
+                    rm_cur.execute("INSERT IGNORE INTO blocked_users (community_id, user_id) VALUES (%s, %s)", (community_id, user_id))
+                    rm_cur.execute("DELETE FROM channel_members WHERE user_id = %s AND channel_id IN (SELECT id FROM channels WHERE community_id = %s)", (user_id, community_id))
+                    rm_cur.execute("DELETE FROM community_members WHERE community_id = %s AND user_id = %s", (community_id, user_id))
+                rm_conn.commit()
+                rm_conn.close()
+            except Exception as rm_err:
+                print(f"[BATCH_MOD] Remove user DB error: {rm_err}")
+            
+            sio.emit('moderation_retroactive', {
+                'message_id': msg_id, 'channel_id': channel_id,
+                'user_id': user_id, 'username': username,
+                'action': 'remove_user', 'severity': 'high',
+                'reasons': reasons, 'explanation': explanation,
+                'violation_count': violation_count, 'max_violations': 3,
+                'banner_text': user_message,
+                'timestamp': datetime.utcnow().isoformat()
+            }, room=room, namespace='/')
+            
+            sio.emit('moderation_user_removed', {
+                'user_id': user_id, 'username': username,
+                'channel_id': channel_id, 'community_id': community_id,
+                'reason': f'Removed for repeated violations: {", ".join(reasons)} (3 strikes)',
+                'removed_by': 'AuraFlow Moderation Agent',
+                'violation_count': violation_count,
+                'timestamp': datetime.utcnow().isoformat()
+            }, room=room, namespace='/')
+            
+            sio.emit('community:removed', {
+                'community_id': community_id, 'user_id': user_id,
+                'reason': 'violation',
+                'message': 'You were removed from this community for repeated violations (3 strikes).',
+                'notification': {
+                    'community_name': community_data['name'] if community_data else 'Community',
+                    'community_logo': community_data.get('logo_url') if community_data else None,
+                    'community_color': community_data.get('color') if community_data else '#8B5CF6',
+                    'community_icon': community_data.get('icon') if community_data else 'AF'
+                }
+            }, room=f"user_{user_id}", namespace='/')
+        
+        else:
+            # warn or flag
+            sio.emit('moderation_retroactive', {
+                'message_id': msg_id, 'channel_id': channel_id,
+                'user_id': user_id, 'username': username,
+                'action': final_action, 'severity': severity,
+                'reasons': reasons, 'explanation': explanation,
+                'violation_count': violation_count, 'max_violations': 3,
+                'banner_text': user_message,
+                'timestamp': datetime.utcnow().isoformat()
+            }, room=room, namespace='/')
+        
+        # Notify community owners
+        sio.emit('moderation_action_logged', {
+            'community_id': community_id, 'channel_id': channel_id,
+            'action': final_action, 'severity': severity,
+            'timestamp': datetime.utcnow().isoformat()
+        }, room=f"community_{community_id}", namespace='/')
+        
+    except Exception as emit_err:
+        print(f"[BATCH_MOD] Socket emit failed: {emit_err}")
+
+
+# Legacy single-message Gemini review (kept for backward compat)
+@celery_app.task(name='tasks.agent_tasks.gemini_review_task', bind=True, max_retries=1, rate_limit='30/m')
+def gemini_review_task(self, text, message_id, user_id, channel_id, community_id,
+                       username, keyword_scores, keyword_reasons):
+    """Legacy single-message Gemini review. Use batch_moderation_task instead."""
+    start = time.time()
+    try:
+        from agents.moderation import ModerationAgent
+        agent = ModerationAgent()
+        verdict = agent.gemini_review(
+            text=text, message_id=message_id, user_id=user_id,
+            channel_id=channel_id, keyword_scores=keyword_scores or {},
+            keyword_reasons=keyword_reasons or []
+        )
+        elapsed = time.time() - start
+        if verdict is None:
+            return {'status': 'cleared', 'message_id': message_id}
+        
+        action = verdict['action']
+        severity = verdict['severity']
+        reasons = verdict['reasons']
+        explanation = verdict.get('explanation', '')
+        
+        from flask_socketio import SocketIO as FlaskSocketIO
+        REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+        sio = FlaskSocketIO(message_queue=REDIS_URL)
+        room = f"channel_{channel_id}"
+        
+        _emit_moderation_event(
+            sio, action, room, channel_id, community_id,
+            message_id, user_id, username, severity, reasons,
+            explanation, 0, f'@{username}, this message was flagged by AI review.'
+        )
+        
+        return {'status': 'actioned', 'action': action, 'message_id': message_id}
+    except Exception as e:
+        print(f"[GEMINI_REVIEW] Error: {e}")
         raise self.retry(exc=e)
 
 
@@ -924,6 +1167,18 @@ def check_user_summary_schedules(self):
                                         print(f"[USER_SCHEDULES] 📲 Web push sent for user {schedule['user_id']}")
                                 except Exception as push_err:
                                     print(f"[USER_SCHEDULES] Web push failed (non-critical): {push_err}")
+
+                                # Queue batched email notification for summary ready
+                                try:
+                                    from services.email_batch_service import queue_email_notification
+                                    queue_email_notification(schedule['user_id'], 'summary_ready', {
+                                        'sender_name': 'AuraFlow',
+                                        'preview': f"Your scheduled summary ({msg_count} messages) for #{schedule['channel_name']} is ready.",
+                                        'community_name': schedule.get('community_name', ''),
+                                        'channel_name': schedule.get('channel_name', ''),
+                                    })
+                                except Exception as email_err:
+                                    print(f"[USER_SCHEDULES] Email batch queue failed (non-critical): {email_err}")
                         except Exception as notif_err:
                             print(f"[USER_SCHEDULES] Notification failed: {notif_err}")
                     finally:

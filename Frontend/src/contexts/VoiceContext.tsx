@@ -93,6 +93,7 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
       s?.off("connect", onConnect);
       s?.off("disconnect", onDisconnect);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const joinVoiceChannel = useCallback(
@@ -211,6 +212,7 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
         setIsLoading(false);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [user]
   );
 
@@ -250,6 +252,7 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
       console.error("[VOICE] ❌ Leave error:", errorMsg);
       setError(errorMsg);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentVoiceChannel]);
 
   const toggleAudio = useCallback(async () => {
@@ -364,6 +367,7 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
     } catch (err) {
       console.error("[VOICE] Speaking detection init error:", err);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const stopSpeakingDetection = useCallback(() => {

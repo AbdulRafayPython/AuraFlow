@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import authService from "@/services/authService";
 import { useAuth } from "@/contexts/AuthContext";
 import AuthPage from "./AuthPage";
+import type { User } from "@/types";
 
 // Define the expected shape from /api/me (matches backend response)
 interface MeResponse {
@@ -65,13 +66,19 @@ export default function AuthPageWrapper() {
     if (token) {
       syncUserFromServer();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [syncUserFromServer]);
 
-  const handleAuth = async () => {
-    // After login/signup, sync fresh data then always navigate to home
-    await syncUserFromServer();
-    navigate('/', { replace: true });
+  const handleAuth = async (user?: User) => {
+    // If user data was passed from login response, use it directly (no extra /api/me call)
+    if (user) {
+      setUser(user);
+      setIsAuthenticated(true);
+      navigate('/', { replace: true });
+    } else {
+      // Fallback for signup or cases without user data
+      await syncUserFromServer();
+      navigate('/', { replace: true });
+    }
   };
 
   return <AuthPage onAuth={handleAuth} />;

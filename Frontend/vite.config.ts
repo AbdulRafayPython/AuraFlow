@@ -8,6 +8,32 @@ export default defineConfig(async ({ mode }) => {
   return {
     build: {
       sourcemap: false,
+      chunkSizeWarningLimit: 1000,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            // React core
+            "vendor-react": ["react", "react-dom", "react-router-dom"],
+            // UI primitives (Radix + shadcn)
+            "vendor-ui": [
+              "@radix-ui/react-dialog",
+              "@radix-ui/react-dropdown-menu",
+              "@radix-ui/react-tooltip",
+              "@radix-ui/react-tabs",
+              "@radix-ui/react-select",
+              "@radix-ui/react-popover",
+              "@radix-ui/react-avatar",
+              "@radix-ui/react-scroll-area",
+            ],
+            // Charts (recharts is large)
+            "vendor-charts": ["recharts"],
+            // Real-time / WebRTC
+            "vendor-realtime": ["socket.io-client"],
+            // Utilities
+            "vendor-utils": ["axios", "date-fns", "clsx", "class-variance-authority", "tailwind-merge"],
+          },
+        },
+      },
     },
     server: {
       host: "localhost",

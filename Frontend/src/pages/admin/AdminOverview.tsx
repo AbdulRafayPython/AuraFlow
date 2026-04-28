@@ -263,6 +263,7 @@ export default function AdminOverview() {
     // Auto-refresh every 30 seconds
     const interval = setInterval(() => fetchData(), 30000);
     return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCommunity?.id]);
 
   const quickActions = [

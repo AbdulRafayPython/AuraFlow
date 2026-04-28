@@ -192,6 +192,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     callWebrtcService.addLocalTracks();
 
     return stream;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDurationTimer, goIdle]);
 
   // ── Initiate call (caller) ────────────────────────────────────────
@@ -296,6 +297,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       s?.off('connect', onConnect);
       s?.off('disconnect', onDisconnect);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Socket event listeners ────────────────────────────────────────
@@ -440,6 +442,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       handleBeforeUnload();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

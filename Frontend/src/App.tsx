@@ -67,6 +67,8 @@ const SysEngagementAnalytics = lazy(() => import('./pages/system-admin').then(m 
 const SysReports = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysReports })));
 const SysCommunityManagement = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysCommunityManagement })));
 const SysAIAgentsManagement = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysAIAgentsManagement })));
+const SysPlatformSettings = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysPlatformSettings })));
+const SysAuditLogs = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysAuditLogs })));
 
 function ErrorFallback({ error, resetErrorBoundary }: { error: Error; resetErrorBoundary: () => void }) {
   return (
@@ -229,6 +231,8 @@ export default function App() {
                                 <Route path="mood" element={<SysMoodTrends />} />
                               </Route>
                               <Route path="reports" element={<SysReports />} />
+                              <Route path="audit-logs" element={<SysAuditLogs />} />
+                              <Route path="settings" element={<SysPlatformSettings />} />
                             </Route>
                             {/* Community Admin Dashboard Routes (wrapped with CommunityDashboardProvider) */}
                             <Route path="/admin" element={

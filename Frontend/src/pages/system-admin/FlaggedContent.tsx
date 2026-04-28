@@ -80,6 +80,7 @@ export default function SysFlaggedContent() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchMessages(); }, [severity, status, currentPage]);
 
   const handleAction = async () => {

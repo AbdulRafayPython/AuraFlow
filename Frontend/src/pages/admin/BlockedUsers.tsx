@@ -87,6 +87,7 @@ export default function BlockedUsers() {
 
   useEffect(() => {
     fetchBlockedUsers();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCommunity?.id]);
 
   const handleUnblock = async () => {

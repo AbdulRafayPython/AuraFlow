@@ -136,6 +136,7 @@ const SearchModal: React.FC<SearchModalProps> = ({
     } else if (e.key === 'Escape') {
       onClose();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [results, selectedIndex, recentSearches, query, onClose]);
 
   // Scroll selected item into view

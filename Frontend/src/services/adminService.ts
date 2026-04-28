@@ -859,6 +859,51 @@ class AdminService {
       throw new Error(error.data?.error || 'Failed to remove member');
     }
   }
+
+  // ==================
+  // AUDIT LOGS
+  // ==================
+
+  async getAuditLogs(params: {
+    action_type?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<any> {
+    try {
+      const query = new URLSearchParams();
+      if (params.action_type) query.set('action_type', params.action_type);
+      if (params.search) query.set('search', params.search);
+      if (params.limit) query.set('limit', String(params.limit));
+      if (params.offset !== undefined) query.set('offset', String(params.offset));
+      const res = await api.get(`/api/admin/system/audit-logs?${query.toString()}`);
+      return res;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch audit logs');
+    }
+  }
+
+  // ==================
+  // PLATFORM SETTINGS
+  // ==================
+
+  async getPlatformSettings(): Promise<any> {
+    try {
+      const res = await api.get('/api/admin/system/platform-settings');
+      return res;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch platform settings');
+    }
+  }
+
+  async updatePlatformSettings(settings: Record<string, any>): Promise<any> {
+    try {
+      const res = await api.put('/api/admin/system/platform-settings', settings);
+      return res;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to update platform settings');
+    }
+  }
 }
 
 export const adminService = new AdminService();

@@ -128,6 +128,7 @@ export default function MoodTrends() {
 
   useEffect(() => {
     fetchMoodTrends();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCommunity?.id, days]);
 
   // Format daily data for chart

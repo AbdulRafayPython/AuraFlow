@@ -78,6 +78,7 @@ export function CommunityDashboardProvider({ children }: { children: React.React
     } finally {
       setIsLoadingCommunities(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, user]);
 
   // Load communities on mount

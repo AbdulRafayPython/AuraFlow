@@ -3,6 +3,7 @@ from flask import jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
 from werkzeug.utils import secure_filename
+from utils import get_user_id
 import os
 import uuid
 from PIL import Image
@@ -56,11 +57,9 @@ def get_communities():
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             cur.execute("""
                 SELECT 
@@ -118,11 +117,9 @@ def get_community_channels(community_id):
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Check membership
             cur.execute("SELECT 1 FROM community_members WHERE community_id = %s AND user_id = %s",
@@ -177,11 +174,9 @@ def create_channel(community_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user info
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Check permissions
             cur.execute("SELECT role FROM community_members WHERE community_id = %s AND user_id = %s",
@@ -255,11 +250,9 @@ def join_channel(channel_id):
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             cur.execute("SELECT community_id FROM channels WHERE id = %s", (channel_id,))
             channel = cur.fetchone()
@@ -304,11 +297,9 @@ def leave_channel(channel_id):
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             cur.execute("""
                 DELETE FROM channel_members 
@@ -341,11 +332,9 @@ def get_friends():
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             cur.execute("""
                 SELECT DISTINCT u.id, u.username, u.display_name, u.avatar_url, 
@@ -404,11 +393,9 @@ def create_community():
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # 1. Create community
             cur.execute("""
@@ -474,11 +461,9 @@ def delete_channel(channel_id):
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             cur.execute("SELECT community_id FROM channels WHERE id = %s", (channel_id,))
             channel = cur.fetchone()
@@ -521,11 +506,9 @@ def update_community(community_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # Check permissions (only owner/admin can update)
             cur.execute("""
@@ -607,11 +590,9 @@ def get_community(community_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # Check membership
             cur.execute("""
@@ -698,11 +679,9 @@ def upload_community_logo(community_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # Check permissions (only owner/admin can upload)
             cur.execute("""
@@ -805,11 +784,9 @@ def upload_community_banner(community_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # Check permissions (only owner/admin can upload)
             cur.execute("""
@@ -894,11 +871,9 @@ def remove_community_logo(community_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # Check permissions (only owner/admin can remove)
             cur.execute("""
@@ -959,11 +934,9 @@ def remove_community_banner(community_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
             
             # Check permissions (only owner/admin can remove)
             cur.execute("""
@@ -1040,11 +1013,9 @@ def search_users():
         
         with conn.cursor() as cur:
             # Get current user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            current_user_id = get_user_id(username, cur)
+            if current_user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            current_user_id = user_row['id']
 
             # Search by username (fuzzy) or email (exact)
             search_pattern = f"%{query}%"
@@ -1114,11 +1085,9 @@ def get_community_members():
         
         with conn.cursor() as cur:
             # Get current user
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Check if user is a member of the community
             cur.execute("""
@@ -1208,11 +1177,9 @@ def add_community_member():
         
         with conn.cursor() as cur:
             # Get current user
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            current_user_id = get_user_id(username, cur)
+            if current_user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            current_user_id = user_row['id']
 
             # Check if current user has permission (admin or owner)
             cur.execute("""
@@ -1323,11 +1290,9 @@ def update_channel(channel_id):
         
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Get channel and community
             cur.execute("""
@@ -1423,11 +1388,9 @@ def delete_community(community_id):
         
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Check if user is owner
             cur.execute("""
@@ -1504,11 +1467,9 @@ def leave_community(community_id):
         
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Check membership
             cur.execute("""
@@ -1597,11 +1558,9 @@ def discover_communities():
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Build search query
             search_condition = ""
@@ -1618,9 +1577,9 @@ def discover_communities():
                     c.id, c.name, c.description, c.icon, c.color, 
                     c.logo_url, c.banner_url, c.created_at,
                     COUNT(DISTINCT cm.user_id) as member_count,
-                    u.username as creator_username,
-                    u.display_name as creator_name,
-                    u.avatar_url as creator_avatar
+                    ANY_VALUE(u.username) as creator_username,
+                    ANY_VALUE(u.display_name) as creator_name,
+                    ANY_VALUE(u.avatar_url) as creator_avatar
                 FROM communities c
                 LEFT JOIN community_members cm ON c.id = cm.community_id
                 LEFT JOIN users u ON c.created_by = u.id
@@ -1686,11 +1645,9 @@ def join_community(community_id):
         
         with conn.cursor() as cur:
             # Get user ID
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cur.fetchone()
-            if not user_row:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user_row['id']
 
             # Check if community exists
             cur.execute("SELECT id, name FROM communities WHERE id = %s", (community_id,))
@@ -1759,3 +1716,4 @@ def join_community(community_id):
     finally:
         if conn:
             conn.close()
+

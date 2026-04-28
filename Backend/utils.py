@@ -1,7 +1,6 @@
 # utils.py - Helper functions for AuraFlow backend
+# NOTE: The active utils package is utils/__init__.py — this file is superseded by the package.
 from flask import request
-
-def get_avatar_url(username, custom_url=None):
     """
     Generate a working avatar URL for a user.
     

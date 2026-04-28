@@ -2,7 +2,7 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
-from utils import get_avatar_url
+from utils import get_avatar_url, get_user_id
 import logging
 
 log = logging.getLogger(__name__)
@@ -41,11 +41,9 @@ def search_messages():
         conn = get_db_connection()
 
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
-            user_id = user['id']
 
             results = []
             total_count = 0
@@ -241,9 +239,8 @@ def get_message_context(message_id):
         username = get_jwt_identity()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            if not user:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
 
             # Get target message
@@ -255,7 +252,7 @@ def get_message_context(message_id):
             # Verify access
             cur.execute(
                 "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
-                (target['channel_id'], user['id'])
+                (target['channel_id'], user_id)
             )
             if not cur.fetchone():
                 return jsonify({'error': 'Access denied'}), 403

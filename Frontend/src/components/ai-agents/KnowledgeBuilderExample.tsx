@@ -152,6 +152,7 @@ export const KnowledgeBuilderPanel: React.FC<KnowledgeBuilderPanelProps> = ({
   // Load stats on mount
   useEffect(() => {
     loadStats();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
 
   const loadStats = async () => {

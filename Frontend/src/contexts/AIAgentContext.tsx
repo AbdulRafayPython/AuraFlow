@@ -106,6 +106,7 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
     if (user) {
       checkAgentStatus();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const checkAgentStatus = useCallback(async () => {

@@ -49,7 +49,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const [userStatuses, setUserStatuses] = useState<Map<string, 'online' | 'idle' | 'dnd' | 'offline'>>(new Map());
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const [isLoadingCommunities, setIsLoadingCommunities] = useState(false);
+  const [isLoadingCommunities, setIsLoadingCommunities] = useState(() => {
+    // If we have cached communities, skip the loading screen
+    const cached = localStorage.getItem('cached_communities');
+    return !cached && !!localStorage.getItem('token');
+  });
   const [isLoadingFriends, setIsLoadingFriends] = useState(false);
   const [messageOffset, setMessageOffset] = useState(0);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -86,17 +90,31 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
   // FIXED: Load functions wrapped in useCallback to prevent unnecessary re-runs
   const loadCommunities = useCallback(async () => {
-    setIsLoadingCommunities(true);
+    // Serve cached data instantly to avoid blocking the loading screen
+    const cached = localStorage.getItem('cached_communities');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as Community[];
+        setCommunities(parsed);
+        setIsLoadingCommunities(false);
+      } catch {
+        // ignore parse error, fall through to fetch
+      }
+    } else {
+      setIsLoadingCommunities(true);
+    }
     try {
       const data = await channelService.getCommunities();
       console.log('[REALTIME] Loaded communities:', data);
       console.log('[REALTIME] Community roles:', data.map(c => ({ id: c.id, name: c.name, role: c.role })));
       setCommunities(data);
+      localStorage.setItem('cached_communities', JSON.stringify(data));
     } catch (error) {
       console.error('[REALTIME] Failed to load communities:', error);
     } finally {
       setIsLoadingCommunities(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCommunity]);
 
   const loadChannels = useCallback(async (communityId: number) => {
@@ -485,6 +503,28 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       window.dispatchEvent(new CustomEvent('summary_result', { detail: data }));
     });
 
+    // Moderation retroactive — Gemini reviewed a message async and found a violation
+    const unsubscribeModerationRetroactive = socketService.onModerationRetroactive((data) => {
+      console.log('[REALTIME] 🤖 Gemini retroactive moderation for msg:', data.message_id, data.action);
+      setMessages(prev => prev.map(m => 
+        m.id === data.message_id 
+          ? { 
+              ...m, 
+              moderation: {
+                ...m.moderation,
+                action: data.action,
+                severity: data.severity,
+                reasons: data.reasons,
+                explanation: data.explanation,
+                violation_count: data.violation_count,
+                message: data.banner_text,
+                pending_ai_review: false
+              }
+            }
+          : m
+      ));
+    });
+
     return () => {
       console.log('[REALTIME] Cleaning up socket connection');
       clearInterval(checkConnection);
@@ -501,12 +541,15 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       unsubscribeCommandResult();
       unsubscribeSummaryGenerating();
       unsubscribeSummaryResult();
+      unsubscribeModerationRetroactive();
 
       typingTimeoutRefs.current.forEach(timeout => clearTimeout(timeout));
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       typingTimeoutRefs.current.clear();
 
       socketService.disconnect();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, user]); // Re-run when auth state changes
 
   // Connection status polling
@@ -549,6 +592,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       console.log('[REALTIME] User completed onboarding, reloading communities');
       loadCommunities();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, user?.is_first_login, loadCommunities]);
 
   // Load channels when community changes

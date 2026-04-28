@@ -59,7 +59,7 @@ class KnowledgeBuilderAgent:
     
     # Ignore short/irrelevant messages (but allow 'yup', 'nice', etc. as they can be answers)
     IGNORE_PATTERNS = [
-        r'^\s*(ok|okay|k|lol|haha|hmm)\s*$',  # Very short noise words only
+        r'^\s*(ok|okay|k|yes|lol|haha|hmm)\s*$',  # Very short noise words only
         r'^[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]+$',  # Only emojis
     ]
     
@@ -298,8 +298,14 @@ class KnowledgeBuilderAgent:
         
         for msg in messages:
             text = msg['text']
+            text_lower = msg['text_lower']
+
+            # Decision-style messages should be handled by _detect_decisions,
+            # not by definition extraction.
+            if any(keyword in text_lower for keyword in self.DECISION_KEYWORDS):
+                continue
             
-            for pattern in self.DEFINITION_PATTERNS:
+            for idx, pattern in enumerate(self.DEFINITION_PATTERNS):
                 match = re.search(pattern, text, re.IGNORECASE)
                 
                 if match:
@@ -310,6 +316,14 @@ class KnowledgeBuilderAgent:
                     
                     # Validate: definition should be substantial (at least 10 chars)
                     # Term can be multiple words (up to 5 words for phrases like "the frontend")
+                    # For the generic "is" pattern, require a stronger explanatory signal
+                    # to reduce false positives from ordinary chat replies.
+                    if idx == 0:
+                        cap_word_count = len(re.findall(r'\b[A-Z][a-zA-Z]+\b', definition))
+                        if cap_word_count < 2:
+                            print(f"[KB V2] ✗ Rejected weak 'is' definition signal")
+                            continue
+
                     if len(definition) >= 10 and len(term.split()) <= 5:
                         print(f"[KB V2] ✓ Valid definition saved")
                         tags = self._extract_tags(term + ' ' + definition)
@@ -388,20 +402,27 @@ class KnowledgeBuilderAgent:
             'with', 'from', 'about', 'what', 'when', 'where', 'which', 'who'
         }
         
-        tags = set()
-        
-        # Extract capitalized words (like Docker, React, API)
-        capitalized = re.findall(r'\b[A-Z][a-zA-Z]+\b', text)
-        tags.update(capitalized)
-        
-        # Extract longer words
-        words = re.findall(r'\b[a-zA-Z]{5,}\b', text.lower())
-        for word in words:
+        ordered_tags = []
+        seen = set()
+
+        def _push(tag):
+            key = tag.lower()
+            if key in seen:
+                return
+            seen.add(key)
+            ordered_tags.append(tag)
+
+        # Extract capitalized words first (like Docker, React, API)
+        for token in re.findall(r'\b[A-Z][a-zA-Z]+\b', text):
+            _push(token)
+
+        # Then add longer lowercase words
+        for word in re.findall(r'\b[a-zA-Z]{5,}\b', text.lower()):
             if word not in STOPWORDS:
-                tags.add(word)
-        
-        # Limit to top 5 tags
-        return ','.join(list(tags)[:5])
+                _push(word)
+
+        # Limit to top 5 tags in deterministic order
+        return ','.join(ordered_tags[:5])
     
     # ========================================
     # DATABASE STORAGE

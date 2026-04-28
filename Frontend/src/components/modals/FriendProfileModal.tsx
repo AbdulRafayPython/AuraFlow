@@ -62,9 +62,9 @@ export default function FriendProfileModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 bg-[hsl(var(--theme-bg-elevated))]">
+      <div className="w-full max-w-md max-h-[90vh] rounded-2xl shadow-2xl overflow-y-auto animate-in fade-in zoom-in-95 duration-200 bg-[hsl(var(--theme-bg-elevated))]">
         {/* Header with Gradient Background */}
-        <div className="relative h-32 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))]">
+        <div className="relative h-24 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))]">
           <button
             onClick={onClose}
             className="absolute top-4 right-4 p-2 rounded-lg bg-black/20 hover:bg-black/40 text-white transition-colors"
@@ -74,25 +74,25 @@ export default function FriendProfileModal({
         </div>
 
         {/* Profile Section */}
-        <div className="px-6 pb-6">
+        <div className="px-6 pb-5">
           {/* Avatar */}
-          <div className="flex justify-center -mt-16 mb-4">
+          <div className="flex justify-center -mt-12 mb-3">
             <div className="relative">
               <img
                 src={getAvatarUrl(friend.avatar_url, friend.username)}
                 alt={friend.display_name}
-                className="w-28 h-28 rounded-full border-4 shadow-lg object-cover border-[hsl(var(--theme-bg-elevated))]"
+                className="w-24 h-24 rounded-full border-4 shadow-lg object-cover border-[hsl(var(--theme-bg-elevated))]"
               />
               <div className={`absolute bottom-2 right-2 w-6 h-6 rounded-full border-3 border-[hsl(var(--theme-bg-elevated))] ${statusColors[friend.status]} shadow-lg`} title={statusLabels[friend.status]} />
             </div>
           </div>
 
           {/* User Info */}
-          <div className="text-center mb-6">
-            <h2 className="text-2xl font-bold mb-1 text-[hsl(var(--theme-text-primary))]">
+          <div className="text-center mb-4">
+            <h2 className="text-xl font-bold mb-1 text-[hsl(var(--theme-text-primary))]">
               {friend.display_name}
             </h2>
-            <p className="text-sm mb-3 text-[hsl(var(--theme-text-muted))]">
+            <p className="text-sm mb-2 text-[hsl(var(--theme-text-muted))]">
               @{friend.username}
             </p>
             <div className="flex items-center justify-center gap-2">
@@ -128,7 +128,7 @@ export default function FriendProfileModal({
           )}
 
           {/* Stats */}
-          <div className="grid grid-cols-3 gap-3 mb-6 py-4 border-y border-[hsl(var(--theme-border-default))]">
+          <div className="grid grid-cols-3 gap-3 mb-4 py-3 border-y border-[hsl(var(--theme-border-default))]">
             <div className="text-center">
               <div className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
                 0

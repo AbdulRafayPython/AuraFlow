@@ -95,6 +95,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
   // Initial load
   useEffect(() => {
     fetchCommunities('', true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Handle search with debounce

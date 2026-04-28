@@ -9,5 +9,7 @@ export { default as SysMoodTrends } from './MoodTrends';
 export { default as SysEngagementAnalytics } from './EngagementAnalytics';
 export { default as SysReports } from './Reports';
 export { default as SysCommunityManagement } from './CommunityManagement';
+export { default as SysPlatformSettings } from './PlatformSettings';
+export { default as SysAuditLogs } from './AuditLogs';
 // Re-export existing system-admin-only pages from community admin folder
 export { default as SysAIAgentsManagement } from '../admin/AIAgentsManagement';
