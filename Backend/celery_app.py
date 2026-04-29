@@ -18,6 +18,7 @@ import os
 import sys
 from celery import Celery
 from celery.schedules import crontab
+from kombu import Exchange, Queue
 from dotenv import load_dotenv
 
 # Ensure Backend/ is on sys.path so 'services', 'tasks', etc. are importable
@@ -78,6 +79,20 @@ celery_app.conf.update(
     },
 )
 
+# ── Queue Definitions ────────────────────────────────────────────────
+# Explicitly declare all queues so the worker always knows what to consume.
+# Without this, omitting -Q on the CLI falls back to the bare 'celery' queue
+# which nothing routes to — causing all tasks to pile up silently.
+_default_exchange = Exchange('default', type='direct')
+celery_app.conf.task_queues = (
+    Queue('default',       _default_exchange, routing_key='default'),
+    Queue('high_priority', Exchange('high_priority', type='direct'), routing_key='high_priority'),
+    Queue('periodic',      Exchange('periodic',      type='direct'), routing_key='periodic'),
+)
+celery_app.conf.task_default_queue    = 'default'
+celery_app.conf.task_default_exchange = 'default'
+celery_app.conf.task_default_routing_key = 'default'
+
 # ── Periodic Tasks (Celery Beat) ─────────────────────────────────────
 celery_app.conf.beat_schedule = {
     'check-community-engagement': {
@@ -121,6 +136,7 @@ celery_app.conf.beat_schedule = {
 celery_app.conf.task_routes = {
     'tasks.agent_tasks.batch_moderation_task': {'queue': 'high_priority'},
     'tasks.agent_tasks.flush_moderation_buffers': {'queue': 'high_priority'},
+    'tasks.agent_tasks.retroactive_scan_task': {'queue': 'high_priority'},  # NEW — v2
     'tasks.agent_tasks.gemini_review_task': {'queue': 'high_priority'},
     'tasks.agent_tasks.track_mood_task': {'queue': 'default'},
     'tasks.agent_tasks.summarize_channel_task': {'queue': 'default'},

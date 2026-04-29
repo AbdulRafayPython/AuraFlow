@@ -359,6 +359,25 @@ class AdminService {
     }
   }
 
+  // NEW — v2
+  async triggerModerationScan(communityId: number, options: { channel_id?: number; hours_back?: number } = {}): Promise<{ task_id: string }> { // NEW — v2
+    try { // NEW — v2
+      const res = await api.post(`/api/admin/community/${communityId}/moderation/scan`, options); // NEW — v2
+      return res.data; // NEW — v2
+    } catch (error: any) { // NEW — v2
+      throw new Error(error.data?.error || 'Failed to start scan'); // NEW — v2
+    } // NEW — v2
+  } // NEW — v2
+
+  async getModerationScanStatus(communityId: number, channelId: number): Promise<{ status: string; scanned: number; total: number; flagged: number; percent: number }> { // NEW — v2
+    try { // NEW — v2
+      const res = await api.get(`/api/admin/community/${communityId}/moderation/scan/status`, { params: { channel_id: channelId } }); // NEW — v2
+      return res.data; // NEW — v2
+    } catch (error: any) { // NEW — v2
+      throw new Error(error.data?.error || 'Failed to get scan status'); // NEW — v2
+    } // NEW — v2
+  } // NEW — v2
+
   // =====================
   // MEMBER MANAGEMENT (Community Scoped)
   // =====================

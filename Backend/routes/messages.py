@@ -19,8 +19,31 @@ import re
 import sys
 import os
 import logging
+import json
 
 log = logging.getLogger(__name__)
+
+
+def _build_moderation(output_data_str, confidence, violation_count=0):
+    """Parse ai_agent_logs.output_data into the moderation dict the frontend expects."""
+    try:
+        data = json.loads(output_data_str) if isinstance(output_data_str, str) else (output_data_str or {})
+    except Exception:
+        return {}
+    action = data.get('action', 'allow')
+    if action == 'allow':
+        return {}
+    return {'moderation': {
+        'action': action,
+        'severity': data.get('severity', 'low'),
+        'reasons': data.get('reasons', []),
+        'confidence': confidence or data.get('confidence', 0),
+        'violation_count': violation_count or 0,
+        'message': None,
+        'explanation': '',
+        'pending_ai_review': False,
+    }}
+
 
 # Moderation agent is used on every message — lazy singleton
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -532,7 +555,7 @@ def get_channel_messages(channel_id):
             if not cached_member:
                 return jsonify({'error': 'Access denied'}), 403
 
-            # Fetch messages with reply-to preview
+            # Fetch messages with reply-to preview and latest moderation verdict
             cur.execute("""
                 SELECT 
                     m.id, m.sender_id, m.content, m.message_type, m.reply_to, m.created_at,
@@ -543,7 +566,9 @@ def get_channel_messages(channel_id):
                     a.file_size AS att_file_size, a.mime_type AS att_mime_type,
                     a.duration AS att_duration,
                     rm.content AS reply_content, rm.message_type AS reply_message_type,
-                    ru.username AS reply_author
+                    ru.username AS reply_author,
+                    ml.output_data AS mod_output, ml.confidence_score AS mod_confidence,
+                    COALESCE(vc.violation_count, 0) AS sender_violation_count
                 FROM messages m
                 JOIN users u ON m.sender_id = u.id
                 JOIN channels ch ON m.channel_id = ch.id
@@ -551,6 +576,28 @@ def get_channel_messages(channel_id):
                 LEFT JOIN attachments a ON a.message_id = m.id
                 LEFT JOIN messages rm ON m.reply_to = rm.id
                 LEFT JOIN users ru ON rm.sender_id = ru.id
+                LEFT JOIN (
+                    SELECT l.user_id, ch2.community_id, COUNT(*) AS violation_count
+                    FROM ai_agent_logs l
+                    JOIN channels ch2 ON ch2.id = l.channel_id
+                    WHERE l.agent_name = 'moderation'
+                      AND l.message_id IS NOT NULL
+                      AND JSON_UNQUOTE(JSON_EXTRACT(l.output_data, '$.action')) NOT IN ('allow')
+                    GROUP BY l.user_id, ch2.community_id
+                ) vc ON vc.user_id = m.sender_id AND vc.community_id = ch.community_id
+                LEFT JOIN (
+                    SELECT message_id,
+                           output_data,
+                           confidence_score
+                    FROM ai_agent_logs
+                    WHERE agent_name = 'moderation'
+                      AND message_id IS NOT NULL
+                      AND id = (
+                          SELECT MAX(id) FROM ai_agent_logs l2
+                          WHERE l2.agent_name = 'moderation'
+                            AND l2.message_id = ai_agent_logs.message_id
+                      )
+                ) ml ON ml.message_id = m.id
                 WHERE m.channel_id = %s
                 ORDER BY m.created_at DESC
                 LIMIT %s OFFSET %s
@@ -583,6 +630,7 @@ def get_channel_messages(channel_id):
                 'author': m['reply_author'],
                 'message_type': m['reply_message_type'],
             }} if m.get('reply_to') and m.get('reply_author') else {}),
+            **(_build_moderation(m['mod_output'], m['mod_confidence'], m.get('sender_violation_count', 0)) if m.get('mod_output') else {}),
         } for m in rows]
         
         # ── Seed Redis cache on first DB fetch (offset=0) ───────────────────

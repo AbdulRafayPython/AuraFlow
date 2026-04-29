@@ -14,6 +14,10 @@ REM   start_celery.bat beat-only    - Start beat scheduler only
 
 cd /d "%~dp0"
 
+REM IMPORTANT: Worker MUST use -Q default,high_priority,periodic
+REM Without -Q, the worker only listens to the bare 'celery' queue and
+REM ALL tasks (moderation, mood, focus, wellness, etc.) will pile up silently.
+
 IF "%1"=="beat-only" (
     echo [CELERY] Starting Celery Beat scheduler...
     "%~dp0venv\Scripts\python.exe" -m celery -A celery_app beat --loglevel=info
@@ -22,9 +26,9 @@ IF "%1"=="beat-only" (
     echo [CELERY] Run: start_celery.bat           (worker)
     echo [CELERY] Run: start_celery.bat beat-only  (beat scheduler)
     echo.
-    echo [CELERY] Starting Celery Worker...
+    echo [CELERY] Starting Celery Worker (queues: default, high_priority, periodic)...
     "%~dp0venv\Scripts\python.exe" -m celery -A celery_app worker --loglevel=info --pool=solo -Q default,high_priority,periodic
 ) ELSE (
-    echo [CELERY] Starting Celery Worker...
+    echo [CELERY] Starting Celery Worker (queues: default, high_priority, periodic)...
     "%~dp0venv\Scripts\python.exe" -m celery -A celery_app worker --loglevel=info --pool=solo -Q default,high_priority,periodic
 )

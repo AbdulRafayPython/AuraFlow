@@ -2113,6 +2113,41 @@
     "bc.vc"
   ],
 
+  "spam_patterns": {
+    "max_duplicates_per_minute": 2,
+    "max_messages_per_10s": 5,
+    "spam_phrases": [
+      "follow for follow", "sub4sub", "like4like",
+      "check my channel", "click my link in bio"
+    ]
+  },
+
+  "scam_patterns": {
+    "crypto_pump": [
+      "guaranteed.*(?:profit|return|roi)",
+      "double your (?:money|bitcoin|crypto|investment)",
+      "(?:free|airdrop).*crypto.*(?:claim|join|now)"
+    ],
+    "phishing": [
+      "(?:verify|confirm|update).*(?:account|password).*(?:click|link|here)",
+      "your account.*(?:suspended|locked|disabled).*click"
+    ],
+    "prize_scam": [
+      "(?:congratulations|you(?:'ve| have) (?:won|been selected))",
+      "claim your (?:prize|reward|gift|voucher)",
+      "lucky (?:winner|draw).*(?:click|dm|message)"
+    ],
+    "urgency_harvest": [
+      "(?:dm|message|contact) me.*(?:urgent|asap|now)",
+      "send me your (?:number|email|password|info|details)"
+    ],
+    "roman_urdu_scam": [
+      "paisa.*double",
+      "sirf.*(?:ek|ik|1).*ghante.*mein.*(?:kamao|earn)",
+      "free.*mobile.*(?:jeetna|jeeto|claim)"
+    ]
+  },
+
   "metadata": {
     "total_profanity_terms": 2847,
     "total_hate_speech_terms": 1523,

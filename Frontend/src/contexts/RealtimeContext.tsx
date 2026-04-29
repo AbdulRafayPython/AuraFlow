@@ -525,6 +525,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       ));
     });
 
+    // NEW — v2: Retroactive scan progress — forward to FlaggedContent via window event
+    const unsubscribeScanProgress = socketService.onModerationScanProgress((data) => { // NEW — v2
+      window.dispatchEvent(new CustomEvent('moderation_scan_progress', { detail: data })); // NEW — v2
+    }); // NEW — v2
+
     return () => {
       console.log('[REALTIME] Cleaning up socket connection');
       clearInterval(checkConnection);
@@ -542,6 +547,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       unsubscribeSummaryGenerating();
       unsubscribeSummaryResult();
       unsubscribeModerationRetroactive();
+      unsubscribeScanProgress(); // NEW — v2
 
       typingTimeoutRefs.current.forEach(timeout => clearTimeout(timeout));
       // eslint-disable-next-line react-hooks/exhaustive-deps

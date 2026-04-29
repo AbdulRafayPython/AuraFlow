@@ -99,6 +99,7 @@ class SocketService {
   private moderationFlagInlineHandlers: ModerationInlineHandler[] = [];
   private moderationUserRemovedHandlers: ModerationInlineHandler[] = [];
   private moderationRetroactiveHandlers: ((data: { message_id: number; channel_id: number; user_id: number; username: string; action: string; severity: string; reasons: string[]; explanation: string; violation_count: number; banner_text: string; timestamp: string }) => void)[] = [];
+  private moderationScanProgressHandlers: ((data: { community_id: number; channel_id: number; status: string; scanned: number; total: number; flagged: number; percent: number }) => void)[] = []; // NEW — v2
   private commandResultHandlers: CommandResultHandler[] = [];
   private unreadUpdateHandlers: UnreadUpdateHandler[] = [];
   private dmUnreadUpdateHandlers: DMUnreadUpdateHandler[] = [];
@@ -332,6 +333,12 @@ class SocketService {
       console.log('[SOCKET] 🤖 Gemini retroactive moderation:', data);
       this.moderationRetroactiveHandlers.forEach(handler => handler(data));
     });
+
+    // NEW — v2: Retroactive scan progress
+    this.socket.on('moderation_scan_progress', (data: any) => { // NEW — v2
+      console.log('[SOCKET] 🔍 Scan progress:', data); // NEW — v2
+      this.moderationScanProgressHandlers.forEach(handler => handler(data)); // NEW — v2
+    }); // NEW — v2
 
     // AI command result event (for chat commands like /summarize)
     this.socket.on('command_result', (data: { type: string; success: boolean; summary?: string; key_points?: string[]; method?: string; error?: string }) => {
@@ -987,6 +994,14 @@ class SocketService {
       this.moderationRetroactiveHandlers = this.moderationRetroactiveHandlers.filter(h => h !== handler);
     };
   }
+
+  // NEW — v2
+  onModerationScanProgress(handler: (data: { community_id: number; channel_id: number; status: string; scanned: number; total: number; flagged: number; percent: number }) => void) { // NEW — v2
+    this.moderationScanProgressHandlers.push(handler); // NEW — v2
+    return () => { // NEW — v2
+      this.moderationScanProgressHandlers = this.moderationScanProgressHandlers.filter(h => h !== handler); // NEW — v2
+    }; // NEW — v2
+  } // NEW — v2
 
   onCommandResult(handler: CommandResultHandler) {
     this.commandResultHandlers.push(handler);

@@ -767,7 +767,7 @@ def register_socket_events(socketio):
 
             instant_result = None
             if moderation_installed and content:
-                instant_result = moderation_agent.instant_check(content)
+                instant_result = moderation_agent.instant_check(content, user_id=user_id, channel_id=channel_id)  # NEW — v2
                 if instant_result.get('block'):
                     final_action = 'block'
 

@@ -18,9 +18,21 @@
 --   (SELECT COUNT(*) FROM community_members WHERE community_id = c.id)
 -- The application now increments/decrements this column on join/leave.
 
-ALTER TABLE communities
-    ADD COLUMN IF NOT EXISTS member_count INT NOT NULL DEFAULT 0
-    COMMENT 'Denormalized count — maintained by application on join/leave';
+-- MySQL-compatible conditional ADD COLUMN (IF NOT EXISTS is MariaDB-only)
+SET @col_exists = (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME   = 'communities'
+      AND COLUMN_NAME  = 'member_count'
+);
+SET @add_col = IF(
+    @col_exists = 0,
+    'ALTER TABLE communities ADD COLUMN member_count INT NOT NULL DEFAULT 0 COMMENT ''Denormalized count — maintained by application on join/leave''',
+    'SELECT 1'
+);
+PREPARE _stmt FROM @add_col;
+EXECUTE _stmt;
+DEALLOCATE PREPARE _stmt;
 
 -- Backfill existing communities so the column is accurate on first deploy.
 UPDATE communities c

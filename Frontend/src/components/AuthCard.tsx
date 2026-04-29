@@ -1157,43 +1157,27 @@ const AuthCard: React.FC<AuthCardProps> = ({ mode, onModeChange, onAuth }) => {
           border: none;
           border-radius: 8px;
           cursor: pointer;
-          transition: all 0.25s ease;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .auth-btn-primary::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
-          opacity: 0;
-          transition: opacity 0.25s ease;
-        }
-
-        .auth-btn-primary:hover::before {
-          opacity: 1;
+          transition: filter 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
         }
 
         .auth-btn-primary:hover {
+          filter: brightness(1.1);
           transform: translateY(-1px);
-          box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+          box-shadow: 0 6px 18px rgba(99, 102, 241, 0.28);
         }
 
         .auth-btn-primary:active {
           transform: translateY(0);
+          filter: brightness(0.97);
+          box-shadow: none;
         }
 
         .auth-btn-primary:disabled {
-          opacity: 0.6;
+          opacity: 0.55;
           cursor: not-allowed;
           transform: none !important;
+          filter: none !important;
           box-shadow: none !important;
-        }
-
-        .auth-btn-primary > * {
-          position: relative;
-          z-index: 1;
         }
 
         .auth-btn-google {

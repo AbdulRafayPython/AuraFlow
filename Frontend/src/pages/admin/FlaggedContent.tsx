@@ -62,9 +62,20 @@ import {
   AlertCircle,
   MessageSquare,
   Clock,
-  Search
+  Search,
+  ScanLine,
+  Loader2
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+
+function timeAgo(dateStr: string): string {
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
 
 type ActionType = 'approve' | 'warn' | 'delete' | 'ban' | 'mute';
 
@@ -99,6 +110,10 @@ export default function FlaggedContent() {
     username: ''
   });
   const [actionNote, setActionNote] = useState('');
+
+  // NEW — v2: retroactive scan state
+  const [scanRunning, setScanRunning] = useState(false); // NEW — v2
+  const [scanProgress, setScanProgress] = useState<{ scanned: number; total: number; flagged: number; percent: number } | null>(null); // NEW — v2
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -136,6 +151,35 @@ export default function FlaggedContent() {
     fetchFlaggedMessages();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCommunity?.id, currentPage, severity, flagType, status]);
+
+  // NEW — v2: listen for scan progress events forwarded by RealtimeContext
+  useEffect(() => { // NEW — v2
+    const handler = (e: Event) => { // NEW — v2
+      const d = (e as CustomEvent).detail; // NEW — v2
+      if (!selectedCommunity || d.community_id !== selectedCommunity.id) return; // NEW — v2
+      setScanProgress({ scanned: d.scanned, total: d.total, flagged: d.flagged, percent: d.percent }); // NEW — v2
+      if (d.status === 'done' || d.status === 'error') { // NEW — v2
+        setScanRunning(false); // NEW — v2
+        if (d.status === 'done') fetchFlaggedMessages(); // refresh list when done  // NEW — v2
+      } // NEW — v2
+    }; // NEW — v2
+    window.addEventListener('moderation_scan_progress', handler); // NEW — v2
+    return () => window.removeEventListener('moderation_scan_progress', handler); // NEW — v2
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCommunity?.id]); // NEW — v2
+
+  // NEW — v2
+  const triggerScan = async () => { // NEW — v2
+    if (!selectedCommunity || scanRunning) return; // NEW — v2
+    setScanRunning(true); // NEW — v2
+    setScanProgress(null); // NEW — v2
+    try { // NEW — v2
+      await adminService.triggerModerationScan(selectedCommunity.id, { hours_back: 48 }); // NEW — v2
+    } catch (err: any) { // NEW — v2
+      toast({ title: 'Scan Failed', description: err.message, variant: 'destructive' }); // NEW — v2
+      setScanRunning(false); // NEW — v2
+    } // NEW — v2
+  }; // NEW — v2
 
   const handleAction = async () => {
     if (!actionDialog.action || !actionDialog.flagId || !selectedCommunity) return;
@@ -238,6 +282,36 @@ export default function FlaggedContent() {
           Refresh
         </Button>
       </div>
+
+      {/* NEW — v2: Retroactive Scan Card */}
+      <Card className="border-dashed border-indigo-500/30 bg-indigo-500/5"> {/* NEW — v2 */}
+        <CardContent className="py-4"> {/* NEW — v2 */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"> {/* NEW — v2 */}
+            <div className="flex items-center gap-2"> {/* NEW — v2 */}
+              <ScanLine className="h-5 w-5 text-indigo-400" /> {/* NEW — v2 */}
+              <div> {/* NEW — v2 */}
+                <p className="text-sm font-medium">Retroactive AI Scan</p> {/* NEW — v2 */}
+                <p className="text-xs text-muted-foreground">Re-scan the last 48 h of messages with Gemini AI</p> {/* NEW — v2 */}
+              </div> {/* NEW — v2 */}
+            </div> {/* NEW — v2 */}
+            <Button size="sm" variant="outline" onClick={triggerScan} disabled={scanRunning || !selectedCommunity}> {/* NEW — v2 */}
+              {scanRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanLine className="h-4 w-4 mr-2" />} {/* NEW — v2 */}
+              {scanRunning ? 'Scanning…' : 'Start Scan'} {/* NEW — v2 */}
+            </Button> {/* NEW — v2 */}
+          </div> {/* NEW — v2 */}
+          {scanProgress && ( // NEW — v2
+            <div className="mt-3"> {/* NEW — v2 */}
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-1"> {/* NEW — v2 */}
+                <span>{scanProgress.scanned} / {scanProgress.total} messages scanned</span> {/* NEW — v2 */}
+                <span className="text-orange-400">{scanProgress.flagged} flagged</span> {/* NEW — v2 */}
+              </div> {/* NEW — v2 */}
+              <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden"> {/* NEW — v2 */}
+                <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${scanProgress.percent}%` }} /> {/* NEW — v2 */}
+              </div> {/* NEW — v2 */}
+            </div> // NEW — v2
+          )} {/* NEW — v2 */}
+        </CardContent> {/* NEW — v2 */}
+      </Card> {/* NEW — v2 */}
 
       {/* Filters */}
       <Card>
@@ -384,9 +458,9 @@ export default function FlaggedContent() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground" title={new Date(message.created_at).toLocaleString()}>
                           <Clock className="h-3 w-3" />
-                          {new Date(message.created_at).toLocaleString()}
+                          {timeAgo(message.created_at)}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">

@@ -1201,3 +1201,158 @@ def check_user_summary_schedules(self):
     finally:
         if conn:
             conn.close()
+
+
+# ======================================================================
+# NEW — v2: RETROACTIVE MODERATION SCAN TASK
+# ======================================================================
+
+@celery_app.task(  # NEW — v2
+    name='tasks.agent_tasks.retroactive_scan_task',  # NEW — v2
+    bind=True,  # NEW — v2
+    max_retries=0,  # NEW — v2
+    rate_limit='2/m'  # NEW — v2
+)  # NEW — v2
+def retroactive_scan_task(self, channel_id, community_id, hours_back=48, triggered_by=None):  # NEW — v2
+    """
+    NEW — v2: Scan historical messages not yet reviewed by the moderation agent.
+    channel_id=None scans ALL channels in the community sequentially.
+    Emits moderation_scan_progress socket events to community_<id> room.
+    Violations are emitted as moderation_retroactive (existing frontend handler).
+    """
+    from agents.moderation import ModerationAgent  # NEW — v2
+    from services.redis_client import get_redis  # NEW — v2
+    from flask_socketio import SocketIO as FlaskSocketIO  # NEW — v2
+
+    REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')  # NEW — v2
+    sio = FlaskSocketIO(message_queue=REDIS_URL)  # NEW — v2
+    r = get_redis()  # NEW — v2
+
+    # ── Resolve which channels to scan ───────────────────────────────────
+    channels_to_scan = []  # NEW — v2
+    if channel_id is None:  # NEW — v2
+        conn = None  # NEW — v2
+        try:  # NEW — v2
+            conn = get_db_connection()  # NEW — v2
+            with conn.cursor() as cur:  # NEW — v2
+                cur.execute(  # NEW — v2
+                    "SELECT id FROM channels WHERE community_id = %s",  # NEW — v2
+                    (community_id,)  # NEW — v2
+                )  # NEW — v2
+                channels_to_scan = [row['id'] for row in cur.fetchall()]  # NEW — v2
+        except Exception as e:  # NEW — v2
+            print(f"[RETRO_SCAN_TASK] Failed to list channels for community {community_id}: {e}")  # NEW — v2
+            return {'status': 'error', 'error': str(e)}  # NEW — v2
+        finally:  # NEW — v2
+            if conn:  # NEW — v2
+                conn.close()  # NEW — v2
+    else:  # NEW — v2
+        channels_to_scan = [channel_id]  # NEW — v2
+
+    task_results = []  # NEW — v2
+
+    for ch_id in channels_to_scan:  # NEW — v2
+        scan_key = f'mod:scan:{community_id}:{ch_id}'  # NEW — v2
+
+        # Guard: one scan per channel at a time
+        if r is not None and r.hget(scan_key, 'status') == b'running':  # NEW — v2
+            print(f"[RETRO_SCAN_TASK] Scan already running for channel {ch_id}, skipping")  # NEW — v2
+            task_results.append({'channel_id': ch_id, 'status': 'already_running'})  # NEW — v2
+            continue  # NEW — v2
+
+        # Mark as running
+        if r is not None:  # NEW — v2
+            r.hset(scan_key, mapping={  # NEW — v2
+                'status': 'running',  # NEW — v2
+                'scanned': 0,  # NEW — v2
+                'total': 0,  # NEW — v2
+                'flagged': 0,  # NEW — v2
+                'started_at': datetime.utcnow().isoformat(),  # NEW — v2
+                'triggered_by': str(triggered_by or 'system'),  # NEW — v2
+            })  # NEW — v2
+            r.expire(scan_key, 3600)  # 1h TTL  # NEW — v2
+
+        # Build progress callback — called by retroactive_scan() after each batch
+        _r = r  # capture for closure  # NEW — v2
+        _scan_key = scan_key  # NEW — v2
+        _ch_id = ch_id  # NEW — v2
+
+        def _make_progress_callback(r_ref, key_ref, ch_ref):  # NEW — v2
+            def _cb(scanned, total, flagged):  # NEW — v2
+                if r_ref is not None:  # NEW — v2
+                    r_ref.hset(key_ref, mapping={  # NEW — v2
+                        'scanned': scanned, 'total': total, 'flagged': flagged  # NEW — v2
+                    })  # NEW — v2
+                percent = int(scanned / total * 100) if total > 0 else 0  # NEW — v2
+                try:  # NEW — v2
+                    sio.emit('moderation_scan_progress', {  # NEW — v2
+                        'community_id': community_id,  # NEW — v2
+                        'channel_id': ch_ref,  # NEW — v2
+                        'status': 'running',  # NEW — v2
+                        'scanned': scanned,  # NEW — v2
+                        'total': total,  # NEW — v2
+                        'flagged': flagged,  # NEW — v2
+                        'percent': percent,  # NEW — v2
+                    }, room=f"community_{community_id}", namespace='/')  # NEW — v2
+                except Exception as emit_err:  # NEW — v2
+                    print(f"[RETRO_SCAN_TASK] Progress emit error: {emit_err}")  # NEW — v2
+            return _cb  # NEW — v2
+
+        progress_callback = _make_progress_callback(_r, _scan_key, _ch_id)  # NEW — v2
+
+        agent = ModerationAgent()  # NEW — v2
+        try:  # NEW — v2
+            result = agent.retroactive_scan(  # NEW — v2
+                channel_id=ch_id,  # NEW — v2
+                community_id=community_id,  # NEW — v2
+                hours_back=hours_back,  # NEW — v2
+                batch_size=10,  # NEW — v2
+                progress_callback=progress_callback,  # NEW — v2
+            )  # NEW — v2
+
+            # Mark as done
+            if r is not None:  # NEW — v2
+                r.hset(scan_key, mapping={  # NEW — v2
+                    'status': 'done',  # NEW — v2
+                    'scanned': result.get('scanned', 0),  # NEW — v2
+                    'total': result.get('scanned', 0),  # NEW — v2
+                    'flagged': result.get('flagged', 0),  # NEW — v2
+                    'finished_at': datetime.utcnow().isoformat(),  # NEW — v2
+                })  # NEW — v2
+                r.expire(scan_key, 3600)  # reset TTL  # NEW — v2
+
+            # Emit final progress event
+            try:  # NEW — v2
+                sio.emit('moderation_scan_progress', {  # NEW — v2
+                    'community_id': community_id,  # NEW — v2
+                    'channel_id': ch_id,  # NEW — v2
+                    'status': 'done',  # NEW — v2
+                    'scanned': result.get('scanned', 0),  # NEW — v2
+                    'total': result.get('scanned', 0),  # NEW — v2
+                    'flagged': result.get('flagged', 0),  # NEW — v2
+                    'percent': 100,  # NEW — v2
+                }, room=f"community_{community_id}", namespace='/')  # NEW — v2
+            except Exception:  # NEW — v2
+                pass  # non-critical  # NEW — v2
+
+            task_results.append({'channel_id': ch_id, 'status': 'done', **result})  # NEW — v2
+            print(  # NEW — v2
+                f"[RETRO_SCAN_TASK] Channel {ch_id}: "  # NEW — v2
+                f"scanned={result.get('scanned')}, "  # NEW — v2
+                f"flagged={result.get('flagged')}, "  # NEW — v2
+                f"errors={result.get('errors')}"  # NEW — v2
+            )  # NEW — v2
+
+        except Exception as e:  # NEW — v2
+            print(f"[RETRO_SCAN_TASK] Error scanning channel {ch_id}: {e}")  # NEW — v2
+            traceback.print_exc()  # NEW — v2
+            if r is not None:  # NEW — v2
+                r.hset(scan_key, mapping={  # NEW — v2
+                    'status': 'error',  # NEW — v2
+                    'error': str(e)[:200],  # NEW — v2
+                    'finished_at': datetime.utcnow().isoformat(),  # NEW — v2
+                })  # NEW — v2
+                r.expire(scan_key, 3600)  # NEW — v2
+            task_results.append({'channel_id': ch_id, 'status': 'error', 'error': str(e)})  # NEW — v2
+
+    return {'channels': task_results}  # NEW — v2
