@@ -1,6 +1,6 @@
 Flask
 Flask-JWT-Extended
-Flask-Cors
+Flask-Cors==4.0.1
 Flask-Compress
 python-dotenv
 PyMySQL

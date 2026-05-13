@@ -85,7 +85,7 @@ else:
     # if '*', already wide open
 
 CORS(app,
-     origins=_ALLOWED_ORIGINS,
+     resources={r"/*": {"origins": _ALLOWED_ORIGINS}},
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization", "ngrok-skip-browser-warning"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
