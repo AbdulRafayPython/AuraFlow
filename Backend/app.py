@@ -63,25 +63,29 @@ Compress(app)
 
 # CORS Configuration — restrict origins in production
 import config as _cfg
-_ALLOWED_ORIGINS = [
-    o.strip() for o in os.getenv('ALLOWED_ORIGINS', '').split(',') if o.strip()
-] or (
-    [_cfg.FRONTEND_URL] if _cfg.FRONTEND_URL else ["*"]
-)
+_raw_origins = os.getenv('ALLOWED_ORIGINS', '').strip()
+if _raw_origins == '*':
+    _ALLOWED_ORIGINS = '*'
+elif _raw_origins:
+    _ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(',') if o.strip()]
+else:
+    _ALLOWED_ORIGINS = [_cfg.FRONTEND_URL] if _cfg.FRONTEND_URL else '*'
+
 if not _cfg.IS_PRODUCTION:
-    _ALLOWED_ORIGINS = "*"  # Allow all in development
+    _ALLOWED_ORIGINS = '*'  # Allow all in development
 else:
     # Always include known Vercel deployment URLs
-    _extra = ["https://auraflow-ai.vercel.app"]
+    _vercel_origins = [
+        "https://auraflow-ai.vercel.app",
+    ]
     if isinstance(_ALLOWED_ORIGINS, list):
-        for _u in _extra:
+        for _u in _vercel_origins:
             if _u not in _ALLOWED_ORIGINS:
                 _ALLOWED_ORIGINS.append(_u)
-    elif _ALLOWED_ORIGINS == "*":
-        pass  # already wide open
+    # if '*', already wide open
 
-CORS(app, 
-     resources={r"/*": {"origins": _ALLOWED_ORIGINS}},
+CORS(app,
+     origins=_ALLOWED_ORIGINS,
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization", "ngrok-skip-browser-warning"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
