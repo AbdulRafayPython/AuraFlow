@@ -948,14 +948,30 @@ def register_socket_events(socketio):
             final_action = 'allow'
             if community_id:
                 try:
-                    chk_conn = get_db_connection()
-                    with chk_conn.cursor() as chk_cur:
-                        chk_cur.execute("""
-                            SELECT 1 FROM community_agents
-                            WHERE community_id = %s AND agent_type = 'moderation' AND enabled = TRUE
-                        """, (community_id,))
-                        moderation_installed = chk_cur.fetchone() is not None
-                    chk_conn.close()
+                    # Cache moderation_installed in Redis for 60s to avoid a DB query per message
+                    _mod_cache_key = f'mod:installed:{community_id}'
+                    try:
+                        from services.redis_client import get_redis as _get_redis
+                        _r = _get_redis()
+                        _cached = _r.get(_mod_cache_key) if _r else None
+                        if _cached is not None:
+                            moderation_installed = _cached == b'1' or _cached == '1'
+                        else:
+                            with conn.cursor() as chk_cur:
+                                chk_cur.execute("""
+                                    SELECT 1 FROM community_agents
+                                    WHERE community_id = %s AND agent_type = 'moderation' AND enabled = TRUE
+                                """, (community_id,))
+                                moderation_installed = chk_cur.fetchone() is not None
+                            if _r:
+                                _r.set(_mod_cache_key, '1' if moderation_installed else '0', ex=60)
+                    except Exception:
+                        with conn.cursor() as chk_cur:
+                            chk_cur.execute("""
+                                SELECT 1 FROM community_agents
+                                WHERE community_id = %s AND agent_type = 'moderation' AND enabled = TRUE
+                            """, (community_id,))
+                            moderation_installed = chk_cur.fetchone() is not None
                 except Exception:
                     moderation_installed = True
 
@@ -1083,21 +1099,20 @@ def register_socket_events(socketio):
                 except Exception as e:
                     log.debug(f"[AGENT_DISPATCH] Mood task skipped: {e}")
 
-                # Focus analysis — community agent (every 50th message in past hour)
+                # Focus analysis — every 10 messages, count tracked in Redis (no DB query)
                 try:
                     from tasks.agent_tasks import analyze_focus_task
-                    focus_conn = get_db_connection()
-                    try:
-                        with focus_conn.cursor() as fc:
-                            fc.execute("""
-                                SELECT COUNT(*) as cnt FROM messages
-                                WHERE channel_id = %s AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
-                            """, (channel_id,))
-                            msg_count = fc.fetchone()['cnt']
-                        if msg_count > 0 and msg_count % 50 == 0:
+                    from services.redis_client import get_redis as _get_redis
+                    _r2 = _get_redis()
+                    if _r2:
+                        _focus_key = f'focus:count:{channel_id}'
+                        _cnt = _r2.incr(_focus_key)
+                        if _cnt == 1:
+                            _r2.expire(_focus_key, 3600)
+                        if _cnt % 10 == 0:
                             analyze_focus_task.delay(channel_id, community_id)
-                    finally:
-                        focus_conn.close()
+                    else:
+                        analyze_focus_task.delay(channel_id, community_id)
                 except Exception as e:
                     log.debug(f"[AGENT_DISPATCH] Focus task skipped: {e}")
 

@@ -13,9 +13,9 @@ DB_SSL = os.getenv('DB_SSL', 'true' if (DB_HOST or '').endswith('tidbcloud.com')
 # Build connection kwargs
 _pool_kwargs = dict(
     creator=pymysql,
-    maxconnections=15,       # TiDB Serverless free tier caps at 25 connections; stay under
-    mincached=1,             # keep 1 idle connection ready
-    maxcached=5,             # cap idle pool size
+    maxconnections=25,       # TiDB Serverless free tier allows 25; use all of them
+    mincached=2,             # keep 2 idle connections warm
+    maxcached=8,             # cap idle pool size
     blocking=True,           # block rather than error when pool exhausted
     maxusage=500,            # recycle connection after 500 uses
     setsession=[],           # no per-session SQL
