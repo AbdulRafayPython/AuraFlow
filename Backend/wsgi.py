@@ -1,32 +1,17 @@
 # Production WSGI entry point
-# 1. Monkey-patch gevent first
+# Must monkey-patch gevent BEFORE importing app (Flask, DBUtils, etc.)
 from gevent import monkey
 monkey.patch_all()
 
 import os
 import sys
 
-port = int(os.environ.get('PORT', 10000))
-
-# 2. Bind and start accepting on the port IMMEDIATELY
-#    This satisfies Render's port scanner while the heavy app loads
-from gevent.pywsgi import WSGIServer
-
-def _loading_app(environ, start_response):
-    """Temporary app that responds while the real app loads."""
-    start_response('200 OK', [('Content-Type', 'text/plain')])
-    return [b'AuroFlow is starting...']
-
-server = WSGIServer(('0.0.0.0', port), _loading_app, log=None)
-server.start()  # Non-blocking — starts accepting in a greenlet
-print(f"[WSGI] Port {port} bound, loading application...", flush=True)
-
-# 3. Now do the heavy import (torch, transformers, spacy, etc.)
+# Heavy ML agents are lazy-loaded in agents/__init__.py — startup is fast
 from app import app, socketio
 
-# 4. Swap in the real Flask-SocketIO app with WebSocket support
-print(f"[WSGI] Application loaded, serving on http://0.0.0.0:{port}", flush=True)
-server.stop()
+port = int(os.environ.get('PORT', 10000))
+print(f"[WSGI] Serving on http://0.0.0.0:{port}", flush=True)
 
-# Use socketio.run() for proper WebSocket support via gevent
+# socketio.run() detects gevent (already monkey-patched) and uses
+# gevent.pywsgi.WSGIServer with WebSocketHandler automatically
 socketio.run(app, host='0.0.0.0', port=port, log_output=True)
