@@ -25,12 +25,16 @@ export default defineConfig(async ({ mode }) => {
               "@radix-ui/react-avatar",
               "@radix-ui/react-scroll-area",
             ],
-            // Charts (recharts is large)
+            // Charts (recharts is large — only needed in admin)
             "vendor-charts": ["recharts"],
             // Real-time / WebRTC
             "vendor-realtime": ["socket.io-client"],
             // Utilities
             "vendor-utils": ["axios", "date-fns", "clsx", "class-variance-authority", "tailwind-merge"],
+            // Admin pages (large, not on critical path)
+            "chunk-admin": ["./src/pages/admin/index.ts"],
+            // System admin pages
+            "chunk-system-admin": ["./src/pages/system-admin/index.ts"],
           },
         },
       },

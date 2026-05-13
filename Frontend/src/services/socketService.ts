@@ -81,7 +81,7 @@ class SocketService {
   private socket: Socket | null = null;
   private token: string | null = null;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
+  private maxReconnectAttempts = 20;
   private hasConnectedOnce = false;
   private messageHandlers: MessageHandler[] = [];
   private statusHandlers: StatusHandler[] = [];
@@ -147,10 +147,10 @@ class SocketService {
       auth: {
         token: `Bearer ${token}`,
       },
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionDelayMax: 10000,
       reconnectionAttempts: this.maxReconnectAttempts,
     });
 
