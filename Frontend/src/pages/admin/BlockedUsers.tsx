@@ -428,7 +428,7 @@ export default function BlockedUsers() {
             </Table>
           </ScrollArea>
         </CardContent>
-        </CardContent>
+      </Card>
           </TabsContent>
 
           {/* Appeals Tab */}
