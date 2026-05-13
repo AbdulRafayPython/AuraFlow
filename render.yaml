@@ -5,7 +5,7 @@ services:
     name: auraflow-backend
     runtime: python
     region: oregon
-    plan: free
+    plan: starter
     rootDir: Backend
     buildCommand: chmod +x build.sh && ./build.sh
     startCommand: python wsgi.py
@@ -51,7 +51,7 @@ services:
     name: auraflow-celery-worker
     runtime: python
     region: oregon
-    plan: free
+    plan: starter
     rootDir: Backend
     buildCommand: chmod +x build.sh && ./build.sh
     startCommand: python -m celery -A celery_app worker --loglevel=info --pool=solo -Q default,high_priority,periodic
@@ -89,7 +89,7 @@ services:
     name: auraflow-celery-beat
     runtime: python
     region: oregon
-    plan: free
+    plan: starter
     rootDir: Backend
     buildCommand: chmod +x build.sh && ./build.sh
     startCommand: python -m celery -A celery_app beat --loglevel=info
