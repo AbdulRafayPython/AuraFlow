@@ -30,7 +30,9 @@ import {
   Home,
   ChevronDown,
   Building2,
-  Check
+  Check,
+  Bot,
+  Megaphone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -90,6 +92,16 @@ const navItems: NavItem[] = [
       { title: 'Engagement', href: '/admin/analytics/engagement', icon: TrendingUp },
       { title: 'Mood Trends', href: '/admin/analytics/mood', icon: Activity },
     ],
+  },
+  {
+    title: 'AI Agents',
+    href: '/admin/agents/settings',
+    icon: Bot,
+  },
+  {
+    title: 'Announcements',
+    href: '/admin/announcements',
+    icon: Megaphone,
   },
   {
     title: 'Reports',

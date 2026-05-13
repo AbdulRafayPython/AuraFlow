@@ -1,5 +1,21 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { aiAgentService, SummaryResult, MoodTrackingResult, EngagementMetrics, WellnessInsights, KnowledgeEntry, AgentCatalogEntry, InstalledAgent, AgentLog, AgentLogsResponse } from '@/services/aiAgentService';
+import {
+  aiAgentService,
+  SummaryResult,
+  MoodTrackingResult,
+  EngagementMetrics,
+  WellnessInsights,
+  KnowledgeEntry,
+  AgentCatalogEntry,
+  InstalledAgent,
+  AgentLog,
+  AgentLogsResponse,
+  AssistantReply,
+  TranslationResult,
+  SupportAnswer,
+  WelcomePreview,
+  QuickReplySuggestions,
+} from '@/services/aiAgentService';
 import { useAuth } from './AuthContext';
 import { useRealtime } from '@/hooks/useRealtime';
 
@@ -76,7 +92,26 @@ interface AIAgentContextType {
   setFocusGoal: (goal: any) => Promise<any>;
   activeFocusSession: any | null;
   focusStats: any | null;
-  
+
+  // AI Assistant
+  askAssistant: (question: string, opts?: { channelId?: number; communityId?: number; context?: string }) => Promise<AssistantReply>;
+  getJoke: () => Promise<AssistantReply>;
+  getMotivation: () => Promise<AssistantReply>;
+
+  // Translator
+  translateText: (text: string, targetLanguage?: string, sourceLanguage?: string) => Promise<TranslationResult>;
+  translateMessage: (messageId: number, targetLanguage?: string) => Promise<TranslationResult>;
+  detectLanguage: (text: string) => Promise<{ language: string; confidence: number }>;
+  getSupportedLanguages: () => Promise<Record<string, string>>;
+
+  // Context-Aware Support
+  askSupport: (question: string, communityId: number, opts?: { channelId?: number; polish?: boolean }) => Promise<SupportAnswer>;
+  refreshSupportIndex: (communityId: number) => Promise<void>;
+
+  // Auto Message
+  previewWelcome: (params: { communityName: string; username: string; communityDescription?: string; communityId?: number; channelId?: number }) => Promise<WelcomePreview>;
+  getQuickReplies: (lastMessage: string, max?: number) => Promise<QuickReplySuggestions>;
+
   // Error Handling
   error: string | null;
   clearError: () => void;
@@ -698,6 +733,159 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // =====================================================
+  // ASSISTANT
+  // =====================================================
+  const askAssistant = useCallback(
+    async (
+      question: string,
+      opts: { channelId?: number; communityId?: number; context?: string } = {},
+    ): Promise<AssistantReply> => {
+      try {
+        return await aiAgentService.askAssistant(question, opts);
+      } catch (error) {
+        console.error('Error asking assistant:', error);
+        setError(error instanceof Error ? error.message : 'Failed to ask assistant');
+        throw error;
+      }
+    },
+    [],
+  );
+
+  const getJoke = useCallback(async (): Promise<AssistantReply> => {
+    try {
+      return await aiAgentService.getJoke();
+    } catch (error) {
+      console.error('Error fetching joke:', error);
+      setError(error instanceof Error ? error.message : 'Failed to fetch joke');
+      throw error;
+    }
+  }, []);
+
+  const getMotivation = useCallback(async (): Promise<AssistantReply> => {
+    try {
+      return await aiAgentService.getMotivation();
+    } catch (error) {
+      console.error('Error fetching motivation:', error);
+      setError(error instanceof Error ? error.message : 'Failed to fetch motivation');
+      throw error;
+    }
+  }, []);
+
+  // =====================================================
+  // TRANSLATOR
+  // =====================================================
+  const translateText = useCallback(
+    async (text: string, targetLanguage = 'en', sourceLanguage = 'auto'): Promise<TranslationResult> => {
+      try {
+        return await aiAgentService.translateText(text, targetLanguage, sourceLanguage);
+      } catch (error) {
+        console.error('Error translating text:', error);
+        setError(error instanceof Error ? error.message : 'Failed to translate');
+        throw error;
+      }
+    },
+    [],
+  );
+
+  const translateMessage = useCallback(
+    async (messageId: number, targetLanguage = 'en'): Promise<TranslationResult> => {
+      try {
+        return await aiAgentService.translateMessage(messageId, targetLanguage);
+      } catch (error) {
+        console.error('Error translating message:', error);
+        setError(error instanceof Error ? error.message : 'Failed to translate message');
+        throw error;
+      }
+    },
+    [],
+  );
+
+  const detectLanguage = useCallback(async (text: string) => {
+    try {
+      return await aiAgentService.detectLanguage(text);
+    } catch (error) {
+      console.error('Error detecting language:', error);
+      setError(error instanceof Error ? error.message : 'Failed to detect language');
+      throw error;
+    }
+  }, []);
+
+  const getSupportedLanguages = useCallback(async () => {
+    try {
+      return await aiAgentService.getSupportedLanguages();
+    } catch (error) {
+      console.error('Error fetching languages:', error);
+      setError(error instanceof Error ? error.message : 'Failed to fetch languages');
+      throw error;
+    }
+  }, []);
+
+  // =====================================================
+  // CONTEXT-AWARE SUPPORT
+  // =====================================================
+  const askSupport = useCallback(
+    async (
+      question: string,
+      communityId: number,
+      opts: { channelId?: number; polish?: boolean } = {},
+    ): Promise<SupportAnswer> => {
+      try {
+        return await aiAgentService.askSupport(question, communityId, opts);
+      } catch (error) {
+        console.error('Error asking support:', error);
+        setError(error instanceof Error ? error.message : 'Failed to ask support');
+        throw error;
+      }
+    },
+    [],
+  );
+
+  const refreshSupportIndex = useCallback(async (communityId: number) => {
+    try {
+      await aiAgentService.refreshSupportIndex(communityId);
+    } catch (error) {
+      console.error('Error refreshing support index:', error);
+      setError(error instanceof Error ? error.message : 'Failed to refresh support index');
+      throw error;
+    }
+  }, []);
+
+  // =====================================================
+  // AUTO MESSAGE
+  // =====================================================
+  const previewWelcome = useCallback(
+    async (params: {
+      communityName: string;
+      username: string;
+      communityDescription?: string;
+      communityId?: number;
+      channelId?: number;
+    }): Promise<WelcomePreview> => {
+      try {
+        return await aiAgentService.previewWelcome(params);
+      } catch (error) {
+        console.error('Error previewing welcome:', error);
+        setError(error instanceof Error ? error.message : 'Failed to preview welcome');
+        throw error;
+      }
+    },
+    [],
+  );
+
+  const getQuickReplies = useCallback(
+    async (lastMessage: string, max = 3): Promise<QuickReplySuggestions> => {
+      try {
+        return await aiAgentService.getQuickReplies(lastMessage, max);
+      } catch (error) {
+        console.error('Error fetching quick replies:', error);
+        // Soft-fail: quick replies are optional UX
+        return { success: false, suggestions: [] };
+      }
+    },
+    [],
+  );
+
+  // =====================================================
   // AUTO-LOAD DATA FOR CURRENT CHANNEL
   // =====================================================
   useEffect(() => {
@@ -788,7 +976,26 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
     setFocusGoal,
     activeFocusSession,
     focusStats,
-    
+
+    // Assistant
+    askAssistant,
+    getJoke,
+    getMotivation,
+
+    // Translator
+    translateText,
+    translateMessage,
+    detectLanguage,
+    getSupportedLanguages,
+
+    // Context-Aware Support
+    askSupport,
+    refreshSupportIndex,
+
+    // Auto Message
+    previewWelcome,
+    getQuickReplies,
+
     // Error Handling
     error,
     clearError,

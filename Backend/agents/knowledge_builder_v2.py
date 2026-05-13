@@ -9,14 +9,36 @@ Features:
 - Decision Detection: Captures team decisions
 - Auto-tagging: Generates keywords from content
 - Duplicate Prevention: Avoids saving redundant entries
+- Gemini AI: Enhanced extraction with fallback to rule-based
 
-Approach: Rule-based (lightweight, no ML dependencies)
+Approach: Hybrid (Gemini AI primary, rule-based fallback)
 """
 
 import re
+import json
 from datetime import datetime
 from database import get_db_connection
 from difflib import SequenceMatcher
+
+# ── Gemini AI integration (same pattern as summarizer.py) ────────────────────
+try:
+    from google import genai
+    from google.genai import errors as _genai_errors
+    from config import GEMINI_API_KEY
+    _KB_GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
+    if _KB_GEMINI_AVAILABLE:
+        _kb_gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    else:
+        _kb_gemini_client = None
+except ImportError:
+    _KB_GEMINI_AVAILABLE = False
+    _kb_gemini_client = None
+    print("[KB] Gemini not available — rule-based extraction only")
+except Exception as _e:
+    _KB_GEMINI_AVAILABLE = False
+    _kb_gemini_client = None
+    print(f"[KB] Gemini init error: {_e}")
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 class KnowledgeBuilderAgent:
@@ -67,18 +89,21 @@ class KnowledgeBuilderAgent:
         """Initialize the Knowledge Builder Agent"""
         self.min_message_length = 5  # Minimum characters for consideration (lowered for short answers)
         self.similarity_threshold = 0.85  # For duplicate detection
+        self.gemini_available = _KB_GEMINI_AVAILABLE
+        self.gemini_client = _kb_gemini_client
+        self.gemini_model = 'gemini-2.5-flash'
     
     # ========================================
     # MAIN EXTRACTION PIPELINE
     # ========================================
     
-    def extract_knowledge(self, channel_id, time_period_hours=24):
+    def extract_knowledge(self, channel_id, time_period_hours=None):
         """
         Main pipeline: Extract knowledge from recent messages
         
         Args:
             channel_id: ID of the channel to analyze
-            time_period_hours: How far back to look (default: 24 hours)
+            time_period_hours: How far back to look. None = all messages (default)
         
         Returns:
             dict with extraction results and statistics
@@ -101,10 +126,18 @@ class KnowledgeBuilderAgent:
             print(f"[Knowledge Builder V2] Preprocessed to {len(clean_messages)} clean messages")
             
             # Step 3: Extract different types of knowledge
+            # Try Gemini first, then fall back to / supplement with rule-based
+            gemini_result = self._extract_with_gemini(clean_messages)
+
             faqs = self._detect_faqs(clean_messages)
             definitions = self._detect_definitions(clean_messages)
             decisions = self._detect_decisions(clean_messages)
-            
+
+            if gemini_result:
+                faqs        = self._merge_items(gemini_result['faqs'],       faqs,       channel_id)
+                definitions = self._merge_items(gemini_result['definitions'], definitions, channel_id)
+                decisions   = self._merge_items(gemini_result['decisions'],   decisions,  channel_id)
+
             print(f"[Knowledge Builder V2] Detected: {len(faqs)} FAQs, {len(definitions)} definitions, {len(decisions)} decisions")
             
             # Step 4: Save to database
@@ -133,32 +166,283 @@ class KnowledgeBuilderAgent:
                 'success': False,
                 'error': str(e)
             }
-    
+
+    # ========================================
+    # GEMINI-ENHANCED EXTRACTION
+    # ========================================
+
+    def _extract_with_gemini(self, messages):
+        """
+        Use Gemini to extract FAQs, definitions, and decisions from messages.
+
+        Falls back gracefully — caller always checks return value for None.
+
+        Returns:
+            dict with keys 'faqs', 'definitions', 'decisions' (lists) or None on failure
+        """
+        if not self.gemini_available or not self.gemini_client:
+            return None
+
+        # Build a compact conversation transcript (max 300 messages to stay within token limits)
+        sample = messages[-300:] if len(messages) > 300 else messages
+        transcript_lines = []
+        for m in sample:
+            username = m.get('username', 'user')
+            text = m.get('text', '').strip()
+            if text:
+                transcript_lines.append(f"{username}: {text}")
+        transcript = '\n'.join(transcript_lines)
+
+        if not transcript:
+            return None
+
+        prompt = f"""You are an expert knowledge extractor for a team collaboration chat application.
+
+Analyze the following chat transcript and extract ALL useful structured knowledge.
+
+Return a JSON object with exactly these three keys:
+{{
+  "faqs": [
+    {{"question": "...", "answer": "...", "tags": ["tag1", "tag2"]}}
+  ],
+  "definitions": [
+    {{"term": "...", "definition": "...", "tags": ["tag1", "tag2"]}}
+  ],
+  "decisions": [
+    {{"statement": "...", "summary": "...", "tags": ["tag1", "tag2"]}}
+  ]
+}}
+
+Extraction rules — be thorough, not conservative:
+
+faqs (Q&A pairs):
+- ANY message that contains a question (even casual ones like "How long did this take?") followed by an answer in any nearby message counts as an FAQ.
+- The question and answer can be from DIFFERENT users separated by several messages — look for the logical response.
+- Also extract implicit Q&A: if someone shares a fact that answers a common question, create the Q&A pair yourself (e.g. if someone says "It took 2 weeks from wireframe to high-fidelity", create Q: "How long did the project/design take?" A: "About 2 weeks from wireframe to high-fidelity").
+- Include feedback and review comments as Q&A when useful (e.g. Q: "What is good about the design?" A: "Spacing is perfect, very consistent 8px grid").
+
+definitions:
+- Any explanation of a term, tool, technology, concept, workflow, or methodology.
+- Implicit definitions count: "consistent 8px grid" defines a design practice; "wireframe to high-fidelity" defines a design workflow stage.
+
+decisions:
+- Any agreement, confirmation, conclusion, or team consensus — formal or informal.
+- Includes: what the chat/channel is for, project choices, confirmed approaches, agreed-upon standards.
+
+General rules:
+- Only extract items actually present or clearly implied in the chat. Do NOT invent unrelated content.
+- tags: 1-4 short lowercase keywords relevant to the item.
+- If nothing qualifies for a category, return an empty list for that key.
+- Return ONLY the JSON object — no markdown, no explanation, no code block.
+
+Chat transcript:
+{transcript}"""
+
+        try:
+            response = self.gemini_client.models.generate_content(
+                model=self.gemini_model,
+                contents=prompt
+            )
+            raw = response.text.strip()
+
+            # Strip markdown code fences if present
+            if raw.startswith('```'):
+                raw = re.sub(r'^```[a-z]*\n?', '', raw)
+                raw = re.sub(r'\n?```$', '', raw)
+                raw = raw.strip()
+
+            data = json.loads(raw)
+
+            # Normalise into the internal item format used by rule-based extraction
+            result_faqs = []
+            for item in data.get('faqs', []):
+                if item.get('question') and item.get('answer'):
+                    result_faqs.append({
+                        'type': 'FAQ',
+                        'question': str(item['question']).strip(),
+                        'answer': str(item['answer']).strip(),
+                        'tags': ','.join(str(t) for t in item.get('tags', [])[:5]),
+                        'timestamp': datetime.now(),
+                        'source': 'gemini',
+                    })
+
+            result_defs = []
+            for item in data.get('definitions', []):
+                if item.get('term') and item.get('definition'):
+                    result_defs.append({
+                        'type': 'DEFINITION',
+                        'question': str(item['term']).strip(),
+                        'answer': str(item['definition']).strip(),
+                        'tags': ','.join(str(t) for t in item.get('tags', [])[:5]),
+                        'timestamp': datetime.now(),
+                        'source': 'gemini',
+                    })
+
+            result_decs = []
+            for item in data.get('decisions', []):
+                if item.get('statement'):
+                    stmt = str(item['statement']).strip()
+                    summary = str(item.get('summary', stmt[:60])).strip()
+                    result_decs.append({
+                        'type': 'DECISION',
+                        'question': summary,
+                        'answer': stmt,
+                        'tags': ','.join(str(t) for t in item.get('tags', [])[:5]),
+                        'timestamp': datetime.now(),
+                        'source': 'gemini',
+                    })
+
+            print(f"[KB Gemini] Extracted: {len(result_faqs)} FAQs, {len(result_defs)} definitions, {len(result_decs)} decisions")
+            return {'faqs': result_faqs, 'definitions': result_defs, 'decisions': result_decs}
+
+        except json.JSONDecodeError as e:
+            print(f"[KB Gemini] JSON parse error: {e} — falling back to rule-based")
+            return None
+        except Exception as e:
+            print(f"[KB Gemini] Extraction error: {e} — falling back to rule-based")
+            return None
+
+    def _merge_items(self, gemini_items, rule_items, channel_id):
+        """
+        Merge Gemini and rule-based results, removing duplicates.
+
+        Gemini results take priority; rule-based items are added only if
+        they are not already covered by a Gemini result.
+        """
+        if not gemini_items:
+            return rule_items
+
+        merged = list(gemini_items)
+        for rule_item in rule_items:
+            is_dup = any(
+                self._text_similarity(rule_item['question'], g['question']) > self.similarity_threshold
+                for g in merged
+            )
+            if not is_dup:
+                merged.append(rule_item)
+        return merged
+
+    # ========================================
+    # QUICK EXTRACT (for /kb slash command)
+    # ========================================
+
+    def quick_extract(self, channel_id, time_period_hours=None):
+        """
+        Extract knowledge and return items directly (not just counts).
+
+        Used by the /kb slash command to display inline results.
+
+        Returns:
+            dict with 'success', 'items' (list), 'faqs', 'definitions', 'decisions' counts,
+            'total_items', 'method' ('gemini', 'rule_based', or 'hybrid')
+        """
+        try:
+            messages = self._fetch_messages(channel_id, time_period_hours)
+            if not messages or len(messages) < 2:
+                return {
+                    'success': True,
+                    'total_items': 0,
+                    'items': [],
+                    'faqs': 0,
+                    'definitions': 0,
+                    'decisions': 0,
+                    'method': 'none',
+                    'message': 'Not enough messages to extract knowledge'
+                }
+
+            clean_messages = self._preprocess_messages(messages)
+
+            # Run Gemini extraction
+            gemini_result = self._extract_with_gemini(clean_messages)
+
+            # Run rule-based extraction
+            rule_faqs = self._detect_faqs(clean_messages)
+            rule_defs = self._detect_definitions(clean_messages)
+            rule_decs = self._detect_decisions(clean_messages)
+
+            if gemini_result:
+                all_faqs  = self._merge_items(gemini_result['faqs'],        rule_faqs, channel_id)
+                all_defs  = self._merge_items(gemini_result['definitions'],  rule_defs, channel_id)
+                all_decs  = self._merge_items(gemini_result['decisions'],    rule_decs, channel_id)
+                method = 'gemini' if not (rule_faqs or rule_defs or rule_decs) else 'hybrid'
+            else:
+                all_faqs, all_defs, all_decs = rule_faqs, rule_defs, rule_decs
+                method = 'rule_based'
+
+            # Save to DB
+            saved_faqs = self._save_knowledge_items(all_faqs, channel_id)
+            saved_defs = self._save_knowledge_items(all_defs, channel_id)
+            saved_decs = self._save_knowledge_items(all_decs, channel_id)
+            total_saved = saved_faqs + saved_defs + saved_decs
+
+            # Build preview items list for inline display (max 5 per type)
+            preview_items = []
+            for item in all_faqs[:3]:
+                preview_items.append({'type': 'FAQ', 'question': item['question'], 'answer': item['answer']})
+            for item in all_defs[:3]:
+                preview_items.append({'type': 'DEFINITION', 'term': item['question'], 'definition': item['answer']})
+            for item in all_decs[:2]:
+                preview_items.append({'type': 'DECISION', 'statement': item['answer']})
+
+            return {
+                'success': True,
+                'total_items': total_saved,
+                'items': preview_items,
+                'faqs': saved_faqs,
+                'definitions': saved_defs,
+                'decisions': saved_decs,
+                'method': method,
+                'message': f'Extracted {total_saved} new knowledge items'
+            }
+
+        except Exception as e:
+            print(f"[KB quick_extract] Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'error': str(e)}
+
     # ========================================
     # MESSAGE FETCHING & PREPROCESSING
     # ========================================
     
-    def _fetch_messages(self, channel_id, time_period_hours):
-        """Fetch recent messages from database"""
+    def _fetch_messages(self, channel_id, time_period_hours=None):
+        """Fetch messages from database. Pass None (default) to fetch all messages with no time limit."""
         conn = get_db_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT 
-                        m.id,
-                        m.sender_id as user_id,
-                        m.content as text,
-                        m.created_at,
-                        u.username
-                    FROM messages m
-                    JOIN users u ON m.sender_id = u.id
-                    WHERE m.channel_id = %s
-                        AND m.content IS NOT NULL
-                        AND m.content != ''
-                        AND m.message_type = 'text'
-                        AND m.created_at >= DATE_SUB(NOW(), INTERVAL %s HOUR)
-                    ORDER BY m.created_at ASC
-                """, (channel_id, time_period_hours))
+                if time_period_hours is None:
+                    cur.execute("""
+                        SELECT 
+                            m.id,
+                            m.sender_id as user_id,
+                            m.content as text,
+                            m.created_at,
+                            u.username
+                        FROM messages m
+                        JOIN users u ON m.sender_id = u.id
+                        WHERE m.channel_id = %s
+                            AND m.content IS NOT NULL
+                            AND m.content != ''
+                            AND m.message_type IN ('text', 'bot')
+                        ORDER BY m.created_at ASC
+                    """, (channel_id,))
+                else:
+                    cur.execute("""
+                        SELECT 
+                            m.id,
+                            m.sender_id as user_id,
+                            m.content as text,
+                            m.created_at,
+                            u.username
+                        FROM messages m
+                        JOIN users u ON m.sender_id = u.id
+                        WHERE m.channel_id = %s
+                            AND m.content IS NOT NULL
+                            AND m.content != ''
+                            AND m.message_type IN ('text', 'bot')
+                            AND m.created_at >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+                        ORDER BY m.created_at ASC
+                    """, (channel_id, time_period_hours))
                 
                 return cur.fetchall()
         finally:

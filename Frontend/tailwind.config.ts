@@ -5,6 +5,14 @@ export default {
   darkMode: ["class"],
   content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
   prefix: "",
+  safelist: [
+    // Agent card dynamic palettes (DiscoverCommunities → AGENT_SKINS)
+    ...['red', 'emerald', 'indigo', 'orange', 'blue', 'pink', 'purple', 'violet', 'cyan', 'amber', 'slate'].flatMap(c => [
+      `hover:border-${c}-500/40`,
+      `bg-${c}-500/10`, `text-${c}-400`, `border-${c}-500/20`,
+      `from-${c}-500`, `to-${c}-600`,
+    ]),
+  ],
   theme: {
     container: {
       center: true,

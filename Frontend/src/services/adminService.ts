@@ -218,6 +218,32 @@ class AdminService {
   }
 
   // =====================
+  // COMMUNITY AGENT SETTINGS
+  // =====================
+
+  async listCommunityAgents(communityId: number): Promise<any[]> {
+    try {
+      const response: any = await api.get(`/api/admin/community/${communityId}/agents`);
+      return response.agents || [];
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch community agents');
+    }
+  }
+
+  async updateCommunityAgent(
+    communityId: number,
+    agentType: string,
+    payload: { enabled?: boolean; settings?: Record<string, any> }
+  ): Promise<any> {
+    try {
+      const response: any = await api.put(`/api/admin/community/${communityId}/agents/${agentType}`, payload);
+      return response.config;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to update community agent');
+    }
+  }
+
+  // =====================
   // OVERVIEW (Community Scoped)
   // =====================
   
@@ -884,14 +910,20 @@ class AdminService {
   // ==================
 
   async getAuditLogs(params: {
+    action?: string;
     action_type?: string;
+    target_type?: string;
+    community_id?: number;
     search?: string;
     limit?: number;
     offset?: number;
   } = {}): Promise<any> {
     try {
       const query = new URLSearchParams();
+      if (params.action) query.set('action', params.action);
       if (params.action_type) query.set('action_type', params.action_type);
+      if (params.target_type) query.set('target_type', params.target_type);
+      if (params.community_id) query.set('community_id', String(params.community_id));
       if (params.search) query.set('search', params.search);
       if (params.limit) query.set('limit', String(params.limit));
       if (params.offset !== undefined) query.set('offset', String(params.offset));
@@ -921,6 +953,67 @@ class AdminService {
       return res;
     } catch (error: any) {
       throw new Error(error.data?.error || 'Failed to update platform settings');
+    }
+  }
+
+  // ==================
+  // ANNOUNCEMENTS
+  // ==================
+
+  async listAnnouncements(communityId: number): Promise<any[]> {
+    try {
+      const res = await api.get(`/api/community-admin/community/${communityId}/announcements`);
+      return res.announcements || [];
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch announcements');
+    }
+  }
+
+  async createAnnouncement(communityId: number, payload: {
+    title: string; body: string; is_pinned?: boolean; expires_at?: string | null;
+  }): Promise<number> {
+    try {
+      const res = await api.post(`/api/community-admin/community/${communityId}/announcements`, payload);
+      return res.id;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to create announcement');
+    }
+  }
+
+  async updateAnnouncement(communityId: number, announcementId: number, payload: any): Promise<void> {
+    try {
+      await api.put(`/api/community-admin/community/${communityId}/announcements/${announcementId}`, payload);
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to update announcement');
+    }
+  }
+
+  async deleteAnnouncement(communityId: number, announcementId: number): Promise<void> {
+    try {
+      await api.delete(`/api/community-admin/community/${communityId}/announcements/${announcementId}`);
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to delete announcement');
+    }
+  }
+
+  // ==================
+  // BLOCK APPEALS
+  // ==================
+
+  async listAppeals(communityId: number, status: string = 'pending'): Promise<any[]> {
+    try {
+      const res = await api.get(`/api/community-admin/community/${communityId}/appeals?status=${status}`);
+      return res.appeals || [];
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch appeals');
+    }
+  }
+
+  async resolveAppeal(communityId: number, appealId: number, action: 'approve' | 'reject', note?: string): Promise<void> {
+    try {
+      await api.put(`/api/community-admin/community/${communityId}/appeals/${appealId}`, { action, note });
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to resolve appeal');
     }
   }
 }

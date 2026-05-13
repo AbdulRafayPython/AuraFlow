@@ -93,6 +93,54 @@ export interface FocusSession {
   recommendations: string[];
 }
 
+export interface AssistantReply {
+  success: boolean;
+  reply: string;
+  source: 'gemini' | 'lexicon' | 'fallback' | 'empty' | string;
+  tag?: string;
+}
+
+export interface TranslationResult {
+  success: boolean;
+  translated_text: string;
+  source_language: string;
+  target_language: string;
+  provider: 'deep_translator' | 'googletrans' | 'none' | string;
+  cached?: boolean;
+  error?: string;
+  message_id?: number;
+}
+
+export interface SupportSource {
+  id?: number;
+  title?: string;
+  category?: string;
+}
+
+export interface SupportAnswer {
+  success: boolean;
+  matched: boolean;
+  answer: string;
+  score?: number;
+  sources?: SupportSource[];
+  error?: string;
+}
+
+export interface QuickReplySuggestions {
+  success: boolean;
+  intent?: string;
+  suggestions: string[];
+}
+
+export interface WelcomePreview {
+  success: boolean;
+  text: string;
+  community_id?: number;
+  channel_id?: number;
+  posted?: boolean;
+  message_id?: number;
+}
+
 export interface AgentCatalogEntry {
   agent_type: string;
   display_name: string;
@@ -935,6 +983,156 @@ class AIAgentService {
       await api.del(`/api/agents/my-summaries/${summaryId}`);
     } catch (error: any) {
       throw new Error(error.data?.error || error.message || 'Failed to delete summary');
+    }
+  }
+
+  // =====================================================
+  // AI ASSISTANT AGENT
+  // =====================================================
+  async askAssistant(
+    question: string,
+    opts: { channelId?: number; communityId?: number; context?: string } = {},
+  ): Promise<AssistantReply> {
+    try {
+      const response: any = await api.post('/api/agents/assistant/ask', {
+        question,
+        channel_id: opts.channelId,
+        community_id: opts.communityId,
+        context: opts.context,
+      });
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to ask assistant');
+    }
+  }
+
+  async getJoke(): Promise<AssistantReply> {
+    try {
+      return (await api.get('/api/agents/assistant/joke')) as any;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch joke');
+    }
+  }
+
+  async getMotivation(): Promise<AssistantReply> {
+    try {
+      return (await api.get('/api/agents/assistant/motivation')) as any;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch motivation');
+    }
+  }
+
+  // =====================================================
+  // TRANSLATOR AGENT
+  // =====================================================
+  async translateText(
+    text: string,
+    targetLanguage: string = 'en',
+    sourceLanguage: string = 'auto',
+  ): Promise<TranslationResult> {
+    try {
+      const response: any = await api.post('/api/agents/translator/translate', {
+        text,
+        target_language: targetLanguage,
+        source_language: sourceLanguage,
+      });
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to translate');
+    }
+  }
+
+  async translateMessage(messageId: number, targetLanguage: string = 'en'): Promise<TranslationResult> {
+    try {
+      const response: any = await api.post(`/api/agents/translator/message/${messageId}`, {
+        target_language: targetLanguage,
+      });
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to translate message');
+    }
+  }
+
+  async getSupportedLanguages(): Promise<Record<string, string>> {
+    try {
+      const response: any = await api.get('/api/agents/translator/languages');
+      return response.languages || {};
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch languages');
+    }
+  }
+
+  async detectLanguage(text: string): Promise<{ language: string; confidence: number }> {
+    try {
+      const response: any = await api.post('/api/agents/translator/detect', { text });
+      return { language: response.language, confidence: response.confidence };
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to detect language');
+    }
+  }
+
+  // =====================================================
+  // CONTEXT-AWARE SUPPORT AGENT
+  // =====================================================
+  async askSupport(
+    question: string,
+    communityId: number,
+    opts: { channelId?: number; polish?: boolean } = {},
+  ): Promise<SupportAnswer> {
+    try {
+      const response: any = await api.post('/api/agents/support/ask', {
+        question,
+        community_id: communityId,
+        channel_id: opts.channelId,
+        polish: opts.polish ?? true,
+      });
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to ask support');
+    }
+  }
+
+  async refreshSupportIndex(communityId: number): Promise<void> {
+    try {
+      await api.post(`/api/agents/support/refresh/${communityId}`);
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to refresh support index');
+    }
+  }
+
+  // =====================================================
+  // AUTO MESSAGE AGENT
+  // =====================================================
+  async previewWelcome(params: {
+    communityName: string;
+    username: string;
+    communityDescription?: string;
+    communityId?: number;
+    channelId?: number;
+  }): Promise<WelcomePreview> {
+    try {
+      const response: any = await api.post('/api/agents/automessage/welcome/preview', {
+        community_name: params.communityName,
+        username: params.username,
+        community_description: params.communityDescription,
+        community_id: params.communityId,
+        channel_id: params.channelId,
+      });
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to preview welcome');
+    }
+  }
+
+  async getQuickReplies(lastMessage: string, max: number = 3): Promise<QuickReplySuggestions> {
+    try {
+      const response: any = await api.post('/api/agents/automessage/quick-replies', {
+        last_message: lastMessage,
+        max,
+      });
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch quick replies');
     }
   }
 }

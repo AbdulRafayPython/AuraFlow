@@ -13,7 +13,11 @@ __all__ = [
     'WellnessAgent',
     'EngagementAgent',
     'KnowledgeBuilderAgent',
-    'FocusAgent'
+    'FocusAgent',
+    'AssistantAgent',
+    'AutoMessageAgent',
+    'SupportAgent',
+    'TranslatorAgent',
 ]
 
 
@@ -25,8 +29,12 @@ def __getattr__(name: str):
         'ModerationAgent': '.moderation',
         'WellnessAgent': '.wellness',
         'EngagementAgent': '.engagement',
-        'KnowledgeBuilderAgent': '.knowledge_builder',
+        'KnowledgeBuilderAgent': '.knowledge_builder_v2',
         'FocusAgent': '.focus',
+        'AssistantAgent': '.assistant',
+        'AutoMessageAgent': '.auto_message',
+        'SupportAgent': '.support',
+        'TranslatorAgent': '.translator',
     }
     if name in _map:
         import importlib

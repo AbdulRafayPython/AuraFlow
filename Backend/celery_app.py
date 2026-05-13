@@ -26,7 +26,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 load_dotenv()
 
+import ssl
+
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+
+# SSL options required for rediss:// (e.g. Upstash)
+_ssl_opts = {'ssl_cert_reqs': ssl.CERT_NONE} if REDIS_URL.startswith('rediss://') else {}
 
 # ── Create Celery App ────────────────────────────────────────────────
 celery_app = Celery(
@@ -35,6 +40,10 @@ celery_app = Celery(
     backend=REDIS_URL,
     include=['tasks.agent_tasks', 'tasks.email_tasks']
 )
+
+if _ssl_opts:
+    celery_app.conf.broker_use_ssl = _ssl_opts
+    celery_app.conf.redis_backend_use_ssl = _ssl_opts
 
 # ── Celery Configuration ─────────────────────────────────────────────
 celery_app.conf.update(

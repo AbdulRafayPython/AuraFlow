@@ -15,21 +15,36 @@ interface AuditLogEntry {
   id: number;
   admin_username: string;
   admin_display_name: string;
-  target_username: string;
-  target_display_name: string;
+  target_username: string | null;
+  target_display_name: string | null;
   action_type: string;
+  action?: string;
+  target_type?: string;
+  community_id?: number | null;
+  community_name?: string | null;
+  actor_role?: string;
   reason: string;
-  details: string | null;
+  details: any;
   created_at: string;
 }
 
 const ACTION_BADGES: Record<string, { label: string; color: string; icon: any }> = {
-  warn: { label: 'Warning', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30', icon: AlertTriangle },
-  suspend: { label: 'Suspend', color: 'bg-orange-500/20 text-orange-400 border-orange-500/30', icon: UserX },
-  ban: { label: 'Ban', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: Ban },
-  unsuspend: { label: 'Restore', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', icon: RefreshCw },
-  role_change: { label: 'Role Change', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', icon: Shield },
-  unban: { label: 'Unban', color: 'bg-teal-500/20 text-teal-400 border-teal-500/30', icon: RefreshCw },
+  'user.warn': { label: 'Warning', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30', icon: AlertTriangle },
+  'user.suspend': { label: 'Suspend', color: 'bg-orange-500/20 text-orange-400 border-orange-500/30', icon: UserX },
+  'user.ban': { label: 'Ban', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: Ban },
+  'user.unsuspend': { label: 'Restore', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', icon: RefreshCw },
+  'user.unban': { label: 'Unban', color: 'bg-teal-500/20 text-teal-400 border-teal-500/30', icon: RefreshCw },
+  'user.role_change': { label: 'Role Change', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', icon: Shield },
+  'user.block': { label: 'Block', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: Ban },
+  'user.unblock': { label: 'Unblock', color: 'bg-teal-500/20 text-teal-400 border-teal-500/30', icon: RefreshCw },
+  'flag.resolve': { label: 'Flag Resolved', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30', icon: Shield },
+  'community.update': { label: 'Community Updated', color: 'bg-sky-500/20 text-sky-400 border-sky-500/30', icon: Eye },
+  'community.delete': { label: 'Community Deleted', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: Ban },
+  'community.member_role_change': { label: 'Member Role', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', icon: Shield },
+  'community.member_remove': { label: 'Member Removed', color: 'bg-orange-500/20 text-orange-400 border-orange-500/30', icon: UserX },
+  'agent.toggle': { label: 'Agent Toggle', color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30', icon: Shield },
+  'agent.community_toggle': { label: 'Agent (Community)', color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30', icon: Shield },
+  'settings.update': { label: 'Settings Updated', color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30', icon: Shield },
 };
 
 export default function AuditLogs() {
@@ -50,7 +65,7 @@ export default function AuditLogs() {
     setLoading(true);
     try {
       const result = await adminService.getAuditLogs({
-        action_type: actionFilter !== 'all' ? actionFilter : undefined,
+        action: actionFilter !== 'all' ? actionFilter : undefined,
         search: search || undefined,
         limit,
         offset: page * limit,
@@ -120,11 +135,19 @@ export default function AuditLogs() {
           className="px-4 py-2.5 rounded-xl border bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-sm text-[hsl(var(--theme-text-primary))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))]"
         >
           <option value="all">All Actions</option>
-          <option value="warn">Warnings</option>
-          <option value="suspend">Suspensions</option>
-          <option value="ban">Bans</option>
-          <option value="unsuspend">Restores</option>
-          <option value="role_change">Role Changes</option>
+          <option value="user.warn">Warnings</option>
+          <option value="user.suspend">Suspensions</option>
+          <option value="user.ban">Bans</option>
+          <option value="user.unsuspend">Restores</option>
+          <option value="user.role_change">Role Changes</option>
+          <option value="user.block">Blocks</option>
+          <option value="user.unblock">Unblocks</option>
+          <option value="flag.resolve">Flag Resolutions</option>
+          <option value="community.update">Community Updates</option>
+          <option value="community.delete">Community Deletes</option>
+          <option value="agent.toggle">Agent Toggles</option>
+          <option value="agent.community_toggle">Agent (Per-Community)</option>
+          <option value="settings.update">Settings Updates</option>
         </select>
         <button
           onClick={handleSearch}
@@ -165,15 +188,27 @@ export default function AuditLogs() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-[hsl(var(--theme-text-primary))]">
                     <span className="font-semibold">{log.admin_display_name || log.admin_username}</span>
-                    <span className="text-[hsl(var(--theme-text-muted))]"> → </span>
-                    <span className="font-semibold">{log.target_display_name || log.target_username}</span>
+                    {(log.target_username || log.target_display_name) && (
+                      <>
+                        <span className="text-[hsl(var(--theme-text-muted))]"> → </span>
+                        <span className="font-semibold">{log.target_display_name || log.target_username}</span>
+                      </>
+                    )}
+                    {log.community_name && (
+                      <span className="text-[hsl(var(--theme-text-muted))] text-xs ml-2">[{log.community_name}]</span>
+                    )}
                   </p>
                   {log.reason && (
                     <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-1 line-clamp-2">
                       Reason: {log.reason}
                     </p>
                   )}
-                  {log.details && (
+                  {log.details && typeof log.details === 'object' && (
+                    <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5 font-mono line-clamp-2">
+                      {JSON.stringify(log.details)}
+                    </p>
+                  )}
+                  {log.details && typeof log.details === 'string' && (
                     <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
                       {log.details}
                     </p>

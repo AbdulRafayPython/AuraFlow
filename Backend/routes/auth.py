@@ -30,6 +30,16 @@ logging.basicConfig(level=logging.DEBUG)
 # SIGNUP
 # ----------------------------------------------------------------------
 def signup():
+    # Honour the platform-wide registration toggle (system-admin setting).
+    try:
+        from services.platform_config import is_registration_enabled, is_maintenance_mode
+        if is_maintenance_mode():
+            return jsonify({'error': 'Platform is in maintenance mode. Please try again later.'}), 503
+        if not is_registration_enabled():
+            return jsonify({'error': 'Registration is currently disabled.'}), 403
+    except Exception:
+        pass
+
     data = request.get_json() or {}
     username      = data.get('username')
     password      = data.get('password')

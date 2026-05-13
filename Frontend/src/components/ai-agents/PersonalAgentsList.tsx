@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Brain, Heart, Settings, Power, Terminal, Bot, Plus, Loader2,
-  AlertCircle, CheckCircle, Sparkles,
+  AlertCircle, CheckCircle, Sparkles, Languages,
 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -55,10 +55,18 @@ const PERSONAL_AGENT_CONFIG: Record<string, {
     name: 'Wellness', description: 'Monitors activity patterns and provides wellness tips',
     command: '/wellness', icon: Heart, color: 'purple', gradient: 'from-purple-500 to-pink-600',
   },
+  assistant: {
+    name: 'AI Assistant', description: 'Quick Q&A, jokes, and motivational replies',
+    command: '/ask', icon: Sparkles, color: 'violet', gradient: 'from-violet-500 to-purple-600',
+  },
+  translator: {
+    name: 'Translator', description: 'One-click message translation across 14+ languages',
+    command: '/translate', icon: Languages, color: 'cyan', gradient: 'from-cyan-500 to-blue-600',
+  },
 };
 
 // Canonical personal agent types to show
-const PERSONAL_AGENT_TYPES = ['summarizer', 'mood_tracker', 'wellness'];
+const PERSONAL_AGENT_TYPES = ['summarizer', 'mood_tracker', 'wellness', 'assistant', 'translator'];
 
 export default function PersonalAgentsList({ onBrowseAgents }: PersonalAgentsListProps) {
   const { currentTheme } = useTheme();

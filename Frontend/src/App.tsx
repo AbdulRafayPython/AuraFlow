@@ -53,6 +53,8 @@ const UserManagement = lazy(() => import('./pages/admin').then(m => ({ default: 
 const Reports = lazy(() => import('./pages/admin').then(m => ({ default: m.Reports })));
 const CommunityManagement = lazy(() => import('./pages/admin').then(m => ({ default: m.CommunityManagement })));
 const AIAgentsManagement = lazy(() => import('./pages/admin').then(m => ({ default: m.AIAgentsManagement })));
+const AgentSettings = lazy(() => import('./pages/admin').then(m => ({ default: m.AgentSettings })));
+const Announcements = lazy(() => import('./pages/admin').then(m => ({ default: m.Announcements })));
 
 // System Admin Dashboard Pages (lazy) - Platform-wide Admin
 const SystemAdminLogin = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SystemAdminLogin })));
@@ -84,11 +86,59 @@ function ErrorFallback({ error, resetErrorBoundary }: { error: Error; resetError
   );
 }
 
-const PageSpinner = () => (
-  <div className="flex items-center justify-center w-full h-screen bg-gradient-to-br from-slate-900 to-slate-800">
-    <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+/**
+ * Skeleton placeholder that mirrors the app shell (sidebars + chat area) while
+ * a lazy route or initial workspace data is loading. Replaces the old full-page
+ * spinner so navigation feels instant rather than blocked.
+ */
+const AppShellSkeleton = () => (
+  <div className="flex w-full h-screen bg-[hsl(var(--theme-bg-primary,222_47%_11%))] text-[hsl(var(--theme-text-primary,210_40%_98%))] overflow-hidden">
+    {/* Community rail */}
+    <div className="hidden md:flex w-[72px] flex-col items-center gap-3 py-4 border-r border-white/5">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="w-10 h-10 rounded-2xl bg-white/5 animate-pulse" />
+      ))}
+    </div>
+    {/* Channel sidebar */}
+    <div className="hidden lg:flex w-60 flex-col gap-2 px-3 py-4 border-r border-white/5">
+      <div className="h-6 w-32 rounded bg-white/5 animate-pulse mb-2" />
+      {Array.from({ length: 7 }).map((_, i) => (
+        <div key={i} className="h-7 w-full rounded bg-white/5 animate-pulse" style={{ opacity: 1 - i * 0.08 }} />
+      ))}
+      <div className="mt-auto flex items-center gap-2 pt-3 border-t border-white/5">
+        <div className="w-8 h-8 rounded-full bg-white/10 animate-pulse" />
+        <div className="flex-1 space-y-1">
+          <div className="h-3 w-20 rounded bg-white/10 animate-pulse" />
+          <div className="h-2 w-14 rounded bg-white/5 animate-pulse" />
+        </div>
+      </div>
+    </div>
+    {/* Main column */}
+    <div className="flex-1 flex flex-col min-w-0">
+      <div className="h-12 border-b border-white/5 flex items-center px-4 gap-3">
+        <div className="h-5 w-40 rounded bg-white/5 animate-pulse" />
+        <div className="ml-auto h-7 w-7 rounded-full bg-white/5 animate-pulse" />
+      </div>
+      <div className="flex-1 px-4 sm:px-8 py-6 space-y-5 overflow-hidden">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="flex gap-3">
+            <div className="w-10 h-10 rounded-full bg-white/5 animate-pulse shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div className="h-3 w-32 rounded bg-white/5 animate-pulse" />
+              <div className="h-3 rounded bg-white/5 animate-pulse" style={{ width: `${60 + ((i * 13) % 30)}%` }} />
+              {i % 2 === 0 && (
+                <div className="h-3 rounded bg-white/5 animate-pulse" style={{ width: `${40 + ((i * 7) % 35)}%` }} />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="h-14 border-t border-white/5 mx-4 sm:mx-8 mb-4 rounded-lg bg-white/5 animate-pulse" />
+    </div>
   </div>
 );
+
+const PageSpinner = AppShellSkeleton;
 
 function AppRouter() {
   const { user, isAuthenticated, completeOnboarding } = useAuth();
@@ -138,16 +188,10 @@ function AppRouter() {
     }
   }
 
-  // Loading communities after login (but not first login)
+  // Loading communities after login (but not first login) — show app-shell skeleton
+  // instead of a centered spinner so the layout doesn't visibly "pop in".
   if (isLoadingCommunities) {
-    return (
-      <div className="flex items-center justify-center w-full h-screen bg-gradient-to-br from-slate-900 to-slate-800">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-white text-lg font-medium">Loading workspace...</p>
-        </div>
-      </div>
-    );
+    return <AppShellSkeleton />;
   }
 
   // Returning user or onboarding complete - show main app with real-time support
@@ -254,6 +298,8 @@ export default function App() {
                               <Route path="reports" element={<Reports />} />
                               <Route path="communities" element={<CommunityManagement />} />
                               <Route path="agents" element={<AIAgentsManagement />} />
+                              <Route path="agents/settings" element={<AgentSettings />} />
+                              <Route path="announcements" element={<Announcements />} />
                             </Route>
                             <Route path="/*" element={<AppRouter />} />
                           </Routes>

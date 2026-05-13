@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { 
+import {
   Bot, Shield, Heart, TrendingUp, BookOpen, Brain, Focus as FocusIcon,
   Power, Settings, Trash2, Loader2, CheckCircle, AlertCircle,
-  ChevronDown, ChevronUp, Plus, RefreshCw, Sliders, Terminal
+  ChevronDown, ChevronUp, Plus, RefreshCw, Sliders, Terminal,
+  Sparkles, Mail, GraduationCap, Languages
 } from 'lucide-react';
 import { aiAgentService, AgentCatalogEntry, InstalledAgent } from '@/services/aiAgentService';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -16,27 +17,35 @@ interface CommunityAgentsTabProps {
 }
 
 const AGENT_ICONS: Record<string, React.ReactNode> = {
-  moderation: <Shield className="w-5 h-5" />,
-  engagement: <TrendingUp className="w-5 h-5" />,
-  knowledge: <BookOpen className="w-5 h-5" />,
+  moderation:        <Shield className="w-5 h-5" />,
+  engagement:        <TrendingUp className="w-5 h-5" />,
+  knowledge:         <BookOpen className="w-5 h-5" />,
   knowledge_builder: <BookOpen className="w-5 h-5" />,
-  focus: <FocusIcon className="w-5 h-5" />,
-  summarizer: <Brain className="w-5 h-5" />,
-  mood: <Heart className="w-5 h-5" />,
-  mood_tracker: <Heart className="w-5 h-5" />,
-  wellness: <Heart className="w-5 h-5" />,
+  focus:             <FocusIcon className="w-5 h-5" />,
+  summarizer:        <Brain className="w-5 h-5" />,
+  mood:              <Heart className="w-5 h-5" />,
+  mood_tracker:      <Heart className="w-5 h-5" />,
+  wellness:          <Heart className="w-5 h-5" />,
+  assistant:         <Sparkles className="w-5 h-5" />,
+  auto_message:      <Mail className="w-5 h-5" />,
+  support:           <GraduationCap className="w-5 h-5" />,
+  translator:        <Languages className="w-5 h-5" />,
 };
 
 const AGENT_COLORS: Record<string, { bg: string; text: string; border: string; gradient: string }> = {
-  moderation: { bg: 'bg-red-500/15', text: 'text-red-400', border: 'border-red-500/30', gradient: 'from-red-500 to-rose-600' },
-  engagement: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30', gradient: 'from-emerald-500 to-teal-600' },
-  knowledge: { bg: 'bg-indigo-500/15', text: 'text-indigo-400', border: 'border-indigo-500/30', gradient: 'from-indigo-500 to-blue-600' },
-  knowledge_builder: { bg: 'bg-indigo-500/15', text: 'text-indigo-400', border: 'border-indigo-500/30', gradient: 'from-indigo-500 to-blue-600' },
-  focus: { bg: 'bg-orange-500/15', text: 'text-orange-400', border: 'border-orange-500/30', gradient: 'from-orange-500 to-amber-600' },
-  summarizer: { bg: 'bg-blue-500/15', text: 'text-blue-400', border: 'border-blue-500/30', gradient: 'from-blue-500 to-cyan-600' },
-  mood: { bg: 'bg-pink-500/15', text: 'text-pink-400', border: 'border-pink-500/30', gradient: 'from-pink-500 to-rose-600' },
-  mood_tracker: { bg: 'bg-pink-500/15', text: 'text-pink-400', border: 'border-pink-500/30', gradient: 'from-pink-500 to-rose-600' },
-  wellness: { bg: 'bg-purple-500/15', text: 'text-purple-400', border: 'border-purple-500/30', gradient: 'from-purple-500 to-violet-600' },
+  moderation:        { bg: 'bg-red-500/15',     text: 'text-red-400',     border: 'border-red-500/30',     gradient: 'from-red-500 to-rose-600' },
+  engagement:        { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30', gradient: 'from-emerald-500 to-teal-600' },
+  knowledge:         { bg: 'bg-indigo-500/15',  text: 'text-indigo-400',  border: 'border-indigo-500/30',  gradient: 'from-indigo-500 to-blue-600' },
+  knowledge_builder: { bg: 'bg-indigo-500/15',  text: 'text-indigo-400',  border: 'border-indigo-500/30',  gradient: 'from-indigo-500 to-blue-600' },
+  focus:             { bg: 'bg-orange-500/15',  text: 'text-orange-400',  border: 'border-orange-500/30',  gradient: 'from-orange-500 to-amber-600' },
+  summarizer:        { bg: 'bg-blue-500/15',    text: 'text-blue-400',    border: 'border-blue-500/30',    gradient: 'from-blue-500 to-cyan-600' },
+  mood:              { bg: 'bg-pink-500/15',    text: 'text-pink-400',    border: 'border-pink-500/30',    gradient: 'from-pink-500 to-rose-600' },
+  mood_tracker:      { bg: 'bg-pink-500/15',    text: 'text-pink-400',    border: 'border-pink-500/30',    gradient: 'from-pink-500 to-rose-600' },
+  wellness:          { bg: 'bg-purple-500/15',  text: 'text-purple-400',  border: 'border-purple-500/30',  gradient: 'from-purple-500 to-violet-600' },
+  assistant:         { bg: 'bg-violet-500/15',  text: 'text-violet-400',  border: 'border-violet-500/30',  gradient: 'from-violet-500 to-purple-600' },
+  auto_message:      { bg: 'bg-amber-500/15',   text: 'text-amber-400',   border: 'border-amber-500/30',   gradient: 'from-amber-500 to-orange-600' },
+  support:           { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30', gradient: 'from-emerald-500 to-teal-600' },
+  translator:        { bg: 'bg-cyan-500/15',    text: 'text-cyan-400',    border: 'border-cyan-500/30',    gradient: 'from-cyan-500 to-blue-600' },
 };
 
 export default function CommunityAgentsTab({ communityId, isAdmin }: CommunityAgentsTabProps) {

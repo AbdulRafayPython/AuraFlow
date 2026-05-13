@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { 
+import {
   Bot, Heart, Focus as FocusIcon, Brain, Shield, TrendingUp, BookOpen,
   Power, Loader2, CheckCircle, Settings, ChevronDown, ChevronUp,
-  Sparkles, RefreshCw, AlertCircle, Sliders, Terminal
+  Sparkles, RefreshCw, AlertCircle, Sliders, Terminal, Languages
 } from 'lucide-react';
 import { aiAgentService, InstalledAgent, AgentCatalogEntry } from '@/services/aiAgentService';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -11,15 +11,19 @@ import { AgentConfirmDialog } from '@/components/modals/AgentConfirmDialog';
 import { AgentCommandModal } from '@/components/modals/AgentCommandModal';
 
 const PERSONAL_AGENTS: { type: string; name: string; description: string; icon: React.ReactNode; color: string; gradient: string }[] = [
-  { type: 'summarizer', name: 'Summarizer', description: 'Condenses long conversations into clear, actionable recaps via /summarize', icon: <Brain className="w-5 h-5" />, color: 'blue', gradient: 'from-blue-500 to-cyan-600' },
-  { type: 'mood_tracker', name: 'Mood Tracker', description: 'Tracks your emotional patterns and sentiment across conversations', icon: <Heart className="w-5 h-5" />, color: 'pink', gradient: 'from-pink-500 to-rose-600' },
-  { type: 'wellness', name: 'Wellness Monitor', description: 'Monitors your communication health and suggests breaks', icon: <Heart className="w-5 h-5" />, color: 'purple', gradient: 'from-purple-500 to-violet-600' },
+  { type: 'summarizer',  name: 'Summarizer',       description: 'Condenses long conversations into clear, actionable recaps via /summarize', icon: <Brain className="w-5 h-5" />,     color: 'blue',   gradient: 'from-blue-500 to-cyan-600' },
+  { type: 'mood_tracker', name: 'Mood Tracker',    description: 'Tracks your emotional patterns and sentiment across conversations',          icon: <Heart className="w-5 h-5" />,     color: 'pink',   gradient: 'from-pink-500 to-rose-600' },
+  { type: 'wellness',    name: 'Wellness Monitor', description: 'Monitors your communication health and suggests breaks',                     icon: <Heart className="w-5 h-5" />,     color: 'purple', gradient: 'from-purple-500 to-violet-600' },
+  { type: 'assistant',   name: 'AI Assistant',     description: 'Quick Q&A, jokes and motivation via /ask — Gemini with offline fallback',    icon: <Sparkles className="w-5 h-5" />,  color: 'violet', gradient: 'from-violet-500 to-purple-600' },
+  { type: 'translator',  name: 'Translator',       description: 'One-click translation across 14+ languages including Roman Urdu',            icon: <Languages className="w-5 h-5" />, color: 'cyan',   gradient: 'from-cyan-500 to-blue-600' },
 ];
 
 const COLOR_MAP: Record<string, { bg: string; text: string; border: string }> = {
-  blue: { bg: 'bg-blue-500/15', text: 'text-blue-400', border: 'border-blue-500/30' },
-  pink: { bg: 'bg-pink-500/15', text: 'text-pink-400', border: 'border-pink-500/30' },
+  blue:   { bg: 'bg-blue-500/15',   text: 'text-blue-400',   border: 'border-blue-500/30' },
+  pink:   { bg: 'bg-pink-500/15',   text: 'text-pink-400',   border: 'border-pink-500/30' },
   purple: { bg: 'bg-purple-500/15', text: 'text-purple-400', border: 'border-purple-500/30' },
+  violet: { bg: 'bg-violet-500/15', text: 'text-violet-400', border: 'border-violet-500/30' },
+  cyan:   { bg: 'bg-cyan-500/15',   text: 'text-cyan-400',   border: 'border-cyan-500/30' },
 };
 
 export default function PersonalAgentsPanel() {

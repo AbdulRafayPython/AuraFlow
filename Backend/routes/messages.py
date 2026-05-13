@@ -5,6 +5,8 @@ from database import get_db_connection
 from utils import get_avatar_url, get_user_id
 from utils.encryption import encrypt as _encrypt, decrypt as _decrypt
 from services.notification_service import create_notification
+from services.platform_config import is_auto_moderation_enabled, message_rate_limit_per_minute
+from services.community_agent_config import is_agent_enabled as is_community_agent_enabled
 # FIX 9: Cache channel membership checks
 from services.redis_client import get_channel_membership, set_channel_membership
 # Channel message list cache (Redis List — eliminates DB hit on channel open)
@@ -287,9 +289,60 @@ def _emit_unread_tracking(socketio, channel_id, community_id, sender_id, message
     
     log.info("[UNREAD-TRACK] _emit_unread_tracking done")
 
+def _insert_ai_bot_message(channel_id: int, user_id: int, content: str, author: str = 'AI Bot'):
+    """Insert an AI bot message and return a payload the HTTP caller can broadcast.
+
+    The HTTP handler in send_message will emit this payload via socketio.emit
+    when command_result contains posted_as_bot=True and bot_payload=<dict>.
+    """
+    if not content or not channel_id:
+        return None
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO messages (channel_id, sender_id, content, message_type) "
+                "VALUES (%s, %s, %s, 'ai')",
+                (channel_id, user_id, content),
+            )
+            mid = cur.lastrowid
+            cur.execute(
+                "SELECT m.*, u.username, u.display_name, u.avatar_url "
+                "FROM messages m JOIN users u ON m.sender_id = u.id "
+                "WHERE m.id = %s",
+                (mid,),
+            )
+            msg = cur.fetchone()
+            conn.commit()
+
+        if not msg:
+            return None
+        created = msg['created_at']
+        return {
+            'id': msg['id'],
+            'channel_id': msg['channel_id'],
+            'sender_id': user_id,
+            'content': msg['content'],
+            'message_type': 'ai',
+            'reply_to': None,
+            'created_at': created.isoformat() if hasattr(created, 'isoformat') else str(created),
+            'author': author,
+            'avatar': None,
+            'is_blocked': False,
+            'moderation': None,
+        }
+    except Exception as exc:
+        log.error(f"[HTTP BOT MESSAGE] failed: {exc}", exc_info=True)
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+
 def handle_ai_command(content: str, username: str, user_id: int, channel_id: int, community_id: int = None):
     """Handle AI commands from chat (/summarize, /help, etc.)
-    
+
     /summarize is ephemeral — only the sender sees the result (not saved to DB).
     Returns a dict with 'ephemeral': True for private delivery.
     """
@@ -496,15 +549,280 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
 • `/mood [hours]` - Analyze your mood over a time period (default: 24h)
 • `/wellness` - Check your current wellness score and get suggestions
 
+**Community Agent Commands:**
+• `/kb [hours]` - Extract knowledge from messages (default: all time)
+• `/kb search <query>` - Search the knowledge base
+
 **General:**
 • `/help` - Show this help message
 
 *Personal agents must be activated from Explore → Personal Agents to use their commands.*"""
             }
-        
+
+        elif command == '/kb':
+            # Sub-command: /kb [hours]  OR  /kb search <query>
+            is_search = len(command_parts) > 1 and command_parts[1].lower() == 'search'
+
+            if is_search:
+                query = ' '.join(command_parts[2:]).strip() if len(command_parts) > 2 else ''
+                if not query:
+                    return {
+                        'type': 'knowledge',
+                        'success': False,
+                        'error': 'Please provide a search query. Usage: `/kb search <query>`'
+                    }
+
+                log.info(f"[HTTP COMMAND] /kb search '{query}' for channel {channel_id}")
+                from agents.knowledge_builder_v2 import KnowledgeBuilderAgent
+                kb_agent = KnowledgeBuilderAgent()
+                results = kb_agent.search_knowledge(query=query, channel_id=channel_id, limit=5)
+
+                if results:
+                    import json as _json
+                    response_text = f"🔍 **Knowledge Base — Search: \"{query}\"**\n"
+                    response_text += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    for i, row in enumerate(results, 1):
+                        try:
+                            content = _json.loads(row['content']) if isinstance(row['content'], str) else row['content']
+                            ktype = content.get('type', 'item').upper()
+                            answer = content.get('answer', '')[:200]
+                            response_text += f"**{i}. [{ktype}]** {row['title']}\n   {answer}\n\n"
+                        except Exception:
+                            response_text += f"**{i}.** {row['title']}\n\n"
+                    return {
+                        'type': 'knowledge',
+                        'subtype': 'search',
+                        'success': True,
+                        'ephemeral': True,
+                        'kb_content': response_text,
+                        'result_count': len(results),
+                    }
+                else:
+                    return {
+                        'type': 'knowledge',
+                        'subtype': 'search',
+                        'success': True,
+                        'ephemeral': True,
+                        'kb_content': f"🔍 **Knowledge Base — Search: \"{query}\"**\n\nNo matching entries found.",
+                        'result_count': 0,
+                    }
+
+            else:
+                # Extraction mode: /kb [hours]
+                time_period = None  # default: all messages (no time limit)
+                if len(command_parts) > 1 and command_parts[1].isdigit():
+                    time_period = min(int(command_parts[1]), 8760)
+
+                log.info(f"[HTTP COMMAND] /kb extract requested by {username} for channel {channel_id}, {time_period}h")
+                from agents.knowledge_builder_v2 import KnowledgeBuilderAgent
+                kb_agent = KnowledgeBuilderAgent()
+                result = kb_agent.quick_extract(channel_id=channel_id, time_period_hours=time_period)
+
+                if result.get('success'):
+                    total = result.get('total_items', 0)
+                    n_faqs = result.get('faqs', 0)
+                    n_defs = result.get('definitions', 0)
+                    n_decs = result.get('decisions', 0)
+                    method = result.get('method', 'rule_based')
+                    method_label = {'gemini': '✨ Gemini AI', 'hybrid': '✨ Gemini + Rules', 'rule_based': '📐 Rule-based', 'none': '—'}.get(method, method)
+                    period_label = f"Last {time_period}h" if time_period else "All time"
+
+                    if total == 0:
+                        response_text = f"📚 **Knowledge Builder — {period_label}**\n"
+                        response_text += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        response_text += "No new knowledge items found in this time window."
+                    else:
+                        response_text = f"📚 **Knowledge Builder — {period_label}**\n"
+                        response_text += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        response_text += f"✅ Saved **{total}** new item{'s' if total != 1 else ''} · {method_label}\n"
+                        parts = []
+                        if n_faqs:   parts.append(f"{n_faqs} FAQ{'s' if n_faqs != 1 else ''}")
+                        if n_defs:   parts.append(f"{n_defs} Definition{'s' if n_defs != 1 else ''}")
+                        if n_decs:   parts.append(f"{n_decs} Decision{'s' if n_decs != 1 else ''}")
+                        if parts:
+                            response_text += f"({', '.join(parts)})\n"
+
+                        # Preview items
+                        items = result.get('items', [])
+                        faq_items  = [x for x in items if x.get('type') == 'FAQ']
+                        def_items  = [x for x in items if x.get('type') == 'DEFINITION']
+                        dec_items  = [x for x in items if x.get('type') == 'DECISION']
+
+                        if faq_items:
+                            response_text += "\n💡 **FAQs**\n"
+                            for item in faq_items:
+                                q = item.get('question', '')[:80]
+                                a = item.get('answer', '')[:120]
+                                response_text += f"• **Q:** {q}\n  **A:** {a}\n"
+                        if def_items:
+                            response_text += "\n📖 **Definitions**\n"
+                            for item in def_items:
+                                term = item.get('term', '')[:60]
+                                defn = item.get('definition', '')[:120]
+                                response_text += f"• **{term}:** {defn}\n"
+                        if dec_items:
+                            response_text += "\n✅ **Decisions**\n"
+                            for item in dec_items:
+                                stmt = item.get('statement', '')[:150]
+                                response_text += f"• {stmt}\n"
+
+                    return {
+                        'type': 'knowledge',
+                        'subtype': 'extract',
+                        'success': True,
+                        'ephemeral': True,
+                        'kb_content': response_text,
+                        'total_items': total,
+                        'faqs': n_faqs,
+                        'definitions': n_defs,
+                        'decisions': n_decs,
+                        'method': method,
+                    }
+                else:
+                    return {
+                        'type': 'knowledge',
+                        'success': False,
+                        'error': result.get('error', 'Failed to extract knowledge. Try again later.')
+                    }
+
+        elif command == '/ask':
+            question = content[len('/ask'):].strip()
+            if not question:
+                return {'type': 'assistant', 'success': False,
+                        'error': 'Usage: /ask <your question>'}
+            from agents.assistant import AssistantAgent
+            r = AssistantAgent().ask(
+                question=question, user_id=user_id,
+                channel_id=channel_id, community_id=community_id,
+            )
+            reply_text = r.get('reply') or "I'm not sure."
+            payload = _insert_ai_bot_message(channel_id, user_id, reply_text, author='AI Assistant')
+            return {'type': 'assistant', 'success': True,
+                    'posted_as_bot': True, 'bot_payload': payload}
+
+        elif command == '/joke':
+            from agents.assistant import AssistantAgent
+            r = AssistantAgent().random_joke()
+            text = r.get('reply') or r.get('joke') or "Why did the dev cross the road? To refactor the chicken."
+            payload = _insert_ai_bot_message(channel_id, user_id, text, author='AI Assistant')
+            return {'type': 'assistant', 'success': True,
+                    'posted_as_bot': True, 'bot_payload': payload}
+
+        elif command == '/motivation':
+            from agents.assistant import AssistantAgent
+            r = AssistantAgent().random_motivation()
+            text = r.get('reply') or r.get('quote') or "Keep going. Small steps compound."
+            payload = _insert_ai_bot_message(channel_id, user_id, text, author='AI Assistant')
+            return {'type': 'assistant', 'success': True,
+                    'posted_as_bot': True, 'bot_payload': payload}
+
+        elif command == '/translate':
+            if len(command_parts) < 3:
+                return {'type': 'translate', 'success': False,
+                        'error': 'Usage: /translate <lang> <text>'}
+            target = command_parts[1].strip()
+            text_to_translate = content.split(None, 2)[2]
+            from agents.translator import TranslatorAgent
+            tr = TranslatorAgent().translate(text=text_to_translate, target_language=target)
+            translated = tr.get('translated_text') or text_to_translate
+            payload = _insert_ai_bot_message(
+                channel_id, user_id,
+                f"[{target}] {translated}",
+                author='Translator',
+            )
+            return {'type': 'translate', 'success': True,
+                    'posted_as_bot': True, 'bot_payload': payload}
+
+        elif command == '/support':
+            question = content[len('/support'):].strip()
+            if not question:
+                return {'type': 'support', 'success': False,
+                        'error': 'Usage: /support <your question>'}
+            if not community_id:
+                return {'type': 'support', 'success': False,
+                        'error': 'Support agent only works inside a community'}
+            from agents.support import SupportAgent
+            r = SupportAgent().ask(
+                question=question, community_id=int(community_id),
+                user_id=user_id, channel_id=channel_id, polish=True,
+            )
+            answer = r.get('answer') or "No answer found."
+            payload = _insert_ai_bot_message(channel_id, user_id, answer, author='Support')
+            return {'type': 'support', 'success': True,
+                    'posted_as_bot': True, 'bot_payload': payload}
+
+        elif command == '/icebreaker':
+            from agents.engagement import EngagementAgent
+            r = EngagementAgent().get_icebreaker_activity()
+            activity = r.get('activity') if isinstance(r, dict) else None
+            if isinstance(activity, dict):
+                title = activity.get('title') or activity.get('question') or 'Icebreaker'
+                desc = activity.get('description') or activity.get('prompt') or ''
+                text = f"💬 **{title}**" + (f"\n{desc}" if desc else '')
+            else:
+                fallback_text = (r.get('text') if isinstance(r, dict) else None) or "Let's start a conversation!"
+                text = f"💬 {activity or fallback_text}"
+            payload = _insert_ai_bot_message(channel_id, user_id, text, author='Engagement')
+            return {'type': 'icebreaker', 'success': True,
+                    'posted_as_bot': True, 'bot_payload': payload}
+
+        elif command == '/poll':
+            from agents.engagement import EngagementAgent
+            r = EngagementAgent().get_quick_poll()
+            poll = r.get('poll') if isinstance(r, dict) and isinstance(r.get('poll'), dict) else (r if isinstance(r, dict) else {})
+            q = poll.get('question') or poll.get('poll') or 'Quick poll'
+            opts = poll.get('options') or []
+            opt_lines = '\n'.join(f"{i+1}. {o}" for i, o in enumerate(opts))
+            text = f"📊 **Poll:** {q}" + (f"\n{opt_lines}" if opt_lines else '')
+            payload = _insert_ai_bot_message(channel_id, user_id, text, author='Engagement')
+            return {'type': 'poll', 'success': True,
+                    'posted_as_bot': True, 'bot_payload': payload}
+
+        elif command == '/extract':
+            if not community_id:
+                return {'type': 'extract', 'success': False,
+                        'error': 'Knowledge extraction needs a community'}
+            from agents.knowledge_builder_v2 import KnowledgeBuilderAgent
+            kb = KnowledgeBuilderAgent()
+            r = kb.quick_extract(channel_id=channel_id) or {}
+            count = r.get('total_items', 0) if isinstance(r, dict) else 0
+            text = (f"📚 Extracted {count} new knowledge entries."
+                    if count else "📚 No new knowledge entries found.")
+            payload = _insert_ai_bot_message(channel_id, user_id, text, author='Knowledge Builder')
+            return {'type': 'extract', 'success': True,
+                    'posted_as_bot': True, 'bot_payload': payload}
+
+        elif command == '/focus':
+            from agents.focus import FocusAgent
+            try:
+                r = FocusAgent().analyze_focus(channel_id=channel_id)
+            except AttributeError:
+                r = {}
+            score = (r or {}).get('focus_score')
+            topics = (r or {}).get('top_topics') or (r or {}).get('topics') or []
+            topic_line = ''
+            if isinstance(topics, list) and topics:
+                names = []
+                for t in topics[:3]:
+                    if isinstance(t, dict):
+                        names.append(t.get('topic') or t.get('name') or '')
+                    else:
+                        names.append(str(t))
+                names = [n for n in names if n]
+                if names:
+                    topic_line = f"\nTop topics: {', '.join(names)}"
+            if isinstance(score, (int, float)):
+                pct = score if score > 1 else score * 100
+                text = f"🎯 Focus score: {pct:.0f}%" + topic_line
+            else:
+                text = "🎯 Channel focus check complete." + topic_line
+            payload = _insert_ai_bot_message(channel_id, user_id, text, author='Focus')
+            return {'type': 'focus', 'success': True,
+                    'posted_as_bot': True, 'bot_payload': payload}
+
         else:
             return None
-            
+
     except Exception as e:
         log.error(f"[HTTP COMMAND] Error: {e}", exc_info=True)
         return {
@@ -688,6 +1006,23 @@ def send_message():
         if len(content) > 5000:
             return jsonify({'error': 'Message too long (max 5000 characters)'}), 400
 
+        # Platform-wide rate limit (system-admin configurable).
+        try:
+            from services.redis_client import check_rate_limit
+            allowed, remaining, reset_in = check_rate_limit(
+                'message_send', current_user,
+                max_requests=message_rate_limit_per_minute(),
+                window_seconds=60,
+            )
+            if not allowed:
+                return jsonify({
+                    'error': 'Rate limit exceeded',
+                    'message': f'Too many messages. Try again in {reset_in}s.',
+                    'reset_in': reset_in,
+                }), 429
+        except Exception as rl_err:
+            log.warning(f"[HTTP SEND] Rate-limit check failed (open): {rl_err}")
+
         log.info(f"[HTTP SEND] User {current_user} sending message to channel {channel_id}: {content[:50]}...")
 
         conn = get_db_connection()
@@ -764,22 +1099,45 @@ def send_message():
                         }, room=user_sid, namespace='/')
                         log.info(f"[HTTP] ✅ Typing indicator sent to {current_user}")
 
+                    if command_name == '/kb' and socketio and user_sid:
+                        socketio.emit('kb_generating', {
+                            'channel_id': channel_id,
+                            'status': 'generating'
+                        }, room=user_sid, namespace='/')
+                        log.info(f"[HTTP] ✅ KB generating indicator sent to {current_user}")
+
                     command_result = handle_ai_command(content, current_user, user_id, channel_id, community_id)
                     log.info(f"[HTTP] ✅ Command handler returned: {command_result}")
                     
                     if command_result:
-                        # ── Ephemeral commands (e.g. /summarize) ─────────────
+                        # ── Ephemeral commands (e.g. /summarize, /kb) ─────────
                         # Don't save to DB, don't broadcast — emit privately to sender only
                         if command_result.get('ephemeral'):
                             if socketio and user_sid:
-                                socketio.emit('summary_result', {
-                                    'channel_id': channel_id,
-                                    'content': command_result.get('summary_content', ''),
-                                    'method': command_result.get('method', 'extractive'),
-                                    'message_count': command_result.get('message_count', 0),
-                                    'created_at': datetime.now().isoformat(),
-                                }, room=user_sid, namespace='/')
-                                log.info(f"[HTTP] ✅ Ephemeral summary sent privately to {current_user}")
+                                # /summarize result
+                                if command_result.get('type') == 'summarize':
+                                    socketio.emit('summary_result', {
+                                        'channel_id': channel_id,
+                                        'content': command_result.get('summary_content', ''),
+                                        'method': command_result.get('method', 'extractive'),
+                                        'message_count': command_result.get('message_count', 0),
+                                        'created_at': datetime.now().isoformat(),
+                                    }, room=user_sid, namespace='/')
+                                # /kb result
+                                elif command_result.get('type') == 'knowledge':
+                                    socketio.emit('kb_result', {
+                                        'channel_id': channel_id,
+                                        'content': command_result.get('kb_content', ''),
+                                        'subtype': command_result.get('subtype', 'extract'),
+                                        'total_items': command_result.get('total_items', 0),
+                                        'faqs': command_result.get('faqs', 0),
+                                        'definitions': command_result.get('definitions', 0),
+                                        'decisions': command_result.get('decisions', 0),
+                                        'method': command_result.get('method', 'rule_based'),
+                                        'result_count': command_result.get('result_count', 0),
+                                        'created_at': datetime.now().isoformat(),
+                                    }, room=user_sid, namespace='/')
+                                    log.info(f"[HTTP] ✅ Ephemeral KB result sent privately to {current_user}")
 
                             return jsonify({
                                 'command_result': command_result,
@@ -849,9 +1207,15 @@ def send_message():
                 log.info(f"[HTTP SEND] Owner {current_user} message — moderation still applied")
 
             # -- Batch moderation: instant-check only, Gemini reviews in batch later --
+            # Honour both platform-wide and per-community settings.
+            # Sys-admin disables moderation globally from platform-settings;
+            # community admin disables it for their community from admin/agents.
             try:
                 _get_moderation_agent()
-                moderation_installed = True
+                moderation_installed = (
+                    is_auto_moderation_enabled()
+                    and is_community_agent_enabled(community_id, 'moderation')
+                )
             except Exception:
                 moderation_installed = False
             instant_result = _get_moderation_agent().instant_check(content) if moderation_installed else {'block': False, 'reason': ''}

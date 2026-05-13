@@ -43,6 +43,18 @@ def _get_agent(name: str):
         elif name == 'wellness':
             from agents.wellness import WellnessAgent
             _agents[name] = WellnessAgent()
+        elif name == 'assistant':
+            from agents.assistant import AssistantAgent
+            _agents[name] = AssistantAgent()
+        elif name == 'auto_message':
+            from agents.auto_message import AutoMessageAgent
+            _agents[name] = AutoMessageAgent()
+        elif name == 'support':
+            from agents.support import SupportAgent
+            _agents[name] = SupportAgent()
+        elif name == 'translator':
+            from agents.translator import TranslatorAgent
+            _agents[name] = TranslatorAgent()
     return _agents[name]
 
 # â”€â”€ Agent-type alias map â”€â”€
@@ -4247,3 +4259,216 @@ def delete_scheduled_summary(summary_id):
     finally:
         if conn:
             conn.close()
+
+
+# =====================================
+# ASSISTANT AGENT ROUTES
+# =====================================
+
+@agents_bp.route('/assistant/ask', methods=['POST'])
+@jwt_required()
+def assistant_ask():
+    """Ask the AI Assistant a question."""
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        data = request.get_json(silent=True) or {}
+        question = (data.get('question') or '').strip()
+        if not question:
+            return jsonify({'error': 'question is required'}), 400
+
+        result = _get_agent('assistant').ask(
+            question=question,
+            user_id=user_id,
+            channel_id=data.get('channel_id'),
+            community_id=data.get('community_id'),
+            context=data.get('context'),
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        print(f"[AGENTS API] assistant_ask error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@agents_bp.route('/assistant/joke', methods=['GET'])
+@jwt_required()
+def assistant_joke():
+    try:
+        return jsonify(_get_agent('assistant').random_joke()), 200
+    except Exception as e:
+        print(f"[AGENTS API] assistant_joke error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@agents_bp.route('/assistant/motivation', methods=['GET'])
+@jwt_required()
+def assistant_motivation():
+    try:
+        return jsonify(_get_agent('assistant').random_motivation()), 200
+    except Exception as e:
+        print(f"[AGENTS API] assistant_motivation error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+# =====================================
+# TRANSLATOR AGENT ROUTES
+# =====================================
+
+@agents_bp.route('/translator/translate', methods=['POST'])
+@jwt_required()
+def translator_translate():
+    """Translate arbitrary text."""
+    try:
+        data = request.get_json(silent=True) or {}
+        text = (data.get('text') or '').strip()
+        if not text:
+            return jsonify({'error': 'text is required'}), 400
+
+        result = _get_agent('translator').translate(
+            text=text,
+            target_language=data.get('target_language', 'en'),
+            source_language=data.get('source_language', 'auto'),
+        )
+        return jsonify({'success': True, **result}), 200
+    except Exception as e:
+        print(f"[AGENTS API] translator_translate error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@agents_bp.route('/translator/message/<int:message_id>', methods=['POST'])
+@jwt_required()
+def translator_message(message_id: int):
+    """Translate an existing message by id."""
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        data = request.get_json(silent=True) or {}
+        target = data.get('target_language', 'en')
+
+        result = _get_agent('translator').translate_message(
+            message_id=message_id,
+            target_language=target,
+            user_id=user_id,
+        )
+        if not result.get('success'):
+            status = 404 if result.get('error') == 'message_not_found' else 500
+            return jsonify(result), status
+        return jsonify(result), 200
+    except Exception as e:
+        print(f"[AGENTS API] translator_message error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@agents_bp.route('/translator/languages', methods=['GET'])
+@jwt_required()
+def translator_languages():
+    try:
+        langs = _get_agent('translator').supported_languages()
+        return jsonify({'success': True, 'languages': langs}), 200
+    except Exception as e:
+        print(f"[AGENTS API] translator_languages error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@agents_bp.route('/translator/detect', methods=['POST'])
+@jwt_required()
+def translator_detect():
+    try:
+        data = request.get_json(silent=True) or {}
+        text = (data.get('text') or '').strip()
+        if not text:
+            return jsonify({'error': 'text is required'}), 400
+        return jsonify({
+            'success': True,
+            **_get_agent('translator').detect_language(text)
+        }), 200
+    except Exception as e:
+        print(f"[AGENTS API] translator_detect error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+# =====================================
+# CONTEXT-AWARE SUPPORT AGENT ROUTES
+# =====================================
+
+@agents_bp.route('/support/ask', methods=['POST'])
+@jwt_required()
+def support_ask():
+    """Q&A over a community's knowledge base."""
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        data = request.get_json(silent=True) or {}
+        question = (data.get('question') or '').strip()
+        community_id = data.get('community_id')
+        if not question or not community_id:
+            return jsonify({'error': 'question and community_id are required'}), 400
+
+        result = _get_agent('support').ask(
+            question=question,
+            community_id=int(community_id),
+            user_id=user_id,
+            channel_id=data.get('channel_id'),
+            polish=bool(data.get('polish', True)),
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        print(f"[AGENTS API] support_ask error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@agents_bp.route('/support/refresh/<int:community_id>', methods=['POST'])
+@jwt_required()
+def support_refresh(community_id: int):
+    try:
+        _get_agent('support').invalidate(community_id)
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        print(f"[AGENTS API] support_refresh error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+# =====================================
+# AUTO MESSAGE AGENT ROUTES
+# =====================================
+
+@agents_bp.route('/automessage/welcome/preview', methods=['POST'])
+@jwt_required()
+def automessage_welcome_preview():
+    """Preview a welcome message without posting."""
+    try:
+        data = request.get_json(silent=True) or {}
+        community_name = data.get('community_name') or ''
+        username_target = data.get('username') or ''
+        if not community_name or not username_target:
+            return jsonify({'error': 'community_name and username are required'}), 400
+
+        result = _get_agent('auto_message').generate_welcome(
+            community_name=community_name,
+            username=username_target,
+            community_description=data.get('community_description'),
+            community_id=data.get('community_id'),
+            channel_id=data.get('channel_id'),
+            post=False,
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        print(f"[AGENTS API] automessage_welcome_preview error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@agents_bp.route('/automessage/quick-replies', methods=['POST'])
+@jwt_required()
+def automessage_quick_replies():
+    """Return quick-reply suggestions for a message."""
+    try:
+        data = request.get_json(silent=True) or {}
+        last_message = (data.get('last_message') or '').strip()
+        max_n = int(data.get('max', 3))
+        result = _get_agent('auto_message').quick_replies(
+            last_message=last_message, max_suggestions=max_n,
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        print(f"[AGENTS API] automessage_quick_replies error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500

@@ -9,15 +9,8 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAIAgents } from '@/contexts/AIAgentContext';
 import { aiAgentService, AgentLog } from '@/services/aiAgentService';
-import SummarizerAgent from '@/components/ai-agents/SummarizerAgent';
-import MoodTrackerAgent from '@/components/ai-agents/MoodTrackerAgent';
-import ModerationAgent from '@/components/ai-agents/ModerationAgent';
-import EngagementAgent from '@/components/ai-agents/EngagementAgent';
-import WellnessAgent from '@/components/ai-agents/WellnessAgent';
-import KnowledgeBuilderAgent from '@/components/ai-agents/KnowledgeBuilderAgent';
-import { FocusAgent } from '@/components/ai-agents/FocusAgent';
 
-type SectionName = 'overview' | 'capabilities' | 'settings' | 'logs' | 'testing';
+type SectionName = 'capabilities' | 'settings' | 'logs' | 'testing';
 
 // Agent capabilities data
 const AGENT_CAPABILITIES: Record<string, { features: string[]; automations: string[]; metrics: string[] }> = {
@@ -55,6 +48,26 @@ const AGENT_CAPABILITIES: Record<string, { features: string[]; automations: stri
     features: ['Focus session tracking', 'Distraction pattern analysis', 'Productivity scoring', 'Goal setting & tracking', 'Break optimization'],
     automations: ['Auto analyze every 50 messages', 'Session reminders', 'Daily focus reports'],
     metrics: ['Focus sessions', 'Avg duration', 'Productivity score', 'Goals completed'],
+  },
+  assistant: {
+    features: ['Q&A on any topic', 'Jokes & motivation on demand', 'Roman Urdu friendly', 'Per-channel context', 'Lexicon fallback when offline'],
+    automations: ['/ask in chat posts a bot reply', '/help lists available commands'],
+    metrics: ['Questions asked', 'Avg latency', 'Lexicon vs Gemini ratio', 'Top intents'],
+  },
+  translator: {
+    features: ['14+ supported languages', 'One-click message translation', 'Auto language detection', 'Roman Urdu heuristics', 'Cached results for repeats'],
+    automations: ['/translate <lang> <text>', 'Right-click translate on any message'],
+    metrics: ['Translations served', 'Cache hit rate', 'Top target languages', 'Avg latency'],
+  },
+  support: {
+    features: ['TF-IDF retrieval over knowledge base', 'Cited sources per answer', 'Optional Gemini polish', 'Auto-rebuilds index every 5 min', '/support slash command'],
+    automations: ['Index refresh on KB updates', 'Citation chips per answer'],
+    metrics: ['Questions answered', 'Match rate', 'Avg score', 'Top KB articles'],
+  },
+  auto_message: {
+    features: ['Welcome on community join', '3-tap quick-reply chips above input', 'Intent-aware suggestions', 'Customizable templates', 'Posts as AI bot in default channel'],
+    automations: ['Auto-welcome on join', 'Quick replies refresh on each new inbound message'],
+    metrics: ['Welcomes posted', 'Suggestions tapped', 'Top intents', 'Quick-reply CTR'],
   },
 };
 
@@ -104,6 +117,25 @@ const AGENT_SETTINGS: Record<string, { key: string; label: string; type: 'toggle
     { key: 'daily_report', label: 'Daily focus report', type: 'toggle', default: false },
     { key: 'default_session_minutes', label: 'Default session length (min)', type: 'slider', min: 15, max: 120, default: 25 },
   ],
+  assistant: [
+    { key: 'reply_style', label: 'Reply style', type: 'select', options: ['concise', 'balanced', 'detailed'], default: 'concise' },
+    { key: 'use_gemini', label: 'Use Gemini when available', type: 'toggle', default: true },
+    { key: 'max_history', label: 'Recent messages used as context', type: 'slider', min: 0, max: 20, default: 5 },
+  ],
+  translator: [
+    { key: 'default_target', label: 'Default target language', type: 'select', options: ['en', 'ur', 'hi', 'es', 'fr', 'de', 'ar', 'zh-CN', 'pt', 'ru', 'ja', 'tr', 'id', 'bn'], default: 'en' },
+    { key: 'auto_detect', label: 'Auto-detect source language', type: 'toggle', default: true },
+  ],
+  support: [
+    { key: 'use_gemini_polish', label: 'Polish replies with Gemini', type: 'toggle', default: true },
+    { key: 'min_score', label: 'Min relevance to answer (×100)', type: 'slider', min: 5, max: 50, default: 12 },
+    { key: 'max_docs', label: 'Max KB docs indexed', type: 'slider', min: 50, max: 1000, default: 500 },
+  ],
+  auto_message: [
+    { key: 'welcome_enabled', label: 'Auto-welcome new members', type: 'toggle', default: true },
+    { key: 'quick_replies_enabled', label: 'Show quick-reply chips', type: 'toggle', default: true },
+    { key: 'post_in_default_channel', label: 'Post welcome in default channel', type: 'toggle', default: true },
+  ],
 };
 
 export default function AgentDetails() {
@@ -113,7 +145,7 @@ export default function AgentDetails() {
   const { agentStatus } = useAIAgents();
   
   const [expandedSections, setExpandedSections] = useState<Set<SectionName>>(
-    new Set(['overview', 'capabilities'])
+    new Set(['capabilities'])
   );
   const [agentEnabled, setAgentEnabled] = useState(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -201,6 +233,38 @@ export default function AgentDetails() {
           icon: <Focus className="w-6 h-6" />,
           color: 'orange',
           status: agentStatus.focus || 'active'
+        };
+      case 'assistant':
+        return {
+          name: 'AI Assistant',
+          description: 'Friendly Q&A chatbot — Gemini-powered with offline lexicon fallback',
+          icon: <Brain className="w-6 h-6" />,
+          color: 'violet',
+          status: agentStatus.assistant || 'active'
+        };
+      case 'translator':
+        return {
+          name: 'Translator',
+          description: 'Translate any chat message to your preferred language',
+          icon: <FileText className="w-6 h-6" />,
+          color: 'cyan',
+          status: agentStatus.translator || 'active'
+        };
+      case 'support':
+        return {
+          name: 'Context-Aware Support',
+          description: 'Answers questions using your community knowledge base',
+          icon: <BookOpen className="w-6 h-6" />,
+          color: 'emerald',
+          status: agentStatus.support || 'active'
+        };
+      case 'auto_message':
+        return {
+          name: 'Auto Message Generator',
+          description: 'Welcomes new members and suggests quick replies',
+          icon: <Activity className="w-6 h-6" />,
+          color: 'amber',
+          status: agentStatus.auto_message || 'active'
         };
       default:
         return null;
@@ -337,26 +401,6 @@ export default function AgentDetails() {
     }
   };
 
-  const renderAgentInterface = () => {
-    switch (agentId) {
-      case 'summarizer':
-        return <SummarizerAgent />;
-      case 'mood':
-        return <MoodTrackerAgent />;
-      case 'moderation':
-        return <ModerationAgent />;
-      case 'engagement':
-        return <EngagementAgent />;
-      case 'wellness':
-        return <WellnessAgent />;
-      case 'knowledge':
-        return <KnowledgeBuilderAgent />;
-      case 'focus':
-        return <FocusAgent />;
-      default:
-        return null;
-    }
-  };
 
   return (
     <div 
@@ -448,7 +492,6 @@ export default function AgentDetails() {
         {/* Tab Navigation */}
         <div className="flex gap-1 px-6 border-t border-[hsl(var(--theme-border-default))]">
           {[
-            { id: 'overview', label: 'Overview', icon: <Activity className="w-4 h-4" /> },
             { id: 'capabilities', label: 'Capabilities', icon: <CheckCircle className="w-4 h-4" /> },
             { id: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" /> },
             { id: 'logs', label: 'Logs', icon: <FileText className="w-4 h-4" /> },
@@ -476,22 +519,6 @@ export default function AgentDetails() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         <div className="max-w-5xl mx-auto p-6 space-y-6">
-          {/* Overview Section */}
-          {expandedSections.has('overview') && (
-            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] backdrop-blur-sm border-[hsl(var(--theme-border-default))] shadow-sm overflow-hidden">
-              <div className="p-6">
-                <h2 className="text-lg font-semibold mb-4 text-[hsl(var(--theme-text-primary))]">
-                  Agent Interface
-                </h2>
-                
-                {/* Agent Component */}
-                <div className="rounded-lg border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-tertiary)/0.5)]">
-                  {renderAgentInterface()}
-                </div>
-              </div>
-            </section>
-          )}
-
           {/* Capabilities Section */}
           {expandedSections.has('capabilities') && agentId && AGENT_CAPABILITIES[agentId] && (
             <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] backdrop-blur-sm border-[hsl(var(--theme-border-default))] shadow-sm">

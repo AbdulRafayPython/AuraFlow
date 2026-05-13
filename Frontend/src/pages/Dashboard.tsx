@@ -1,6 +1,6 @@
 // pages/Dashboard.tsx - Professional Real-time Version with Theme Support
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus, Mic, SmilePlus, X, Palette, Reply, Pin, PinOff, Radio, BookOpen, Trash2 } from "lucide-react";
+import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus, Mic, SmilePlus, X, Palette, Reply, Pin, PinOff, Radio, BookOpen, Trash2, Brain, Languages } from "lucide-react";
 import { useTheme, THEMES } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
@@ -28,6 +28,10 @@ import type { PinModalContext } from "@/components/pins/PinDurationModal";
 import PinnedMessageBanner, { type ActivePinData } from "@/components/pins/PinnedMessageBanner";
 import { pinService, type PinDurationMinutes } from "@/services/pinService";
 import { useAuth } from "@/contexts/AuthContext";
+import { KnowledgePanel } from "@/components/ai-agents/KnowledgePanel";
+import AgentBar from "@/components/ai-agents/AgentBar";
+import AgentResultPanel, { AgentResultTab, TranslationHistoryItem } from "@/components/ai-agents/AgentResultPanel";
+import QuickReplyChips from "@/components/chat/QuickReplyChips";
 import { statusService } from "@/services/statusService";
 import { friendService } from "@/services/friendService";
 import { useUnreadCounts } from "@/hooks/useUnreadCounts";
@@ -105,14 +109,53 @@ export default function Dashboard() {
   const [pendingScheduledSummaries, setPendingScheduledSummaries] = useState<any[]>([]);
   const [savedSummaries, setSavedSummaries] = useState<any[]>([]);
   const [summaryHistoryOpen, setSummaryHistoryOpen] = useState(false);
+  const [kbPanelOpen, setKbPanelOpen] = useState(false);
 
-  // Available commands
-  const availableCommands = [
+  // AgentResultPanel — multi-tab right rail driven by AgentBar
+  const [agentPanelOpen, setAgentPanelOpen] = useState(false);
+  const [agentPanelTab, setAgentPanelTab] = useState<AgentResultTab>('knowledge');
+  const [translationHistory, setTranslationHistory] = useState<TranslationHistoryItem[]>([]);
+
+  // Ephemeral KB state (private /kb results)
+  const [isGeneratingKB, setIsGeneratingKB] = useState(false);
+  const [ephemeralKBResult, setEphemeralKBResult] = useState<{
+    content: string;
+    subtype: string;
+    total_items: number;
+    faqs: number;
+    definitions: number;
+    decisions: number;
+    method: string;
+    result_count?: number;
+    created_at: string;
+  } | null>(null);
+
+  // Available commands (priority-ordered; only top N are shown in the picker)
+  const allCommands = [
     { command: '/summarize', description: 'Summarize recent messages', usage: '/summarize [count]' },
-    { command: '/mood', description: 'Analyze your mood and sentiment', usage: '/mood [hours]' },
-    { command: '/wellness', description: 'Check your wellness score', usage: '/wellness' },
-    { command: '/help', description: 'Show available commands', usage: '/help' },
+    { command: '/ask',       description: 'Ask the AI Assistant',       usage: '/ask <question>' },
+    { command: '/support',   description: 'Ask the community knowledge base', usage: '/support <question>' },
+    { command: '/translate', description: 'Translate text',              usage: '/translate <lang> <text>' },
+    { command: '/help',      description: 'Show available commands',    usage: '/help' },
+    { command: '/icebreaker',description: 'Post an ice-breaker',         usage: '/icebreaker' },
+    { command: '/poll',      description: 'Post a quick poll',           usage: '/poll' },
+    { command: '/extract',   description: 'Extract knowledge from channel', usage: '/extract' },
+    { command: '/focus',     description: 'Check channel focus score',  usage: '/focus' },
+    { command: '/mood',      description: 'Analyze your mood and sentiment', usage: '/mood [hours]' },
+    { command: '/wellness',  description: 'Check your wellness score',  usage: '/wellness' },
+    { command: '/kb',        description: 'Extract knowledge (legacy)', usage: '/kb [hours]' },
+    { command: '/kb search', description: 'Search the knowledge base',  usage: '/kb search <query>' },
   ];
+  const COMMAND_PICKER_LIMIT = 5;
+  // Filter by current input prefix, then cap to the top N to keep the picker compact
+  const filteredCommands = (() => {
+    const q = (message || '').trim().toLowerCase();
+    const base = q.startsWith('/')
+      ? allCommands.filter(c => c.command.toLowerCase().startsWith(q))
+      : allCommands;
+    return base.slice(0, COMMAND_PICKER_LIMIT);
+  })();
+  const availableCommands = filteredCommands;
 
   // Log messages for debugging blocked users
   useEffect(() => {
@@ -221,14 +264,22 @@ export default function Dashboard() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [reactionPickerMessageId]);
 
-  // Listen for AI command errors (summary itself is posted as a bot message in chat)
+  // Listen for AI command results — errors and help responses both come through here.
   useEffect(() => {
     const handleCommandResult = (event: CustomEvent) => {
       const data = event.detail;
-      if (!data.success) {
+      if (data?.type === 'help' && data?.success) {
+        toast({
+          title: 'AuraFlow AI Commands',
+          description: String(data.message || '').replace(/[*`]/g, ''),
+          duration: 12000,
+        });
+        return;
+      }
+      if (!data?.success) {
         toast({
           title: '❌ Command Failed',
-          description: data.error || 'Failed to execute command.',
+          description: data?.error || 'Failed to execute command.',
           variant: 'destructive',
           duration: 5000,
         });
@@ -270,6 +321,32 @@ export default function Dashboard() {
     };
   }, [currentChannel]);
 
+  // Listen for ephemeral KB events (private to sender)
+  useEffect(() => {
+    const handleKBGenerating = (event: CustomEvent) => {
+      const data = event.detail;
+      if (currentChannel && data.channel_id === currentChannel.id) {
+        setIsGeneratingKB(true);
+        setEphemeralKBResult(null);
+      }
+    };
+
+    const handleKBResult = (event: CustomEvent) => {
+      const data = event.detail;
+      if (currentChannel && data.channel_id === currentChannel.id) {
+        setIsGeneratingKB(false);
+        setEphemeralKBResult(data);
+      }
+    };
+
+    window.addEventListener('kb_generating', handleKBGenerating as EventListener);
+    window.addEventListener('kb_result', handleKBResult as EventListener);
+    return () => {
+      window.removeEventListener('kb_generating', handleKBGenerating as EventListener);
+      window.removeEventListener('kb_result', handleKBResult as EventListener);
+    };
+  }, [currentChannel]);
+
   // Typewriter animation for ephemeral summary
   useEffect(() => {
     if (!ephemeralSummary) {
@@ -298,6 +375,9 @@ export default function Dashboard() {
     setPendingScheduledSummaries([]);
     setSavedSummaries([]);
     setSummaryHistoryOpen(false);
+    setKbPanelOpen(false);
+    setEphemeralKBResult(null);
+    setIsGeneratingKB(false);
   }, [currentChannel?.id]);
 
   // Fetch pending scheduled summaries + saved summaries when entering a channel
@@ -550,6 +630,30 @@ export default function Dashboard() {
     inputRef.current?.focus();
   };
 
+  const handleTranslateMessage = useCallback(async (msg: Message) => {
+    try {
+      const target = (typeof navigator !== 'undefined' && navigator.language?.split('-')[0]) || 'en';
+      const res: any = await aiAgentService.translateMessage(msg.id, target);
+      if (res && (res.translated_text || res.translation)) {
+        const translated = res.translated_text || res.translation;
+        setTranslationHistory(prev => [
+          {
+            message_id: msg.id,
+            original: String(msg.content || ''),
+            translated: String(translated),
+            target_language: String(target),
+            at: new Date().toISOString(),
+          },
+          ...prev,
+        ].slice(0, 30));
+        setAgentPanelTab('translations');
+        setAgentPanelOpen(true);
+      }
+    } catch (e) {
+      console.error('Translate failed', e);
+    }
+  }, []);
+
   const scrollToMessage = (messageId: number) => {
     const el = document.getElementById(`msg-${messageId}`);
     if (el) {
@@ -600,6 +704,12 @@ export default function Dashboard() {
       setIsGeneratingSummary(true);
       setEphemeralSummary(null);
       setDisplayedSummaryText('');
+    }
+
+    // Show skeleton instantly for /kb
+    if (messageToSend.trim().toLowerCase().startsWith('/kb')) {
+      setIsGeneratingKB(true);
+      setEphemeralKBResult(null);
     }
 
     try {
@@ -695,7 +805,12 @@ export default function Dashboard() {
       }
       if (e.key === "Tab" || e.key === "Enter") {
         e.preventDefault();
-        const selectedCommand = availableCommands[selectedCommandIndex];
+        const idx = Math.min(selectedCommandIndex, availableCommands.length - 1);
+        const selectedCommand = availableCommands[idx];
+        if (!selectedCommand) {
+          setShowCommandSuggestions(false);
+          return;
+        }
         setMessage(selectedCommand.command + ' ');
         setShowCommandSuggestions(false);
         setSelectedCommandIndex(0);
@@ -718,8 +833,8 @@ export default function Dashboard() {
     const value = e.target.value;
     setMessage(value);
 
-    // Show command suggestions when user types '/'
-    if (value === '/' || (value.startsWith('/') && !value.includes(' '))) {
+    // Show command suggestions while user types the command (before the first space)
+    if (value.startsWith('/') && !value.includes(' ')) {
       setShowCommandSuggestions(true);
       setSelectedCommandIndex(0);
     } else {
@@ -934,6 +1049,21 @@ export default function Dashboard() {
             </button>
           )}
 
+          {/* Knowledge Base */}
+          {currentChannel && (
+            <button
+              onClick={() => setKbPanelOpen(prev => !prev)}
+              className={`p-2 rounded-lg transition-colors relative ${
+                kbPanelOpen
+                  ? 'bg-amber-500/20 text-amber-400'
+                  : 'hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]'
+              }`}
+              title="Knowledge Base"
+            >
+              <Brain className="w-4 h-4" />
+            </button>
+          )}
+
           {/* Pinned Messages */}
           {currentChannel && (
             <button
@@ -978,6 +1108,21 @@ export default function Dashboard() {
         onUnpin={handleUnpinMessage}
         onJumpToMessage={scrollToMessage}
       />
+
+      {/* AI Agent Bar — only renders if at least one agent is active */}
+      {currentChannel && (
+        <div className="px-3 pt-2">
+          <AgentBar
+            channelId={currentChannel.id}
+            channelName={currentChannel.name}
+            communityId={currentCommunity?.id ?? null}
+            onOpenPanel={(tab) => {
+              setAgentPanelTab(tab);
+              setAgentPanelOpen(true);
+            }}
+          />
+        </div>
+      )}
 
       {/* Messages */}
       <main
@@ -1104,7 +1249,7 @@ export default function Dashboard() {
                         <div className="flex-1 min-w-0 overflow-hidden">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-semibold text-[15px] text-purple-400">
-                              Summarizer Agent
+                              {((msg as any).author && String((msg as any).author).trim()) || 'AI Bot'}
                             </span>
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-400 border border-purple-500/30">
                               BOT
@@ -1288,6 +1433,16 @@ export default function Dashboard() {
                             title="Reply"
                           >
                             <Reply className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTranslateMessage(msg);
+                            }}
+                            className="p-1.5 transition-colors text-[hsl(var(--theme-text-muted))] hover:text-cyan-400 hover:bg-[hsl(var(--theme-bg-hover))]"
+                            title="Translate"
+                          >
+                            <Languages className="w-4 h-4" />
                           </button>
                           <button
                             onClick={(e) => {
@@ -1488,6 +1643,86 @@ export default function Dashboard() {
               </div>
             ))}
 
+            {/* KB Skeleton Screen — shows immediately when /kb is processing */}
+            {isGeneratingKB && (
+              <div className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="absolute left-2 sm:left-4 mt-0.5">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-amber-500/80 to-yellow-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(251,191,36,0.3)] animate-pulse">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-semibold text-[15px] text-amber-400">Knowledge Builder</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">BOT</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Only visible to you</span>
+                  </div>
+                  <div className="p-4 rounded-xl border-l-[3px] border-l-amber-500/40 bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default))]">
+                    <div className="space-y-2.5">
+                      <div className="h-3.5 w-[85%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" />
+                      <div className="h-3.5 w-[70%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" style={{ animationDelay: '150ms' }} />
+                      <div className="h-3.5 w-[78%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" style={{ animationDelay: '300ms' }} />
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2 text-[12px] text-amber-400/70">
+                    <span>Extracting knowledge</span>
+                    <div className="flex items-center gap-0.5">
+                      <div className="w-1 h-1 rounded-full animate-bounce bg-amber-400" style={{ animationDelay: "0ms", animationDuration: "1s" }}></div>
+                      <div className="w-1 h-1 rounded-full animate-bounce bg-amber-400" style={{ animationDelay: "200ms", animationDuration: "1s" }}></div>
+                      <div className="w-1 h-1 rounded-full animate-bounce bg-amber-400" style={{ animationDelay: "400ms", animationDuration: "1s" }}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Ephemeral KB Result Card (private, only visible to sender) */}
+            {ephemeralKBResult && (
+              <div className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="absolute left-2 sm:left-4 mt-0.5">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-amber-500/80 to-yellow-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(251,191,36,0.3)]">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-semibold text-[15px] text-amber-400">Knowledge Builder</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">BOT</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Only visible to you</span>
+                    <span className="text-[11px] ml-1 text-[hsl(var(--theme-text-muted))]">
+                      {formatMessageTime(ephemeralKBResult.created_at)}
+                    </span>
+                  </div>
+                  <div className="p-4 rounded-xl border-l-[3px] border-l-amber-500/60 bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default))]">
+                    <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+                      {ephemeralKBResult.content}
+                    </div>
+                    {ephemeralKBResult.subtype === 'extract' && (
+                      <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
+                        <span>Method: {ephemeralKBResult.method}</span>
+                        {ephemeralKBResult.total_items > 0 && (
+                          <>
+                            <span>•</span>
+                            <span>{ephemeralKBResult.total_items} items saved</span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setEphemeralKBResult(null)}
+                    className="mt-2 text-[11px] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div ref={messagesEndRef} className="h-4" />
           </div>
         )}
@@ -1528,9 +1763,12 @@ export default function Dashboard() {
           )}
 
           {/* Command Suggestions Dropdown */}
-          {showCommandSuggestions && (
-            <div className="absolute bottom-full left-0 mb-2 w-full max-w-md rounded-lg shadow-2xl border overflow-hidden z-50 backdrop-blur-xl bg-[hsl(var(--theme-bg-elevated)/0.95)] border-[hsl(var(--theme-border-default))]">
-              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide border-b bg-[hsl(var(--theme-bg-secondary)/0.8)] text-[hsl(var(--theme-text-muted))] border-[hsl(var(--theme-border-default))]">
+          {showCommandSuggestions && availableCommands.length > 0 && (
+            <div
+              className="absolute bottom-full left-0 mb-2 w-full max-w-xs rounded-md shadow-xl border overflow-hidden z-50 backdrop-blur-xl bg-[hsl(var(--theme-bg-elevated)/0.95)] border-[hsl(var(--theme-border-default))]"
+              style={{ fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' }}
+            >
+              <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider border-b bg-[hsl(var(--theme-bg-secondary)/0.8)] text-[hsl(var(--theme-text-muted))] border-[hsl(var(--theme-border-default))]">
                 Commands
               </div>
               {availableCommands.map((cmd, index) => (
@@ -1542,45 +1780,59 @@ export default function Dashboard() {
                     setSelectedCommandIndex(0);
                     inputRef.current?.focus();
                   }}
-                  className={`w-full px-3 py-2.5 text-left transition-colors ${
+                  className={`w-full px-2.5 py-1.5 text-left transition-colors ${
                     index === selectedCommandIndex
-                      ? "bg-[hsl(var(--theme-accent-primary)/0.2)]"
+                      ? "bg-[hsl(var(--theme-accent-primary)/0.18)]"
                       : "hover:bg-[hsl(var(--theme-bg-hover))]"
                   }`}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className={`p-1.5 rounded-md ${
+                  <div className="flex items-center gap-2">
+                    <Bot className={`w-3.5 h-3.5 shrink-0 ${
                       index === selectedCommandIndex
-                        ? "bg-[hsl(var(--theme-accent-primary)/0.3)]"
-                        : "bg-[hsl(var(--theme-bg-tertiary))]"
-                    }`}>
-                      <Bot className={`w-4 h-4 ${
-                        index === selectedCommandIndex
-                          ? "text-[hsl(var(--theme-accent-primary))]"
-                          : "text-[hsl(var(--theme-text-muted))]"
-                      }`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className={`font-semibold text-[15px] ${
+                        ? "text-[hsl(var(--theme-accent-primary))]"
+                        : "text-[hsl(var(--theme-text-muted))]"
+                    }`} />
+                    <div className="flex-1 min-w-0 flex items-baseline gap-2">
+                      <span className={`font-medium text-[12px] tabular-nums ${
                         index === selectedCommandIndex
                           ? "text-[hsl(var(--theme-accent-primary))]"
                           : "text-[hsl(var(--theme-text-primary))]"
                       }`}>
                         {cmd.command}
-                      </div>
-                      <div className="text-[13px] mt-0.5 text-[hsl(var(--theme-text-secondary))]">
+                      </span>
+                      <span className="truncate text-[11px] text-[hsl(var(--theme-text-muted))]">
                         {cmd.description}
-                      </div>
+                      </span>
                     </div>
                   </div>
                 </button>
               ))}
-              <div className="px-3 py-2 text-[11px] border-t flex items-center gap-3 bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-muted))] border-[hsl(var(--theme-border-default))]">
-                <span><kbd className="px-1.5 py-0.5 rounded text-[10px] bg-[hsl(var(--theme-bg-tertiary))]">↑↓</kbd> navigate</span>
-                <span><kbd className="px-1.5 py-0.5 rounded text-[10px] bg-[hsl(var(--theme-bg-tertiary))]">Tab</kbd> select</span>
-                <span><kbd className="px-1.5 py-0.5 rounded text-[10px] bg-[hsl(var(--theme-bg-tertiary))]">Esc</kbd> close</span>
+              <div className="px-2.5 py-1 text-[10px] border-t flex items-center gap-2 bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-muted))] border-[hsl(var(--theme-border-default))]">
+                <span><kbd className="px-1 py-0 rounded text-[9px] bg-[hsl(var(--theme-bg-tertiary))]">↑↓</kbd> nav</span>
+                <span><kbd className="px-1 py-0 rounded text-[9px] bg-[hsl(var(--theme-bg-tertiary))]">Tab</kbd> select</span>
+                <span><kbd className="px-1 py-0 rounded text-[9px] bg-[hsl(var(--theme-bg-tertiary))]">Esc</kbd> close</span>
               </div>
             </div>
+          )}
+
+          {/* Quick reply chips — last inbound message in the channel */}
+          {currentChannel && (
+            <QuickReplyChips
+              lastMessage={(() => {
+                for (let i = messages.length - 1; i >= 0; i--) {
+                  const m: any = messages[i];
+                  if (m && m.sender_id !== authUser?.id && m.message_type !== 'ai' && m.content) {
+                    return String(m.content).slice(0, 300);
+                  }
+                }
+                return null;
+              })()}
+              enabled={!!currentChannel}
+              onPick={(text) => {
+                setMessage(prev => (prev ? `${prev} ${text}` : text));
+                inputRef.current?.focus();
+              }}
+            />
           )}
 
           <div className={`flex items-center rounded-lg transition-all backdrop-blur-md border ${
@@ -1743,6 +1995,19 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+      )}
+
+      {/* --- Agent Insights Panel (Knowledge / Summary / Mood / Focus / Translations) --- */}
+      {currentChannel && (
+        <AgentResultPanel
+          open={agentPanelOpen || kbPanelOpen}
+          onClose={() => { setAgentPanelOpen(false); setKbPanelOpen(false); }}
+          channelId={currentChannel.id}
+          channelName={currentChannel.name}
+          communityId={currentCommunity?.id ?? null}
+          initialTab={kbPanelOpen ? 'knowledge' : agentPanelTab}
+          translations={translationHistory}
+        />
       )}
 
       {/* --- Pin Duration / Unpin Modal --- */}

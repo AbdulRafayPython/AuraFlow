@@ -503,6 +503,17 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       window.dispatchEvent(new CustomEvent('summary_result', { detail: data }));
     });
 
+    // Listen for ephemeral KB events (private to sender)
+    const unsubscribeKBGenerating = socketService.onKBGenerating((data) => {
+      console.log('[REALTIME] 📚 KB generating for channel:', data.channel_id);
+      window.dispatchEvent(new CustomEvent('kb_generating', { detail: data }));
+    });
+
+    const unsubscribeKBResult = socketService.onKBResult((data) => {
+      console.log('[REALTIME] 📚 KB result for channel:', data.channel_id);
+      window.dispatchEvent(new CustomEvent('kb_result', { detail: data }));
+    });
+
     // Moderation retroactive — Gemini reviewed a message async and found a violation
     const unsubscribeModerationRetroactive = socketService.onModerationRetroactive((data) => {
       console.log('[REALTIME] 🤖 Gemini retroactive moderation for msg:', data.message_id, data.action);
@@ -546,6 +557,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       unsubscribeCommandResult();
       unsubscribeSummaryGenerating();
       unsubscribeSummaryResult();
+      unsubscribeKBGenerating();
+      unsubscribeKBResult();
       unsubscribeModerationRetroactive();
       unsubscribeScanProgress(); // NEW — v2
 

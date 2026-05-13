@@ -292,12 +292,21 @@ def get_channel_messages_cache(channel_id):
 
 
 def push_channel_message_cache(channel_id, msg_dict):
-    """Prepend a newly sent message to the channel cache (atomic pipeline)."""
+    """Prepend a newly sent message to the channel cache (atomic pipeline).
+
+    Skips the push if the cache key does not already exist — this prevents
+    a single new message from creating a 1-item cache after the key has been
+    invalidated (delete/edit) or naturally expired, which would cause only
+    that message to appear on the next channel load.
+    """
     r = get_redis()
     if r is None:
         return
     try:
         key = f"channel_msgs:{channel_id}"
+        # Only update an existing cache; never create a 1-message cache
+        if not r.exists(key):
+            return
         pipe = r.pipeline()
         pipe.lpush(key, json.dumps(msg_dict, default=str))
         pipe.ltrim(key, 0, _MSGS_MAX - 1)

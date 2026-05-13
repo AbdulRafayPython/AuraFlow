@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Shield, TrendingUp, BookOpen, Focus, Settings, Power, Trash2,
   Terminal, Bot, Plus, Loader2, AlertCircle, CheckCircle,
+  Mail, GraduationCap,
 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -40,11 +41,13 @@ const AGENT_CONFIG: Record<string, {
   color: string;
   gradient: string;
 }> = {
-  moderation: { name: 'Moderation', icon: Shield, color: 'red', gradient: 'from-red-500 to-rose-600' },
-  engagement: { name: 'Engagement', icon: TrendingUp, color: 'emerald', gradient: 'from-emerald-500 to-green-600' },
-  knowledge_builder: { name: 'Knowledge Builder', icon: BookOpen, color: 'indigo', gradient: 'from-indigo-500 to-purple-600' },
-  knowledge: { name: 'Knowledge Builder', icon: BookOpen, color: 'indigo', gradient: 'from-indigo-500 to-purple-600' },
-  focus: { name: 'Focus', icon: Focus, color: 'orange', gradient: 'from-orange-500 to-red-600' },
+  moderation:        { name: 'Moderation',             icon: Shield,        color: 'red',     gradient: 'from-red-500 to-rose-600' },
+  engagement:        { name: 'Engagement',             icon: TrendingUp,    color: 'emerald', gradient: 'from-emerald-500 to-green-600' },
+  knowledge_builder: { name: 'Knowledge Builder',      icon: BookOpen,      color: 'indigo',  gradient: 'from-indigo-500 to-purple-600' },
+  knowledge:         { name: 'Knowledge Builder',      icon: BookOpen,      color: 'indigo',  gradient: 'from-indigo-500 to-purple-600' },
+  focus:             { name: 'Focus',                  icon: Focus,         color: 'orange',  gradient: 'from-orange-500 to-red-600' },
+  support:           { name: 'Context-Aware Support',  icon: GraduationCap, color: 'emerald', gradient: 'from-emerald-500 to-teal-600' },
+  auto_message:      { name: 'Auto Message Generator', icon: Mail,          color: 'amber',   gradient: 'from-amber-500 to-orange-600' },
 };
 
 export default function CommunityAgentsList({ communityId, isAdmin, onBrowseAgents }: CommunityAgentsListProps) {

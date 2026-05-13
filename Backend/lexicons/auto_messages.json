@@ -1,0 +1,18 @@
+{
+  "welcome_templates": [
+    "Welcome to {community}, {user}! Glad you're here.",
+    "Hey {user}, welcome to {community}! Feel free to introduce yourself.",
+    "Welcome aboard, {user}! Take a look around {community} and say hi when ready.",
+    "{user} just joined {community} — give them a warm welcome!",
+    "Welcome, {user}! We're excited to have you in {community}."
+  ],
+  "quick_replies": {
+    "greeting": ["Hi!", "Hello there", "Hey, how's it going?"],
+    "thanks": ["You're welcome!", "Anytime", "Glad to help"],
+    "question": ["Let me check", "Good question", "Can you share more details?"],
+    "help_request": ["I can help with that", "What's the issue?", "Share more details please"],
+    "confirm": ["Sounds good", "Got it", "Perfect"],
+    "apology": ["No worries", "It's all good", "All fine"],
+    "general": ["Sounds good", "Got it", "Thanks for sharing", "Interesting"]
+  }
+}

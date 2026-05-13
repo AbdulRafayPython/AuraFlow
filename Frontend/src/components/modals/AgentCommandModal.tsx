@@ -97,21 +97,28 @@ const AGENT_COMMANDS: Record<string, {
     name: 'Knowledge Builder',
     emoji: '📚',
     commands: [
-      { command: '/knowledge [query]', description: 'Search the knowledge base', example: '/knowledge how to deploy' },
+      { command: '/kb', description: 'Extract knowledge from the last 24 hours of chat', example: '/kb' },
+      { command: '/kb [hours]', description: 'Extract knowledge from the last N hours (max 168)', example: '/kb 48' },
+      { command: '/kb search <query>', description: 'Search the knowledge base for a term', example: '/kb search docker' },
     ],
+    exampleResponse: `📚 Knowledge Builder — Last 24h\n━━━━━━━━━━━━━━━━━━━━━━━━\n✅ Saved 4 new items · ✨ Gemini AI\n(2 FAQs, 1 Definition, 1 Decision)\n\n💡 FAQs\n• Q: What is Docker?\n  A: A containerization platform...\n\n📖 Definitions\n• React: A JavaScript UI library...\n\n✅ Decisions\n• We decided to use PostgreSQL for production.`,
     tips: [
-      'Q&A pairs are extracted every 2 hours',
-      'Auto-categorizes topics',
-      'Quality score filtering removes noise',
+      'Uses Gemini AI with rule-based fallback for accurate extraction',
+      'Run /kb after important discussions to save key decisions',
+      'Use /kb search to quickly find past answers without scrolling',
+      'Results are private — only visible to you',
+      'View all saved items in the Knowledge Builder agent panel',
     ],
   },
   knowledge: {
     name: 'Knowledge Builder',
     emoji: '📚',
     commands: [
-      { command: '/knowledge [query]', description: 'Search the knowledge base', example: '/knowledge how to deploy' },
+      { command: '/kb', description: 'Extract knowledge from recent chat', example: '/kb' },
+      { command: '/kb [hours]', description: 'Extract from the last N hours', example: '/kb 48' },
+      { command: '/kb search <query>', description: 'Search the knowledge base', example: '/kb search docker' },
     ],
-    tips: ['Q&A pairs are extracted automatically', 'Searchable knowledge grows over time'],
+    tips: ['Uses Gemini AI for precise extraction', 'Searchable knowledge grows over time'],
   },
   wellness: {
     name: 'Wellness Agent',
@@ -129,14 +136,78 @@ const AGENT_COMMANDS: Record<string, {
     name: 'Focus Agent',
     emoji: '🎯',
     commands: [
-      { command: '/focus start [type] [minutes]', description: 'Start a focus session', example: '/focus start work 60' },
-      { command: '/focus end [id]', description: 'End current focus session', example: '/focus end' },
-      { command: '/focus stats', description: 'View your focus statistics', example: '/focus stats' },
+      { command: '/focus', description: 'Show current focus score and dominant topics for this channel', example: '/focus' },
     ],
     tips: [
-      'Session types: work, break, meeting',
-      'Auto-analyzes distraction patterns',
-      'Set daily focus goals in settings',
+      'Detects when discussion drifts off-topic',
+      'Higher score = more on-topic',
+      'Admins can set drift sensitivity in settings',
+    ],
+  },
+  assistant: {
+    name: 'AI Assistant',
+    emoji: '🤖',
+    commands: [
+      { command: '/ask <question>', description: 'Ask a quick question — Gemini-powered with offline lexicon fallback', example: '/ask what is FastAPI?' },
+      { command: '/joke', description: 'Get a random joke', example: '/joke' },
+      { command: '/motivation', description: 'Get a motivational line', example: '/motivation' },
+    ],
+    exampleResponse: `🤖 **AI Assistant**
+FastAPI is a modern Python web framework for building
+APIs quickly. It's built on Starlette + Pydantic, supports
+async/await natively, and auto-generates OpenAPI docs.`,
+    tips: [
+      'Replies are private — only visible to you',
+      'Roman Urdu friendly',
+      'Falls back to a local lexicon if Gemini is unavailable',
+    ],
+  },
+  translator: {
+    name: 'Translator',
+    emoji: '🌐',
+    commands: [
+      { command: '/translate <lang> <text>', description: 'Translate text into the target language', example: '/translate ur Hello, how are you?' },
+      { command: 'Hover → 🌐', description: 'Click the globe icon on any message to translate it into your default language', example: '' },
+    ],
+    exampleResponse: `🌐 **Translator** (en → ur)
+"Hello, how are you?"
+↓
+"السلام علیکم، آپ کیسے ہیں؟"`,
+    tips: [
+      'Supports 14+ languages including Roman Urdu detection',
+      'Cached for 24h — repeat translations are instant',
+      'Falls back to googletrans if deep-translator is offline',
+    ],
+  },
+  support: {
+    name: 'Context-Aware Support',
+    emoji: '🎓',
+    commands: [
+      { command: '/support <question>', description: 'Search the community knowledge base for an answer', example: '/support how do I reset my password?' },
+    ],
+    exampleResponse: `🎓 **Support** (best match · score 0.74)
+Q: How do I reset my password?
+A: Open Settings → Account → "Forgot Password",
+then enter your email. A reset link will be sent.
+
+📚 Source: #help — 3 days ago`,
+    tips: [
+      'Pulls answers from the community Knowledge Base',
+      'Install Knowledge Builder alongside it for best results',
+      'Cites the source message so you can read full context',
+    ],
+  },
+  auto_message: {
+    name: 'Auto Message Generator',
+    emoji: '✉️',
+    commands: [
+      { command: 'Automatic — Welcome', description: 'Posts a welcome message in the default channel when a new member joins', example: 'No command needed' },
+      { command: 'Automatic — Quick Replies', description: 'Suggests 3 tap-to-send chips above the chat input based on the latest message', example: 'No command needed' },
+    ],
+    tips: [
+      'Welcome posts can be toggled in agent settings',
+      'Quick-reply chips never auto-send — they drop into your input',
+      'Optional Gemini polish makes welcome copy feel less templated',
     ],
   },
 };
@@ -153,7 +224,14 @@ export const AgentCommandModal: React.FC<AgentCommandModalProps> = ({
 
   if (!open) return null;
 
-  const agent = AGENT_COMMANDS[agentType] || AGENT_COMMANDS.summarizer;
+  const agent = AGENT_COMMANDS[agentType] || {
+    name: 'AI Agent',
+    emoji: '🤖',
+    commands: [
+      { command: 'Automatic', description: 'This agent runs in the background — no chat command needed.', example: 'No command needed' },
+    ],
+    tips: ['Open agent settings to configure behaviour.'],
+  };
 
   const handleCopy = (text: string, idx: number) => {
     navigator.clipboard.writeText(text);

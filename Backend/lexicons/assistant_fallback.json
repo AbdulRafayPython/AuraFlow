@@ -1,0 +1,29 @@
+{
+  "greetings": [
+    "Hi there! How can I help you today?",
+    "Hello! Ask me anything.",
+    "Hey! Need help with something?",
+    "Salam! Kya madad chahiye?"
+  ],
+  "jokes": [
+    "Why do programmers prefer dark mode? Because light attracts bugs.",
+    "I told my computer I needed a break — it said 'no problem, I'll go to sleep.'",
+    "There are 10 kinds of people: those who understand binary and those who don't.",
+    "Debugging is like being the detective in a crime movie where you're also the murderer.",
+    "Why did the developer go broke? Because he used up all his cache.",
+    "A SQL query walks into a bar, walks up to two tables and asks: 'Can I join you?'"
+  ],
+  "motivation": [
+    "Small steps every day add up to big results.",
+    "Progress, not perfection.",
+    "You don't have to be great to start, but you have to start to be great.",
+    "Every expert was once a beginner.",
+    "Done is better than perfect.",
+    "Focus on what you can control today."
+  ],
+  "fallback": [
+    "I'm not sure about that one — try rephrasing?",
+    "Hmm, I don't have a great answer for that. Could you give me more context?",
+    "Good question! I don't have enough info to answer well — share more details?"
+  ]
+}

@@ -11,6 +11,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
 from services.notification_service import create_notification
+from services.audit_logger import log_admin_action, actor_role_from_request
 from datetime import datetime, timedelta
 from functools import wraps
 import logging
@@ -684,12 +685,23 @@ def update_member_role(community_id, user_id):
                 return jsonify({'error': 'Cannot change owner role'}), 403
             
             cur.execute("""
-                UPDATE community_members 
-                SET role = %s 
+                UPDATE community_members
+                SET role = %s
                 WHERE community_id = %s AND user_id = %s
             """, (new_role, community_id, user_id))
-            
+
         conn.commit()
+
+        log_admin_action(
+            actor_user_id=request.admin_user_id,
+            actor_role=actor_role_from_request(request),
+            action='community.member_role_change',
+            target_type='user',
+            target_id=user_id,
+            community_id=community_id,
+            metadata={'new_role': new_role, 'prev_role': member['role']},
+        )
+
         return jsonify({'success': True, 'message': 'Role updated'}), 200
         
     except Exception as e:
@@ -734,8 +746,18 @@ def remove_member(community_id, user_id):
                 INNER JOIN channels c ON cm.channel_id = c.id
                 WHERE c.community_id = %s AND cm.user_id = %s
             """, (community_id, user_id))
-            
+
         conn.commit()
+
+        log_admin_action(
+            actor_user_id=request.admin_user_id,
+            actor_role=actor_role_from_request(request),
+            action='community.member_remove',
+            target_type='user',
+            target_id=user_id,
+            community_id=community_id,
+            metadata={'prev_role': member['role']},
+        )
         
         # Notify the removed user
         try:
@@ -1126,11 +1148,21 @@ def unblock_user(community_id, user_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             cur.execute("""
-                DELETE FROM blocked_users 
+                DELETE FROM blocked_users
                 WHERE community_id = %s AND user_id = %s
             """, (community_id, user_id))
-        
+
         conn.commit()
+
+        log_admin_action(
+            actor_user_id=request.admin_user_id,
+            actor_role=actor_role_from_request(request),
+            action='user.unblock',
+            target_type='user',
+            target_id=user_id,
+            community_id=community_id,
+        )
+
         return jsonify({'success': True, 'message': 'User unblocked'}), 200
         
     except Exception as e:
@@ -1197,8 +1229,19 @@ def block_user(community_id):
                 INNER JOIN channels c ON cm.channel_id = c.id
                 WHERE c.community_id = %s AND cm.user_id = %s
             """, (community_id, user_id))
-        
+
         conn.commit()
+
+        log_admin_action(
+            actor_user_id=request.admin_user_id,
+            actor_role=actor_role_from_request(request),
+            action='user.block',
+            target_type='user',
+            target_id=user_id,
+            community_id=community_id,
+            metadata={'reason': reason},
+        )
+
         return jsonify({'success': True, 'message': 'User blocked'}), 200
         
     except Exception as e:
@@ -1828,6 +1871,480 @@ def get_community_health(community_id):
         import traceback
         traceback.print_exc()
         return jsonify({'error': 'Failed to fetch health metrics'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# PER-COMMUNITY AGENT SETTINGS (§3.4)
+# =====================================
+
+@community_admin_bp.route('/community/<int:community_id>/agents', methods=['GET'])
+@jwt_required()
+@require_community_owner
+def list_community_agents(community_id):
+    """
+    List all community-category agents with this community's per-community
+    enabled/settings state. If a row doesn't exist in community_agents, the
+    agent is treated as enabled by default with no overrides.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Pull all platform-level community agents from the registry.
+            cur.execute("""
+                SELECT agent_type, display_name, description, icon, default_settings, is_active
+                FROM agent_registry
+                WHERE category = 'community' AND is_active = 1
+                ORDER BY display_name
+            """)
+            registry = cur.fetchall()
+
+            # Pull this community's overrides.
+            cur.execute("""
+                SELECT agent_type, enabled, settings, installed_at, last_active, usage_count
+                FROM community_agents
+                WHERE community_id = %s
+            """, (community_id,))
+            overrides_by_type = {r['agent_type']: r for r in cur.fetchall()}
+
+            import json as _json
+            agents = []
+            for a in registry:
+                ov = overrides_by_type.get(a['agent_type'])
+
+                default_settings = a['default_settings']
+                if isinstance(default_settings, str):
+                    try:
+                        default_settings = _json.loads(default_settings)
+                    except Exception:
+                        default_settings = None
+
+                effective_settings = None
+                if ov and ov['settings'] is not None:
+                    effective_settings = ov['settings']
+                    if isinstance(effective_settings, str):
+                        try:
+                            effective_settings = _json.loads(effective_settings)
+                        except Exception:
+                            effective_settings = None
+                else:
+                    effective_settings = default_settings
+
+                agents.append({
+                    'agent_type': a['agent_type'],
+                    'display_name': a['display_name'],
+                    'description': a['description'],
+                    'icon': a['icon'],
+                    'default_settings': default_settings,
+                    'enabled': bool(ov['enabled']) if ov else True,
+                    'has_override': ov is not None,
+                    'settings': effective_settings,
+                    'usage_count': (ov['usage_count'] if ov else 0),
+                    'last_active': ov['last_active'].isoformat() if ov and ov['last_active'] else None,
+                })
+
+            return jsonify({'success': True, 'agents': agents}), 200
+    except Exception as e:
+        log.error(f"[ADMIN] Error listing community agents: {e}")
+        return jsonify({'error': 'Failed to fetch community agents'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@community_admin_bp.route('/community/<int:community_id>/agents/<agent_type>', methods=['PUT'])
+@jwt_required()
+@require_community_owner
+def update_community_agent(community_id, agent_type):
+    """
+    Toggle and/or update settings for a per-community agent.
+    Body (JSON): { enabled?: bool, settings?: object }
+    """
+    try:
+        from services.community_agent_config import upsert as upsert_community_agent
+    except Exception as e:
+        return jsonify({'error': f'Agent config service unavailable: {e}'}), 500
+
+    data = request.get_json() or {}
+    enabled = data.get('enabled')
+    settings = data.get('settings')
+
+    if enabled is None and settings is None:
+        return jsonify({'error': 'Provide enabled and/or settings'}), 400
+    if enabled is not None and not isinstance(enabled, bool):
+        return jsonify({'error': 'enabled must be a boolean'}), 400
+    if settings is not None and not isinstance(settings, dict):
+        return jsonify({'error': 'settings must be an object'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT agent_type FROM agent_registry WHERE agent_type = %s AND category = 'community' AND is_active = 1",
+                (agent_type,),
+            )
+            if not cur.fetchone():
+                return jsonify({'error': 'Unknown community agent type'}), 404
+
+        config = upsert_community_agent(
+            community_id=community_id,
+            agent_type=agent_type,
+            enabled=enabled,
+            settings=settings,
+            installed_by=request.admin_user_id,
+        )
+
+        log_admin_action(
+            actor_user_id=request.admin_user_id,
+            actor_role=actor_role_from_request(request),
+            action='agent.community_toggle',
+            target_type='agent',
+            target_id=None,
+            community_id=community_id,
+            metadata={'agent_type': agent_type, 'enabled': enabled, 'settings': settings},
+        )
+
+        return jsonify({'success': True, 'config': config}), 200
+    except Exception as e:
+        log.error(f"[ADMIN] Error updating community agent: {e}")
+        return jsonify({'error': 'Failed to update community agent'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ------------------------------------------------------------
+# §3.6 Announcements (stretch)
+# ------------------------------------------------------------
+
+@community_admin_bp.route('/community/<int:community_id>/announcements', methods=['GET'])
+def list_announcements(community_id):
+    """List active announcements for a community."""
+    require_community_owner(community_id)
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT a.id, a.title, a.body, a.is_pinned, a.expires_at, a.created_at,
+                       u.username as author_name
+                FROM community_announcements a
+                JOIN users u ON a.author_id = u.id
+                WHERE a.community_id = %s AND a.is_active = 1
+                  AND (a.expires_at IS NULL OR a.expires_at > NOW())
+                ORDER BY a.is_pinned DESC, a.created_at DESC
+                """,
+                (community_id,)
+            )
+            rows = cur.fetchall()
+        return jsonify({'announcements': rows}), 200
+    except Exception as e:
+        log.error(f"[ADMIN] Error listing announcements: {e}")
+        return jsonify({'error': 'Failed to list announcements'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@community_admin_bp.route('/community/<int:community_id>/announcements', methods=['POST'])
+def create_announcement(community_id):
+    """Create a new announcement."""
+    require_community_owner(community_id)
+    data = request.get_json()
+    title = data.get('title', '').strip()
+    body = data.get('body', '').strip()
+    is_pinned = bool(data.get('is_pinned', False))
+    expires_at = data.get('expires_at')  # ISO string or null
+
+    if not title or not body:
+        return jsonify({'error': 'Title and body are required'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO community_announcements
+                    (community_id, author_id, title, body, is_pinned, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (community_id, request.admin_user_id, title, body,
+                 1 if is_pinned else 0, expires_at)
+            )
+        conn.commit()
+
+        log_admin_action(
+            actor_user_id=request.admin_user_id,
+            actor_role=actor_role_from_request(request),
+            action='announcement.create',
+            target_type='announcement',
+            target_id=cur.lastrowid,
+            community_id=community_id,
+            metadata={'title': title[:50], 'is_pinned': is_pinned},
+        )
+
+        return jsonify({'success': True, 'id': cur.lastrowid}), 201
+    except Exception as e:
+        log.error(f"[ADMIN] Error creating announcement: {e}")
+        return jsonify({'error': 'Failed to create announcement'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@community_admin_bp.route('/community/<int:community_id>/announcements/<int:announcement_id>', methods=['PUT'])
+def update_announcement(community_id, announcement_id):
+    """Update an announcement."""
+    require_community_owner(community_id)
+    data = request.get_json()
+    title = data.get('title', '').strip()
+    body = data.get('body', '').strip()
+    is_pinned = data.get('is_pinned')
+    is_active = data.get('is_active')
+    expires_at = data.get('expires_at')
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        # Build dynamic update
+        updates = []
+        params = []
+        if title:
+            updates.append("title = %s")
+            params.append(title)
+        if body:
+            updates.append("body = %s")
+            params.append(body)
+        if is_pinned is not None:
+            updates.append("is_pinned = %s")
+            params.append(1 if is_pinned else 0)
+        if is_active is not None:
+            updates.append("is_active = %s")
+            params.append(1 if is_active else 0)
+        if expires_at is not None:
+            updates.append("expires_at = %s")
+            params.append(expires_at)
+
+        if not updates:
+            return jsonify({'error': 'No fields to update'}), 400
+
+        params.extend([announcement_id, community_id])
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE community_announcements SET {', '.join(updates)} "
+                "WHERE id = %s AND community_id = %s",
+                params
+            )
+        conn.commit()
+
+        log_admin_action(
+            actor_user_id=request.admin_user_id,
+            actor_role=actor_role_from_request(request),
+            action='announcement.update',
+            target_type='announcement',
+            target_id=announcement_id,
+            community_id=community_id,
+            metadata={'fields': list(data.keys())},
+        )
+
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        log.error(f"[ADMIN] Error updating announcement: {e}")
+        return jsonify({'error': 'Failed to update announcement'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@community_admin_bp.route('/community/<int:community_id>/announcements/<int:announcement_id>', methods=['DELETE'])
+def delete_announcement(community_id, announcement_id):
+    """Delete (deactivate) an announcement."""
+    require_community_owner(community_id)
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE community_announcements SET is_active = 0 "
+                "WHERE id = %s AND community_id = %s",
+                (announcement_id, community_id)
+            )
+        conn.commit()
+
+        log_admin_action(
+            actor_user_id=request.admin_user_id,
+            actor_role=actor_role_from_request(request),
+            action='announcement.delete',
+            target_type='announcement',
+            target_id=announcement_id,
+            community_id=community_id,
+        )
+
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        log.error(f"[ADMIN] Error deleting announcement: {e}")
+        return jsonify({'error': 'Failed to delete announcement'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ------------------------------------------------------------
+# §3.6 Block Appeals (stretch)
+# ------------------------------------------------------------
+
+@community_admin_bp.route('/community/<int:community_id>/appeals', methods=['GET'])
+def list_appeals(community_id):
+    """List block appeals for a community."""
+    require_community_owner(community_id)
+    status = request.args.get('status', 'pending')
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT a.id, a.message, a.status, a.admin_note, a.created_at,
+                       a.reviewed_at, u.username as user_name,
+                       b.reason as block_reason
+                FROM block_appeals a
+                JOIN users u ON a.user_id = u.id
+                JOIN community_blocks b ON a.block_id = b.id
+                WHERE a.community_id = %s AND a.status = %s
+                ORDER BY a.created_at DESC
+                """,
+                (community_id, status)
+            )
+            rows = cur.fetchall()
+        return jsonify({'appeals': rows}), 200
+    except Exception as e:
+        log.error(f"[ADMIN] Error listing appeals: {e}")
+        return jsonify({'error': 'Failed to list appeals'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@community_admin_bp.route('/community/<int:community_id>/appeals/<int:appeal_id>', methods=['PUT'])
+def resolve_appeal(community_id, appeal_id):
+    """Resolve a block appeal (approve or reject)."""
+    require_community_owner(community_id)
+    data = request.get_json()
+    action = data.get('action')  # 'approve' or 'reject'
+    admin_note = data.get('note', '').strip()
+
+    if action not in ('approve', 'reject'):
+        return jsonify({'error': 'Invalid action'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        new_status = 'approved' if action == 'approve' else 'rejected'
+
+        with conn.cursor() as cur:
+            # Update appeal
+            cur.execute(
+                """
+                UPDATE block_appeals
+                SET status = %s, reviewed_by = %s, reviewed_at = NOW(), admin_note = %s
+                WHERE id = %s AND community_id = %s
+                """,
+                (new_status, request.admin_user_id, admin_note, appeal_id, community_id)
+            )
+
+            # If approved, also unblock the user
+            if action == 'approve':
+                cur.execute(
+                    """
+                    SELECT block_id FROM block_appeals WHERE id = %s
+                    """,
+                    (appeal_id,)
+                )
+                block_row = cur.fetchone()
+                if block_row:
+                    cur.execute(
+                        "DELETE FROM community_blocks WHERE id = %s",
+                        (block_row['block_id'],)
+                    )
+
+        conn.commit()
+
+        log_admin_action(
+            actor_user_id=request.admin_user_id,
+            actor_role=actor_role_from_request(request),
+            action=f'appeal.{action}',
+            target_type='appeal',
+            target_id=appeal_id,
+            community_id=community_id,
+            metadata={'admin_note': admin_note[:100]},
+        )
+
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        log.error(f"[ADMIN] Error resolving appeal: {e}")
+        return jsonify({'error': 'Failed to resolve appeal'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# User-facing: submit an appeal when blocked
+@community_admin_bp.route('/community/<int:community_id>/appeal', methods=['POST'])
+def submit_appeal(community_id):
+    """Submit an appeal for a user's block in this community."""
+    # Any logged-in user in the community can appeal their block
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    message = data.get('message', '').strip()
+
+    if not message:
+        return jsonify({'error': 'Appeal message is required'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Find the active block
+            cur.execute(
+                """
+                SELECT id FROM community_blocks
+                WHERE community_id = %s AND user_id = %s AND is_active = 1
+                """,
+                (community_id, user_id)
+            )
+            block = cur.fetchone()
+            if not block:
+                return jsonify({'error': 'No active block found'}), 404
+
+            # Check no pending appeal already
+            cur.execute(
+                """
+                SELECT id FROM block_appeals
+                WHERE block_id = %s AND status = 'pending'
+                """,
+                (block['id'],)
+            )
+            if cur.fetchone():
+                return jsonify({'error': 'Appeal already pending'}), 409
+
+            cur.execute(
+                """
+                INSERT INTO block_appeals (community_id, block_id, user_id, message)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (community_id, block['id'], user_id, message)
+            )
+        conn.commit()
+        return jsonify({'success': True, 'appeal_id': cur.lastrowid}), 201
+    except Exception as e:
+        log.error(f"[APPEAL] Error submitting appeal: {e}")
+        return jsonify({'error': 'Failed to submit appeal'}), 500
     finally:
         if conn:
             conn.close()

@@ -74,6 +74,8 @@ type FriendsBulkStatusHandler = (data: Record<number, string>) => void;
 type ChannelActivityHandler = (data: { channel_id: number; community_id: number; sender_id: number; message_id: number }) => void;
 type SummaryGeneratingHandler = (data: { channel_id: number; status: string }) => void;
 type SummaryResultHandler = (data: { channel_id: number; content: string; method: string; message_count: number; created_at: string }) => void;
+type KBGeneratingHandler = (data: { channel_id: number; status: string }) => void;
+type KBResultHandler = (data: { channel_id: number; content: string; subtype: string; total_items: number; faqs: number; definitions: number; decisions: number; method: string; result_count?: number; created_at: string }) => void;
 
 class SocketService {
   private socket: Socket | null = null;
@@ -109,11 +111,13 @@ class SocketService {
   private channelActivityHandlers: ChannelActivityHandler[] = [];
   private summaryGeneratingHandlers: SummaryGeneratingHandler[] = [];
   private summaryResultHandlers: SummaryResultHandler[] = [];
+  private kbGeneratingHandlers: KBGeneratingHandler[] = [];
+  private kbResultHandlers: KBResultHandler[] = [];
   private dmTypingHandlers: ((data: { user_id: number; is_typing: boolean }) => void)[] = [];
   private currentChannel: number | null = null;
   private currentDMUser: number | null = null;
-  private typingTimeout: NodeJS.Timeout | null = null;
-  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private typingTimeout: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   
   // Global DM listener tracker
   private dmListenerRegistered: boolean = false;
@@ -571,6 +575,17 @@ class SocketService {
     this.socket.on('summary_result', (data: { channel_id: number; content: string; method: string; message_count: number; created_at: string }) => {
       console.log('[SOCKET] 📋 Summary result received for channel:', data.channel_id);
       this.summaryResultHandlers.forEach(handler => handler(data));
+    });
+
+    // Knowledge Builder ephemeral events (private to sender)
+    this.socket.on('kb_generating', (data: { channel_id: number; status: string }) => {
+      console.log('[SOCKET] 📚 KB generating for channel:', data.channel_id);
+      this.kbGeneratingHandlers.forEach(handler => handler(data));
+    });
+
+    this.socket.on('kb_result', (data: { channel_id: number; content: string; subtype: string; total_items: number; faqs: number; definitions: number; decisions: number; method: string; result_count?: number; created_at: string }) => {
+      console.log('[SOCKET] 📚 KB result received for channel:', data.channel_id);
+      this.kbResultHandlers.forEach(handler => handler(data));
     });
 
     // Server-pushed persistent notification (from notification_service)
@@ -1065,6 +1080,20 @@ class SocketService {
     this.summaryResultHandlers.push(handler);
     return () => {
       this.summaryResultHandlers = this.summaryResultHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onKBGenerating(handler: KBGeneratingHandler) {
+    this.kbGeneratingHandlers.push(handler);
+    return () => {
+      this.kbGeneratingHandlers = this.kbGeneratingHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onKBResult(handler: KBResultHandler) {
+    this.kbResultHandlers.push(handler);
+    return () => {
+      this.kbResultHandlers = this.kbResultHandlers.filter(h => h !== handler);
     };
   }
 

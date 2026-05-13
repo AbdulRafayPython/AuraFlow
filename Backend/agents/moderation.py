@@ -14,6 +14,20 @@ from collections import Counter
 
 from database import get_db_connection
 
+try:
+    from services.platform_config import (
+        is_auto_moderation_enabled,
+        moderation_confidence_cutoff,
+        auto_ban_threshold as _platform_auto_ban_threshold,
+    )
+except Exception:  # pragma: no cover — keep moderation usable if service not yet importable
+    def is_auto_moderation_enabled() -> bool:
+        return True
+    def moderation_confidence_cutoff() -> float:
+        return 0.70
+    def _platform_auto_ban_threshold() -> int:
+        return 5
+
 # Module-level lexicon cache — loaded once, shared by all ModerationAgent instances
 _lexicon_cache = None
 _lexicon_path = os.path.join(os.path.dirname(__file__), '..', 'lexicons', 'moderation_keywords.json')
@@ -43,13 +57,13 @@ try:
     _GEMINI_MODERATION_AVAILABLE = bool(GEMINI_API_KEY)
     if _GEMINI_MODERATION_AVAILABLE:
         _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-        print("[MODERATION] ✅ Gemini AI client initialized for moderation")
+        print("[MODERATION] OK Gemini AI client initialized for moderation")
     else:
-        print("[MODERATION] ⚠️ No GEMINI_API_KEY — using keyword-only mode")
+        print("[MODERATION] WARN No GEMINI_API_KEY - using keyword-only mode")
 except ImportError:
-    print("[MODERATION] ⚠️ google-genai not installed — using keyword-only mode")
+    print("[MODERATION] WARN google-genai not installed - using keyword-only mode")
 except Exception as e:
-    print(f"[MODERATION] ⚠️ Gemini init error: {e} — using keyword-only mode")
+    print(f"[MODERATION] WARN Gemini init error: {e} - using keyword-only mode")
 
 
 # ── Gemini result cache (TTL-based) ──
@@ -391,17 +405,29 @@ class ModerationAgent:
                 print(f"[MODERATION] Gemini batch returned non-array: {raw[:200]}")
                 return []
             
+            # Confidence cutoff from platform settings (low/med/high → 0.85/0.70/0.55).
+            # Verdicts below the cutoff are dropped — admin chose a less aggressive
+            # sensitivity, so weak Gemini signals shouldn't surface as flags.
+            cutoff = moderation_confidence_cutoff()
+
             # Enrich verdicts with msg_id and user_id from original messages
             enriched = []
             for v in verdicts:
                 idx = v.get('msg_index')
                 if idx is None or idx < 0 or idx >= len(messages):
                     continue
-                
+
                 action = v.get('action', 'warn')
                 if action not in ('warn', 'flag', 'block'):
                     action = 'warn'
-                
+
+                try:
+                    conf = float(v.get('confidence', 0.5))
+                except (TypeError, ValueError):
+                    conf = 0.5
+                if conf < cutoff:
+                    continue
+
                 enriched.append({
                     'msg_index': idx,
                     'msg_id': messages[idx].get('msg_id'),
@@ -411,7 +437,7 @@ class ModerationAgent:
                     'action': action,
                     'severity': v.get('severity', 'low'),
                     'category': v.get('category', 'unknown'),
-                    'confidence': float(v.get('confidence', 0.5)),
+                    'confidence': conf,
                     'explanation': v.get('explanation', ''),
                 })
             
@@ -990,16 +1016,19 @@ class ModerationAgent:
                     flagged += 1  # NEW — v2
                     continue  # NEW — v2
 
-                # 3-strike escalation (mirrors batch_moderation_task)  # NEW — v2
-                if violation_count >= 3 and not is_owner:  # NEW — v2
+                # Auto-ban threshold from platform settings (default 3, sys-admin tunable).
+                ab_threshold = max(1, int(_platform_auto_ban_threshold() or 3))
+
+                # N-strike escalation (mirrors batch_moderation_task)  # NEW — v2
+                if violation_count >= ab_threshold and not is_owner:  # NEW — v2
                     final_action = 'remove_user'  # NEW — v2
                     user_message = (f'@{username} has been removed from this community '
                                     f'by the Moderation Agent for repeated violations.')  # NEW — v2
-                elif violation_count == 2:  # NEW — v2
+                elif violation_count == max(1, ab_threshold - 1):  # NEW — v2
                     final_action = 'flag'  # NEW — v2
                     user_message = (f'@{username}, your content has been flagged for repeated violations '
-                                    f'(2/3). One more violation will result in removal.')  # NEW — v2
-                elif violation_count == 1:  # NEW — v2
+                                    f'({violation_count}/{ab_threshold}). One more violation will result in removal.')  # NEW — v2
+                elif violation_count >= 1:  # NEW — v2
                     final_action = 'warn'  # NEW — v2
                     user_message = (f'@{username}, this message may violate community guidelines '
                                     f'({", ".join(reasons)}). Please be mindful.')  # NEW — v2
@@ -1071,6 +1100,25 @@ class ModerationAgent:
                         'action': final_action, 'severity': severity,
                         'timestamp': datetime.utcnow().isoformat()
                     }, room=f"community_{community_id}", namespace='/')  # NEW — v2
+
+                    # §3.5: push admin_alert for high/critical severity to admin rooms.
+                    if severity in ('high', 'critical'):
+                        alert_payload = {
+                            'kind': 'moderation',
+                            'severity': severity,
+                            'community_id': community_id,
+                            'channel_id': channel_id,
+                            'user_id': user_id,
+                            'username': username,
+                            'action': final_action,
+                            'reasons': reasons,
+                            'message': (v.get('content') or '')[:200],
+                            'timestamp': datetime.utcnow().isoformat(),
+                        }
+                        sio.emit('admin_alert', alert_payload,
+                                 room=f"community_admins_{community_id}", namespace='/')
+                        sio.emit('admin_alert', alert_payload,
+                                 room='system_admins', namespace='/')
 
                 except Exception as emit_err:  # NEW — v2
                     print(f"[RETRO_SCAN] Socket emit failed: {emit_err}")  # NEW — v2

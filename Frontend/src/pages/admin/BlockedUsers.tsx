@@ -40,6 +40,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   UserX,
   RefreshCw,
@@ -47,9 +48,151 @@ import {
   Calendar,
   AlertTriangle,
   UserCheck,
-  Mail
+  Mail,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  MessageSquare,
+  Gavel,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import adminService from '@/services/adminService';
+
+// ---- Appeals sub-panel ----
+interface Appeal {
+  id: number;
+  user_name: string;
+  message: string;
+  status: 'pending' | 'approved' | 'rejected';
+  admin_note: string | null;
+  block_reason: string;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+function AppealsPanel() {
+  const { toast } = useToast();
+  const { selectedCommunity } = useCommunityDashboard();
+  const [appeals, setAppeals] = useState<Appeal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [resolving, setResolving] = useState<number | null>(null);
+
+  const load = async () => {
+    if (!selectedCommunity?.id) return;
+    setLoading(true);
+    try {
+      const rows = await adminService.listAppeals(selectedCommunity.id);
+      setAppeals(rows);
+    } catch (e: any) {
+      toast({ title: 'Failed to load appeals', description: e.message, variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, [selectedCommunity?.id]);
+
+  const handleResolve = async (appealId: number, action: 'approve' | 'reject') => {
+    setResolving(appealId);
+    try {
+      await adminService.resolveAppeal(selectedCommunity!.id, appealId, action);
+      toast({ title: action === 'approve' ? 'Appeal approved — user unblocked' : 'Appeal rejected' });
+      void load();
+    } catch (e: any) {
+      toast({ title: 'Failed to resolve appeal', description: e.message, variant: 'destructive' });
+    } finally {
+      setResolving(null);
+    }
+  };
+
+  const formatDate = (d: string) =>
+    new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">Review appeals from blocked users.</p>
+        <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+          <RefreshCw className={cn('h-4 w-4 mr-1', loading && 'animate-spin')} /> Refresh
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">{[1, 2].map(i => <Skeleton key={i} className="h-28 w-full" />)}</div>
+      ) : appeals.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+            <CheckCircle2 className="h-10 w-10 mb-2 opacity-30" />
+            <p>No pending appeals.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {appeals.map(a => (
+            <Card key={a.id}>
+              <CardContent className="pt-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium">{a.user_name}</span>
+                      <Badge
+                        variant={
+                          a.status === 'pending' ? 'secondary' :
+                          a.status === 'approved' ? 'default' : 'destructive'
+                        }
+                      >
+                        {a.status}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
+                      <AlertTriangle className="h-3 w-3" />
+                      Blocked for: <span className="italic">{a.block_reason}</span>
+                    </div>
+                    <p className="text-sm italic text-muted-foreground border-l-2 border-primary/30 pl-3 mb-2">
+                      "{a.message}"
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Submitted {formatDate(a.created_at)}
+                    </p>
+                    {a.admin_note && (
+                      <p className="text-xs mt-1 text-muted-foreground">
+                        Admin note: {a.admin_note}
+                      </p>
+                    )}
+                  </div>
+                  {a.status === 'pending' && (
+                    <div className="flex flex-col gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-green-600 border-green-300 hover:bg-green-50"
+                        onClick={() => handleResolve(a.id, 'approve')}
+                        disabled={resolving === a.id}
+                      >
+                        {resolving === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600 border-red-300 hover:bg-red-50"
+                        onClick={() => handleResolve(a.id, 'reject')}
+                        disabled={resolving === a.id}
+                      >
+                        {resolving === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4 mr-1" />}
+                        Reject
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function BlockedUsers() {
   const { toast } = useToast();
@@ -163,22 +306,33 @@ export default function BlockedUsers() {
         </Card>
       </div>
 
-      {/* Search */}
-      <Card>
-        <CardContent className="py-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by username, display name, or community..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-        </CardContent>
-      </Card>
+      {/* Search & Tabs */}
+      <Tabs defaultValue="blocked" className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="blocked">
+            <UserX className="h-4 w-4 mr-1" /> Blocked ({users.length})
+          </TabsTrigger>
+          <TabsTrigger value="appeals">
+            <Gavel className="h-4 w-4 mr-1" /> Appeals
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Users Table */}
+        <TabsContent value="blocked">
+          <Card className="mb-4">
+            <CardContent className="py-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by username, display name, or community..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Users Table */}
       <Card>
         <CardContent className="p-0">
           <ScrollArea className="h-[500px]">
@@ -274,7 +428,14 @@ export default function BlockedUsers() {
             </Table>
           </ScrollArea>
         </CardContent>
-      </Card>
+        </CardContent>
+          </TabsContent>
+
+          {/* Appeals Tab */}
+          <TabsContent value="appeals">
+            <AppealsPanel />
+          </TabsContent>
+        </Tabs>
 
       {/* Unblock Confirmation Dialog */}
       <AlertDialog open={unblockDialog.isOpen} onOpenChange={open => !open && setUnblockDialog(prev => ({ ...prev, isOpen: false }))}>

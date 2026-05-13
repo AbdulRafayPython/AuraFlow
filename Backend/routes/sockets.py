@@ -44,6 +44,54 @@ def _socket_rate_limited(sid: str) -> bool:
     return False
 
 
+def _post_ai_bot_message(channel_id: int, user_id: int, content: str,
+                         author: str = 'AI Bot') -> None:
+    """Insert an AI bot message and broadcast it to channel_<id>."""
+    if not content or not channel_id:
+        return
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO messages (channel_id, sender_id, content, message_type) "
+                "VALUES (%s, %s, %s, 'ai')",
+                (channel_id, user_id, content),
+            )
+            mid = cur.lastrowid
+            cur.execute(
+                "SELECT m.*, u.username, u.display_name, u.avatar_url "
+                "FROM messages m JOIN users u ON m.sender_id = u.id "
+                "WHERE m.id = %s",
+                (mid,),
+            )
+            msg = cur.fetchone()
+            conn.commit()
+
+        if msg:
+            created = msg['created_at']
+            payload = {
+                'id': msg['id'],
+                'channel_id': msg['channel_id'],
+                'sender_id': user_id,
+                'content': msg['content'],
+                'message_type': 'ai',
+                'reply_to': None,
+                'created_at': created.isoformat() if hasattr(created, 'isoformat') else str(created),
+                'author': author,
+                'avatar': None,
+                'is_blocked': False,
+                'moderation': None,
+            }
+            emit('message_received', payload,
+                 room=f"channel_{channel_id}", namespace='/')
+    except Exception as exc:
+        log.error(f"[BOT MESSAGE] failed: {exc}")
+    finally:
+        if conn:
+            conn.close()
+
+
 def handle_ai_command(content: str, username: str, user_id: int, channel_id: int, community_id: int = None):
     """Handle AI commands from chat (/summarize, /help, etc.)
     
@@ -149,17 +197,145 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                     'error': result.get('error', 'Failed to generate summary')
                 }
         
+        elif command == '/ask':
+            question = content[len('/ask'):].strip()
+            if not question:
+                return {'type': 'assistant', 'success': False,
+                        'error': 'Usage: /ask <your question>'}
+            from agents.assistant import AssistantAgent
+            assistant = AssistantAgent()
+            r = assistant.ask(
+                question=question,
+                user_id=user_id,
+                channel_id=channel_id,
+                community_id=community_id,
+            )
+            reply_text = r.get('reply') or "I'm not sure."
+            _post_ai_bot_message(channel_id, user_id, reply_text,
+                                 author='AI Assistant')
+            return {'type': 'assistant', 'success': True, 'posted_as_bot': True}
+
+        elif command == '/translate':
+            # /translate <lang> <text>
+            if len(command_parts) < 3:
+                return {'type': 'translate', 'success': False,
+                        'error': 'Usage: /translate <lang> <text>'}
+            target = command_parts[1].strip()
+            text = content.split(None, 2)[2]
+            from agents.translator import TranslatorAgent
+            tr = TranslatorAgent().translate(text=text, target_language=target)
+            translated = tr.get('translated_text') or text
+            _post_ai_bot_message(
+                channel_id, user_id,
+                f"[{target}] {translated}",
+                author='Translator',
+            )
+            return {'type': 'translate', 'success': True, 'posted_as_bot': True}
+
+        elif command == '/support':
+            question = content[len('/support'):].strip()
+            if not question:
+                return {'type': 'support', 'success': False,
+                        'error': 'Usage: /support <your question>'}
+            if not community_id:
+                return {'type': 'support', 'success': False,
+                        'error': 'Support agent only works inside a community'}
+            from agents.support import SupportAgent
+            r = SupportAgent().ask(
+                question=question,
+                community_id=int(community_id),
+                user_id=user_id,
+                channel_id=channel_id,
+                polish=True,
+            )
+            answer = r.get('answer') or "No answer found."
+            _post_ai_bot_message(channel_id, user_id, answer, author='Support')
+            return {'type': 'support', 'success': True, 'posted_as_bot': True}
+
+        elif command == '/icebreaker':
+            from agents.engagement import EngagementAgent
+            r = EngagementAgent().get_icebreaker_activity()
+            activity = r.get('activity') if isinstance(r, dict) else None
+            if isinstance(activity, dict):
+                title = activity.get('title') or activity.get('question') or 'Icebreaker'
+                desc = activity.get('description') or activity.get('prompt') or ''
+                text = f"💬 **{title}**" + (f"\n{desc}" if desc else '')
+            else:
+                fallback_text = (r.get('text') if isinstance(r, dict) else None) or "Let's start a conversation!"
+                text = f"💬 {activity or fallback_text}"
+            _post_ai_bot_message(channel_id, user_id, text, author='Engagement')
+            return {'type': 'icebreaker', 'success': True, 'posted_as_bot': True}
+
+        elif command == '/poll':
+            from agents.engagement import EngagementAgent
+            r = EngagementAgent().get_quick_poll()
+            poll = r.get('poll') if isinstance(r, dict) and isinstance(r.get('poll'), dict) else (r if isinstance(r, dict) else {})
+            q = poll.get('question') or poll.get('poll') or 'Quick poll'
+            opts = poll.get('options') or []
+            opt_lines = '\n'.join(f"{i+1}. {o}" for i, o in enumerate(opts))
+            text = f"📊 **Poll:** {q}" + (f"\n{opt_lines}" if opt_lines else '')
+            _post_ai_bot_message(channel_id, user_id, text, author='Engagement')
+            return {'type': 'poll', 'success': True, 'posted_as_bot': True}
+
+        elif command == '/extract':
+            if not community_id:
+                return {'type': 'extract', 'success': False,
+                        'error': 'Knowledge extraction needs a community'}
+            from agents.knowledge_builder_v2 import KnowledgeBuilderAgent
+            kb = KnowledgeBuilderAgent()
+            r = kb.quick_extract(channel_id=channel_id) or {}
+            count = r.get('total_items', 0) if isinstance(r, dict) else 0
+            text = (f"📚 Extracted {count} new knowledge entries."
+                    if count else "📚 No new knowledge entries found.")
+            _post_ai_bot_message(channel_id, user_id, text,
+                                 author='Knowledge Builder')
+            return {'type': 'extract', 'success': True, 'posted_as_bot': True}
+
+        elif command == '/focus':
+            from agents.focus import FocusAgent
+            try:
+                r = FocusAgent().analyze_focus(channel_id=channel_id)
+            except AttributeError:
+                r = {}
+            score = (r or {}).get('focus_score')
+            topics = (r or {}).get('top_topics') or (r or {}).get('topics') or []
+            topic_line = ''
+            if isinstance(topics, list) and topics:
+                names = []
+                for t in topics[:3]:
+                    if isinstance(t, dict):
+                        names.append(t.get('topic') or t.get('name') or '')
+                    else:
+                        names.append(str(t))
+                names = [n for n in names if n]
+                if names:
+                    topic_line = f"\nTop topics: {', '.join(names)}"
+            if isinstance(score, (int, float)):
+                pct = score if score > 1 else score * 100
+                text = f"🎯 Focus score: {pct:.0f}%" + topic_line
+            else:
+                text = "🎯 Channel focus check complete." + topic_line
+            _post_ai_bot_message(channel_id, user_id, text, author='Focus')
+            return {'type': 'focus', 'success': True, 'posted_as_bot': True}
+
         elif command == '/help':
             return {
                 'type': 'help',
                 'success': True,
-                'message': """**AuraFlow AI Commands:**
-• `/summarize [count]` - Summarize recent messages (default: 100)
-• `/help` - Show this help message
-
-More commands coming soon!"""
+                'message': (
+                    "AuraFlow AI Commands\n"
+                    "/summarize [count]  - Summarize recent messages\n"
+                    "/ask <question>     - Ask the AI Assistant\n"
+                    "/support <question> - Ask the community knowledge base\n"
+                    "/translate <lang> <text> - Translate text (e.g. /translate ur Hello)\n"
+                    "/icebreaker         - Post an ice-breaker\n"
+                    "/poll               - Post a quick poll\n"
+                    "/extract            - Extract knowledge from this channel\n"
+                    "/focus              - Check channel focus score\n"
+                    "/help               - Show this help message"
+                )
             }
-        
+
         else:
             return None  # Unknown command, let it be treated as regular message
             
@@ -294,6 +470,24 @@ def register_socket_events(socketio):
                     room_name = f"community_{cm_row['community_id']}"
                     join_room(room_name)
                     log.info(f"[SOCKET] ├─ Joined room: {room_name}")
+
+                # Admin alert rooms (§3.5):
+                #  - system_admins      — all platform admins
+                #  - community_admins_<id> — owners/admins of each community
+                cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+                role_row = cur.fetchone()
+                if role_row and role_row.get('role') == 'system_admin':
+                    join_room('system_admins')
+                    log.info(f"[SOCKET] 🛡️ {username} joined room: system_admins")
+
+                cur.execute("""
+                    SELECT community_id, role FROM community_members
+                    WHERE user_id = %s AND role IN ('owner', 'admin')
+                """, (user_id,))
+                for ar in cur.fetchall():
+                    ar_room = f"community_admins_{ar['community_id']}"
+                    join_room(ar_room)
+                    log.info(f"[SOCKET] 🛡️ {username} joined room: {ar_room}")
                 
                 # Track user's rooms
                 user_rooms[username] = rooms()

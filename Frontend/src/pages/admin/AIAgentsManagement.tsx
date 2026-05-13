@@ -21,6 +21,10 @@ import {
   AlertCircle,
   Search,
   Plus,
+  Sparkles,
+  Mail,
+  GraduationCap,
+  Languages,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 
@@ -44,25 +48,37 @@ interface Agent {
 }
 
 const agentStyles: Record<string, { icon: React.ElementType; color: string; border: string; bg: string }> = {
-  moderator: { icon: Shield, color: 'text-blue-500', border: 'border-blue-500/20', bg: 'bg-blue-500/10' },
-  moderation: { icon: Shield, color: 'text-blue-500', border: 'border-blue-500/20', bg: 'bg-blue-500/10' },
-  mood_tracker: { icon: Heart, color: 'text-pink-500', border: 'border-pink-500/20', bg: 'bg-pink-500/10' },
-  focus: { icon: Target, color: 'text-purple-500', border: 'border-purple-500/20', bg: 'bg-purple-500/10' },
-  engagement: { icon: TrendingUp, color: 'text-orange-500', border: 'border-orange-500/20', bg: 'bg-orange-500/10' },
-  wellness: { icon: Leaf, color: 'text-teal-500', border: 'border-teal-500/20', bg: 'bg-teal-500/10' },
-  summarizer: { icon: FileText, color: 'text-yellow-500', border: 'border-yellow-500/20', bg: 'bg-yellow-500/10' },
-  knowledge_builder: { icon: Brain, color: 'text-indigo-500', border: 'border-indigo-500/20', bg: 'bg-indigo-500/10' },
+  moderator:         { icon: Shield,         color: 'text-blue-500',    border: 'border-blue-500/20',    bg: 'bg-blue-500/10' },
+  moderation:        { icon: Shield,         color: 'text-blue-500',    border: 'border-blue-500/20',    bg: 'bg-blue-500/10' },
+  mood_tracker:      { icon: Heart,          color: 'text-pink-500',    border: 'border-pink-500/20',    bg: 'bg-pink-500/10' },
+  mood:              { icon: Heart,          color: 'text-pink-500',    border: 'border-pink-500/20',    bg: 'bg-pink-500/10' },
+  focus:             { icon: Target,         color: 'text-purple-500',  border: 'border-purple-500/20',  bg: 'bg-purple-500/10' },
+  engagement:        { icon: TrendingUp,     color: 'text-orange-500',  border: 'border-orange-500/20',  bg: 'bg-orange-500/10' },
+  wellness:          { icon: Leaf,           color: 'text-teal-500',    border: 'border-teal-500/20',    bg: 'bg-teal-500/10' },
+  summarizer:        { icon: FileText,       color: 'text-yellow-500',  border: 'border-yellow-500/20',  bg: 'bg-yellow-500/10' },
+  knowledge_builder: { icon: Brain,          color: 'text-indigo-500',  border: 'border-indigo-500/20',  bg: 'bg-indigo-500/10' },
+  knowledge:         { icon: Brain,          color: 'text-indigo-500',  border: 'border-indigo-500/20',  bg: 'bg-indigo-500/10' },
+  assistant:         { icon: Sparkles,       color: 'text-violet-500',  border: 'border-violet-500/20',  bg: 'bg-violet-500/10' },
+  auto_message:      { icon: Mail,           color: 'text-amber-500',   border: 'border-amber-500/20',   bg: 'bg-amber-500/10' },
+  support:           { icon: GraduationCap,  color: 'text-emerald-500', border: 'border-emerald-500/20', bg: 'bg-emerald-500/10' },
+  translator:        { icon: Languages,      color: 'text-cyan-500',    border: 'border-cyan-500/20',    bg: 'bg-cyan-500/10' },
 };
 
 const agentSecondStat: Record<string, string> = {
-  moderation: 'Accuracy',
-  moderator: 'Accuracy',
-  mood_tracker: 'Avg Score',
-  focus: 'Optimized',
-  engagement: 'Conversion',
-  wellness: 'Engagement',
-  summarizer: 'Accuracy',
+  moderation:        'Accuracy',
+  moderator:         'Accuracy',
+  mood_tracker:      'Avg Score',
+  mood:              'Avg Score',
+  focus:             'Optimized',
+  engagement:        'Conversion',
+  wellness:          'Engagement',
+  summarizer:        'Accuracy',
   knowledge_builder: 'Coverage',
+  knowledge:         'Coverage',
+  assistant:         'Replies',
+  auto_message:      'Welcomes',
+  support:           'KB Hits',
+  translator:        'Translated',
 };
 
 export default function AIAgentsManagement() {

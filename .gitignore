@@ -9,11 +9,21 @@ Thumbs.db
 desktop.ini
 
 # ---------- IDE / Editor ----------
-.vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+# ---------- VS Code (keep mcp.json out too — has API keys) ----------
+.vscode/
+
+# ---------- Docs (internal design docs, not for repo) ----------
+docs/
+
+# ---------- Test / scratch output ----------
+Backend/test_out.txt
+Backend/test_*.py
+Backend/test_moderation.py
 
 # ==========================================
 # BACKEND (Python / Flask)

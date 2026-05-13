@@ -141,9 +141,20 @@ def batch_moderation_task(self, channel_id, community_id):
     """
     start = time.time()
     try:
+        # Honour per-community moderation toggle. If the community admin has
+        # disabled moderation for their community, drain & drop without calling Gemini.
+        try:
+            from services.community_agent_config import is_agent_enabled
+            if not is_agent_enabled(community_id, 'moderation'):
+                from agents.moderation import ModerationAgent
+                ModerationAgent().drain_buffer(channel_id)
+                return {'status': 'disabled', 'community_id': community_id, 'channel_id': channel_id}
+        except Exception:
+            pass
+
         from agents.moderation import ModerationAgent
         agent = ModerationAgent()
-        
+
         # Drain the buffer atomically
         messages = agent.drain_buffer(channel_id)
         if not messages:

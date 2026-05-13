@@ -89,19 +89,49 @@ const SETTINGS_SCHEMA: Record<string, SettingDef[]> = {
     { key: 'analyze_threshold', label: 'Messages before analysis', type: 'slider', min: 20, max: 100, default: 50, section: '📊 Tracking' },
     { key: 'daily_reports', label: 'Daily focus reports', type: 'toggle', default: true, section: '🎯 Features' },
   ],
+  assistant: [
+    { key: 'use_gemini', label: 'Use Gemini for replies', description: 'Falls back to lexicon when disabled or unavailable', type: 'toggle', default: true, section: '🤖 Engine' },
+    { key: 'reply_style', label: 'Reply style', type: 'select', options: ['concise', 'friendly', 'detailed'], default: 'concise', section: '🎯 Style' },
+    { key: 'max_history', label: 'Conversation history (turns)', type: 'slider', min: 1, max: 10, default: 5, section: '🤖 Engine' },
+    { key: 'allow_jokes', label: 'Allow /joke replies', type: 'toggle', default: true, section: '🎯 Style' },
+    { key: 'allow_motivation', label: 'Allow /motivation replies', type: 'toggle', default: true, section: '🎯 Style' },
+  ],
+  auto_message: [
+    { key: 'welcome_enabled', label: 'Auto welcome new members', description: 'Posts a welcome message in the default channel when someone joins', type: 'toggle', default: true, section: '👋 Welcome' },
+    { key: 'post_in_default_channel', label: 'Post in default channel', type: 'toggle', default: true, section: '👋 Welcome' },
+    { key: 'quick_replies_enabled', label: 'Quick-reply suggestions', description: 'Show 3 tap-to-send chips above the chat input', type: 'toggle', default: true, section: '💬 Suggestions' },
+    { key: 'use_gemini_polish', label: 'Polish copy with Gemini', type: 'toggle', default: true, section: '🤖 Engine' },
+  ],
+  support: [
+    { key: 'min_score', label: 'Match threshold', description: 'Minimum cosine similarity for a knowledge-base hit', type: 'slider', min: 1, max: 10, default: 2, section: '🎯 Retrieval' },
+    { key: 'max_docs', label: 'Max indexed docs', type: 'slider', min: 100, max: 1000, default: 500, section: '🎯 Retrieval' },
+    { key: 'use_gemini_polish', label: 'Polish answer with Gemini', description: 'Re-write retrieved snippet into a natural reply', type: 'toggle', default: true, section: '🤖 Engine' },
+    { key: 'show_sources', label: 'Show source citations', type: 'toggle', default: true, section: '📚 Output' },
+  ],
+  translator: [
+    { key: 'default_target', label: 'Default target language', type: 'select', options: ['en', 'ur', 'hi', 'es', 'fr', 'de', 'ar', 'zh-CN', 'pt', 'ru', 'ja', 'tr', 'id', 'bn'], default: 'en', section: '🌍 Language' },
+    { key: 'auto_detect', label: 'Auto-detect source language', type: 'toggle', default: true, section: '🌍 Language' },
+    { key: 'cache_enabled', label: 'Cache repeat translations', description: 'Skip API calls for already-seen text (24h TTL)', type: 'toggle', default: true, section: '⚡ Performance' },
+  ],
 };
 
 const AGENT_DISPLAY: Record<string, { name: string; emoji: string; gradient: string }> = {
-  moderation: { name: 'Moderation Agent', emoji: '🛡️', gradient: 'from-red-500 to-rose-500' },
-  engagement: { name: 'Engagement Agent', emoji: '🎯', gradient: 'from-emerald-500 to-green-500' },
-  knowledge_builder: { name: 'Knowledge Builder', emoji: '📚', gradient: 'from-indigo-500 to-purple-500' },
-  knowledge: { name: 'Knowledge Builder', emoji: '📚', gradient: 'from-indigo-500 to-purple-500' },
-  summarizer: { name: 'Summarizer Agent', emoji: '📝', gradient: 'from-blue-500 to-cyan-500' },
-  mood_tracker: { name: 'Mood Tracker', emoji: '😊', gradient: 'from-pink-500 to-rose-500' },
-  mood: { name: 'Mood Tracker', emoji: '😊', gradient: 'from-pink-500 to-rose-500' },
-  wellness: { name: 'Wellness Agent', emoji: '🧘', gradient: 'from-purple-500 to-pink-500' },
-  focus: { name: 'Focus Agent', emoji: '🎯', gradient: 'from-orange-500 to-red-500' },
+  moderation:        { name: 'Moderation Agent',     emoji: '🛡️', gradient: 'from-red-500 to-rose-500' },
+  engagement:        { name: 'Engagement Agent',     emoji: '🎯', gradient: 'from-emerald-500 to-green-500' },
+  knowledge_builder: { name: 'Knowledge Builder',    emoji: '📚', gradient: 'from-indigo-500 to-purple-500' },
+  knowledge:         { name: 'Knowledge Builder',    emoji: '📚', gradient: 'from-indigo-500 to-purple-500' },
+  summarizer:        { name: 'Summarizer Agent',     emoji: '📝', gradient: 'from-blue-500 to-cyan-500' },
+  mood_tracker:      { name: 'Mood Tracker',         emoji: '😊', gradient: 'from-pink-500 to-rose-500' },
+  mood:              { name: 'Mood Tracker',         emoji: '😊', gradient: 'from-pink-500 to-rose-500' },
+  wellness:          { name: 'Wellness Agent',       emoji: '🧘', gradient: 'from-purple-500 to-pink-500' },
+  focus:             { name: 'Focus Agent',          emoji: '🎯', gradient: 'from-orange-500 to-red-500' },
+  assistant:         { name: 'AI Assistant',         emoji: '🤖', gradient: 'from-violet-500 to-purple-500' },
+  auto_message:      { name: 'Auto Message',         emoji: '✉️', gradient: 'from-amber-500 to-orange-500' },
+  support:           { name: 'Context-Aware Support', emoji: '🎓', gradient: 'from-emerald-500 to-teal-500' },
+  translator:        { name: 'Translator',           emoji: '🌐', gradient: 'from-cyan-500 to-blue-500' },
 };
+
+const FALLBACK_DISPLAY = { name: 'AI Agent', emoji: '🤖', gradient: 'from-slate-500 to-slate-600' };
 
 export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
   open,
@@ -122,7 +152,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
   const [isTriggering, setIsTriggering] = useState(false);
 
   const schema = SETTINGS_SCHEMA[agentType] || [];
-  const display = AGENT_DISPLAY[agentType] || AGENT_DISPLAY.summarizer;
+  const display = AGENT_DISPLAY[agentType] || FALLBACK_DISPLAY;
 
   // ─── Personal Schedule State ─────────────────────────
   const [schedules, setSchedules] = useState<any[]>([]);

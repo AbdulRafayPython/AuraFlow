@@ -10,6 +10,7 @@ Security: All endpoints require JWT + admin/owner role verification.
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
+from services.audit_logger import log_admin_action
 from datetime import datetime, timedelta
 from functools import wraps
 import json
@@ -787,13 +788,23 @@ def resolve_moderation(log_id):
                 """, (log_entry['community_id'], log_entry['user_id']))
             
             conn.commit()
-            
+
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin' if request.is_system_admin else 'community_admin',
+                action='flag.resolve',
+                target_type='message',
+                target_id=log_id,
+                community_id=log_entry.get('community_id'),
+                metadata={'action': action, 'note': note, 'target_user_id': log_entry.get('user_id')},
+            )
+
             return jsonify({
                 'success': True,
                 'message': f'Moderation resolved with action: {action}',
                 'log_id': log_id
             }), 200
-            
+
     except Exception as e:
         log.error(f"[ADMIN] Error resolving moderation: {e}")
         if conn:
@@ -882,13 +893,24 @@ def unblock_user(block_id):
     try:
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM blocked_users WHERE id = %s", (block_id,))
-            
-            if cur.rowcount == 0:
+            cur.execute("SELECT user_id, community_id FROM blocked_users WHERE id = %s", (block_id,))
+            block_row = cur.fetchone()
+            if not block_row:
                 return jsonify({'error': 'Block record not found'}), 404
-            
+
+            cur.execute("DELETE FROM blocked_users WHERE id = %s", (block_id,))
             conn.commit()
-            
+
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin' if request.is_system_admin else 'community_admin',
+                action='user.unblock',
+                target_type='user',
+                target_id=block_row['user_id'],
+                community_id=block_row.get('community_id'),
+                metadata={'block_id': block_id},
+            )
+
             return jsonify({
                 'success': True,
                 'message': 'User unblocked successfully'
@@ -2051,14 +2073,27 @@ def resolve_community_flag(community_id, log_id):
                 WHERE id = %s""",
                 (action, note, datetime.now().isoformat(), request.admin_username, log_id))
 
+            target_user_id = None
             if action == 'ban':
                 cur.execute("SELECT user_id FROM ai_agent_logs WHERE id = %s", (log_id,))
                 row = cur.fetchone()
                 if row:
+                    target_user_id = row['user_id']
                     cur.execute("""INSERT IGNORE INTO blocked_users (user_id, community_id, reason, blocked_by, blocked_at)
                         VALUES (%s, %s, %s, %s, NOW())""",
                         (row['user_id'], community_id, note or f'Banned via moderation #{log_id}', request.admin_user_id))
             conn.commit()
+
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin' if getattr(request, 'is_system_admin', False) else 'community_admin',
+                action='flag.resolve',
+                target_type='message',
+                target_id=log_id,
+                community_id=community_id,
+                metadata={'action': action, 'note': note, 'target_user_id': target_user_id},
+            )
+
             return jsonify({'success': True, 'message': f'Action "{action}" applied'}), 200
     except Exception as e:
         log.error(f"[ADMIN] Resolve community flag error: {e}")
@@ -2725,7 +2760,16 @@ def update_user_system_role(user_id):
             
             cur.execute("UPDATE users SET role = %s WHERE id = %s", (new_role, user_id))
             conn.commit()
-            
+
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin',
+                action='user.role_change',
+                target_type='user',
+                target_id=user_id,
+                metadata={'new_role': new_role, 'target_username': user['username']},
+            )
+
             log.info(f"[ADMIN] System role changed: user {user['username']} (#{user_id}) -> {new_role} by {request.admin_username}")
             
             return jsonify({
@@ -2768,6 +2812,15 @@ def warn_user(user_id):
                 VALUES (%s, %s, 'warn', %s)
             """, (request.admin_user_id, user_id, reason))
             conn.commit()
+
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin',
+                action='user.warn',
+                target_type='user',
+                target_id=user_id,
+                metadata={'reason': reason, 'target_username': user['username']},
+            )
 
             log.info(f"[ADMIN] Warning sent to user {user['username']} (#{user_id}) by {request.admin_username}: {reason}")
 
@@ -2829,6 +2882,15 @@ def suspend_user(user_id):
 
             conn.commit()
 
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin',
+                action='user.suspend',
+                target_type='user',
+                target_id=user_id,
+                metadata={'reason': reason, 'duration_days': duration_days, 'target_username': user['username']},
+            )
+
             log.info(f"[ADMIN] User {user['username']} (#{user_id}) suspended for {duration_days} days by {request.admin_username}")
 
             return jsonify({
@@ -2886,6 +2948,15 @@ def ban_user(user_id):
 
             conn.commit()
 
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin',
+                action='user.ban',
+                target_type='user',
+                target_id=user_id,
+                metadata={'reason': reason, 'target_username': user['username']},
+            )
+
             log.info(f"[ADMIN] User {user['username']} (#{user_id}) banned by {request.admin_username}: {reason}")
 
             return jsonify({
@@ -2937,6 +3008,15 @@ def unsuspend_user(user_id):
             """, (request.admin_user_id, user_id, action_type))
 
             conn.commit()
+
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin',
+                action=f'user.{action_type}',
+                target_type='user',
+                target_id=user_id,
+                metadata={'target_username': user['username'], 'prev_status': prev_status},
+            )
 
             log.info(f"[ADMIN] User {user['username']} (#{user_id}) restored to active by {request.admin_username}")
 
@@ -3086,7 +3166,16 @@ def toggle_agent(agent_id):
             if cur.rowcount == 0:
                 return jsonify({'error': 'Agent not found'}), 404
             conn.commit()
-            
+
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin',
+                action='agent.toggle',
+                target_type='agent',
+                target_id=agent_id,
+                metadata={'is_active': bool(is_active)},
+            )
+
             return jsonify({
                 'success': True,
                 'message': f"Agent {'enabled' if is_active else 'disabled'}"
@@ -3295,6 +3384,16 @@ def update_community_details(community_id):
             )
             conn.commit()
 
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin',
+                action='community.update',
+                target_type='community',
+                target_id=community_id,
+                community_id=community_id,
+                metadata={'name': name, 'description': description},
+            )
+
             log.info(f"[ADMIN] Community #{community_id} updated by {request.admin_username}")
             return jsonify({'success': True, 'message': 'Community updated'}), 200
     except Exception as e:
@@ -3324,6 +3423,15 @@ def delete_community(community_id):
             # CASCADE will handle related tables (community_members, channels, etc.)
             cur.execute("DELETE FROM communities WHERE id = %s", (community_id,))
             conn.commit()
+
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin',
+                action='community.delete',
+                target_type='community',
+                target_id=community_id,
+                metadata={'name': community['name']},
+            )
 
             log.info(f"[ADMIN] Community '{community['name']}' (#{community_id}) DELETED by {request.admin_username}")
             return jsonify({'success': True, 'message': f"Community '{community['name']}' deleted"}), 200
@@ -3454,6 +3562,16 @@ def update_community_member_role(community_id, user_id):
             )
             conn.commit()
 
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin',
+                action='community.member_role_change',
+                target_type='user',
+                target_id=user_id,
+                community_id=community_id,
+                metadata={'new_role': new_role, 'target_username': member['username'], 'prev_role': member['role']},
+            )
+
             log.info(f"[ADMIN] Community #{community_id} member {member['username']} role -> {new_role} by {request.admin_username}")
             return jsonify({'success': True, 'message': f"Role updated to {new_role}"}), 200
     except Exception as e:
@@ -3493,6 +3611,16 @@ def remove_community_member(community_id, user_id):
                 (community_id, user_id)
             )
             conn.commit()
+
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin',
+                action='community.member_remove',
+                target_type='user',
+                target_id=user_id,
+                community_id=community_id,
+                metadata={'target_username': member['username'], 'prev_role': member['role']},
+            )
 
             log.info(f"[ADMIN] Removed {member['username']} from community #{community_id} by {request.admin_username}")
             return jsonify({'success': True, 'message': f"{member['username']} removed from community"}), 200
@@ -3570,10 +3698,22 @@ def get_platform_stats():
 @jwt_required()
 @require_true_system_admin
 def get_audit_logs():
-    """Get paginated list of all admin actions. System admin only."""
+    """
+    Get paginated audit log of admin actions. System admin only.
+
+    Reads from admin_audit_logs (canonical) with filters:
+      - action: exact action (e.g. 'user.suspend', 'flag.resolve')
+      - target_type: 'user' | 'community' | 'message' | 'agent' | 'setting'
+      - community_id: scope to a community
+      - search: actor or target username substring
+      - action_type: legacy compat (maps to action prefix on 'user.')
+    """
     conn = None
     try:
-        action_type = request.args.get('action_type')
+        action = request.args.get('action')
+        action_type = request.args.get('action_type')  # legacy: 'warn', 'suspend', etc.
+        target_type = request.args.get('target_type')
+        community_id = request.args.get('community_id', type=int)
         search = request.args.get('search', '')
         limit = min(request.args.get('limit', 20, type=int), 100)
         offset = max(request.args.get('offset', 0, type=int), 0)
@@ -3583,13 +3723,25 @@ def get_audit_logs():
             where_clauses = []
             params = []
 
-            if action_type:
-                where_clauses.append("aa.action_type = %s")
-                params.append(action_type)
+            if action:
+                where_clauses.append("al.action = %s")
+                params.append(action)
+            elif action_type:
+                # Back-compat with the old UI which filtered by 'warn', 'suspend', etc.
+                where_clauses.append("al.action = %s")
+                params.append(f"user.{action_type}")
+
+            if target_type:
+                where_clauses.append("al.target_type = %s")
+                params.append(target_type)
+
+            if community_id:
+                where_clauses.append("al.community_id = %s")
+                params.append(community_id)
 
             if search:
                 where_clauses.append(
-                    "(admin_u.username LIKE %s OR admin_u.display_name LIKE %s "
+                    "(actor_u.username LIKE %s OR actor_u.display_name LIKE %s "
                     "OR target_u.username LIKE %s OR target_u.display_name LIKE %s)"
                 )
                 s = f"%{search}%"
@@ -3597,45 +3749,64 @@ def get_audit_logs():
 
             where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
-            # Count
             cur.execute(f"""
                 SELECT COUNT(*) as c
-                FROM admin_actions aa
-                JOIN users admin_u ON aa.admin_id = admin_u.id
-                JOIN users target_u ON aa.target_user_id = target_u.id
+                FROM admin_audit_logs al
+                JOIN users actor_u ON al.actor_user_id = actor_u.id
+                LEFT JOIN users target_u
+                       ON (al.target_type = 'user' AND al.target_id = target_u.id)
                 {where_sql}
             """, params)
             total = cur.fetchone()['c']
 
-            # Fetch page
             cur.execute(f"""
                 SELECT
-                    aa.id, aa.action_type, aa.reason,
-                    aa.details, aa.created_at,
-                    admin_u.username as admin_username,
-                    admin_u.display_name as admin_display_name,
+                    al.id, al.action, al.target_type, al.target_id,
+                    al.community_id, al.metadata, al.actor_role, al.created_at,
+                    actor_u.username as admin_username,
+                    actor_u.display_name as admin_display_name,
                     target_u.username as target_username,
-                    target_u.display_name as target_display_name
-                FROM admin_actions aa
-                JOIN users admin_u ON aa.admin_id = admin_u.id
-                JOIN users target_u ON aa.target_user_id = target_u.id
+                    target_u.display_name as target_display_name,
+                    c.name as community_name
+                FROM admin_audit_logs al
+                JOIN users actor_u ON al.actor_user_id = actor_u.id
+                LEFT JOIN users target_u
+                       ON (al.target_type = 'user' AND al.target_id = target_u.id)
+                LEFT JOIN communities c ON al.community_id = c.id
                 {where_sql}
-                ORDER BY aa.created_at DESC
+                ORDER BY al.created_at DESC
                 LIMIT %s OFFSET %s
             """, params + [limit, offset])
             rows = cur.fetchall()
 
-            logs = [{
-                'id': r['id'],
-                'admin_username': r['admin_username'],
-                'admin_display_name': r['admin_display_name'],
-                'target_username': r['target_username'],
-                'target_display_name': r['target_display_name'],
-                'action_type': r['action_type'],
-                'reason': r['reason'],
-                'details': r['details'],
-                'created_at': r['created_at'].isoformat() if r['created_at'] else None,
-            } for r in rows]
+            logs = []
+            for r in rows:
+                metadata = r['metadata']
+                if isinstance(metadata, str):
+                    try:
+                        metadata = json.loads(metadata)
+                    except Exception:
+                        metadata = None
+                reason = ''
+                if isinstance(metadata, dict):
+                    reason = metadata.get('reason') or metadata.get('note') or ''
+                logs.append({
+                    'id': r['id'],
+                    'admin_username': r['admin_username'],
+                    'admin_display_name': r['admin_display_name'],
+                    'target_username': r['target_username'],
+                    'target_display_name': r['target_display_name'],
+                    'action_type': r['action'],
+                    'action': r['action'],
+                    'target_type': r['target_type'],
+                    'target_id': r['target_id'],
+                    'community_id': r['community_id'],
+                    'community_name': r['community_name'],
+                    'actor_role': r['actor_role'],
+                    'reason': reason,
+                    'details': metadata,
+                    'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+                })
 
             return jsonify({
                 'success': True,
@@ -3788,6 +3959,23 @@ def update_platform_settings():
                 """, (key, str_value))
 
             conn.commit()
+
+            try:
+                from services.platform_config import invalidate_setting
+                for k in normalized.keys():
+                    invalidate_setting(k)
+            except Exception as cache_err:
+                log.warning(f"[ADMIN] Failed to invalidate platform settings cache: {cache_err}")
+
+            log_admin_action(
+                actor_user_id=request.admin_user_id,
+                actor_role='system_admin',
+                action='settings.update',
+                target_type='setting',
+                target_id=None,
+                metadata={'updated_keys': list(normalized.keys()), 'values': normalized},
+            )
+
             return jsonify({
                 'success': True,
                 'message': 'Settings updated',

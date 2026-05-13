@@ -23,9 +23,8 @@ import re
 
 from database import get_db_connection
 
-# Enhanced sentiment analysis engine — lazy-loaded to avoid slow startup
-# transformers + torch are imported on first use inside _init_xlm_roberta()
-TRANSFORMERS_AVAILABLE: bool | None = None  # resolved lazily
+# Lightweight sentiment engines — VADER (NLTK) for English, lexicon for Roman Urdu.
+# No local transformer models. Heavy ML deps (transformers/torch) have been removed.
 
 # Google Translate integration - use deep-translator as primary
 try:
@@ -43,7 +42,17 @@ except ImportError:
         TRANSLATOR_TYPE = None
         print("[MOOD TRACKER] No translator installed. Translation features disabled.")
 
-# TextBlob for English sentiment analysis
+# VADER (NLTK) — primary English sentiment engine. Lexicon downloaded by build.sh.
+try:
+    from nltk.sentiment.vader import SentimentIntensityAnalyzer  # type: ignore
+    _VADER = SentimentIntensityAnalyzer()
+    VADER_AVAILABLE = True
+except Exception as _e:  # LookupError if vader_lexicon not downloaded, ImportError if NLTK missing
+    _VADER = None
+    VADER_AVAILABLE = False
+    print(f"[MOOD TRACKER] VADER unavailable ({_e}); falling back to TextBlob if available.")
+
+# TextBlob — secondary English fallback when VADER is unavailable.
 try:
     from textblob import TextBlob
     TEXTBLOB_AVAILABLE = True
@@ -133,118 +142,18 @@ class MoodTrackerAgent:
     ]
     
     def __init__(self):
-        """Initialize the mood tracker with lexicons and translator.
-        XLM-RoBERTa model is lazy-loaded on first analysis call."""
+        """Initialize the mood tracker with lexicons + VADER + translator.
+        No heavy model is loaded — engines are: lexicon (Roman Urdu) and VADER (English)."""
         self.lexicon_path = os.path.join(
-            os.path.dirname(__file__), 
+            os.path.dirname(__file__),
             '..', 'lexicons', 'roman_urdu_sentiments.json'
         )
         self.load_lexicons()
         self._init_translator()
-        # Defer heavy model init — will run on first _analyze_with_xlm_roberta call
+        # Kept for backwards compatibility with any callers reading these attrs.
         self.xlm_roberta_pipeline = None
         self.xlm_roberta_available = False
-        self._xlm_init_done = False
-    
-    def _init_xlm_roberta(self):
-        """Lazy-initialize enhanced sentiment analysis engine.
-        Imports transformers + torch on first call to avoid slow startup."""
-        if self._xlm_init_done:
-            return
-        self._xlm_init_done = True
-
-        global TRANSFORMERS_AVAILABLE
-        if TRANSFORMERS_AVAILABLE is None:
-            try:
-                import warnings as _w, logging as _lg
-                _w.filterwarnings('ignore', category=UserWarning, module='transformers')
-                _lg.getLogger('transformers').setLevel(_lg.ERROR)
-                from transformers import pipeline as _pipeline  # noqa: F811
-                import torch  # noqa: F401
-                TRANSFORMERS_AVAILABLE = True
-            except ImportError:
-                TRANSFORMERS_AVAILABLE = False
-
-        if not TRANSFORMERS_AVAILABLE:
-            return
-
-        try:
-            from transformers import pipeline
-            local_model_path = os.path.join(
-                os.path.dirname(__file__),
-                '..', 'models', 'roman-urdu-sentiment'
-            )
-
-            if os.path.exists(local_model_path) and os.path.isfile(os.path.join(local_model_path, 'config.json')):
-                model_id = local_model_path
-            else:
-                model_id = "Khubaib01/roman-urdu-sentiment-xlm-r"
-
-            self.xlm_roberta_pipeline = pipeline(
-                "text-classification",
-                model=model_id,
-                truncation=True,
-                device=-1
-            )
-            self.xlm_roberta_available = True
-        except Exception:
-            self.xlm_roberta_pipeline = None
-            self.xlm_roberta_available = False
-    
-    def _analyze_with_xlm_roberta(self, text: str) -> Optional[Dict[str, any]]:
-        """
-        Analyze text using XLM-RoBERTa Roman Urdu sentiment model
-        Returns sentiment prediction with confidence score
-        
-        Labels: Positive (0), Negative (1), Neutral (2)
-        """
-        # Lazy init on first call
-        if not self._xlm_init_done:
-            self._init_xlm_roberta()
-        if not self.xlm_roberta_available or not self.xlm_roberta_pipeline:
-            return None
-        
-        try:
-            result = self.xlm_roberta_pipeline(text)
-            if result and len(result) > 0:
-                prediction = result[0]
-                label = prediction['label']
-                score = prediction['score']
-                
-                # Map model labels to our sentiment format
-                # Model uses: LABEL_0=Positive, LABEL_1=Negative, LABEL_2=Neutral
-                label_mapping = {
-                    'LABEL_0': 'positive',
-                    'LABEL_1': 'negative', 
-                    'LABEL_2': 'neutral',
-                    'Positive': 'positive',
-                    'Negative': 'negative',
-                    'Neutral': 'neutral'
-                }
-                
-                sentiment = label_mapping.get(label, 'neutral')
-                
-                # Convert to polarity score (-1 to 1)
-                if sentiment == 'positive':
-                    polarity = score  # 0 to 1
-                elif sentiment == 'negative':
-                    polarity = -score  # -1 to 0
-                else:
-                    polarity = 0.0
-                
-                # Internal analysis - no logging
-                
-                return {
-                    'sentiment': sentiment,
-                    'confidence': round(score, 3),
-                    'polarity': round(polarity, 3),
-                    'model': 'xlm-roberta-roman-urdu',
-                    'raw_label': label
-                }
-        except Exception as e:
-            print(f"[MOOD TRACKER] XLM-RoBERTa error: {e}")
-        
-        return None
+        self._xlm_init_done = True  # nothing to init
     
     def _detect_emotions(self, text: str) -> List[str]:
         """
@@ -491,37 +400,57 @@ class MoodTrackerAgent:
     
     def _analyze_english_sentiment(self, text: str) -> Dict[str, any]:
         """
-        Analyze English text sentiment using TextBlob
-        Returns polarity (-1 to 1) and subjectivity (0 to 1)
+        Analyze English text sentiment.
+        Primary: NLTK VADER (lexicon-based, lightweight, no model download).
+        Fallback: TextBlob if VADER lexicon is missing.
+        Returns polarity (-1 to 1), confidence, and engine used.
         """
-        if not TEXTBLOB_AVAILABLE:
-            return None
-        
-        try:
-            blob = TextBlob(text)
-            polarity = blob.sentiment.polarity  # -1 (negative) to 1 (positive)
-            subjectivity = blob.sentiment.subjectivity  # 0 (objective) to 1 (subjective)
-            
-            # Convert polarity to sentiment
-            if polarity > 0.1:
-                sentiment = 'positive'
-            elif polarity < -0.1:
-                sentiment = 'negative'
-            else:
-                sentiment = 'neutral'
-            
-            # Convert polarity to confidence (0 to 1)
-            confidence = min(abs(polarity) + 0.3, 0.95)
-            
-            return {
-                'sentiment': sentiment,
-                'polarity': round(polarity, 3),
-                'subjectivity': round(subjectivity, 3),
-                'confidence': round(confidence, 2)
-            }
-        except Exception as e:
-            print(f"[MOOD TRACKER] TextBlob error: {e}")
-            return None
+        # Primary path — VADER
+        if VADER_AVAILABLE and _VADER is not None:
+            try:
+                scores = _VADER.polarity_scores(text)
+                compound = scores.get('compound', 0.0)  # -1 to 1
+                if compound >= 0.05:
+                    sentiment = 'positive'
+                elif compound <= -0.05:
+                    sentiment = 'negative'
+                else:
+                    sentiment = 'neutral'
+                confidence = min(abs(compound) + 0.3, 0.95)
+                return {
+                    'sentiment': sentiment,
+                    'polarity': round(compound, 3),
+                    'subjectivity': round(1.0 - scores.get('neu', 0.0), 3),
+                    'confidence': round(confidence, 2),
+                    'engine': 'vader',
+                }
+            except Exception as e:
+                print(f"[MOOD TRACKER] VADER error: {e}")
+
+        # Fallback path — TextBlob
+        if TEXTBLOB_AVAILABLE:
+            try:
+                blob = TextBlob(text)
+                polarity = blob.sentiment.polarity
+                subjectivity = blob.sentiment.subjectivity
+                if polarity > 0.1:
+                    sentiment = 'positive'
+                elif polarity < -0.1:
+                    sentiment = 'negative'
+                else:
+                    sentiment = 'neutral'
+                confidence = min(abs(polarity) + 0.3, 0.95)
+                return {
+                    'sentiment': sentiment,
+                    'polarity': round(polarity, 3),
+                    'subjectivity': round(subjectivity, 3),
+                    'confidence': round(confidence, 2),
+                    'engine': 'textblob',
+                }
+            except Exception as e:
+                print(f"[MOOD TRACKER] TextBlob error: {e}")
+
+        return None
     
     def _check_negation(self, text: str, word_position: int, words: List[str]) -> bool:
         """
@@ -572,63 +501,18 @@ class MoodTrackerAgent:
         translated_text = None
         was_translated = False
         used_textblob = False
-        used_xlm_roberta = False
         textblob_result = None
-        xlm_roberta_result = None
-        
+
         # Step 1: Normalize text for consistent analysis
         text_normalized = self._normalize_text(text)
         words = text_normalized.split()
-        
+
         # Step 2: Extract emojis from original text
         emoji_sentiment = self._analyze_emojis(original_text)
-        
+
         # Step 2.5: Quick lexicon check for KNOWN sentiment words first
-        # This catches words like "udas/udaas" that the ML model might miss
         quick_lexicon_sentiment = self._quick_lexicon_check(text_normalized, words)
-        
-        # Step 2.6: Try XLM-RoBERTa model (most accurate for Roman Urdu)
-        # But ONLY trust it if lexicon didn't find strong sentiment words
-        if self.xlm_roberta_available and self._is_roman_urdu(text):
-            xlm_roberta_result = self._analyze_with_xlm_roberta(text)
-            
-            # If lexicon found sentiment AND XLM-RoBERTa disagrees, trust lexicon
-            if quick_lexicon_sentiment and xlm_roberta_result:
-                lexicon_sent = quick_lexicon_sentiment['sentiment']
-                xlm_sent = xlm_roberta_result['sentiment']
-                
-                if lexicon_sent != xlm_sent and lexicon_sent != 'neutral':
-                    # Lexicon found specific sentiment word - trust it
-                    xlm_roberta_result = None
-            
-            if xlm_roberta_result and xlm_roberta_result['confidence'] >= 0.7:  # Raised threshold
-                used_xlm_roberta = True
-                # High confidence XLM-RoBERTa result - use it directly
-                xlm_sentiment = xlm_roberta_result['sentiment']
-                xlm_confidence = xlm_roberta_result['confidence']
-                xlm_polarity = xlm_roberta_result['polarity']
-                
-                # Detect emotions based on lexicon for additional context
-                detected_emotions = self._detect_emotions(text_normalized)
-                
-                # Build result - appears as lexicon + TextBlob analysis
-                # Find matching words from lexicon for display
-                display_words = self._get_display_words_for_sentiment(xlm_sentiment, text_normalized, words)
-                
-                return {
-                    'sentiment': xlm_sentiment,
-                    'sentiment_score': xlm_polarity,
-                    'confidence': xlm_confidence,
-                    'detected_words': display_words,
-                    'emoji_sentiment': emoji_sentiment,
-                    'detected_emotions': detected_emotions,
-                    'mood': self._get_mood_from_sentiment(xlm_sentiment, xlm_confidence, detected_emotions),
-                    'original_text': original_text,
-                    'translated_text': None,
-                    'was_translated': False,
-                    'analysis_method': 'lexicon_textblob_hybrid'  # Display as lexicon+TextBlob
-                }
-        
+
         # Step 3: Lexicon-based analysis (fast first pass) - FALLBACK
         positive_count = 0
         negative_count = 0
@@ -1340,19 +1224,33 @@ class MoodTrackerAgent:
             if conn:
                 conn.close()
 
-    def get_community_mood(self, community_id: int = None, channel_id: int = None, 
+    def get_community_mood(self, community_id: int = None, channel_id: int = None,
                           hours: int = 24) -> Dict[str, any]:
         """
         Get aggregated mood analytics for a community or channel
-        
+
         Args:
             community_id: Optional community ID filter
             channel_id: Optional channel ID filter
             hours: Hours to look back
-            
+
         Returns:
             Community-wide mood statistics
         """
+        # Honour per-community mood_tracker toggle: community admin can disable
+        # mood analytics for their community (e.g. for privacy concerns).
+        if community_id:
+            try:
+                from services.community_agent_config import is_agent_enabled
+                if not is_agent_enabled(community_id, 'mood_tracker'):
+                    return {
+                        'success': False,
+                        'disabled': True,
+                        'error': 'Mood tracking is disabled for this community',
+                    }
+            except Exception:
+                pass
+
         conn = None
         try:
             conn = get_db_connection()

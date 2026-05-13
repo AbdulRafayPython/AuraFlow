@@ -23,7 +23,16 @@ uploads_bp = Blueprint('uploads', __name__)
 # CONFIGURATION
 # ============================================================================
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB (fallback when platform_settings unreachable)
+
+
+def _max_file_size() -> int:
+    """Resolve current upload size cap from platform settings (system-admin tunable)."""
+    try:
+        from services.platform_config import max_file_size_bytes
+        return max_file_size_bytes()
+    except Exception:
+        return MAX_FILE_SIZE
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'chat')
 
 ALLOWED_EXTENSIONS = {
@@ -108,8 +117,9 @@ def upload_channel_file():
         file_size = file.tell()
         file.seek(0)
 
-        if file_size > MAX_FILE_SIZE:
-            return jsonify({'error': f'File too large. Max size is {MAX_FILE_SIZE // (1024*1024)}MB'}), 400
+        cap = _max_file_size()
+        if file_size > cap:
+            return jsonify({'error': f'File too large. Max size is {cap // (1024*1024)}MB'}), 400
 
         # Auth + access checks
         conn = get_db_connection()
@@ -272,8 +282,9 @@ def upload_dm_file():
         file_size = file.tell()
         file.seek(0)
 
-        if file_size > MAX_FILE_SIZE:
-            return jsonify({'error': f'File too large. Max size is {MAX_FILE_SIZE // (1024*1024)}MB'}), 400
+        cap = _max_file_size()
+        if file_size > cap:
+            return jsonify({'error': f'File too large. Max size is {cap // (1024*1024)}MB'}), 400
 
         conn = get_db_connection()
         with conn.cursor() as cur:

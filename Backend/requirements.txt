@@ -31,10 +31,5 @@ google-genai
 googletrans==4.0.0-rc1
 deep-translator
 
-# NLP Processing (optional — skipped if RAM is limited)
-transformers
-
 # Web Push Notifications
 pywebpush
-torch --extra-index-url https://download.pytorch.org/whl/cpu
-sentencepiece

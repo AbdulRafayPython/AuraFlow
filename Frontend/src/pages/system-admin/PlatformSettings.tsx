@@ -261,6 +261,36 @@ export default function PlatformSettings() {
           <ToggleSwitch enabled={config.email_notifications_enabled} onChange={(v) => updateConfig('email_notifications_enabled', v)} />
         </SettingRow>
       </SectionCard>
+
+      {/* Where settings take effect */}
+      <SectionCard title="Where each setting is enforced" icon={Settings}>
+        <p className="text-xs text-[hsl(var(--theme-text-muted))] -mt-2 mb-2">
+          Reference for engineers: which backend module reads each setting.
+          Changes are picked up within 60 seconds (read-through cache TTL).
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border border-[hsl(var(--theme-border-default))] rounded-lg">
+            <thead className="bg-[hsl(var(--theme-bg-tertiary))]">
+              <tr>
+                <th className="text-left px-3 py-2 font-semibold text-[hsl(var(--theme-text-secondary))]">Setting</th>
+                <th className="text-left px-3 py-2 font-semibold text-[hsl(var(--theme-text-secondary))]">Consumed by</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[hsl(var(--theme-border-default))]">
+              <tr><td className="px-3 py-2 font-mono">registration_enabled</td><td className="px-3 py-2">routes/auth.py — signup()</td></tr>
+              <tr><td className="px-3 py-2 font-mono">maintenance_mode</td><td className="px-3 py-2">routes/auth.py — signup(); UI banner</td></tr>
+              <tr><td className="px-3 py-2 font-mono">max_file_size_mb</td><td className="px-3 py-2">routes/uploads.py — both upload paths</td></tr>
+              <tr><td className="px-3 py-2 font-mono">message_rate_limit</td><td className="px-3 py-2">routes/messages.py — send_message() (per-user per-minute)</td></tr>
+              <tr><td className="px-3 py-2 font-mono">auto_moderation_enabled</td><td className="px-3 py-2">routes/messages.py — skip moderation when off</td></tr>
+              <tr><td className="px-3 py-2 font-mono">moderation_sensitivity</td><td className="px-3 py-2">agents/moderation.py — Gemini confidence cutoff</td></tr>
+              <tr><td className="px-3 py-2 font-mono">auto_ban_threshold</td><td className="px-3 py-2">agents/moderation.py — N-strike escalation</td></tr>
+              <tr><td className="px-3 py-2 font-mono">email_notifications_enabled</td><td className="px-3 py-2">services/email_service.py (gates transactional mail)</td></tr>
+              <tr><td className="px-3 py-2 font-mono">max_communities_per_user</td><td className="px-3 py-2">routes/communities.py — create cap</td></tr>
+              <tr><td className="px-3 py-2 font-mono">max_channels_per_community</td><td className="px-3 py-2">routes/channels.py — create cap</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
     </div>
   );
 }

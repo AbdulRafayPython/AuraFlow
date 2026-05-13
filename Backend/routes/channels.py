@@ -25,6 +25,52 @@ print(f"[INFO] Upload folder: {UPLOAD_FOLDER}")
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
+def _maybe_post_welcome(community_id, community_name, username, user_id,
+                        first_channel_id):
+    """If the AutoMessage agent is installed AND enabled with welcome_enabled,
+    post a welcome message as the AI bot in the first channel. Best-effort.
+    """
+    if not first_channel_id:
+        return
+    conn = None
+    try:
+        import json as _json
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT enabled, settings FROM community_agents "
+                "WHERE community_id = %s AND agent_type = 'auto_message' "
+                "LIMIT 1",
+                (community_id,),
+            )
+            row = cur.fetchone()
+        if not row or not row.get('enabled'):
+            return
+
+        settings = row.get('settings') or {}
+        if isinstance(settings, str):
+            try:
+                settings = _json.loads(settings)
+            except Exception:
+                settings = {}
+        if settings.get('welcome_enabled') is False:
+            return
+
+        from agents.auto_message import AutoMessageAgent
+        AutoMessageAgent().generate_welcome(
+            community_name=community_name,
+            username=username,
+            community_description=None,
+            community_id=community_id,
+            channel_id=first_channel_id,
+            user_id=user_id,
+            post=True,
+        )
+    finally:
+        if conn:
+            conn.close()
+
 def process_image(file, max_size, maintain_aspect=True):
     """Process and resize image while maintaining quality"""
     try:
@@ -1722,6 +1768,22 @@ def join_community(community_id):
         for channel in channels:
             invalidate_channel_membership(channel['id'], user_id)
         print(f"[SUCCESS] User {user_id} joined community {community_id}")
+
+        # ── Auto-Welcome (best effort): if AutoMessage agent is installed
+        # for this community AND welcome_enabled, post a welcome message in
+        # the default (first) channel as the AI bot. Errors are swallowed so
+        # join always succeeds.
+        try:
+            _maybe_post_welcome(
+                community_id=community_id,
+                community_name=community['name'],
+                username=username,
+                user_id=user_id,
+                first_channel_id=(channels[0]['id'] if channels else None),
+            )
+        except Exception as _welcome_exc:
+            print(f"[AUTO_MESSAGE] welcome skipped: {_welcome_exc}")
+
         return jsonify({
             'message': f'Successfully joined {community["name"]}',
             'community_id': community_id
