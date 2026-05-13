@@ -4,7 +4,7 @@ services:
   - type: web
     name: auraflow-backend
     runtime: python
-    region: singapore
+    region: oregon
     plan: starter
     rootDir: Backend
     buildCommand: chmod +x build.sh && ./build.sh
@@ -50,7 +50,7 @@ services:
   - type: worker
     name: auraflow-celery-worker
     runtime: python
-    region: singapore
+    region: oregon
     plan: starter
     rootDir: Backend
     buildCommand: chmod +x build.sh && ./build.sh
@@ -88,7 +88,7 @@ services:
   - type: worker
     name: auraflow-celery-beat
     runtime: python
-    region: singapore
+    region: oregon
     plan: starter
     rootDir: Backend
     buildCommand: chmod +x build.sh && ./build.sh
