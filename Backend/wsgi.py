@@ -24,8 +24,9 @@ print(f"[WSGI] Port {port} bound, loading application...", flush=True)
 # 3. Now do the heavy import (torch, transformers, spacy, etc.)
 from app import app, socketio
 
-# 4. Swap in the real Flask app and keep serving
+# 4. Swap in the real Flask-SocketIO app with WebSocket support
 print(f"[WSGI] Application loaded, serving on http://0.0.0.0:{port}", flush=True)
 server.stop()
-server = WSGIServer(('0.0.0.0', port), app, log=sys.stdout)
-server.serve_forever()
+
+# Use socketio.run() for proper WebSocket support via gevent
+socketio.run(app, host='0.0.0.0', port=port, log_output=True)
