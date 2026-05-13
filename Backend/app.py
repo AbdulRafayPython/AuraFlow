@@ -70,6 +70,15 @@ _ALLOWED_ORIGINS = [
 )
 if not _cfg.IS_PRODUCTION:
     _ALLOWED_ORIGINS = "*"  # Allow all in development
+else:
+    # Always include known Vercel deployment URLs
+    _extra = ["https://auraflow-ai.vercel.app"]
+    if isinstance(_ALLOWED_ORIGINS, list):
+        for _u in _extra:
+            if _u not in _ALLOWED_ORIGINS:
+                _ALLOWED_ORIGINS.append(_u)
+    elif _ALLOWED_ORIGINS == "*":
+        pass  # already wide open
 
 CORS(app, 
      resources={r"/*": {"origins": _ALLOWED_ORIGINS}},
