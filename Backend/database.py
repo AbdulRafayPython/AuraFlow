@@ -48,10 +48,23 @@ if DB_SSL:
     _ssl_opts = {'ca': _ca} if _ca else {}
     _pool_kwargs['ssl'] = {'ssl': _ssl_opts}
 
-# ─── Connection Pool ────────────────────────────────────────────────
-_pool = PooledDB(**_pool_kwargs)
+# ─── Connection Pool (lazy) ─────────────────────────────────────────
+# Pool is created on first use, NOT at import time.
+# This lets Celery workers import database.py without needing a live DB
+# connection just to start up.
+_pool = None
+_pool_lock = __import__('threading').Lock()
+
+
+def _get_pool():
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                _pool = PooledDB(**_pool_kwargs)
+    return _pool
 
 
 def get_db_connection():
     """Return a connection from the pool (drop-in replacement)."""
-    return _pool.connection()
+    return _get_pool().connection()
