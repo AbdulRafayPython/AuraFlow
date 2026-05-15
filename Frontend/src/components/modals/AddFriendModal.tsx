@@ -5,6 +5,7 @@ import { getAvatarUrl } from "@/lib/utils";
 import { X, Search, User, UserPlus, Loader, CheckCircle } from "lucide-react";
 import { channelService } from "@/services/channelService";
 import type { User as UserType } from "@/types";
+import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
 interface AddFriendModalProps {
   isOpen: boolean;
@@ -82,15 +83,9 @@ export default function AddFriendModal({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      {/* Premium Modal Container */}
-      <div
-        className="w-full max-w-[480px] rounded-2xl shadow-2xl border max-h-[85vh] overflow-hidden flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-subtle))] animate-in zoom-in-95 slide-in-from-bottom-2 duration-300"
-        style={{ boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.05) inset' }}
-      >
+    <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <ResponsiveModalContent size="md" className="flex flex-col">
         {/* Header */}
         <div className="px-5 py-4 border-b border-[hsl(var(--theme-border-subtle))]">
           <div className="flex items-center justify-between">
@@ -107,13 +102,7 @@ export default function AddFriendModal({
                 </p>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg transition-all duration-150 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-secondary))] active:scale-95"
-              aria-label="Close modal"
-            >
-              <X className="w-[18px] h-[18px]" />
-            </button>
+            {/* Close handled by ResponsiveModal (X in corner / drag-down on mobile) */}
           </div>
 
           {/* Search Bar */}
@@ -236,7 +225,7 @@ export default function AddFriendModal({
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
   );
 }

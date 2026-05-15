@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
 import authService from '../services/authService';
 import { connectSocket, disconnectSocket } from '../socket';
 import { API_URL } from '@/config/api';
@@ -225,19 +225,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     updateUser({ is_first_login: false });
   };
 
+  const contextValue = useMemo(() => ({
+    user,
+    isAuthenticated,
+    isLoading,
+    login,
+    logout,
+    updateUser,
+    updateProfile,
+    completeOnboarding,
+    setUser,
+    setIsAuthenticated,
+  }), [user, isAuthenticated, isLoading]);
+
   return (
-    <AuthContext.Provider value={{
-      user,
-      isAuthenticated,
-      isLoading,
-      login,
-      logout,
-      updateUser,
-      updateProfile,
-      completeOnboarding,
-      setUser,
-      setIsAuthenticated,
-    }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

@@ -288,6 +288,14 @@ def logout():
 @jwt_required()
 def get_me():
     current_user = get_jwt_identity()
+
+    # Response cache (TTL 60s) — invalidated when the user updates their profile
+    # or notification settings.
+    _me_ck = f"user:me:{current_user}"
+    _me_cached = cache_get(_me_ck)
+    if _me_cached is not None:
+        return jsonify(_me_cached), 200
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -355,6 +363,7 @@ def get_me():
     
     print(f"[GET_ME] User: {user_data['username']}, Role: {user_data['role']}")
 
+    cache_set(_me_ck, user_data, ttl=60)
     return jsonify(user_data), 200
 
 #---------------------------------------------------------------------------------
@@ -582,7 +591,13 @@ def update_profile():
         return jsonify({'error': 'Failed to update profile'}), 500
     finally:
         conn.close()
-    
+
+    # Invalidate /api/me cache so the next fetch reflects the new fields.
+    try:
+        cache_delete(f"user:me:{current_user}")
+    except Exception:
+        pass
+
     return jsonify({
         'message': 'Profile updated successfully',
         'avatar_url': get_avatar_url(current_user, avatar_url) if avatar_url else None

@@ -1,16 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
-      "Bash(./Backend/venv/Scripts/python.exe -m py_compile Backend/routes/messages.py)",
-      "Bash(npx tsc *)",
-      "Bash(./venv/Scripts/python.exe app.py)",
-      "Bash(SOCKETIO_ASYNC_MODE=threading ./venv/Scripts/python.exe -c \"import time; start=time.time\\(\\); import app; print\\(f'App loaded in {time.time\\(\\)-start:.1f}s'\\)\")",
-      "Bash(SOCKETIO_ASYNC_MODE=threading F:\\\\BSCS\\\\FYP\\\\AuroFlow\\\\Backend\\\\venv\\\\Scripts\\\\python.exe *)",
-      "Bash(\"F:\\\\BSCS\\\\FYP\\\\AuroFlow\\\\Backend\\\\venv\\\\Scripts\\\\python.exe\" \"F:\\\\BSCS\\\\FYP\\\\AuroFlow\\\\Backend\\\\app.py\")",
-      "Bash(F:\\\\BSCS\\\\FYP\\\\AuroFlow\\\\Backend\\\\venv\\\\Scripts\\\\python.exe *)",
-      "Bash(taskkill /F /IM python.exe)",
-      "PowerShell(Stop-Process *)"
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

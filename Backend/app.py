@@ -396,6 +396,11 @@ def serve_community_image(filename):
 # ======================================================================
 # BACKGROUND TASKS - Monitor inactive users
 # ======================================================================
+# All `time.sleep()` calls below are safe under gevent because production
+# enters this module via wsgi.py, which calls `monkey.patch_all()` BEFORE
+# importing app — that swaps `time.sleep` with a greenlet-yielding version.
+# In dev (no monkey-patching) these threads run on real OS threads, which is
+# fine because Flask dev server uses the threading async mode.
 import threading
 import time
 from datetime import datetime, timedelta

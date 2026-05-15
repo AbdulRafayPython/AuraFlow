@@ -13,6 +13,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import CommunitySettingsModal from "./CommunitySettingsModal";
 import { Community } from "@/types";
 import { API_SERVER } from "@/config/api";
+import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
 interface CommunityManagementModalProps {
   isOpen: boolean;
@@ -137,14 +138,15 @@ export default function CommunityManagementModal({
     );
   };
 
-  if (!isOpen || !community) return null;
+  if (!community) return null;
 
   const logoUrl = community.logo_url ? `${API_SERVER}${community.logo_url}` : null;
   const bannerUrl = community.banner_url ? `${API_SERVER}${community.banner_url}` : null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-lg rounded-2xl shadow-2xl border overflow-hidden bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]">
+    <>
+    <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <ResponsiveModalContent size="lg" className="overflow-hidden">
         
         {/* Banner & Header */}
         <div className="relative">
@@ -163,13 +165,7 @@ export default function CommunityManagementModal({
             <div className="absolute inset-0 bg-gradient-to-t from-[hsl(var(--theme-bg-elevated))] via-transparent to-transparent" />
           </div>
 
-          {/* Close Button */}
-          <button
-            onClick={onClose}
-            className="absolute top-3 right-3 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white transition-all backdrop-blur-sm"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {/* Close handled by ResponsiveModal */}
 
           {/* Community Logo & Info */}
           <div className="relative px-5 pb-4 -mt-10">
@@ -485,7 +481,8 @@ export default function CommunityManagementModal({
             </div>
           )}
         </div>
-      </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
 
       {/* Delete Confirmation */}
       <ConfirmDialog
@@ -519,6 +516,6 @@ export default function CommunityManagementModal({
           setShowSettings(false);
         }}
       />
-    </div>
+    </>
   );
 }

@@ -4,6 +4,7 @@ import { X, Hash, Volume2, Plus, AlertCircle, Radio } from "lucide-react";
 import { channelService } from "@/services/channelService";
 import { socketService } from "@/services/socketService";
 import { useNotifications } from "@/hooks/useNotifications";
+import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
 interface CreateChannelModalProps {
   isOpen: boolean;
@@ -119,8 +120,6 @@ export default function CreateChannelModal({
     return () => window.removeEventListener("keydown", handleKey);
   }, [isOpen, isLoading, onClose]);
 
-  if (!isOpen) return null;
-
   const isFormValid = formData.name.trim().length >= 2;
 
   const channelTypes = [
@@ -139,18 +138,8 @@ export default function CreateChannelModal({
   ];
 
   return (
-    <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !isLoading) onClose();
-      }}
-    >
-      <div
-        className="w-full max-w-[440px] rounded-2xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-200 bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default)/0.5)]"
-        style={{
-          boxShadow: "0 24px 80px rgba(0,0,0,0.35), 0 0 0 1px hsl(var(--theme-border-default) / 0.1)",
-        }}
-      >
+    <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o && !isLoading) onClose(); }}>
+      <ResponsiveModalContent size="md" className="overflow-hidden">
         {/* Accent top bar */}
         <div className="h-0.5" style={{ background: "var(--theme-accent-gradient)" }} />
 
@@ -169,13 +158,7 @@ export default function CreateChannelModal({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            disabled={isLoading}
-            className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] disabled:opacity-50"
-          >
-            <X className="w-4.5 h-4.5" />
-          </button>
+          {/* Close handled by ResponsiveModal */}
         </div>
 
         {/* Form */}
@@ -385,7 +368,7 @@ export default function CreateChannelModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
   );
 }

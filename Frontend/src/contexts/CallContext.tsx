@@ -1,7 +1,7 @@
 // contexts/CallContext.tsx — 1-to-1 Audio/Video Call state management
 // Orchestrates signaling (socket) + media (WebRTC) + UI state
 
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { socketService } from '@/services/socketService';
 import { callWebrtcService, type CallMediaType } from '@/services/callWebrtcService';
 import { callSoundService } from '@/services/callSoundService';
@@ -445,25 +445,31 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const contextValue = useMemo(() => ({
+    callState,
+    callId,
+    callType,
+    remotePeer,
+    isCaller,
+    localStream,
+    remoteStream,
+    isMicOn,
+    isCameraOn,
+    callDuration,
+    initiateCall,
+    acceptCall,
+    rejectCall,
+    endCall,
+    toggleMic,
+    toggleCamera,
+  }), [
+    callState, callId, callType, remotePeer, isCaller,
+    localStream, remoteStream, isMicOn, isCameraOn, callDuration,
+    initiateCall, acceptCall, rejectCall, endCall, toggleMic, toggleCamera,
+  ]);
+
   return (
-    <CallContext.Provider value={{
-      callState,
-      callId,
-      callType,
-      remotePeer,
-      isCaller,
-      localStream,
-      remoteStream,
-      isMicOn,
-      isCameraOn,
-      callDuration,
-      initiateCall,
-      acceptCall,
-      rejectCall,
-      endCall,
-      toggleMic,
-      toggleCamera,
-    }}>
+    <CallContext.Provider value={contextValue}>
       {children}
     </CallContext.Provider>
   );

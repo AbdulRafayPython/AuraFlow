@@ -5,6 +5,7 @@ import { channelService } from "@/services/channelService";
 import { socketService } from "@/services/socketService";
 import { useNotifications } from "@/hooks/useNotifications";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
 interface ChannelManagementModalProps {
   isOpen: boolean;
@@ -115,11 +116,12 @@ export default function ChannelManagementModal({
     }
   };
 
-  if (!isOpen || !channel) return null;
+  if (!channel) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-md rounded-2xl shadow-2xl border max-h-[90vh] overflow-y-auto bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl">
+    <>
+    <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <ResponsiveModalContent size="md" className="overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b sticky top-0 border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))]">
           <div className="flex items-center gap-3">
@@ -132,12 +134,7 @@ export default function ChannelManagementModal({
               Channel Settings
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg transition-all hover:bg-[hsl(var(--theme-bg-hover))]"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {/* Close handled by ResponsiveModal */}
         </div>
 
         {/* Content */}
@@ -272,9 +269,10 @@ export default function ChannelManagementModal({
             </div>
           )}
         </div>
-      </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation Dialog (sibling so it survives parent close) */}
       <ConfirmDialog
         isOpen={showDeleteConfirm}
         title="Delete Channel?"
@@ -284,6 +282,6 @@ export default function ChannelManagementModal({
         onConfirm={handleDeleteChannel}
         onCancel={() => setShowDeleteConfirm(false)}
       />
-    </div>
+    </>
   );
 }

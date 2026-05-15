@@ -5,11 +5,46 @@ from database import get_db_connection
 from werkzeug.utils import secure_filename
 from utils import get_user_id
 # FIX 2/9: member_count updates and channel membership cache invalidation
-from services.redis_client import invalidate_channel_membership, invalidate_member_role
+from services.redis_client import invalidate_channel_membership, invalidate_member_role, get_redis
 import os
 import uuid
+import json as _json
 from PIL import Image
 import io
+
+
+# ── Lightweight HTTP response cache helpers ──────────────────────────────
+# Used to avoid redundant DB hits for hot read endpoints. Falls back to a
+# no-op if Redis is unavailable.
+def _cache_get(key):
+    r = get_redis()
+    if r is None:
+        return None
+    try:
+        val = r.get(key)
+        return _json.loads(val) if val else None
+    except Exception:
+        return None
+
+
+def _cache_set(key, data, ttl=30):
+    r = get_redis()
+    if r is None:
+        return
+    try:
+        r.set(key, _json.dumps(data, default=str), ex=ttl)
+    except Exception:
+        pass
+
+
+def _cache_delete(*keys):
+    r = get_redis()
+    if r is None or not keys:
+        return
+    try:
+        r.delete(*keys)
+    except Exception:
+        pass
 
 # Configuration for uploads
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads', 'communities')
@@ -103,11 +138,18 @@ def get_communities():
     conn = None
     try:
         username = get_jwt_identity()
+        # Resolve user_id from cache (cheap) so we can key the response cache.
         conn = get_db_connection()
         with conn.cursor() as cur:
             user_id = get_user_id(username, cur)
             if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
+
+            # Response cache (TTL 30s) — invalidated on community join/leave/create.
+            _ck = f"communities:{user_id}"
+            _cached = _cache_get(_ck)
+            if _cached is not None:
+                return jsonify(_cached), 200
 
             cur.execute("""
                 SELECT 
@@ -145,6 +187,7 @@ def get_communities():
             'channel_count': c['channel_count']
         } for c in communities]
 
+        _cache_set(_ck, result, ttl=30)
         return jsonify(result), 200
 
     except Exception as e:
@@ -163,23 +206,32 @@ def get_community_channels(community_id):
     conn = None
     try:
         username = get_jwt_identity()
+
+        # Response cache (TTL 30s) — invalidated on channel create/delete/update.
+        _ck = f"channels:{community_id}"
+        _cached = _cache_get(_ck)
+
         conn = get_db_connection()
         with conn.cursor() as cur:
             user_id = get_user_id(username, cur)
             if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
 
-            # Check membership
+            # Membership check is still required even on cache hit (security).
             cur.execute("SELECT 1 FROM community_members WHERE community_id = %s AND user_id = %s",
                         (community_id, user_id))
             if not cur.fetchone():
                 return jsonify({'error': 'Access denied'}), 403
 
+            if _cached is not None:
+                return jsonify(_cached), 200
+
             cur.execute("""
                 SELECT id, name, type, description, created_at
-                FROM channels 
+                FROM channels
                 WHERE community_id = %s
                 ORDER BY name ASC
+                LIMIT 200
             """, (community_id,))
             channels = cur.fetchall()
 
@@ -191,6 +243,7 @@ def get_community_channels(community_id):
             'created_at': ch['created_at'].isoformat() if ch['created_at'] else None
         } for ch in channels]
 
+        _cache_set(_ck, result, ttl=30)
         return jsonify(result), 200
 
     except Exception as e:
@@ -266,8 +319,10 @@ def create_channel(community_id):
             print(f"[INFO] ✅ Added {members_added} members to channel {channel_id}")
 
         conn.commit()
+        # Invalidate the channels-list cache for this community
+        _cache_delete(f"channels:{community_id}")
         print(f"[SUCCESS] Channel '{name}' created with {members_added} members")
-        
+
         return jsonify({
             'id': channel_id,
             'name': name,
@@ -384,12 +439,18 @@ def get_friends():
             if user_id is None:
                 return jsonify({'error': 'User not found'}), 404
 
+            _ck = f"friends:{user_id}"
+            _cached = _cache_get(_ck)
+            if _cached is not None:
+                return jsonify(_cached), 200
+
             cur.execute("""
-                SELECT DISTINCT u.id, u.username, u.display_name, u.avatar_url, 
+                SELECT DISTINCT u.id, u.username, u.display_name, u.avatar_url,
                        u.status, u.custom_status, u.last_seen
                 FROM friends f
                 JOIN users u ON u.id = (CASE WHEN f.user_id = %s THEN f.friend_id ELSE f.user_id END)
                 WHERE f.user_id = %s OR f.friend_id = %s
+                LIMIT 500
             """, (user_id, user_id, user_id))
             friends = cur.fetchall()
 
@@ -411,6 +472,7 @@ def get_friends():
             key=lambda x: (x['status'] != 'online', x['display_name'].lower())
         )
 
+        _cache_set(_ck, result, ttl=20)
         return jsonify(result), 200
 
     except Exception as e:
@@ -476,8 +538,9 @@ def create_community():
             print(f"[INFO] ✅ Added user {user_id} to channel_members for channel {general_channel_id}")
 
         conn.commit()
+        _cache_delete(f"communities:{user_id}")
         print(f"[SUCCESS] Community creation complete for {name}")
-        
+
         return jsonify({
             'id': community_id,
             'name': name,
@@ -529,6 +592,7 @@ def delete_channel(channel_id):
             cur.execute("DELETE FROM channels WHERE id = %s", (channel_id,))
 
         conn.commit()
+        _cache_delete(f"channels:{channel['community_id']}")
         return jsonify({'message': 'Channel deleted'}), 200
 
     except Exception as e:
@@ -1157,13 +1221,14 @@ def get_community_members():
                 JOIN users u ON cm.user_id = u.id
                 LEFT JOIN blocked_users bu ON cm.community_id = bu.community_id AND cm.user_id = bu.user_id
                 WHERE cm.community_id = %s
-                ORDER BY 
-                    CASE cm.role 
+                ORDER BY
+                    CASE cm.role
                         WHEN 'owner' THEN 1
                         WHEN 'admin' THEN 2
                         ELSE 3
                     END,
                     u.username ASC
+                LIMIT 200
             """, (community_id,))
             members = cur.fetchall()
 
@@ -1402,6 +1467,7 @@ def update_channel(channel_id):
             'created_at': updated['created_at'].isoformat() if updated['created_at'] else None
         }
 
+        _cache_delete(f"channels:{channel['community_id']}")
         print(f"[SUCCESS] Channel {channel_id} updated")
         return jsonify(result), 200
 
@@ -1469,6 +1535,7 @@ def delete_community(community_id):
             cur.execute("DELETE FROM communities WHERE id = %s", (community_id,))
 
         conn.commit()
+        _cache_delete(f"communities:{user_id}", f"channels:{community_id}")
         print(f"[SUCCESS] Community {community_id} deleted by {username}")
 
         # Broadcast deletion to all members via socket
@@ -1555,6 +1622,7 @@ def leave_community(community_id):
         conn.commit()
         # FIX 6/9: Invalidate cached role and channel memberships for this user
         invalidate_member_role(community_id, user_id)
+        _cache_delete(f"communities:{user_id}")
         print(f"[SUCCESS] User {user_id} ({username}) left community {community_id}")
 
         # Broadcast leave event via socket to notify remaining members
@@ -1767,6 +1835,7 @@ def join_community(community_id):
         # FIX 9: Prime channel membership cache for all channels just joined
         for channel in channels:
             invalidate_channel_membership(channel['id'], user_id)
+        _cache_delete(f"communities:{user_id}")
         print(f"[SUCCESS] User {user_id} joined community {community_id}")
 
         # ── Auto-Welcome (best effort): if AutoMessage agent is installed

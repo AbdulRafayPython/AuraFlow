@@ -5,6 +5,7 @@ import { getAvatarUrl } from "@/lib/utils";
 import { X, Search, Users, Plus, Loader, AlertCircle } from "lucide-react";
 import type { Community } from "@/types";
 import { API_SERVER } from "@/config/api";
+import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
 interface JoinCommunityModalProps {
   isOpen: boolean;
@@ -118,14 +119,9 @@ export default function JoinCommunityModal({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      {/* Premium Modal Container */}
-      <div
-        className="w-full max-w-2xl rounded-3xl shadow-2xl border max-h-[85vh] overflow-y-auto flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl"
-      >
+    <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <ResponsiveModalContent size="xl" className="flex flex-col overflow-y-auto">
 
         {/* Sticky Header */}
         <div className="sticky top-0 z-10 p-5 border-b backdrop-blur-xl bg-[hsl(var(--theme-bg-elevated))]/80 border-[hsl(var(--theme-border-default))]">
@@ -139,12 +135,7 @@ export default function JoinCommunityModal({
                 Discover Communities
               </h2>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2.5 rounded-xl transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] active:scale-95"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            {/* Close handled by ResponsiveModal */}
           </div>
 
           {/* Search Bar */}
@@ -271,7 +262,7 @@ export default function JoinCommunityModal({
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
   );
 }

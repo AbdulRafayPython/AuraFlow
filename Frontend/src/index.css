@@ -183,6 +183,31 @@
     @apply bg-background text-foreground font-sans;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   }
+
+  /* Mobile-first foundation: kill the iOS tap flash on interactive elements
+     and prevent text size adjust on orientation change. */
+  button,
+  a,
+  [role="button"],
+  input,
+  textarea,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+}
+
+/* ── Safe-area + viewport primitives ─────────────────────
+   These run unconditionally so any component can reference
+   var(--safe-bottom) etc. without importing anything. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 }
 
 @layer components {
@@ -250,7 +275,46 @@
   .transition-smooth {
     @apply transition-all duration-200 ease-out;
   }
-  
+
+  /* Skip layout/paint for off-screen items.
+     Apply to long-list rows (messages, members, channels) so the browser
+     short-circuits work for anything outside the viewport. Estimate matches
+     typical row height — tweak per usage if rows are taller/shorter. */
+  .cv-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: 0 64px;
+  }
+
+  /* Mobile viewport + safe-area helpers.
+     Use these on full-screen containers so iOS Safari's URL bar
+     collapse doesn't break layout. dvh = dynamic viewport height. */
+  .h-dvh-safe {
+    height: 100dvh;
+  }
+  @supports not (height: 100dvh) {
+    .h-dvh-safe {
+      height: 100vh;
+    }
+  }
+  .min-h-dvh-safe {
+    min-height: 100dvh;
+  }
+  @supports not (min-height: 100dvh) {
+    .min-h-dvh-safe {
+      min-height: 100vh;
+    }
+  }
+  .pb-safe { padding-bottom: var(--safe-bottom); }
+  .pt-safe { padding-top: var(--safe-top); }
+  .pl-safe { padding-left: var(--safe-left); }
+  .pr-safe { padding-right: var(--safe-right); }
+  .pb-safe-nav { padding-bottom: calc(var(--safe-bottom) + 4rem); }
+
+  /* Lock chat scroll containers to vertical-only panning so iOS doesn't
+     hijack horizontal swipes for back/forward navigation. */
+  .touch-pan-y { touch-action: pan-y; }
+
+
   .hover-lift {
     @apply transition-smooth hover:shadow-medium hover:-translate-y-0.5;
   }
@@ -292,32 +356,61 @@
     @apply absolute left-0 w-1 h-2 bg-channel-unread rounded-r;
   }
 
-  /* ── Universal Themed Scrollbar ── */
-  * {
+  /* ── Themed Scrollbar (scoped to scroll containers only) ──
+     Previously applied via `*` which forced the browser to evaluate
+     scrollbar styling for every node in the tree. Scoping to elements
+     that actually scroll is materially cheaper. */
+  html,
+  body,
+  [class*="overflow-y-auto"],
+  [class*="overflow-x-auto"],
+  [class*="overflow-auto"],
+  [class*="overflow-y-scroll"],
+  [class*="overflow-x-scroll"] {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--theme-accent-primary) / 0.25) transparent;
   }
 
-  *::-webkit-scrollbar {
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar,
+  [class*="overflow-y-auto"]::-webkit-scrollbar,
+  [class*="overflow-x-auto"]::-webkit-scrollbar,
+  [class*="overflow-auto"]::-webkit-scrollbar,
+  [class*="overflow-y-scroll"]::-webkit-scrollbar,
+  [class*="overflow-x-scroll"]::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
 
-  *::-webkit-scrollbar-track {
+  html::-webkit-scrollbar-track,
+  body::-webkit-scrollbar-track,
+  [class*="overflow-y-auto"]::-webkit-scrollbar-track,
+  [class*="overflow-x-auto"]::-webkit-scrollbar-track,
+  [class*="overflow-auto"]::-webkit-scrollbar-track,
+  [class*="overflow-y-scroll"]::-webkit-scrollbar-track,
+  [class*="overflow-x-scroll"]::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  *::-webkit-scrollbar-thumb {
+  html::-webkit-scrollbar-thumb,
+  body::-webkit-scrollbar-thumb,
+  [class*="overflow-y-auto"]::-webkit-scrollbar-thumb,
+  [class*="overflow-x-auto"]::-webkit-scrollbar-thumb,
+  [class*="overflow-auto"]::-webkit-scrollbar-thumb,
+  [class*="overflow-y-scroll"]::-webkit-scrollbar-thumb,
+  [class*="overflow-x-scroll"]::-webkit-scrollbar-thumb {
     background: hsl(var(--theme-accent-primary) / 0.25);
     border-radius: 10px;
   }
 
-  *::-webkit-scrollbar-thumb:hover {
+  html::-webkit-scrollbar-thumb:hover,
+  body::-webkit-scrollbar-thumb:hover,
+  [class*="overflow-y-auto"]::-webkit-scrollbar-thumb:hover,
+  [class*="overflow-x-auto"]::-webkit-scrollbar-thumb:hover,
+  [class*="overflow-auto"]::-webkit-scrollbar-thumb:hover,
+  [class*="overflow-y-scroll"]::-webkit-scrollbar-thumb:hover,
+  [class*="overflow-x-scroll"]::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--theme-accent-primary) / 0.45);
-  }
-
-  *::-webkit-scrollbar-corner {
-    background: transparent;
   }
 
   /* Custom Scrollbar — alias kept for backward compat */

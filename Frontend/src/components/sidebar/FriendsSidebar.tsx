@@ -262,7 +262,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
   return (
     <>
     <div 
-      className={`flex-shrink-0 h-full flex transition-all duration-300 relative ${showLogoutDialog || isMembersModalOpen || isCommunityManagementModalOpen || showFriendProfileModal ? 'blur-[2px] pointer-events-none' : ''}`}
+      className={`flex-shrink-0 h-full flex transition-all duration-300 relative ${showLogoutDialog || isMembersModalOpen || isCommunityManagementModalOpen || showFriendProfileModal ? 'pointer-events-none' : ''}`}
       style={{ 
         overflow: 'visible',
         background: 'var(--theme-sidebar-gradient)'

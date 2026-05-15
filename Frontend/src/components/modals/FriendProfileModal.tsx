@@ -4,6 +4,7 @@ import { getAvatarUrl } from "@/lib/utils";
 import type { Friend } from "@/types";
 import { X, MessageCircle, Phone, Video, Ban, UserMinus } from "lucide-react";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
+import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
 interface FriendProfileModalProps {
   isOpen: boolean;
@@ -41,7 +42,7 @@ export default function FriendProfileModal({
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
 
-  if (!isOpen || !friend) return null;
+  if (!friend) return null;
 
   const getLastSeenText = (lastSeen?: string) => {
     if (!lastSeen || friend.status === "online") return null;
@@ -61,16 +62,12 @@ export default function FriendProfileModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-md max-h-[90vh] rounded-2xl shadow-2xl overflow-y-auto animate-in fade-in zoom-in-95 duration-200 bg-[hsl(var(--theme-bg-elevated))]">
+    <>
+    <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <ResponsiveModalContent size="md" className="overflow-y-auto">
         {/* Header with Gradient Background */}
         <div className="relative h-24 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))]">
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-lg bg-black/20 hover:bg-black/40 text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {/* Close handled by ResponsiveModal */}
         </div>
 
         {/* Profile Section */}
@@ -213,36 +210,38 @@ export default function FriendProfileModal({
           </div>
         </div>
 
-        {/* Confirmation Dialogs */}
-        <ConfirmDialog
-          isOpen={showRemoveConfirm}
-          title="Remove Friend?"
-          description={`Are you sure you want to remove ${friend?.display_name} from your friends list? You can add them again later.`}
-          cancelText="Cancel"
-          confirmText="Remove"
-          isDangerous
-          onConfirm={() => {
-            if (onRemove && friend) onRemove(friend.id);
-            setShowRemoveConfirm(false);
-            onClose();
-          }}
-          onCancel={() => setShowRemoveConfirm(false)}
-        />
-        <ConfirmDialog
-          isOpen={showBlockConfirm}
-          title="Block User?"
-          description={`Are you sure you want to block ${friend?.display_name}? They won't be able to send you messages or friend requests.`}
-          cancelText="Cancel"
-          confirmText="Block"
-          isDangerous
-          onConfirm={() => {
-            if (onBlock && friend) onBlock(friend.id);
-            setShowBlockConfirm(false);
-            onClose();
-          }}
-          onCancel={() => setShowBlockConfirm(false)}
-        />
-      </div>
-    </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
+
+    {/* Confirmation Dialogs (siblings so they survive parent close) */}
+    <ConfirmDialog
+      isOpen={showRemoveConfirm}
+      title="Remove Friend?"
+      description={`Are you sure you want to remove ${friend?.display_name} from your friends list? You can add them again later.`}
+      cancelText="Cancel"
+      confirmText="Remove"
+      isDangerous
+      onConfirm={() => {
+        if (onRemove && friend) onRemove(friend.id);
+        setShowRemoveConfirm(false);
+        onClose();
+      }}
+      onCancel={() => setShowRemoveConfirm(false)}
+    />
+    <ConfirmDialog
+      isOpen={showBlockConfirm}
+      title="Block User?"
+      description={`Are you sure you want to block ${friend?.display_name}? They won't be able to send you messages or friend requests.`}
+      cancelText="Cancel"
+      confirmText="Block"
+      isDangerous
+      onConfirm={() => {
+        if (onBlock && friend) onBlock(friend.id);
+        setShowBlockConfirm(false);
+        onClose();
+      }}
+      onCancel={() => setShowBlockConfirm(false)}
+    />
+    </>
   );
 }

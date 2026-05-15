@@ -897,48 +897,136 @@ def register_socket_events(socketio):
 
             log.info(f"[SOCKET] new_message received: message_id={message_id}, channel_id={channel_id}, user={username}")
 
-            # Get user ID and community ID for moderation
-            conn = get_db_connection()
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, display_name, avatar_url FROM users WHERE username = %s", (username,))
-                user_row = cur.fetchone()
+            # ── Redis-backed metadata cache ─────────────────────────────────
+            # All three lookups (user, channel/community, blocked) used to hit
+            # TiDB on every message. We try Redis first and fall back to a
+            # single shared DB connection only when necessary.
+            import json as _json
+            try:
+                from services.redis_client import get_redis as _get_redis
+                _r_meta = _get_redis()
+            except Exception:
+                _r_meta = None
+
+            user_id = None
+            sender_display_name = username
+            sender_avatar = None
+            community_id = None
+            channel_name = None
+            community_name = None
+            community_logo = None
+            community_icon = None
+            community_color = None
+            is_blocked = False
+
+            # 1) user meta cache  (TTL 120s)
+            user_meta = None
+            if _r_meta is not None:
+                try:
+                    raw = _r_meta.get(f"user:meta:{username}")
+                    if raw:
+                        user_meta = _json.loads(raw)
+                except Exception:
+                    user_meta = None
+            if user_meta is None:
+                conn = get_db_connection()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, display_name, avatar_url FROM users WHERE username = %s",
+                        (username,)
+                    )
+                    user_row = cur.fetchone()
                 if not user_row:
                     log.error(f"[SOCKET] User not found: {username}")
                     return
-                user_id = user_row['id']
-                sender_display_name = user_row.get('display_name') or username
-                sender_avatar = user_row.get('avatar_url')
-                log.info(f"[SOCKET] User {username} has id {user_id}")
-                
-                # Get community_id + channel name from channel
-                cur.execute("""
-                    SELECT c.community_id, c.name AS channel_name,
-                           cm.name AS community_name, cm.logo_url AS community_logo,
-                           cm.icon AS community_icon, cm.color AS community_color
-                    FROM channels c
-                    LEFT JOIN communities cm ON cm.id = c.community_id
-                    WHERE c.id = %s
-                """, (channel_id,))
-                channel_row = cur.fetchone()
-                community_id = channel_row['community_id'] if channel_row else None
-                channel_name = channel_row['channel_name'] if channel_row else None
-                community_name = channel_row['community_name'] if channel_row else None
-                community_logo = channel_row['community_logo'] if channel_row else None
-                community_icon = channel_row['community_icon'] if channel_row else None
-                community_color = channel_row['community_color'] if channel_row else None
-                log.info(f"[SOCKET] Channel {channel_id} belongs to community {community_id}")
-                
-                # Check if user is blocked from this community
-                is_blocked = False
-                if community_id:
+                user_meta = {
+                    'id': user_row['id'],
+                    'display_name': user_row.get('display_name') or username,
+                    'avatar_url': user_row.get('avatar_url'),
+                }
+                if _r_meta is not None:
+                    try:
+                        _r_meta.set(f"user:meta:{username}", _json.dumps(user_meta, default=str), ex=120)
+                    except Exception:
+                        pass
+
+            user_id = user_meta['id']
+            sender_display_name = user_meta['display_name']
+            sender_avatar = user_meta.get('avatar_url')
+
+            # 2) channel/community meta cache  (TTL 300s)
+            ch_meta = None
+            if _r_meta is not None:
+                try:
+                    raw = _r_meta.get(f"channel:meta:{channel_id}")
+                    if raw:
+                        ch_meta = _json.loads(raw)
+                except Exception:
+                    ch_meta = None
+            if ch_meta is None:
+                if conn is None:
+                    conn = get_db_connection()
+                with conn.cursor() as cur:
                     cur.execute("""
-                        SELECT 1 FROM blocked_users 
-                        WHERE community_id = %s AND user_id = %s
-                    """, (community_id, user_id))
-                    is_blocked = cur.fetchone() is not None
-                    
-                    if is_blocked:
-                        log.info(f"[SOCKET] User {username} is BLOCKED in community {community_id}")
+                        SELECT c.community_id, c.name AS channel_name,
+                               cm.name AS community_name, cm.logo_url AS community_logo,
+                               cm.icon AS community_icon, cm.color AS community_color
+                        FROM channels c
+                        LEFT JOIN communities cm ON cm.id = c.community_id
+                        WHERE c.id = %s
+                    """, (channel_id,))
+                    channel_row = cur.fetchone()
+                if channel_row:
+                    ch_meta = {
+                        'community_id': channel_row['community_id'],
+                        'channel_name': channel_row['channel_name'],
+                        'community_name': channel_row['community_name'],
+                        'community_logo': channel_row['community_logo'],
+                        'community_icon': channel_row['community_icon'],
+                        'community_color': channel_row['community_color'],
+                    }
+                else:
+                    ch_meta = {}
+                if _r_meta is not None:
+                    try:
+                        _r_meta.set(f"channel:meta:{channel_id}", _json.dumps(ch_meta, default=str), ex=300)
+                    except Exception:
+                        pass
+
+            community_id = ch_meta.get('community_id')
+            channel_name = ch_meta.get('channel_name')
+            community_name = ch_meta.get('community_name')
+            community_logo = ch_meta.get('community_logo')
+            community_icon = ch_meta.get('community_icon')
+            community_color = ch_meta.get('community_color')
+
+            # 3) blocked-status cache  (TTL 60s)
+            if community_id:
+                _blk_key = f"blocked:{community_id}:{user_id}"
+                _blk_cached = None
+                if _r_meta is not None:
+                    try:
+                        _blk_cached = _r_meta.get(_blk_key)
+                    except Exception:
+                        _blk_cached = None
+                if _blk_cached is not None:
+                    is_blocked = _blk_cached in ('1', b'1', 1, True)
+                else:
+                    if conn is None:
+                        conn = get_db_connection()
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT 1 FROM blocked_users WHERE community_id = %s AND user_id = %s",
+                            (community_id, user_id),
+                        )
+                        is_blocked = cur.fetchone() is not None
+                    if _r_meta is not None:
+                        try:
+                            _r_meta.set(_blk_key, '1' if is_blocked else '0', ex=60)
+                        except Exception:
+                            pass
+                if is_blocked:
+                    log.info(f"[SOCKET] User {username} is BLOCKED in community {community_id}")
             
             # 🛡️ BATCH MODERATION — instant-check → broadcast → Redis buffer → Gemini batch
             # Messages broadcast INSTANTLY (only extreme content blocked pre-broadcast).
@@ -950,28 +1038,29 @@ def register_socket_events(socketio):
                 try:
                     # Cache moderation_installed in Redis for 60s to avoid a DB query per message
                     _mod_cache_key = f'mod:installed:{community_id}'
-                    try:
-                        from services.redis_client import get_redis as _get_redis
-                        _r = _get_redis()
-                        _cached = _r.get(_mod_cache_key) if _r else None
-                        if _cached is not None:
-                            moderation_installed = _cached == b'1' or _cached == '1'
-                        else:
-                            with conn.cursor() as chk_cur:
-                                chk_cur.execute("""
-                                    SELECT 1 FROM community_agents
-                                    WHERE community_id = %s AND agent_type = 'moderation' AND enabled = TRUE
-                                """, (community_id,))
-                                moderation_installed = chk_cur.fetchone() is not None
-                            if _r:
-                                _r.set(_mod_cache_key, '1' if moderation_installed else '0', ex=60)
-                    except Exception:
+                    _r = _r_meta  # reuse the connection acquired earlier
+                    _cached = None
+                    if _r is not None:
+                        try:
+                            _cached = _r.get(_mod_cache_key)
+                        except Exception:
+                            _cached = None
+                    if _cached is not None:
+                        moderation_installed = _cached in ('1', b'1', 1, True)
+                    else:
+                        if conn is None:
+                            conn = get_db_connection()
                         with conn.cursor() as chk_cur:
                             chk_cur.execute("""
                                 SELECT 1 FROM community_agents
                                 WHERE community_id = %s AND agent_type = 'moderation' AND enabled = TRUE
                             """, (community_id,))
                             moderation_installed = chk_cur.fetchone() is not None
+                        if _r is not None:
+                            try:
+                                _r.set(_mod_cache_key, '1' if moderation_installed else '0', ex=60)
+                            except Exception:
+                                pass
                 except Exception:
                     moderation_installed = True
 

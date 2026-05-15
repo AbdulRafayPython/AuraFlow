@@ -11,14 +11,18 @@ DB_PORT = int(os.getenv('DB_PORT', '4000' if (DB_HOST or '').endswith('tidbcloud
 DB_SSL = os.getenv('DB_SSL', 'true' if (DB_HOST or '').endswith('tidbcloud.com') else 'false').lower() == 'true'
 
 # Build connection kwargs
+# ping=1 ⇒ DBUtils pings the connection on checkout and reconnects on a
+# stale socket (TiDB Cloud kills idle connections after a few hours).
+# Tighter timeouts fail fast on flaky network instead of holding a worker.
 _pool_kwargs = dict(
     creator=pymysql,
-    maxconnections=25,       # TiDB Serverless free tier allows 25; use all of them
+    maxconnections=25,       # TiDB Serverless free tier hard cap
     mincached=2,             # keep 2 idle connections warm
     maxcached=8,             # cap idle pool size
-    blocking=True,           # block rather than error when pool exhausted
+    blocking=True,           # block (don't error) when pool exhausted
     maxusage=500,            # recycle connection after 500 uses
     setsession=[],           # no per-session SQL
+    ping=1,                  # ping on checkout — auto-reconnect on stale conn
     host=DB_HOST,
     user=DB_USER,
     password=DB_PASSWORD,
@@ -27,9 +31,9 @@ _pool_kwargs = dict(
     cursorclass=DictCursor,
     charset='utf8mb4',
     autocommit=False,
-    connect_timeout=15,
-    read_timeout=60,
-    write_timeout=60,
+    connect_timeout=10,      # fail fast on unreachable host
+    read_timeout=30,
+    write_timeout=30,
 )
 
 if DB_SSL:

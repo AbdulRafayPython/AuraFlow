@@ -8,6 +8,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { getAvatarUrl } from "@/lib/utils";
 import toast from "react-hot-toast";
 import { channelService } from "@/services/channelService";
+import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
 interface User {
   id: number;
@@ -118,17 +119,9 @@ export default function CommunityMembersAddModal({
       .slice(0, 2);
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div
-        className="rounded-3xl shadow-2xl border w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <ResponsiveModalContent size="xl" className="flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-[hsl(var(--theme-border-default))]">
           <div className="flex items-center gap-4">
@@ -144,12 +137,7 @@ export default function CommunityMembersAddModal({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-3 rounded-xl transition-all hover:scale-105 hover:bg-[hsl(var(--theme-bg-hover))]"
-          >
-            <X className="w-6 h-6 text-[hsl(var(--theme-text-muted))]" />
-          </button>
+          {/* Close handled by ResponsiveModal */}
         </div>
 
         {/* Search */}
@@ -286,7 +274,7 @@ export default function CommunityMembersAddModal({
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
   );
 }

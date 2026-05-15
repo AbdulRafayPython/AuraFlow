@@ -1,5 +1,5 @@
 // components/layout/MainLayout.tsx
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import { Menu, X, Home as HomeIcon, Users, Settings } from "lucide-react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import FriendsSidebar from "../sidebar/FriendsSidebar";
@@ -12,6 +12,11 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDirectMessages } from "@/contexts/DirectMessagesContext";
 import { useFriends } from "@/contexts/FriendsContext";
+import { useIsMobile } from "@/hooks/use-mobile";
+
+// Lazy: needed only when /settings is opened on top of /community/:id so the
+// Dashboard stays mounted underneath the modal.
+const DashboardLazy = lazy(() => import("@/pages/Dashboard"));
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -26,7 +31,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const navigate = useNavigate();
   const params = useParams();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useIsMobile();
   const [selectedDMUser, setSelectedDMUser] = useState<{ id: number; username: string; display_name: string; avatar_url?: string } | null>(null);
   const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
   const [isCommunityManagementModalOpen, setIsCommunityManagementModalOpen] = useState(false);
@@ -44,9 +49,26 @@ export default function MainLayout({ children }: MainLayoutProps) {
     return "not-found" as const;
   }, [location.pathname]);
 
-  // Check if we're on an agent page or discover page
-  const isAgentPage = currentView === "agent";
-  const isDiscoverPage = currentView === "discover";
+  // Remember the last non-settings view + location so the underlying content
+  // stays mounted when the Settings modal overlay opens. Without this the
+  // chat would unmount and have to refetch when settings closes.
+  const lastNonSettingsViewRef = useRef<typeof currentView>(currentView);
+  const lastNonSettingsLocationRef = useRef(location);
+  useEffect(() => {
+    if (currentView !== "settings") {
+      lastNonSettingsViewRef.current = currentView;
+      lastNonSettingsLocationRef.current = location;
+    }
+  }, [currentView, location]);
+  const effectiveView =
+    currentView === "settings"
+      ? lastNonSettingsViewRef.current
+      : currentView;
+
+  // Check if we're on an agent page or discover page (use effectiveView so
+  // that opening /settings doesn't visually unmount these layouts).
+  const isAgentPage = effectiveView === "agent";
+  const isDiscoverPage = effectiveView === "discover";
 
   // --- URL → State sync: community ---
   useEffect(() => {
@@ -64,8 +86,15 @@ export default function MainLayout({ children }: MainLayoutProps) {
           navigate('/', { replace: true });
         }
       }
-    } else if (currentView !== "dashboard" && currentView !== "agent" && currentView !== "discover") {
-      // Non-community route: clear community selection
+    } else if (
+      currentView !== "dashboard" &&
+      currentView !== "agent" &&
+      currentView !== "discover" &&
+      currentView !== "settings"
+    ) {
+      // Non-community route: clear community selection.
+      // Settings is treated as an overlay — keep the community selected so
+      // the chat is still mounted when the modal closes.
       if (currentCommunity) {
         selectCommunity(null);
       }
@@ -136,19 +165,10 @@ export default function MainLayout({ children }: MainLayoutProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [friends]);
 
-  // Detect mobile screen size
+  // Auto-close the mobile menu when we cross into desktop width.
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-      if (window.innerWidth >= 768) {
-        setMobileMenuOpen(false);
-      }
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+    if (!isMobile) setMobileMenuOpen(false);
+  }, [isMobile]);
 
   // Lock body scroll when mobile menu is open
   useEffect(() => {
@@ -215,7 +235,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
       style={{ background: 'var(--theme-bg-gradient)' }}
     >
       {/* Desktop: Friends Sidebar - Always Visible */}
-      <div className="hidden md:flex flex-shrink-0 relative z-30">
+      <div className="hidden md:flex flex-shrink-0">
         <FriendsSidebar 
           onNavigate={handleNavigation} 
           currentView={currentView} 
@@ -226,9 +246,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
       </div>
 
       {/* Desktop: Channel Sidebar - Show when community is selected and not on agent/discover page */}
-      {currentView === "dashboard" && hasCommunitySelected && !isAgentPage && !isDiscoverPage && (
-        <div className="hidden md:flex flex-shrink-0 relative z-20">
-          <ChannelSidebar 
+      {effectiveView === "dashboard" && hasCommunitySelected && !isAgentPage && !isDiscoverPage && (
+        <div className="hidden md:flex flex-shrink-0">
+          <ChannelSidebar
             onNavigate={handleNavigation}
             onMembersModalChange={setIsMembersModalOpen}
             onCommunityManagementModalChange={setIsCommunityManagementModalOpen}
@@ -269,9 +289,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
             </div>
             
             {/* Channel Sidebar - Show when community is selected and not on agent/discover page */}
-            {currentView === "dashboard" && hasCommunitySelected && !isAgentPage && !isDiscoverPage && (
+            {effectiveView === "dashboard" && hasCommunitySelected && !isAgentPage && !isDiscoverPage && (
               <div className="flex-shrink-0 h-full overflow-y-auto">
-                <ChannelSidebar 
+                <ChannelSidebar
                   onNavigate={handleNavigation}
                 />
               </div>
@@ -282,43 +302,53 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
-        {isAgentPage || isDiscoverPage || currentView === "not-found" ? (
+        {isAgentPage || isDiscoverPage || effectiveView === "not-found" ? (
           // Agent/Discover/NotFound pages take full width
           <div className="flex-1 overflow-hidden">
             <div className="h-full overflow-hidden">
               {children}
             </div>
           </div>
-        ) : currentView === "home" ? (
+        ) : effectiveView === "home" ? (
           <div className="flex-1 overflow-y-auto">
             <HomePage />
           </div>
-        ) : currentView === "friends" ? (
+        ) : effectiveView === "friends" ? (
           <div className="flex-1 overflow-hidden">
             <Friends onOpenDM={handleOpenDM} />
           </div>
-        ) : currentView === "settings" ? (
+        ) : effectiveView === "direct-message" && selectedDMUser ? (
           <div className="flex-1 overflow-hidden">
-            <SettingsPage />
-          </div>
-        ) : currentView === "direct-message" && selectedDMUser ? (
-          <div className="flex-1 overflow-hidden">
-            <DirectMessageView 
-              userId={selectedDMUser.id} 
-              username={selectedDMUser.username} 
+            <DirectMessageView
+              userId={selectedDMUser.id}
+              username={selectedDMUser.username}
               displayName={selectedDMUser.display_name}
-              avatar={selectedDMUser.avatar_url} 
-              onClose={handleCloseDM} 
+              avatar={selectedDMUser.avatar_url}
+              onClose={handleCloseDM}
             />
           </div>
         ) : hasCommunitySelected ? (
-          // Show main content (Dashboard) when a community is selected
+          // Show main content (Dashboard) when a community is selected.
+          // When the Settings overlay is open, `children` is null (the route
+          // is /settings), so we mount Dashboard directly to keep the chat
+          // visible behind the modal.
           <div className="flex-1 flex overflow-hidden">
-            <div className="flex-1 overflow-hidden bg-[hsl(var(--theme-bg-primary))]">
-              {children}
+            <div
+              className={`flex-1 overflow-hidden bg-[hsl(var(--theme-bg-primary))] ${
+                currentView === "settings" ? "pointer-events-none select-none" : ""
+              }`}
+              aria-hidden={currentView === "settings" ? true : undefined}
+            >
+              {currentView === "settings" ? (
+                <Suspense fallback={null}>
+                  <DashboardLazy />
+                </Suspense>
+              ) : (
+                children
+              )}
             </div>
           </div>
-        ) : currentView === "dashboard" ? (
+        ) : effectiveView === "dashboard" ? (
           // Community route but community not loaded yet - show loading
           <div className="flex items-center justify-center h-full bg-[hsl(var(--theme-bg-primary))]">
             <div className="flex flex-col items-center gap-4">
@@ -438,6 +468,11 @@ export default function MainLayout({ children }: MainLayoutProps) {
           </div>
         </div>
       )}
+
+      {/* Settings is rendered as a fixed overlay (z-9999) so the underlying
+          view (Dashboard, Home, Friends, etc.) stays mounted behind it.
+          Closing the modal returns to that view instantly — no reload. */}
+      {currentView === "settings" && <SettingsPage />}
     </div>
   );
 }

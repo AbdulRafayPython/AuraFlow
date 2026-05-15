@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Terminal, BookOpen, Settings, Copy, Check } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useState } from 'react';
+import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
 interface AgentCommandModalProps {
   open: boolean;
@@ -222,8 +223,6 @@ export const AgentCommandModal: React.FC<AgentCommandModalProps> = ({
   const isBasicTheme = currentTheme === 'basic';
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
-  if (!open) return null;
-
   const agent = AGENT_COMMANDS[agentType] || {
     name: 'AI Agent',
     emoji: '🤖',
@@ -240,19 +239,8 @@ export const AgentCommandModal: React.FC<AgentCommandModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" />
-
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className={`relative w-full max-w-[500px] max-h-[75vh] overflow-hidden flex flex-col
-          ${isBasicTheme ? 'rounded-lg' : 'rounded-2xl'}
-          bg-[hsl(var(--theme-bg-elevated))] border border-[hsl(var(--theme-border-default)/0.5)]
-          shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300`}
-      >
+    <ResponsiveModal open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <ResponsiveModalContent size="md" className="flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[hsl(var(--theme-border-default)/0.3)] flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -264,12 +252,7 @@ export const AgentCommandModal: React.FC<AgentCommandModalProps> = ({
               <p className="text-xs text-[hsl(var(--theme-text-muted))]">Commands and usage</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {/* Close handled by ResponsiveModal */}
         </div>
 
         {/* Content */}
@@ -356,7 +339,7 @@ export const AgentCommandModal: React.FC<AgentCommandModalProps> = ({
             </button>
           </div>
         )}
-      </div>
-    </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
   );
 };

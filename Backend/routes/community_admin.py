@@ -1154,6 +1154,16 @@ def unblock_user(community_id, user_id):
 
         conn.commit()
 
+        # Invalidate Redis cache so the next message from this user
+        # in this community no longer reads a stale 'blocked' verdict.
+        try:
+            from services.redis_client import get_redis as _get_redis
+            _r = _get_redis()
+            if _r:
+                _r.delete(f"blocked:{community_id}:{user_id}")
+        except Exception:
+            pass
+
         log_admin_action(
             actor_user_id=request.admin_user_id,
             actor_role=actor_role_from_request(request),
@@ -1231,6 +1241,16 @@ def block_user(community_id):
             """, (community_id, user_id))
 
         conn.commit()
+
+        # Invalidate Redis cache for this block — Socket.IO message handler
+        # will re-read DB on next message and discover the block.
+        try:
+            from services.redis_client import get_redis as _get_redis
+            _r = _get_redis()
+            if _r:
+                _r.delete(f"blocked:{community_id}:{user_id}")
+        except Exception:
+            pass
 
         log_admin_action(
             actor_user_id=request.admin_user_id,

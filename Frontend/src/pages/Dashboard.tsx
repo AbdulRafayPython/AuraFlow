@@ -973,7 +973,7 @@ export default function Dashboard() {
 
       {/* Header - Discord Style with Theme Support */}
       <header
-        className="h-12 flex items-center justify-between border-b shadow-sm relative z-10 backdrop-blur-md border-[hsl(var(--theme-border-default)/0.5)] transition-colors duration-300"
+        className="h-12 flex items-center justify-between border-b shadow-sm relative z-10 border-[hsl(var(--theme-border-default)/0.5)] transition-colors duration-300"
         style={{ background: 'hsl(var(--theme-header-bg) / 0.85)' }}
       >
         <div className="flex items-center h-full">
@@ -1230,7 +1230,7 @@ export default function Dashboard() {
                     {msg.message_type === 'ai' ? (
                       <div
                         id={`msg-${msg.id}`}
-                        className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-all duration-300"
+                        className="cv-auto group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-colors duration-150"
                         onMouseEnter={() => setHoveredMessageId(msg.id)}
                         onMouseLeave={() => setHoveredMessageId(null)}
                       >
@@ -1276,7 +1276,7 @@ export default function Dashboard() {
                         msg.is_pinned
                           ? 'bg-[hsl(var(--theme-accent-primary)/0.04)] border-l-2 border-l-[hsl(var(--theme-accent-primary)/0.5)] hover:bg-[hsl(var(--theme-accent-primary)/0.07)]'
                           : 'hover:bg-[hsl(var(--theme-bg-hover)/0.3)]'
-                      } transition-all duration-300`}
+                      } transition-colors duration-150`}
                       onMouseEnter={() => setHoveredMessageId(msg.id)}
                       onMouseLeave={() => setHoveredMessageId(null)}
                     >
@@ -1555,7 +1555,7 @@ export default function Dashboard() {
 
             {/* Ephemeral Summary Card (private, only visible to sender) */}
             {ephemeralSummary && (
-              <div className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-all duration-300">
+              <div className="cv-auto group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-colors duration-150">
                 {/* Bot Avatar */}
                 <div className="absolute left-2 sm:left-4 mt-0.5">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-500/80 to-blue-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(168,85,247,0.3)]">
@@ -1602,7 +1602,7 @@ export default function Dashboard() {
 
             {/* Pending Scheduled Summaries (delivered when user enters channel) */}
             {pendingScheduledSummaries.map((sched) => (
-              <div key={sched.id} className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-all duration-300">
+              <div key={sched.id} className="cv-auto group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-colors duration-150">
                 <div className="absolute left-2 sm:left-4 mt-0.5">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-blue-500/80 to-cyan-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(59,130,246,0.3)]">
                     <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1680,7 +1680,7 @@ export default function Dashboard() {
 
             {/* Ephemeral KB Result Card (private, only visible to sender) */}
             {ephemeralKBResult && (
-              <div className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-colors duration-150 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div className="absolute left-2 sm:left-4 mt-0.5">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-amber-500/80 to-yellow-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(251,191,36,0.3)]">
                     <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1731,7 +1731,7 @@ export default function Dashboard() {
       {/* Input - Discord Style */}
       {currentChannel?.type !== 'voice' && (
       <footer 
-        className="px-4 pb-16 md:pb-6 pt-0 relative transition-colors duration-300 backdrop-blur-sm"
+        className="px-4 pb-16 md:pb-6 pt-0 relative transition-colors duration-300"
         
       >
         <div className="relative">
@@ -1835,7 +1835,7 @@ export default function Dashboard() {
             />
           )}
 
-          <div className={`flex items-center rounded-lg transition-all backdrop-blur-md border ${
+          <div className={`flex items-center rounded-lg transition-colors duration-150 border ${
             message.startsWith('/')
               ? "bg-[hsl(var(--theme-accent-primary)/0.15)] ring-1 ring-[hsl(var(--theme-accent-primary)/0.5)] border-[hsl(var(--theme-accent-primary)/0.3)]"
               : "bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary)/0.6)] border-[hsl(var(--theme-border-default)/0.4)]"

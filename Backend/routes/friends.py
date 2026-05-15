@@ -8,8 +8,19 @@ from datetime import datetime
 from services.notification_service import create_notification
 # FIX 1: Use cached user-id lookup to eliminate repeated DB hits
 from utils import get_user_id
+from services.redis_client import cache_delete as _cache_delete
 
 log = logging.getLogger(__name__)
+
+
+def _invalidate_friends_cache(*user_ids):
+    """Invalidate the GET /api/friends response cache for these users."""
+    for uid in user_ids:
+        if uid:
+            try:
+                _cache_delete(f"friends:{uid}")
+            except Exception:
+                pass
 
 
 # =====================================
@@ -421,7 +432,9 @@ def accept_friend_request(request_id):
             acceptor_info = cur.fetchone()
 
         conn.commit()
-        
+        # Friend list changed for both users — drop their cached list
+        _invalidate_friends_cache(user_id, req['sender_id'])
+
         # Emit socket event to notify sender that request was accepted
         try:
             socketio = current_app.extensions.get('socketio')
@@ -581,15 +594,16 @@ def remove_friend(friend_id):
                 return jsonify({'error': 'User not found'}), 404
 
             cur.execute("""
-                DELETE FROM friends 
-                WHERE (user_id = %s AND friend_id = %s) 
+                DELETE FROM friends
+                WHERE (user_id = %s AND friend_id = %s)
                    OR (user_id = %s AND friend_id = %s)
             """, (user_id, friend_id, friend_id, user_id))
-            
+
             if cur.rowcount == 0:
                 return jsonify({'error': 'Not friends'}), 404
 
         conn.commit()
+        _invalidate_friends_cache(user_id, friend_id)
 
         # Notify the other user in real-time
         try:
@@ -652,12 +666,13 @@ def block_friend(friend_id):
 
             # Optionally, remove from friends if present
             cur.execute("""
-                DELETE FROM friends 
-                WHERE (user_id = %s AND friend_id = %s) 
+                DELETE FROM friends
+                WHERE (user_id = %s AND friend_id = %s)
                    OR (user_id = %s AND friend_id = %s)
             """, (user_id, friend_id, friend_id, user_id))
 
         conn.commit()
+        _invalidate_friends_cache(user_id, friend_id)
 
         # Notify the blocked user in real-time
         try:

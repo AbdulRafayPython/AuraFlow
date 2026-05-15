@@ -7,6 +7,7 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { Community } from "@/types";
 import { API_SERVER } from "@/config/api";
 import CommunityAgentsTab from "@/components/ai-agents/CommunityAgentsTab";
+import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
 interface CommunitySettingsModalProps {
   isOpen: boolean;
@@ -179,7 +180,7 @@ export default function CommunitySettingsModal({
     }
   };
 
-  if (!isOpen || !community) return null;
+  if (!community) return null;
 
   const colorOptions = [
     "#8B5CF6", "#6366F1", "#3B82F6", "#06B6D4", "#10B981",
@@ -188,8 +189,8 @@ export default function CommunitySettingsModal({
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl rounded-2xl shadow-2xl border overflow-hidden bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] backdrop-blur-xl">
+    <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <ResponsiveModalContent size="xl" className="overflow-hidden">
         {/* Banner Section */}
         <div className="relative h-40 overflow-hidden">
           {bannerPreview ? (
@@ -256,13 +257,7 @@ export default function CommunitySettingsModal({
             </div>
           )}
           
-          {/* Close Button */}
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-full bg-black/30 hover:bg-black/50 text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {/* Close handled by ResponsiveModal */}
         </div>
 
         {/* Logo Section - Overlapping */}
@@ -475,7 +470,7 @@ export default function CommunitySettingsModal({
           </>
           )}
         </div>
-      </div>
-    </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
   );
 }

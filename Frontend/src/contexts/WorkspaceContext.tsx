@@ -119,9 +119,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
     // Add a small delay to ensure AuthContext has initialized
     const loadTimer = setTimeout(() => {
-      console.log('[WorkspaceContext] Loading workspaces and friend requests');
-      loadWorkspaces();
-      getPendingRequests();
+      console.log('[WorkspaceContext] Loading workspaces and friend requests in parallel');
+      // Independent fetches — fire them together rather than awaiting one before the next.
+      Promise.all([
+        loadWorkspaces(),
+        getPendingRequests(),
+      ]).catch((e) => console.error('[WorkspaceContext] Initial parallel load failed:', e));
     }, 150);
 
     return () => clearTimeout(loadTimer);
@@ -129,6 +132,27 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loadWorkspaces = useCallback(async () => {
+    // Stale-while-revalidate — serve a cached list immediately so the UI is
+    // not blocked on the network round-trip; then refresh in the background.
+    try {
+      const raw = localStorage.getItem('cache:workspaces');
+      if (raw) {
+        const { data, ts } = JSON.parse(raw) as { data: Community[]; ts: number };
+        if (Array.isArray(data) && data.length) {
+          setWorkspaces(data);
+          if (!currentWorkspace) setCurrentWorkspace(data[0]);
+          // Skip the loading spinner — we have something to show.
+          setIsLoadingWorkspaces(false);
+          // If the cache is fresh (<30s) skip the refresh too.
+          if (Date.now() - ts < 30_000) {
+            return;
+          }
+        }
+      }
+    } catch {
+      /* fall through to network */
+    }
+
     setIsLoadingWorkspaces(true);
     try {
       const data = await channelService.getCommunities();
@@ -136,6 +160,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       if (data.length > 0 && !currentWorkspace) {
         setCurrentWorkspace(data[0]);
       }
+      try {
+        localStorage.setItem('cache:workspaces', JSON.stringify({ data, ts: Date.now() }));
+      } catch { /* quota or private mode */ }
       setError(null);
     } catch (err: any) {
       console.error('[WorkspaceContext] Failed to load workspaces:', err);
@@ -493,9 +520,29 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const getCommunityMembers = useCallback(async (communityId: number) => {
+    // Stale-while-revalidate: paint cached members instantly, then refresh.
+    const cacheKey = `cache:members:${communityId}`;
+    let cacheTs = 0;
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const { data, ts } = JSON.parse(raw) as { data: CommunityMember[]; ts: number };
+        if (Array.isArray(data)) {
+          setCommunityMembers(data);
+          cacheTs = ts || 0;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    // Skip network if cache is fresh enough
+    if (cacheTs && Date.now() - cacheTs < 30_000) return;
     try {
       const members = await channelService.getCommunityMembers(communityId);
       setCommunityMembers(members);
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({ data: members, ts: Date.now() }));
+      } catch { /* quota */ }
       setError(null);
     } catch (err: any) {
       console.error('[WorkspaceContext] Failed to load community members:', err);

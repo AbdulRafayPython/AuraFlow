@@ -1465,18 +1465,26 @@ def get_dm_conversations():
     conn = None
     try:
         current_user = get_jwt_identity()
+        # Optional LIMIT — defaults to 100 (covers typical UI list size).
+        limit = min(int(request.args.get('limit', 100)), 200)
         conn = get_db_connection()
         with conn.cursor() as cur:
             uid = get_user_id(current_user, cur)
             if uid is None:
                 return jsonify({'error': 'User not found'}), 404
 
-            # Most recent message per conversation partner
+            # Single round-trip: last message + partner profile + unread count
+            # for every conversation this user is part of.
             cur.execute("""
                 SELECT
                     dm.id, dm.sender_id, dm.receiver_id, dm.content, dm.message_type,
                     dm.created_at, dm.is_read,
-                    CASE WHEN dm.sender_id = %s THEN dm.receiver_id ELSE dm.sender_id END AS partner_id
+                    CASE WHEN dm.sender_id = %s THEN dm.receiver_id ELSE dm.sender_id END AS partner_id,
+                    p.username   AS partner_username,
+                    p.display_name AS partner_display_name,
+                    p.avatar_url AS partner_avatar,
+                    p.status     AS partner_status,
+                    COALESCE(uc.unread_count, 0) AS unread_count
                 FROM direct_messages dm
                 INNER JOIN (
                     SELECT MAX(id) AS max_id
@@ -1484,8 +1492,18 @@ def get_dm_conversations():
                     WHERE sender_id = %s OR receiver_id = %s
                     GROUP BY LEAST(sender_id, receiver_id), GREATEST(sender_id, receiver_id)
                 ) latest ON dm.id = latest.max_id
+                JOIN users p ON p.id =
+                    (CASE WHEN dm.sender_id = %s THEN dm.receiver_id ELSE dm.sender_id END)
+                LEFT JOIN (
+                    SELECT sender_id AS partner_id, COUNT(*) AS unread_count
+                    FROM direct_messages
+                    WHERE receiver_id = %s AND is_read = 0
+                    GROUP BY sender_id
+                ) uc ON uc.partner_id =
+                    (CASE WHEN dm.sender_id = %s THEN dm.receiver_id ELSE dm.sender_id END)
                 ORDER BY dm.created_at DESC
-            """, (uid, uid, uid))
+                LIMIT %s
+            """, (uid, uid, uid, uid, uid, uid, limit))
             rows = cur.fetchall()
 
         result = []
@@ -1498,6 +1516,14 @@ def get_dm_conversations():
                     pass
             result.append({
                 'partner_id': m['partner_id'],
+                'partner': {
+                    'id': m['partner_id'],
+                    'username': m['partner_username'],
+                    'display_name': m['partner_display_name'] or m['partner_username'],
+                    'avatar_url': m['partner_avatar'],
+                    'status': m['partner_status'] or 'offline',
+                },
+                'unread_count': int(m['unread_count'] or 0),
                 'last_message': {
                     'id': m['id'],
                     'sender_id': m['sender_id'],

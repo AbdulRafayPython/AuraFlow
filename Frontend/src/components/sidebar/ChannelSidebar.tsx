@@ -72,6 +72,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
   
   // Use role directly from currentCommunity (comes from API)
   const userRoleInCommunity = currentCommunity?.role || 'member';
+  const canManageChannels = userRoleInCommunity === 'owner' || userRoleInCommunity === 'admin';
 
   // Filter channels by type (declared early so useEffects can reference them)
   const textChannels = channels.filter((ch) => ch.type === "text");
@@ -99,34 +100,36 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
     }
   }, [currentChannel?.id, currentCommunity?.id, markChRead]);
 
-  // Fetch voice participants for sidebar cards
+  // Fetch voice participants for sidebar cards.
+  // Gated: only poll when the voice section is expanded AND the tab is visible —
+  // socket events (user_joined_voice / user_left_voice) cover the live updates,
+  // so polling is just a safety-net refresh.
   useEffect(() => {
     if (voiceChannels.length === 0) return;
-    
+    if (!expandedSections.voice) return;
+
     const fetchParticipants = () => {
+      if (document.hidden) return;
       const ids = voiceChannels.map(ch => ch.id);
       voiceService.getVoiceParticipants(ids);
     };
-    
-    // Initial fetch
+
     fetchParticipants();
-    
-    // Poll every 10 seconds for live updates
-    const interval = setInterval(fetchParticipants, 10000);
-    
-    // Listen for updates
+
+    // 30s safety-net poll (was 10s) — socket events handle the real-time path.
+    const interval = setInterval(fetchParticipants, 30000);
+
     const handleUpdate = (data: any) => {
       setVoiceParticipants(data.channels || {});
     };
     voiceService.onVoiceParticipantsUpdate(handleUpdate);
-    
-    // Also refresh on user_joined_voice / user_left_voice
+
     const refreshOnChange = () => {
       setTimeout(fetchParticipants, 500);
     };
     socketService.getSocket()?.on('user_joined_voice', refreshOnChange);
     socketService.getSocket()?.on('user_left_voice', refreshOnChange);
-    
+
     return () => {
       clearInterval(interval);
       socketService.getSocket()?.off('voice_participants_update', handleUpdate);
@@ -134,7 +137,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
       socketService.getSocket()?.off('user_left_voice', refreshOnChange);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceChannels.length]);
+  }, [voiceChannels.length, expandedSections.voice]);
 
   // Fetch community members when current community changes
   useEffect(() => {
@@ -180,6 +183,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
 
   const handleChannelContextMenu = (e: React.MouseEvent, channelId: number) => {
     e.preventDefault();
+    if (!canManageChannels) return;
     setContextMenu({ x: e.clientX, y: e.clientY, channelId });
   };
 
@@ -283,7 +287,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
       <div
         className={`relative flex-shrink-0 h-full transition-all duration-200 ${
           isCollapsed ? "w-0" : "w-60"
-        } ${isMembersModalOpen ? "blur-[2px] pointer-events-none" : ""}`}
+        } ${isMembersModalOpen ? "pointer-events-none" : ""}`}
       >
         {/* Main Content */}
         {!isCollapsed && (
@@ -362,16 +366,18 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
                       )}
                       Text Channels
                     </button>
-                    <div
-                      className="p-0.5 rounded hover:bg-[hsl(var(--theme-bg-hover))] cursor-pointer text-[hsl(var(--theme-text-muted))]"
-                      title="Create Channel"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsCreateChannelModalOpen(true);
-                      }}
-                    >
-                      <Plus className="w-3 h-3" />
-                    </div>
+                    {canManageChannels && (
+                      <div
+                        className="p-0.5 rounded hover:bg-[hsl(var(--theme-bg-hover))] cursor-pointer text-[hsl(var(--theme-text-muted))]"
+                        title="Create Channel"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsCreateChannelModalOpen(true);
+                        }}
+                      >
+                        <Plus className="w-3 h-3" />
+                      </div>
+                    )}
                   </div>
                   {expandedSections.text && (
                     <div className="mt-1 space-y-0.5">
@@ -420,16 +426,18 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
                       )}
                       Voice Channels
                     </button>
-                    <div
-                      className="p-0.5 rounded hover:bg-[hsl(var(--theme-bg-hover))] cursor-pointer text-[hsl(var(--theme-text-muted))]"
-                      title="Create Voice Channel"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsCreateChannelModalOpen(true);
-                      }}
-                    >
-                      <Plus className="w-3 h-3" />
-                    </div>
+                    {canManageChannels && (
+                      <div
+                        className="p-0.5 rounded hover:bg-[hsl(var(--theme-bg-hover))] cursor-pointer text-[hsl(var(--theme-text-muted))]"
+                        title="Create Voice Channel"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsCreateChannelModalOpen(true);
+                        }}
+                      >
+                        <Plus className="w-3 h-3" />
+                      </div>
+                    )}
                   </div>
                   {expandedSections.voice && (
                     <div className="mt-1 space-y-1.5">

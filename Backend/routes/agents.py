@@ -3161,12 +3161,15 @@ def install_community_agent(community_id):
         
         # Invalidate cache
         try:
-            from services.redis_client import invalidate_installed_agents, invalidate_agent_settings
+            from services.redis_client import invalidate_installed_agents, invalidate_agent_settings, get_redis
             invalidate_installed_agents(community_id)
             invalidate_agent_settings(community_id, agent_type)
+            _r = get_redis()
+            if _r:
+                _r.delete(f"mod:installed:{community_id}")
         except Exception:
             pass
-        
+
         return jsonify({
             'success': True,
             'message': f'{agent_type} agent installed successfully',
@@ -3210,14 +3213,17 @@ def uninstall_community_agent(community_id, agent_type):
                 return jsonify({'error': 'Agent not installed in this community'}), 404
             
             conn.commit()
-        
+
         try:
-            from services.redis_client import invalidate_installed_agents, invalidate_agent_settings
+            from services.redis_client import invalidate_installed_agents, invalidate_agent_settings, get_redis
             invalidate_installed_agents(community_id)
             invalidate_agent_settings(community_id, agent_type)
+            _r = get_redis()
+            if _r:
+                _r.delete(f"mod:installed:{community_id}")
         except Exception:
             pass
-        
+
         return jsonify({
             'success': True,
             'message': f'{agent_type} agent uninstalled',
@@ -3281,12 +3287,15 @@ def configure_community_agent(community_id, agent_type):
             conn.commit()
         
         try:
-            from services.redis_client import invalidate_agent_settings, invalidate_installed_agents
+            from services.redis_client import invalidate_agent_settings, invalidate_installed_agents, get_redis
             invalidate_agent_settings(community_id, agent_type)
             invalidate_installed_agents(community_id)
+            _r = get_redis()
+            if _r:
+                _r.delete(f"mod:installed:{community_id}")
         except Exception:
             pass
-        
+
         return jsonify({
             'success': True,
             'settings': merged,

@@ -901,6 +901,14 @@ def unblock_user(block_id):
             cur.execute("DELETE FROM blocked_users WHERE id = %s", (block_id,))
             conn.commit()
 
+            try:
+                from services.redis_client import get_redis as _get_redis
+                _r = _get_redis()
+                if _r:
+                    _r.delete(f"blocked:{block_row.get('community_id')}:{block_row['user_id']}")
+            except Exception:
+                pass
+
             log_admin_action(
                 actor_user_id=request.admin_user_id,
                 actor_role='system_admin' if request.is_system_admin else 'community_admin',
@@ -2161,6 +2169,13 @@ def unblock_community_user(community_id, user_id):
             if cur.rowcount == 0:
                 return jsonify({'error': 'Block record not found'}), 404
             conn.commit()
+            try:
+                from services.redis_client import get_redis as _get_redis
+                _r = _get_redis()
+                if _r:
+                    _r.delete(f"blocked:{community_id}:{user_id}")
+            except Exception:
+                pass
             return jsonify({'success': True, 'message': 'User unblocked'}), 200
     except Exception as e:
         log.error(f"[ADMIN] Unblock community user error: {e}")
@@ -2190,6 +2205,13 @@ def block_community_user(community_id):
                 VALUES (%s, %s, %s, %s, NOW())""",
                 (user_id, community_id, reason, request.admin_user_id))
             conn.commit()
+            try:
+                from services.redis_client import get_redis as _get_redis
+                _r = _get_redis()
+                if _r:
+                    _r.delete(f"blocked:{community_id}:{user_id}")
+            except Exception:
+                pass
             return jsonify({'success': True, 'message': 'User blocked'}), 200
     except Exception as e:
         log.error(f"[ADMIN] Block community user error: {e}")

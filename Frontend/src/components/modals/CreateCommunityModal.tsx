@@ -6,6 +6,7 @@ import { channelService } from "@/services/channelService";
 import { useRealtime } from "@/hooks/useRealtime";
 import type { Community } from "@/types";
 import { X, Sparkles, ArrowRight, ArrowLeft, UploadCloud } from "lucide-react";
+import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
 interface CreateCommunityModalProps {
   isOpen: boolean;
@@ -190,16 +191,11 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
     setBannerPreview(null);
   };
 
-  if (!isOpen) return null;
-
   const isBusy = isLoading || uploadingAssets;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div
-        className="w-full max-w-[560px] rounded-2xl shadow-2xl border max-h-[85vh] overflow-hidden flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-subtle))] animate-in zoom-in-95 slide-in-from-bottom-2 duration-300"
-        style={{ boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.05) inset' }}
-      >
+    <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <ResponsiveModalContent size="xl" className="flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[hsl(var(--theme-border-subtle))]">
           <div className="flex items-center gap-3">
@@ -215,13 +211,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg transition-all duration-150 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-secondary))] active:scale-95"
-            aria-label="Close modal"
-          >
-            <X className="w-[18px] h-[18px]" />
-          </button>
+          {/* Close handled by ResponsiveModal */}
         </div>
 
         {/* Stepper - Refined Progress Indicator */}
@@ -517,7 +507,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
             </div>
           </form>
         </div>
-      </div>
-    </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
   );
 }

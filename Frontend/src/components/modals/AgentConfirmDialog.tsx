@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertTriangle, X, Loader2, Shield, Trash2, Power, RotateCcw } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
+import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
 interface AgentConfirmDialogProps {
   open: boolean;
@@ -91,24 +92,11 @@ export const AgentConfirmDialog: React.FC<AgentConfirmDialogProps> = ({
   const { currentTheme } = useTheme();
   const isBasicTheme = currentTheme === 'basic';
 
-  if (!open) return null;
-
   const content = DIALOG_CONTENT[type] || DIALOG_CONTENT.uninstall;
 
   return (
-    <div
-      className="fixed inset-0 z-[110] flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" />
-
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className={`relative w-full max-w-[420px]
-          ${isBasicTheme ? 'rounded-lg' : 'rounded-2xl'}
-          bg-[hsl(var(--theme-bg-elevated))] border border-[hsl(var(--theme-border-default)/0.5)]
-          shadow-2xl animate-in zoom-in-95 duration-200`}
-      >
+    <ResponsiveModal open={open} onOpenChange={(o) => { if (!o && !isLoading) onClose(); }}>
+      <ResponsiveModalContent size="sm">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-2">
           <div className="flex items-center gap-3">
@@ -119,13 +107,7 @@ export const AgentConfirmDialog: React.FC<AgentConfirmDialogProps> = ({
               {content.title}
             </h3>
           </div>
-          <button
-            onClick={onClose}
-            disabled={isLoading}
-            className="p-1.5 rounded-lg hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {/* Close handled by ResponsiveModal */}
         </div>
 
         {/* Body */}
@@ -171,7 +153,7 @@ export const AgentConfirmDialog: React.FC<AgentConfirmDialogProps> = ({
             {content.confirmText}
           </button>
         </div>
-      </div>
-    </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
   );
 };
