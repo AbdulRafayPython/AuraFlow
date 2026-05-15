@@ -69,7 +69,10 @@ services:
       - key: DB_SSL
         value: "true"
       - key: JWT_SECRET_KEY
-        sync: false
+        fromService:
+          name: auraflow-backend
+          type: web
+          envVarKey: JWT_SECRET_KEY
       - key: GEMINI_API_KEY
         sync: false
       - key: REDIS_URL
@@ -106,7 +109,10 @@ services:
       - key: DB_SSL
         value: "true"
       - key: JWT_SECRET_KEY
-        sync: false
+        fromService:
+          name: auraflow-backend
+          type: web
+          envVarKey: JWT_SECRET_KEY
       - key: GEMINI_API_KEY
         sync: false
       - key: REDIS_URL
