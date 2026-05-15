@@ -6,6 +6,14 @@ monkey.patch_all()
 import os
 import sys
 
+# Validate JWT_SECRET_KEY before loading the app — fail fast with a clear message.
+# This check lives here (not config.py) so Celery workers can import config freely.
+if not os.environ.get("JWT_SECRET_KEY"):
+    raise RuntimeError(
+        "JWT_SECRET_KEY must be set in the production environment. "
+        "Add it as an env var in your Render/deployment dashboard."
+    )
+
 # Heavy ML agents are lazy-loaded in agents/__init__.py — startup is fast
 from app import app, socketio
 

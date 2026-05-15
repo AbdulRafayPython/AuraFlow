@@ -31,9 +31,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 
 # Security - JWT
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.urandom(32).hex() if not IS_PRODUCTION else None)
-if IS_PRODUCTION and not JWT_SECRET_KEY:
-    raise RuntimeError("JWT_SECRET_KEY must be set in production environment")
+# In production, a real key must be set. Validation is enforced in wsgi.py
+# so Celery workers (which don't use JWT) can import config freely.
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.urandom(32).hex()
 
 # Session management
 JWT_REFRESH_TOKEN_EXPIRES_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "7"))
