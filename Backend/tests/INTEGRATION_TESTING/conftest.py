@@ -4,7 +4,7 @@ Provides a Flask test client with a mocked database connection.
 All tests import `client` fixture from here.
 """
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import pytest
 from unittest.mock import patch, MagicMock

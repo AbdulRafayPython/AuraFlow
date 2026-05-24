@@ -38,12 +38,13 @@ Production: `python wsgi.py` (monkey-patches gevent first, then loads `app:app`)
 
 Backend tests (pytest, from `Backend/`):
 ```bash
-./venv/Scripts/python.exe -m pytest UNIT_TESTING/                               # unit
-./venv/Scripts/python.exe -m pytest INTEGRATION_TESTING/                        # integration (hits real services)
-./venv/Scripts/python.exe -m pytest SYSTEM_TESTING/ UAT/                        # system + UAT journeys
-./venv/Scripts/python.exe -m pytest UNIT_TESTING/test_moderation.py::test_name  # single test
+./venv/Scripts/python.exe -m pytest tests/UNIT_TESTING/                                       # unit (incl. autonomous-agents under tests/UNIT_TESTING/agents/)
+./venv/Scripts/python.exe -m pytest tests/INTEGRATION_TESTING/                                # integration (hits real services)
+./venv/Scripts/python.exe -m pytest tests/SYSTEM_TESTING/ tests/UAT/                          # system + UAT journeys (incl. tests/UAT/test_agent_chains.py)
+./venv/Scripts/python.exe -m pytest tests/UNIT_TESTING/agents/test_moderation_autonomous.py   # single file
+./venv/Scripts/python.exe -m pytest tests/UAT/test_agent_chains.py tests/UNIT_TESTING/agents/ # autonomous-agents headline suite (~124 tests, ~30 s)
 ```
-There is also an older flat `tests/` directory and ad-hoc `test_*.py` scripts at `Backend/` root — the canonical layout is the four-tier UNIT/INTEGRATION/SYSTEM/UAT folders.
+All Backend tests live under `Backend/tests/` in four tiers: `UNIT_TESTING/`, `INTEGRATION_TESTING/`, `SYSTEM_TESTING/`, `UAT/`. The autonomous-agent unit suite is `tests/UNIT_TESTING/agents/`; its end-to-end chain UATs are in `tests/UAT/test_agent_chains.py`. Each tier's `conftest.py` inserts `Backend/` onto `sys.path`.
 
 Frontend (from `Frontend/`):
 ```bash

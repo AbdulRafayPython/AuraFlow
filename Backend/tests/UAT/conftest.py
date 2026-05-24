@@ -6,7 +6,7 @@ complete workflows: Register → Login → Join Community → Send Message → S
 DB is mocked for reproducibility, but the full Flask routing stack is exercised.
 """
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import pytest
 from unittest.mock import patch, MagicMock
