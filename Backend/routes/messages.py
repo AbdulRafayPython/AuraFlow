@@ -26,6 +26,17 @@ import json
 log = logging.getLogger(__name__)
 
 
+def _parse_card_payload(payload):
+    """Parse engagement_cards.payload (JSON column or str) into a dict.
+    Returns {} on failure so the spread is always safe."""
+    if isinstance(payload, dict):
+        return payload
+    try:
+        return json.loads(payload) if payload else {}
+    except Exception:
+        return {}
+
+
 def _build_moderation(output_data_str, confidence, violation_count=0):
     """Parse ai_agent_logs.output_data into the moderation dict the frontend expects."""
     try:
@@ -157,12 +168,19 @@ def _notify_reply(reply_to_id, sender_id, sender_username, channel_id, community
         log.warning(f"[REPLY] notify_reply failed: {e}")
 
 
-def _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_type='text'):
+def _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_type='text',
+                          message_id=None, username=None):
     """
-    Fire-and-forget Celery tasks for AI agent auto-execution.
-    Called after a message is successfully saved. Truly non-blocking:
-    runs in a daemon thread so the HTTP response is never delayed
-    by broker (Redis) connection issues.
+    Fire-and-forget agent dispatch for messages posted via the REST
+    endpoint (the Socket.IO path publishes msg.created inline in
+    routes/sockets.py:on_new_message).
+
+    Publishes msg.created on the autonomous-agent event bus so the
+    orchestrator can fan out to every subscriber — mood_tracker (which
+    replaced the legacy track_mood_task), focus, support, etc.
+
+    Runs in a daemon thread so the HTTP response is never delayed by
+    Redis hiccups.
     """
     if message_type != 'text' or not content:
         return
@@ -171,28 +189,17 @@ def _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_ty
 
     def _do_dispatch():
         try:
-            from tasks.agent_tasks import track_mood_task
-            track_mood_task.delay(content, user_id, channel_id)
+            from agents import event_bus as _agent_bus
+            _agent_bus.publish(_agent_bus.TOPIC_MSG_CREATED, {
+                'message_id':   message_id,
+                'user_id':      user_id,
+                'username':     username,
+                'channel_id':   channel_id,
+                'community_id': community_id,
+                'content':      content,
+            })
         except Exception as e:
-            log.debug(f"[AGENT_DISPATCH] Mood task dispatch skipped: {e}")
-
-        try:
-            from tasks.agent_tasks import analyze_focus_task
-            from database import get_db_connection as _gdb
-            c = _gdb()
-            try:
-                with c.cursor() as cur:
-                    cur.execute("""
-                        SELECT COUNT(*) as cnt FROM messages
-                        WHERE channel_id = %s AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
-                    """, (channel_id,))
-                    msg_count = cur.fetchone()['cnt']
-                if msg_count > 0 and msg_count % 50 == 0:
-                    analyze_focus_task.delay(channel_id, community_id)
-            finally:
-                c.close()
-        except Exception as e:
-            log.debug(f"[AGENT_DISPATCH] Focus task dispatch skipped: {e}")
+            log.debug(f"[event_bus] msg.created publish skipped: {e}")
 
     threading.Thread(target=_do_dispatch, daemon=True).start()
 
@@ -340,26 +347,62 @@ def _insert_ai_bot_message(channel_id: int, user_id: int, content: str, author: 
             conn.close()
 
 
-def handle_ai_command(content: str, username: str, user_id: int, channel_id: int, community_id: int = None):
+def handle_ai_command(content: str, username: str, user_id: int, channel_id: int, community_id: int = None,
+                       dm_peer_id: int = None):
     """Handle AI commands from chat (/summarize, /help, etc.)
 
     /summarize is ephemeral — only the sender sees the result (not saved to DB).
     Returns a dict with 'ephemeral': True for private delivery.
+
+    When ``dm_peer_id`` is set the command originated from a DM thread:
+    ``/summarize`` dispatches to :meth:`SummarizerAgent.summarize_dm`
+    instead of the channel path. ``channel_id`` may then be ``None`` /
+    ``0`` since DM threads have no channel.
     """
     try:
         log.info(f"[HTTP COMMAND] Processing command: {content}")
         command_parts = content.strip().split()
         command = command_parts[0].lower()
         log.info(f"[HTTP COMMAND] Parsed command: {command}")
-        
+
         if command == '/summarize':
             # Parse optional message count
             message_count = 100
             if len(command_parts) > 1 and command_parts[1].isdigit():
                 message_count = min(int(command_parts[1]), 200)
-            
+
+            # DM path — ephemeral summary of the 1:1 thread.
+            if dm_peer_id:
+                log.info(f"[HTTP COMMAND] /summarize DM requested by {username} "
+                         f"peer={dm_peer_id} count={message_count}")
+                from agents.summarizer import SummarizerAgent
+                dm_result = SummarizerAgent().summarize_dm(
+                    peer_user_id=int(dm_peer_id),
+                    requester_user_id=user_id,
+                    message_count=message_count,
+                )
+                if dm_result.get('success'):
+                    return {
+                        'type': 'summarize_dm',
+                        'success': True,
+                        'ephemeral': True,
+                        'summary': dm_result['summary'],
+                        'key_points': dm_result.get('key_points', []),
+                        'action_items': dm_result.get('action_items', []),
+                        'message_count': dm_result['message_count'],
+                        'method': dm_result.get('method', 'extractive'),
+                        'peer_user_id': dm_peer_id,
+                    }
+                return {
+                    'type': 'summarize_dm',
+                    'success': False,
+                    'error': dm_result.get('error',
+                                           'Failed to generate DM summary'),
+                    'message_count': dm_result.get('message_count', 0),
+                }
+
             log.info(f"[HTTP COMMAND] /summarize requested by {username} for channel {channel_id} with {message_count} messages")
-            
+
             # Generate summary
             from agents.summarizer import SummarizerAgent
             summarizer = SummarizerAgent()
@@ -875,9 +918,9 @@ def get_channel_messages(channel_id):
 
             # Fetch messages with reply-to preview and latest moderation verdict
             cur.execute("""
-                SELECT 
+                SELECT
                     m.id, m.sender_id, m.content, m.message_type, m.reply_to, m.created_at,
-                    m.is_pinned,
+                    m.is_pinned, m.bot_name,
                     u.username, u.display_name, u.avatar_url,
                     CASE WHEN bu.user_id IS NOT NULL THEN 1 ELSE 0 END as is_blocked,
                     a.file_name AS att_file_name, a.file_path AS att_file_url,
@@ -886,9 +929,11 @@ def get_channel_messages(channel_id):
                     rm.content AS reply_content, rm.message_type AS reply_message_type,
                     ru.username AS reply_author,
                     ml.output_data AS mod_output, ml.confidence_score AS mod_confidence,
-                    COALESCE(vc.violation_count, 0) AS sender_violation_count
+                    COALESCE(vc.violation_count, 0) AS sender_violation_count,
+                    ec.kind AS card_kind, ec.payload AS card_payload
                 FROM messages m
-                JOIN users u ON m.sender_id = u.id
+                LEFT JOIN users u ON m.sender_id = u.id
+                LEFT JOIN engagement_cards ec ON ec.message_id = m.id
                 JOIN channels ch ON m.channel_id = ch.id
                 LEFT JOIN blocked_users bu ON ch.community_id = bu.community_id AND m.sender_id = bu.user_id
                 LEFT JOIN attachments a ON a.message_id = m.id
@@ -930,9 +975,9 @@ def get_channel_messages(channel_id):
             'message_type': m['message_type'],
             'reply_to': m['reply_to'],
             'created_at': m['created_at'].isoformat() if m['created_at'] else None,
-            'author': m['username'],
-            'display_name': m['display_name'] or m['username'],
-            'avatar_url': get_avatar_url(m['username'], m['avatar_url']),
+            'author': (m.get('bot_name') if m['message_type'] == 'ai' and m.get('bot_name') else (m.get('username') or 'System')),
+            'display_name': (m.get('bot_name') if m['message_type'] == 'ai' and m.get('bot_name') else (m.get('display_name') or m.get('username') or 'System')),
+            'avatar_url': get_avatar_url(m.get('username') or '', m.get('avatar_url')),
             'is_blocked': bool(m['is_blocked']),
             'is_pinned': bool(m.get('is_pinned')),
             **({'attachment': {
@@ -949,6 +994,7 @@ def get_channel_messages(channel_id):
                 'message_type': m['reply_message_type'],
             }} if m.get('reply_to') and m.get('reply_author') else {}),
             **(_build_moderation(m['mod_output'], m['mod_confidence'], m.get('sender_violation_count', 0)) if m.get('mod_output') else {}),
+            **({'card': {'kind': m['card_kind'], **_parse_card_payload(m['card_payload'])}} if m.get('card_kind') else {}),
         } for m in rows]
         
         # ── Seed Redis cache on first DB fetch (offset=0) ───────────────────
@@ -1332,8 +1378,9 @@ def send_message():
                 except Exception as buf_err:
                     log.warning(f"[MODERATION] Buffer push failed: {buf_err}")
 
-            # Agent auto-execution (fire-and-forget)
-            _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_type)
+            # Agent auto-execution (fire-and-forget) — publishes msg.created
+            _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_type,
+                                  message_id=message_id, username=current_user)
 
             avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
             return jsonify({

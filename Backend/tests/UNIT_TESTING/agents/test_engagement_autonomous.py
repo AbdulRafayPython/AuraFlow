@@ -11,12 +11,24 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))))
 
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 
 from agents.engagement import EngagementAgent
 from agents import event_bus as _bus
+
+
+def _fake_conn(lastrowid=42):
+    """Connection whose cursor() context-manager yields a cursor with a fixed
+    lastrowid. Mirrors the conftest fake-db pattern."""
+    cur = MagicMock()
+    cur.lastrowid = lastrowid
+    cur.__enter__ = lambda s: s
+    cur.__exit__ = MagicMock(return_value=False)
+    conn = MagicMock()
+    conn.cursor.return_value = cur
+    return conn, cur
 
 
 def _silent_event(bucket=60, channel_id=100):
@@ -66,8 +78,13 @@ class TestEngagementDecide:
 class TestEngagementAct:
 
     def test_act_emits_engagement_nudge(self, chain_store, socketio_emits):
+        # act() now POSTS real content into the channel; stub the DB write
+        # so the unit test exercises only the decision/emit contract.
         with patch.object(EngagementAgent, "_suggest_conversation_starter",
-                          return_value="What's everyone working on today?"):
+                          return_value="What's everyone working on today?"), \
+             patch.object(EngagementAgent, "_post_as_ai_bot",
+                          return_value={"posted": True, "message_id": 1,
+                                        "kind": "poll"}):
             result = EngagementAgent().act(
                 {"channel_id": 100, "community_id": 7, "bucket": 60,
                  "silent_minutes": 60, "category": "casual"},
@@ -75,6 +92,7 @@ class TestEngagementAct:
             )
         assert result["emitted"] is True
         assert result["category"] == "casual"
+        # With _post_as_ai_bot stubbed, the only socket emit is the nudge.
         topic = socketio_emits.call_args.args[0]
         assert topic == "engagement_nudge"
         payload = socketio_emits.call_args.args[1]
@@ -89,12 +107,91 @@ class TestEngagementHandle:
         with patch.object(EngagementAgent, "_pick_category",
                           return_value="icebreaker"), \
              patch.object(EngagementAgent, "_suggest_conversation_starter",
-                          return_value="Quick share: one win today."):
+                          return_value="Quick share: one win today."), \
+             patch.object(EngagementAgent, "_post_as_ai_bot",
+                          return_value={"posted": True, "message_id": 1,
+                                        "kind": "pack"}):
             EngagementAgent().handle(_silent_event(bucket=240))
         acts = chain_store.act_rows_for("engagement")
         assert len(acts) == 1
         assert acts[0]["payload"]["category"] == "icebreaker"
+        # _post_as_ai_bot is stubbed, so the lone emit is the dashboard nudge.
         assert socketio_emits.call_count == 1
+
+
+class TestEngagementCards:
+    """TC-UT-AGT-ENG-09 … 15 — structured engagement cards."""
+
+    def test_build_card_starter(self):
+        with patch.object(EngagementAgent, "_suggest_conversation_starter",
+                          return_value="What are you building?"):
+            built = EngagementAgent()._build_card_for("starter")
+        assert built["text"] == "What are you building?"
+        assert built["card"] == {"kind": "starter",
+                                 "text": "What are you building?"}
+
+    def test_build_card_poll_has_question_and_options(self):
+        built = EngagementAgent()._build_card_for("poll")
+        assert built is not None
+        card = built["card"]
+        assert card["kind"] == "poll"
+        assert isinstance(card["question"], str) and card["question"]
+        assert isinstance(card["options"], list) and len(card["options"]) >= 2
+
+    def test_build_card_icebreaker_has_title(self):
+        card = EngagementAgent()._build_card_for("icebreaker")["card"]
+        assert card["kind"] == "icebreaker"
+        assert card["title"]
+        assert isinstance(card["questions"], list)
+
+    def test_build_card_challenge_has_title(self):
+        card = EngagementAgent()._build_card_for("challenge")["card"]
+        assert card["kind"] == "challenge"
+        assert card["title"]
+
+    def test_pack_posts_three_separate_cards(self):
+        captured = []
+
+        def fake_post(self, text, channel_id, community_id=None, card=None):
+            captured.append(card)
+            return {"posted": True, "message_id": len(captured), "card": card}
+
+        with patch.object(EngagementAgent, "_post_as_ai_bot", new=fake_post):
+            res = EngagementAgent().post_engagement_content(
+                100, 7, kind="pack")
+        assert res["posted"] is True
+        assert len(res["items"]) == 3
+        assert [c["kind"] for c in captured] == ["starter", "poll", "icebreaker"]
+
+    def test_single_poll_posts_one_card(self):
+        captured = []
+
+        def fake_post(self, text, channel_id, community_id=None, card=None):
+            captured.append(card)
+            return {"posted": True, "message_id": 1, "card": card}
+
+        with patch.object(EngagementAgent, "_post_as_ai_bot", new=fake_post):
+            res = EngagementAgent().post_engagement_content(
+                100, 7, kind="poll")
+        assert len(res["items"]) == 1
+        assert captured[0]["kind"] == "poll"
+
+    def test_post_as_ai_bot_persists_and_emits_card(self, socketio_emits):
+        conn, cur = _fake_conn(lastrowid=99)
+        card = {"kind": "poll", "question": "Q?", "options": ["a", "b"]}
+        with patch("agents.engagement.get_db_connection", return_value=conn):
+            res = EngagementAgent()._post_as_ai_bot("text", 100, 7, card=card)
+        assert res["posted"] is True
+        assert res["message_id"] == 99
+        assert res["card"] == card
+        # Two INSERTs: the message row + the engagement_cards row.
+        insert_calls = [c for c in cur.execute.call_args_list
+                        if "INSERT INTO" in c.args[0]]
+        assert any("engagement_cards" in c.args[0] for c in insert_calls)
+        # The socket payload carries the card so the frontend can render it.
+        emit_payload = socketio_emits.call_args.args[1]
+        assert emit_payload["card"] == card
+        assert socketio_emits.call_args.kwargs["room"] == "channel_100"
 
 
 class TestEngagementLearn:

@@ -1,24 +1,56 @@
 """
 Engagement Agent for AuraFlow
-Boosts conversation engagement with smart suggestions and ice-breaking activities
+Boosts conversation engagement with smart suggestions and ice-breaking activities.
+
+Autonomous role (Phase 3.1): subscribes to ``channel.silent`` (published
+by ``services.presence._silence_probe_loop`` at 15 / 60 / 240-min
+buckets) and emits a nudge socket event into the silent channel. The
+prompt template is picked via an ε-greedy bandit over the existing
+``conversation_starters`` categories, with rewards persisted in
+``agent_state.thresholds.category_rewards`` per channel. This replaces
+the legacy 30-minute fixed-cron sweep with reactive scheduling.
 """
 
 import json
 import os
+import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from collections import Counter
-import random
 
 from database import get_db_connection
+from agents.base import AutonomousAgent
+from agents import event_bus as _event_bus
+from agents import memory as _agent_memory
+from agents._settings import get_community_settings
 
 
-class EngagementAgent:
+_ENGAGEMENT_DEFAULTS = {
+    'auto_analyze': True,
+    'analysis_interval': 30,    # minutes
+    'track_threads': True,
+    'leaderboard': True,
+    'inactivity_alerts': False,
+}
+
+
+class EngagementAgent(AutonomousAgent):
     """
     Analyzes conversation patterns and suggests engagement boosters
     Provides conversation starters, ice-breakers, polls, and activity suggestions
     """
-    
+
+    # ── Autonomous contract (Phase 3.1) ─────────────────────────────
+    NAME = "engagement"
+    GOAL = {"revive_silent_channels": True, "low_intrusiveness": True}
+    SUBSCRIBES = [_event_bus.TOPIC_CHANNEL_SILENT]
+    SCOPE_TYPE = _agent_memory.SCOPE_CHANNEL
+    COOLDOWN_SECONDS = 60 * 60  # one nudge per channel per hour, max
+
+    # Minimum bucket we'll act on. Anything shorter is just typical
+    # background quiet, not actionable.
+    _MIN_BUCKET_MINUTES = 15
+
     def __init__(self):
         """Initialize the engagement agent"""
         self.min_silence_minutes = 5
@@ -288,18 +320,38 @@ class EngagementAgent:
             }
         ]
     
-    def analyze_engagement(self, channel_id: int, 
-                          time_period_hours: int = 6) -> Dict[str, any]:
+    def analyze_engagement(
+        self,
+        channel_id: int,
+        time_period_hours: int = 6,
+        *,
+        community_id: Optional[int] = None,
+        scheduled: bool = False,
+    ) -> Dict[str, any]:
         """
         Analyze channel engagement levels
-        
+
         Args:
             channel_id: Channel to analyze
             time_period_hours: Time window for analysis
-            
+            community_id: Optional community for settings lookup. When
+                provided we honor ``auto_analyze`` (gates scheduled runs),
+                ``track_threads``, and ``leaderboard`` toggles.
+            scheduled: True for periodic Celery beat runs. Gated by
+                ``auto_analyze``; on-demand admin clicks are not.
+
         Returns:
             Engagement analysis with suggestions
         """
+        cfg = (get_community_settings(community_id, 'engagement', _ENGAGEMENT_DEFAULTS)
+               if community_id else dict(_ENGAGEMENT_DEFAULTS))
+        if scheduled and not cfg.get('auto_analyze', True):
+            return {
+                'success': False,
+                'skipped': 'auto_analyze_disabled',
+                'engagement_level': 'inactive',
+                'engagement_score': 0,
+            }
         conn = None
         try:
             conn = get_db_connection()
@@ -393,6 +445,11 @@ class EngagementAgent:
                     participant_count, suggestion_type
                 )
                 
+                # Honor the community toggles by surfacing them on the
+                # response — UI uses `track_threads` / `leaderboard` to
+                # decide whether to render those sections. Hiding them
+                # here keeps the dashboard consistent with admin intent
+                # without needing a second API round-trip.
                 result = {
                     'success': True,
                     'engagement_level': engagement_level,
@@ -403,7 +460,11 @@ class EngagementAgent:
                     'silence_minutes': round(silence_minutes, 2),
                     'participation_balance': round(participation_balance, 2),
                     'suggestions': suggestions,
-                    'time_period_hours': time_period_hours
+                    'time_period_hours': time_period_hours,
+                    'features': {
+                        'track_threads': bool(cfg.get('track_threads', True)),
+                        'leaderboard':   bool(cfg.get('leaderboard', True)),
+                    },
                 }
                 
                 # Log engagement analysis
@@ -929,6 +990,395 @@ class EngagementAgent:
         except Exception as e:
             print(f"[ENGAGEMENT] Error getting activity stats: {e}")
             return {'success': False, 'error': str(e)}
+        finally:
+            if conn:
+                conn.close()
+
+    # ====================================================================
+    # POST ENGAGEMENT CONTENT INTO A CHANNEL  (real AI bot message)
+    # ====================================================================
+
+    _NUM_EMOJI = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
+
+    def _format_poll(self, poll: Dict) -> str:
+        lines = [f"📊 **Quick Poll** — {poll['question']}", ""]
+        for i, opt in enumerate(poll.get('options', [])):
+            emoji = self._NUM_EMOJI[i] if i < len(self._NUM_EMOJI) else '▫️'
+            lines.append(f"{emoji} {opt}")
+        lines.append("\n_React with the number, or reply with your pick!_ 👇")
+        return "\n".join(lines)
+
+    def _format_icebreaker(self, activity: Dict) -> str:
+        lines = [f"🧊 **Ice-breaker — {activity.get('title', 'Let’s play!')}**"]
+        if activity.get('description'):
+            lines.append(activity['description'])
+        lines.append("")
+        for q in (activity.get('questions') or activity.get('instructions') or []):
+            lines.append(f"• {q}")
+        if activity.get('example'):
+            lines.append(f"\n_Example:_ {activity['example']}")
+        if activity.get('duration'):
+            lines.append(f"\n⏱️ ~{activity['duration']}")
+        return "\n".join(lines)
+
+    def _format_challenge(self, challenge: Dict) -> str:
+        lines = [f"{challenge.get('title', '💡 Challenge')}"]
+        if challenge.get('description'):
+            lines.append(challenge['description'])
+        if challenge.get('current_theme'):
+            lines.append(f"\n👉 **Theme:** {challenge['current_theme']}")
+        if challenge.get('duration'):
+            lines.append(f"⏱️ ~{challenge['duration']}")
+        return "\n".join(lines)
+
+    def _post_as_ai_bot(self, text: str, channel_id: int,
+                        community_id: Optional[int] = None,
+                        card: Optional[Dict] = None) -> Dict:
+        """Insert an AI bot message into the channel and broadcast it.
+        Matches the canonical bot-post pattern in routes/sockets.py:
+        sender_id NULL + bot_name, message_type 'ai', plaintext content.
+        ``community_id`` is broadcast on the socket payload only — the
+        messages table has no such column.
+
+        ``card`` is an optional structured payload (``{'kind': ..., ...}``)
+        persisted in ``engagement_cards`` and echoed on the socket/return so
+        the frontend can render an interactive card instead of plain text.
+        The ``text`` is always stored as a readable fallback.
+        """
+        conn = None
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO messages "
+                    "(channel_id, sender_id, content, message_type, bot_name, created_at) "
+                    "VALUES (%s, NULL, %s, 'ai', %s, NOW())",
+                    (channel_id, text, 'Engagement Agent'),
+                )
+                mid = cur.lastrowid
+                if card:
+                    kind = card.get('kind')
+                    payload = {k: v for k, v in card.items() if k != 'kind'}
+                    cur.execute(
+                        "INSERT INTO engagement_cards "
+                        "(message_id, channel_id, kind, payload) "
+                        "VALUES (%s, %s, %s, %s)",
+                        (mid, channel_id, kind, json.dumps(payload)),
+                    )
+                conn.commit()
+            # A new bot message invalidates the channel's offset=0 cache so a
+            # reload re-fetches with the card attached.
+            try:
+                from services.redis_client import invalidate_channel_messages_cache
+                invalidate_channel_messages_cache(channel_id)
+            except Exception:
+                pass
+            created_at = datetime.utcnow().isoformat() + 'Z'
+            try:
+                from app import socketio  # lazy: avoid circular import
+                socketio.emit('message_received', {
+                    'id': mid,
+                    'channel_id': channel_id,
+                    'community_id': community_id,
+                    'sender_id': None,
+                    'content': text,
+                    'message_type': 'ai',
+                    'reply_to': None,
+                    'created_at': created_at,
+                    'author': 'Engagement Agent',
+                    'avatar': None,
+                    'is_blocked': False,
+                    'moderation': None,
+                    'card': card,
+                }, room=f'channel_{channel_id}', namespace='/')
+            except Exception as emit_exc:
+                print(f"[ENGAGEMENT] socket emit failed: {emit_exc}")
+            return {'posted': True, 'message_id': mid, 'content': text,
+                    'author': 'Engagement Agent', 'created_at': created_at,
+                    'card': card}
+        except Exception as exc:
+            print(f"[ENGAGEMENT] _post_as_ai_bot failed: {exc}")
+            return {'posted': False, 'error': str(exc)}
+        finally:
+            if conn:
+                conn.close()
+
+    def _build_card_for(self, kind: str,
+                        category: Optional[str] = None) -> Optional[Dict]:
+        """Build a (text, card) pair for a single engagement ``kind``.
+        Returns ``None`` if the underlying generator fails. The card dict is
+        ``{'kind': ..., <structured fields>}``; the text is a readable
+        fallback rendered by the legacy ``_format_*`` helpers.
+        """
+        if kind == 'starter':
+            text = self._suggest_conversation_starter(category or 'casual')
+            return {'text': text, 'card': {'kind': 'starter', 'text': text}}
+        if kind == 'poll':
+            p = self.get_quick_poll(category or 'random')
+            if not p.get('success'):
+                return None
+            poll = p['poll']
+            return {
+                'text': self._format_poll(poll),
+                'card': {'kind': 'poll',
+                         'question': poll['question'],
+                         'options': list(poll.get('options', []))},
+            }
+        if kind == 'icebreaker':
+            ib = self.get_icebreaker_activity('random')
+            if not ib.get('success'):
+                return None
+            a = ib['activity']
+            return {
+                'text': self._format_icebreaker(a),
+                'card': {'kind': 'icebreaker',
+                         'title': a.get('title', 'Ice-breaker'),
+                         'description': a.get('description'),
+                         'questions': list(a.get('questions')
+                                           or a.get('instructions') or []),
+                         'example': a.get('example'),
+                         'duration': a.get('duration')},
+            }
+        if kind == 'challenge':
+            c = self.get_fun_challenge('random')
+            if not c.get('success'):
+                return None
+            ch = c['challenge']
+            return {
+                'text': self._format_challenge(ch),
+                'card': {'kind': 'challenge',
+                         'title': ch.get('title', 'Challenge'),
+                         'description': ch.get('description'),
+                         'theme': ch.get('current_theme'),
+                         'duration': ch.get('duration')},
+            }
+        return None
+
+    def post_engagement_content(self, channel_id: int,
+                                community_id: Optional[int] = None,
+                                kind: str = 'pack',
+                                category: Optional[str] = None) -> Dict:
+        """Build and POST engagement content into a channel as real, separate
+        AI messages — one per booster, each with its own interactive card.
+
+        ``kind`` is one of: starter, poll, icebreaker, challenge, pack
+        (= starter + poll + icebreaker, posted as three distinct cards).
+
+        Returns ``{'posted': bool, 'kind': kind, 'items': [<post result>, ...]}``
+        where each item is the dict returned by ``_post_as_ai_bot``.
+        """
+        kind = (kind or 'pack').lower()
+        sub_kinds = (['starter', 'poll', 'icebreaker'] if kind == 'pack'
+                     else [kind])
+
+        items: List[Dict] = []
+        for sk in sub_kinds:
+            built = self._build_card_for(sk, category)
+            if not built:
+                continue
+            res = self._post_as_ai_bot(
+                built['text'], channel_id, community_id, card=built['card'])
+            res['kind'] = sk
+            if res.get('posted'):
+                items.append(res)
+
+        # Fallback: never return empty-handed.
+        if not items:
+            built = self._build_card_for('starter', category or 'general')
+            res = self._post_as_ai_bot(
+                built['text'], channel_id, community_id, card=built['card'])
+            res['kind'] = 'starter'
+            if res.get('posted'):
+                items.append(res)
+
+        posted = bool(items)
+        return {
+            'posted': posted,
+            'kind': kind,
+            'items': items,
+            # Back-compat single-value fields (first item).
+            'message_id': items[0].get('message_id') if posted else None,
+        }
+
+    # ────────────────────────────────────────────────────────────────────
+    # Autonomous hooks (Phase 3.1)
+    # ────────────────────────────────────────────────────────────────────
+
+    def sense(self, event: dict) -> Optional[Dict]:
+        """Accept only ``channel.silent`` events at-or-above the minimum
+        bucket. The presence probe already rate-limits to one event per
+        bucket per hour, so we don't need additional gating here.
+        """
+        channel_id = event.get("channel_id")
+        bucket = int(event.get("bucket") or 0)
+        if not channel_id or bucket < self._MIN_BUCKET_MINUTES:
+            return None
+        # G1a per-channel override / Phase 5.2 community kill-switch.
+        # Channel helper falls through to community level when no override
+        # row exists.
+        if not self._is_enabled_for_channel(
+            event.get("community_id"), channel_id
+        ):
+            return None
+        # Honor community settings: auto_analyze gates the whole pipeline
+        # (the nudge IS the engagement reaction). We intentionally do NOT
+        # also gate on inactivity_alerts here — existing community rows
+        # may have it false-by-default in the schema yet still expect the
+        # autonomous nudge (matches legacy behaviour). Inactivity_alerts
+        # is treated as a hint surfaced on the dashboard side, not a hard
+        # gate on the bus reaction.
+        community_id = event.get("community_id")
+        if community_id:
+            try:
+                cfg = get_community_settings(int(community_id), 'engagement',
+                                             _ENGAGEMENT_DEFAULTS)
+                if not cfg.get('auto_analyze', True):
+                    return None
+            except Exception:
+                pass
+        return {
+            "channel_id":     channel_id,
+            "community_id":   event.get("community_id"),
+            "silent_minutes": int(event.get("silent_minutes") or bucket),
+            "bucket":         bucket,
+            "scope_type":     _agent_memory.SCOPE_CHANNEL,
+            "scope_id":       channel_id,
+        }
+
+    def decide(self, observation: Dict):
+        """Pick a conversation-starter category via ε-greedy bandit over
+        the per-channel reward table.
+        """
+        channel_id = observation["channel_id"]
+        bucket = observation["bucket"]
+        category = self._pick_category(channel_id, bucket)
+        return ("act", {**observation, "category": category},
+                f"nudge_bucket_{bucket}_cat_{category}")
+
+    def act(self, payload: Dict, correlation_id: str) -> Optional[Dict]:
+        """POST engagement content into the silent channel as a real AI
+        message, escalating with how long it has been quiet:
+            • 15-min bucket  → a single conversation starter
+            • 60-min bucket  → starter + quick poll
+            • 240-min bucket → full starter pack (starter + poll + ice-breaker)
+        We also emit a lightweight ``engagement_nudge`` event so the admin
+        AgentActivityTimeline can render the decision in real time.
+        """
+        channel_id = payload["channel_id"]
+        community_id = payload.get("community_id")
+        category = payload.get("category") or "general"
+        bucket = int(payload.get("bucket") or 0)
+
+        if bucket >= 240:
+            kind = 'pack'
+        elif bucket >= 60:
+            kind = 'poll'
+        else:
+            kind = 'starter'
+
+        post = self.post_engagement_content(
+            channel_id, community_id, kind=kind, category=category)
+
+        # Surface the decision on the dashboard timeline (non-blocking).
+        try:
+            from app import socketio  # lazy: avoid circular import
+            socketio.emit("engagement_nudge", {
+                "channel_id":     channel_id,
+                "community_id":   community_id,
+                "category":       category,
+                "kind":           kind,
+                "starter":        self._suggest_conversation_starter(category),
+                "silent_minutes": payload.get("silent_minutes"),
+                "bucket":         bucket,
+                "correlation_id": correlation_id,
+            }, room=f"channel_{channel_id}", namespace="/")
+        except Exception as exc:
+            print(f"[ENGAGEMENT] nudge emit failed: {exc}")
+
+        return {"emitted": bool(post.get("posted")), "category": category,
+                "kind": kind, "message_id": post.get("message_id")}
+
+    def learn(self, action_id: int, signal: str, *, weight: float = 1.0) -> None:
+        """Per-channel category bandit. Reward the picked category on
+        positive/engaged feedback; lightly punish on dismissed (so
+        repeated dismissals shift the bandit toward other categories
+        without ever fully zeroing out the chosen arm).
+        """
+        try:
+            action = _agent_memory.get_action(action_id)
+            if not action or not action.get("channel_id"):
+                return super().learn(action_id, signal, weight=weight)
+            channel_id = action["channel_id"]
+            category = self._category_for(action_id) or "general"
+            state = _agent_memory.get_state(
+                self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id) or {}
+            th = dict(state.get("thresholds") or {})
+            rewards = dict(th.get("category_rewards") or {})
+            cur = float(rewards.get(category, 0))
+            if signal in ("positive", "engaged"):
+                rewards[category] = cur + float(weight)
+            elif signal in ("negative", "dismissed"):
+                # Half-step downward, floor at 0 so we never get negative.
+                rewards[category] = max(0.0, cur - 0.5 * float(weight))
+            th["category_rewards"] = rewards
+            outcome = ("positive" if signal in ("positive", "engaged")
+                       else "negative" if signal in ("negative", "dismissed")
+                       else "neutral")
+            _agent_memory.set_state(
+                self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id,
+                thresholds=th, last_outcome=outcome,
+            )
+        except Exception as exc:
+            print(f"[ENGAGEMENT] learn failed: {exc}")
+        super().learn(action_id, signal, weight=weight)
+
+    # ── Bandit helpers ─────────────────────────────────────────────
+
+    def _pick_category(self, channel_id: int, bucket: int) -> str:
+        """ε-greedy over conversation_starter categories.
+        Bucket-aware: longer silence → prefer 'icebreaker' / 'casual'.
+        """
+        cats = list(self.conversation_starters.keys()) or ["general"]
+        state = _agent_memory.get_state(
+            self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id) or {}
+        rewards = (state.get("thresholds") or {}).get("category_rewards") or {}
+
+        # Explore 25% of the time, OR if no priors exist.
+        if random.random() < 0.25 or not rewards:
+            if bucket >= 240 and "icebreaker" in cats:
+                return "icebreaker"
+            if bucket >= 60 and "casual" in cats:
+                return "casual"
+            return random.choice(cats)
+
+        # Exploit the best-rewarded category we know about.
+        try:
+            best = max(rewards, key=lambda k: float(rewards[k]))
+            if best in cats:
+                return best
+        except Exception:
+            pass
+        return random.choice(cats)
+
+    def _category_for(self, action_id: int) -> Optional[str]:
+        """Recover the category we picked when logging this action."""
+        conn = None
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT payload_json FROM agent_actions WHERE id=%s",
+                            (action_id,))
+                row = cur.fetchone()
+            if not row:
+                return None
+            raw = row["payload_json"] if isinstance(row, dict) else row[0]
+            if isinstance(raw, (str, bytes, bytearray)):
+                data = json.loads(raw)
+            else:
+                data = raw
+            return (data or {}).get("category")
+        except Exception:
+            return None
         finally:
             if conn:
                 conn.close()

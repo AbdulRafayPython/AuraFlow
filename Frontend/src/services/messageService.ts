@@ -37,6 +37,7 @@ class MessageService {
         is_blocked: msg.is_blocked || false,
         moderation: msg.moderation || undefined,
         attachment: msg.attachment || undefined,
+        card: msg.card || undefined,
       }));
     } catch (error) {
       console.error('Error fetching channel messages:', error);

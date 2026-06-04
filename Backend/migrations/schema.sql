@@ -50,6 +50,48 @@ CREATE TABLE `admin_audit_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- -----------------------------------------------------------
+-- agent_actions  (autonomous-agent action log)
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_feedback`;
+DROP TABLE IF EXISTS `agent_actions`;
+CREATE TABLE `agent_actions` (
+  `id`             BIGINT       NOT NULL AUTO_INCREMENT,
+  `agent_name`     VARCHAR(32)  NOT NULL,
+  `community_id`   INT          NULL,
+  `channel_id`     INT          NULL,
+  `user_id`        INT          NULL,
+  `decision`       ENUM('act','skip','defer') NOT NULL,
+  `reason`         VARCHAR(255) NULL,
+  `payload_json`   JSON         NULL,
+  `correlation_id` CHAR(36)     NOT NULL,
+  `created_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_agent_correlation` (`agent_name`, `correlation_id`),
+  KEY `idx_agent_created` (`agent_name`, `created_at`),
+  KEY `idx_correlation` (`correlation_id`),
+  KEY `idx_scope_channel` (`channel_id`, `created_at`),
+  KEY `idx_scope_community` (`community_id`, `created_at`),
+  KEY `idx_scope_user` (`user_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
+-- agent_feedback  (user reactions to autonomous-agent actions)
+-- -----------------------------------------------------------
+CREATE TABLE `agent_feedback` (
+  `id`         BIGINT NOT NULL AUTO_INCREMENT,
+  `action_id`  BIGINT NOT NULL,
+  `user_id`    INT    NULL,
+  `signal`     ENUM('positive','negative','dismissed','engaged','ignored') NOT NULL,
+  `weight`     FLOAT  NOT NULL DEFAULT 1.0,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_action` (`action_id`),
+  KEY `idx_user_signal` (`user_id`, `signal`),
+  CONSTRAINT `fk_agent_feedback_action`
+    FOREIGN KEY (`action_id`) REFERENCES `agent_actions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
 -- agent_registry
 -- -----------------------------------------------------------
 DROP TABLE IF EXISTS `agent_registry`;
@@ -65,6 +107,26 @@ CREATE TABLE `agent_registry` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`agent_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------
+-- agent_state  (per-agent goals / adaptive thresholds)
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_state`;
+CREATE TABLE `agent_state` (
+  `id`             BIGINT      NOT NULL AUTO_INCREMENT,
+  `agent_name`     VARCHAR(32) NOT NULL,
+  `scope_type`     ENUM('community','channel','user','global') NOT NULL,
+  `scope_id`       INT         NULL,
+  `goal_key`       VARCHAR(64) NOT NULL DEFAULT 'default',
+  `goal_value`     JSON        NULL,
+  `thresholds`     JSON        NULL,
+  `last_acted_at`  DATETIME    NULL,
+  `last_outcome`   ENUM('positive','negative','neutral','unknown') NULL,
+  `updated_at`     DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_agent_scope_goal` (`agent_name`, `scope_type`, `scope_id`, `goal_key`),
+  KEY `idx_agent_scope` (`agent_name`, `scope_type`, `scope_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- -----------------------------------------------------------
 -- ai_agent_logs
@@ -279,6 +341,7 @@ CREATE TABLE `communities` (
   `created_by` int DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `member_count` int NOT NULL DEFAULT '0' COMMENT 'Denormalized count maintained by application on join/leave',
+  `intelligence_profile` json DEFAULT NULL COMMENT 'Subset of {safe,recaps,multilingual}. NULL = use heuristic.',
   PRIMARY KEY (`id`),
   KEY `created_by` (`created_by`),
   KEY `idx_community_name` (`name`),
@@ -309,6 +372,33 @@ CREATE TABLE `community_agents` (
   CONSTRAINT `community_agents_ibfk_2` FOREIGN KEY (`agent_type`) REFERENCES `agent_registry` (`agent_type`),
   CONSTRAINT `community_agents_ibfk_3` FOREIGN KEY (`installed_by`) REFERENCES `users` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------
+-- community_channel_agents  (per-channel override of community_agents.enabled)
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `community_channel_agents`;
+CREATE TABLE `community_channel_agents` (
+  `id`            INT          NOT NULL AUTO_INCREMENT,
+  `community_id`  INT          NOT NULL,
+  `channel_id`    INT          NOT NULL,
+  `agent_type`    VARCHAR(50)  NOT NULL,
+  `enabled`       TINYINT(1)   NOT NULL DEFAULT 1,
+  `updated_by`    INT          NULL,
+  `updated_at`    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_community_channel_agent`
+    (`community_id`, `channel_id`, `agent_type`),
+  KEY `idx_channel_lookup` (`channel_id`, `agent_type`, `enabled`),
+  CONSTRAINT `fk_cca_community`
+    FOREIGN KEY (`community_id`) REFERENCES `communities` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_cca_channel`
+    FOREIGN KEY (`channel_id`) REFERENCES `channels` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_cca_agent_type`
+    FOREIGN KEY (`agent_type`) REFERENCES `agent_registry` (`agent_type`),
+  CONSTRAINT `fk_cca_updated_by`
+    FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- -----------------------------------------------------------
 -- community_announcements
@@ -546,6 +636,7 @@ CREATE TABLE `messages` (
   `sender_id` int DEFAULT NULL,
   `content` text,
   `message_type` enum('text','image','file','system','ai','voice','video','call') NOT NULL DEFAULT 'text',
+  `bot_name` varchar(64) DEFAULT NULL,
   `reply_to` bigint DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `edited_at` timestamp NULL DEFAULT NULL,
@@ -777,6 +868,7 @@ CREATE TABLE `user_notification_settings` (
   `notify_friend_requests` tinyint(1) NOT NULL DEFAULT '1',
   `notify_friend_online` tinyint(1) NOT NULL DEFAULT '0',
   `notification_sounds` tinyint(1) NOT NULL DEFAULT '1',
+  `show_agent_activity` tinyint(1) NOT NULL DEFAULT '0',
   `email_alerts_enabled` tinyint(1) NOT NULL DEFAULT '1',
   `email_dms_and_calls` tinyint(1) NOT NULL DEFAULT '1',
   `email_community_messages` tinyint(1) NOT NULL DEFAULT '0',
@@ -902,6 +994,34 @@ CREATE TABLE `voice_sessions` (
   KEY `idx_joined_at` (`joined_at`),
   CONSTRAINT `voice_sessions_ibfk_1` FOREIGN KEY (`channel_id`) REFERENCES `channels` (`id`) ON DELETE CASCADE,
   CONSTRAINT `voice_sessions_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
+-- engagement_cards + engagement_poll_votes
+-- Structured engagement cards attached to message_type='ai' messages, plus
+-- their poll votes. See migrations/add_engagement_cards.sql.
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `engagement_poll_votes`;
+DROP TABLE IF EXISTS `engagement_cards`;
+CREATE TABLE `engagement_cards` (
+  `message_id` bigint NOT NULL,
+  `channel_id` int NOT NULL,
+  `kind` varchar(20) NOT NULL,
+  `payload` json NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`message_id`),
+  KEY `idx_engagement_cards_channel` (`channel_id`),
+  CONSTRAINT `fk_engagement_card_msg` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+CREATE TABLE `engagement_poll_votes` (
+  `message_id` bigint NOT NULL,
+  `user_id` int NOT NULL,
+  `option_index` int NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`message_id`,`user_id`),
+  KEY `idx_poll_votes_msg` (`message_id`),
+  CONSTRAINT `fk_poll_vote_msg` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_poll_vote_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

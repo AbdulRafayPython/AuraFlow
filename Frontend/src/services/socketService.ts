@@ -113,6 +113,7 @@ class SocketService {
   private summaryResultHandlers: SummaryResultHandler[] = [];
   private kbGeneratingHandlers: KBGeneratingHandler[] = [];
   private kbResultHandlers: KBResultHandler[] = [];
+  private pollVoteUpdateHandlers: ((data: { message_id: number; channel_id: number; tallies: number[]; total: number }) => void)[] = [];
   private dmTypingHandlers: ((data: { user_id: number; is_typing: boolean }) => void)[] = [];
   private currentChannel: number | null = null;
   private currentDMUser: number | null = null;
@@ -260,6 +261,7 @@ class SocketService {
         is_blocked: data.is_blocked || false,
         moderation: data.moderation || undefined,
         attachment: data.attachment || undefined,
+        card: data.card || undefined,
       };
       
       if (message.is_blocked) {
@@ -271,6 +273,11 @@ class SocketService {
       }
       
       this.messageHandlers.forEach(handler => handler(message));
+    });
+
+    // Engagement poll vote tally update
+    this.socket.on('poll_vote_update', (data: any) => {
+      this.pollVoteUpdateHandlers.forEach(handler => handler(data));
     });
 
     // Typing indicator
@@ -886,6 +893,13 @@ class SocketService {
     this.statusHandlers.push(handler);
     return () => {
       this.statusHandlers = this.statusHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onPollVoteUpdate(handler: (data: { message_id: number; channel_id: number; tallies: number[]; total: number }) => void) {
+    this.pollVoteUpdateHandlers.push(handler);
+    return () => {
+      this.pollVoteUpdateHandlers = this.pollVoteUpdateHandlers.filter(h => h !== handler);
     };
   }
 

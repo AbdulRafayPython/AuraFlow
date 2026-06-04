@@ -29,6 +29,32 @@ export interface ReplyToPreview {
   message_type: string;
 }
 
+/** Structured engagement-agent card attached to a message_type='ai' message. */
+export type EngagementCard =
+  | { kind: 'poll'; question: string; options: string[] }
+  | { kind: 'starter'; text: string }
+  | {
+      kind: 'icebreaker';
+      title: string;
+      description?: string | null;
+      questions?: string[];
+      example?: string | null;
+      duration?: string | null;
+    }
+  | {
+      kind: 'challenge';
+      title: string;
+      description?: string | null;
+      theme?: string | null;
+      duration?: string | null;
+    };
+
+export interface PollState {
+  tallies: number[];
+  total: number;
+  my_vote: number | null;
+}
+
 export interface Message {
   id: number;
   channel_id: number;
@@ -37,6 +63,7 @@ export interface Message {
   message_type: 'text' | 'image' | 'file' | 'system' | 'ai' | 'voice' | 'video';
   created_at: string;
   author: string;
+  card?: EngagementCard;
   avatar_url?: string;
   edited_at?: string | null;
   reply_to?: number | null;
@@ -129,6 +156,8 @@ export interface Community {
     display_name: string;
     avatar_url?: string;
   };
+  /** Subset of {'safe','recaps','multilingual'} — drives Discover badges. */
+  intelligence_profile?: string[];
 }
 
 export interface Channel {
