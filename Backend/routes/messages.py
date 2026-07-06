@@ -313,10 +313,13 @@ def _insert_ai_bot_message(channel_id: int, user_id: int, content: str, author: 
     try:
         conn = get_db_connection()
         with conn.cursor() as cur:
+            # bot_name is what the history loader displays as the author for
+            # message_type='ai' rows — without it a reload falls back to the
+            # invoking user's username ("<username> BOT").
             cur.execute(
-                "INSERT INTO messages (channel_id, sender_id, content, message_type) "
-                "VALUES (%s, %s, %s, 'ai')",
-                (channel_id, user_id, content),
+                "INSERT INTO messages (channel_id, sender_id, content, message_type, bot_name) "
+                "VALUES (%s, %s, %s, 'ai', %s)",
+                (channel_id, user_id, content, (author or 'AI Bot')[:64]),
             )
             mid = cur.lastrowid
             cur.execute(
