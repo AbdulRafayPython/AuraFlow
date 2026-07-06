@@ -283,9 +283,12 @@ class TranslatorAgent(AutonomousAgent):
         try:
             conn = get_db_connection()
             cur = conn.cursor()
+            # `messages` has no community_id column — a message's community is
+            # derived from its channel, so join `channels` to fetch it.
             cur.execute(
-                "SELECT id, content, sender_id, channel_id, community_id "
-                "FROM messages WHERE id = %s",
+                "SELECT m.id, m.content, m.sender_id, m.channel_id, c.community_id "
+                "FROM messages m LEFT JOIN channels c ON m.channel_id = c.id "
+                "WHERE m.id = %s",
                 (message_id,),
             )
             row = cur.fetchone()
