@@ -236,10 +236,10 @@ export default function Dashboard() {
 
   // Scroll to bottom when skeleton/ephemeral summary appears
   useEffect(() => {
-    if ((isGeneratingSummary || ephemeralSummary) && messagesContainerRef.current) {
+    if ((isGeneratingSummary || ephemeralSummary || pendingCommand) && messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
-  }, [isGeneratingSummary, ephemeralSummary]);
+  }, [isGeneratingSummary, ephemeralSummary, pendingCommand]);
 
   // Load reactions for messages — ONE bulk API call instead of N individual calls
   useEffect(() => {
@@ -766,8 +766,9 @@ export default function Dashboard() {
     }
 
     // Show a calm skeleton for synchronous agent commands whose result is a
-    // toast (/mood, /wellness) or a posted bot message (/focus) — otherwise the
-    // user gets no feedback while the agent runs. Cleared in `finally`.
+    // toast (/mood, /wellness) or a posted bot message (/focus, /support,
+    // /ask, /translate, /extract) — otherwise the user gets no feedback while
+    // the agent runs. Cleared in `finally`.
     const lowerCmd = messageToSend.trim().toLowerCase();
     if (lowerCmd.startsWith('/mood')) {
       setPendingCommand({ agent: 'mood_tracker', label: 'Analyzing your mood' });
@@ -775,6 +776,14 @@ export default function Dashboard() {
       setPendingCommand({ agent: 'wellness', label: 'Checking in on your wellbeing' });
     } else if (lowerCmd.startsWith('/focus')) {
       setPendingCommand({ agent: 'focus', label: 'Measuring channel focus' });
+    } else if (lowerCmd.startsWith('/support')) {
+      setPendingCommand({ agent: 'support', label: 'Searching the knowledge base', displayName: 'Support' });
+    } else if (lowerCmd.startsWith('/ask')) {
+      setPendingCommand({ agent: 'assistant', label: 'Thinking through your question', displayName: 'AI Assistant' });
+    } else if (lowerCmd.startsWith('/translate')) {
+      setPendingCommand({ agent: 'translator', label: 'Translating', displayName: 'Translator' });
+    } else if (lowerCmd.startsWith('/extract')) {
+      setPendingCommand({ agent: 'knowledge_builder', label: 'Extracting knowledge', displayName: 'Knowledge Builder' });
     }
 
     try {
@@ -1636,12 +1645,13 @@ export default function Dashboard() {
               />
             )}
 
-            {/* Skeleton for synchronous agent commands (/mood, /wellness, /focus) */}
+            {/* Skeleton for synchronous agent commands (/mood, /wellness,
+                /focus, /support, /ask, /translate, /extract) */}
             {pendingCommand && (
               <AgentMessageShell
                 agentName={pendingCommand.agent}
                 displayName={pendingCommand.displayName}
-                isPrivate={pendingCommand.agent !== 'focus'}
+                isPrivate={['mood_tracker', 'wellness'].includes(pendingCommand.agent)}
                 variant="skeleton"
                 skeletonLabel={pendingCommand.label}
               />

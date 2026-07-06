@@ -621,12 +621,15 @@ class SocketService {
 
   // Join a direct message conversation
   joinDMConversation(userId: number) {
+    // Record first so the 'connect' handler can re-join after the
+    // page-load race / a reconnect — mirrors joinChannel above.
+    this.currentDMUser = userId;
+
     if (!this.socket?.connected) {
-      console.warn('[SOCKET] Not connected, cannot join DM room');
+      console.warn(`[SOCKET] Not connected yet — DM room with user ${userId} will be joined on connect`);
       return;
     }
 
-    this.currentDMUser = userId;
     this.socket.emit('join_dm', { user_id: userId });
     console.log(`[SOCKET] Joined DM room with user ${userId}`);
   }
@@ -736,17 +739,24 @@ class SocketService {
 
   // Join a channel
   joinChannel(channelId: number) {
+    // ALWAYS record the target channel first. If the socket isn't connected
+    // yet (page-load race: the channel effect can fire before the handshake
+    // completes) the 'connect' handler re-joins from this field. Dropping
+    // the call without recording it left the client outside the channel_N
+    // room — deaf to every broadcast — until a manual channel switch.
+    const previousChannel = this.currentChannel;
+    this.currentChannel = channelId;
+
     if (!this.socket?.connected) {
-      console.warn('[SOCKET] Not connected, cannot join channel');
+      console.warn(`[SOCKET] Not connected yet — channel ${channelId} will be joined on connect`);
       return;
     }
 
     // Leave previous channel if any
-    if (this.currentChannel && this.currentChannel !== channelId) {
-      this.socket.emit('leave_channel', { channel_id: this.currentChannel });
+    if (previousChannel && previousChannel !== channelId) {
+      this.socket.emit('leave_channel', { channel_id: previousChannel });
     }
 
-    this.currentChannel = channelId;
     this.socket.emit('join_channel', { channel_id: channelId });
     console.log(`[SOCKET] 🚪 Joining channel ${channelId}`);
   }

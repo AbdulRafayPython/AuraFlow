@@ -72,6 +72,29 @@ _INDEX_TTL_SECONDS = 5 * 60  # rebuild per-community index every 5 minutes
 _MIN_SCORE = 0.12            # cosine threshold below which we say "no match"
 
 
+def _readable_snippet(content: str) -> str:
+    """Knowledge Builder stores each row's ``content`` as a JSON blob
+    (``{type, question, answer, tags}``). Return the human-readable answer
+    for display; fall back to the raw string if it isn't that JSON shape.
+    Keeps answers clean even when Gemini polish is off or unavailable."""
+    content = (content or '').strip()
+    if not content:
+        return ''
+    try:
+        obj = json.loads(content)
+    except Exception:
+        return content
+    if isinstance(obj, dict):
+        for key in ('answer', 'definition', 'summary', 'decision', 'content', 'text'):
+            val = obj.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+        q = obj.get('question')
+        if isinstance(q, str) and q.strip():
+            return q.strip()
+    return content
+
+
 class SupportAgent(AutonomousAgent):
     """Q&A over a community's knowledge base.
 
@@ -152,7 +175,7 @@ class SupportAgent(AutonomousAgent):
                 'sources': [],
             }
 
-        snippet = (best['content'] or '').strip()
+        snippet = _readable_snippet(best.get('content'))
         score = best['score']
 
         # Optionally polish via Gemini — honor the community setting.
@@ -168,9 +191,9 @@ class SupportAgent(AutonomousAgent):
             conn = get_db_connection(); cur = conn.cursor()
             cur.execute(
                 "INSERT INTO ai_agent_logs "
-                "(agent_type, action, user_id, channel_id, community_id, "
-                " input_data, output_data, success, processing_time_ms, created_at) "
-                "VALUES ('support', 'ask', %s, %s, %s, %s, %s, 1, 0, NOW())",
+                "(agent_name, action_type, user_id, channel_id, community_id, "
+                " input_data, output_data, status, execution_time_ms, created_at) "
+                "VALUES ('support', 'ask', %s, %s, %s, %s, %s, 'success', 0, NOW())",
                 (
                     user_id, channel_id, community_id,
                     json.dumps({'q': question[:500]})[:1000],
@@ -202,20 +225,31 @@ class SupportAgent(AutonomousAgent):
 
     # ------------------------------------------------------------- internals
     def _polish_with_gemini(self, question: str, snippet: str) -> Optional[str]:
+        # Bound the network call so a stalled Gemini request can't freeze the
+        # synchronous /support handler (the HTTP route blocks on this). On
+        # timeout we return None and the caller falls back to the raw snippet,
+        # which _readable_snippet has already made presentable. Mirrors the
+        # ThreadPoolExecutor timeout pattern in agents/moderation.py.
         try:
+            from concurrent.futures import ThreadPoolExecutor
             prompt = (
                 "Answer the user's question using ONLY the context below. "
                 "Reply in 1-3 short sentences. If context is insufficient, say so.\n\n"
                 f"Context:\n{snippet[:1500]}\n\n"
                 f"Question: {question[:400]}\n\nAnswer:"
             )
-            resp = self.gemini_client.models.generate_content(
-                model=self.gemini_model, contents=prompt,
-            )
+
+            def _call():
+                return self.gemini_client.models.generate_content(
+                    model=self.gemini_model, contents=prompt,
+                )
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                resp = executor.submit(_call).result(timeout=8.0)
             text = (getattr(resp, 'text', '') or '').strip()
             return text[:1000] if text else None
         except Exception as exc:
-            print(f"[SUPPORT] Gemini polish failed: {exc}")
+            print(f"[SUPPORT] Gemini polish failed/timed out: {exc}")
             return None
 
     def _best_match(
@@ -308,11 +342,16 @@ class SupportAgent(AutonomousAgent):
             except (TypeError, ValueError):
                 lim = 500
             conn = get_db_connection(); cur = conn.cursor()
+            # knowledge_base rows are scoped by `related_channel`; a community
+            # owns many channels, so join through `channels` to gather every
+            # doc for the community. (The table has no community_id/category/
+            # is_published columns — see migrations/schema.sql.)
             cur.execute(
-                "SELECT id, title, content, category, source "
-                "FROM knowledge_base "
-                "WHERE community_id = %s AND COALESCE(is_published, 1) = 1 "
-                "ORDER BY id DESC LIMIT %s",
+                "SELECT kb.id, kb.title, kb.content, kb.source "
+                "FROM knowledge_base kb "
+                "JOIN channels c ON kb.related_channel = c.id "
+                "WHERE c.community_id = %s "
+                "ORDER BY kb.id DESC LIMIT %s",
                 (community_id, lim),
             )
             rows = cur.fetchall() or []
@@ -328,7 +367,7 @@ class SupportAgent(AutonomousAgent):
             else:
                 d = {
                     'id': row[0], 'title': row[1], 'content': row[2],
-                    'category': row[3], 'source': row[4],
+                    'source': row[3],
                 }
             title = (d.get('title') or '').strip()
             content = (d.get('content') or '').strip()
@@ -394,7 +433,7 @@ class SupportAgent(AutonomousAgent):
             **observation,
             "kb_id":    best.get("id"),
             "kb_title": best.get("title"),
-            "snippet":  (best.get("content") or "")[:400],
+            "snippet":  _readable_snippet(best.get("content"))[:400],
             "score":    best["score"],
         }, f"kb_match_{best['score']:.2f}")
 
