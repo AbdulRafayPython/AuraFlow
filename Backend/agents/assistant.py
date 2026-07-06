@@ -260,9 +260,9 @@ class AssistantAgent(AutonomousAgent):
             cur = conn.cursor()
             cur.execute(
                 "INSERT INTO ai_agent_logs "
-                "(agent_type, action, user_id, channel_id, community_id, "
-                " input_data, output_data, success, processing_time_ms, created_at) "
-                "VALUES ('assistant', 'ask', %s, %s, %s, %s, %s, 1, %s, NOW())",
+                "(agent_name, action_type, user_id, channel_id, community_id, "
+                " input_data, output_data, status, execution_time_ms, created_at) "
+                "VALUES ('assistant', 'ask', %s, %s, %s, %s, %s, 'success', %s, NOW())",
                 (
                     user_id, channel_id, community_id,
                     json.dumps({'q': question[:500], 'source': source})[:1000],

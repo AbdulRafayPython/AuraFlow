@@ -85,13 +85,19 @@ def _readable_snippet(content: str) -> str:
     except Exception:
         return content
     if isinstance(obj, dict):
+        # Combine question + answer when both exist: for `decision`-type
+        # entries the substance often lives in the question field while the
+        # answer is a one-line gloss ("Targets have been set.") — answer
+        # alone starved Gemini into "context is insufficient" replies.
+        q = obj.get('question')
+        q = q.strip() if isinstance(q, str) else ''
         for key in ('answer', 'definition', 'summary', 'decision', 'content', 'text'):
             val = obj.get(key)
             if isinstance(val, str) and val.strip():
-                return val.strip()
-        q = obj.get('question')
-        if isinstance(q, str) and q.strip():
-            return q.strip()
+                a = val.strip()
+                return f"{q}\n{a}" if q and q not in a else a
+        if q:
+            return q
     return content
 
 

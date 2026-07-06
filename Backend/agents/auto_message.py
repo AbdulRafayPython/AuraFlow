@@ -171,9 +171,9 @@ class AutoMessageAgent(AutonomousAgent):
             conn = get_db_connection(); cur = conn.cursor()
             cur.execute(
                 "INSERT INTO ai_agent_logs "
-                "(agent_type, action, user_id, channel_id, community_id, "
-                " input_data, output_data, success, processing_time_ms, created_at) "
-                "VALUES ('auto_message', 'welcome', %s, %s, %s, %s, %s, 1, 0, NOW())",
+                "(agent_name, action_type, user_id, channel_id, community_id, "
+                " input_data, output_data, status, execution_time_ms, created_at) "
+                "VALUES ('auto_message', 'welcome', %s, %s, %s, %s, %s, 'success', 0, NOW())",
                 (
                     user_id, channel_id, community_id,
                     json.dumps({'community_name': community_name,

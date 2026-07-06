@@ -307,8 +307,8 @@ class TranslatorAgent(AutonomousAgent):
             try:
                 cur.execute(
                     "INSERT INTO ai_agent_logs "
-                    "(agent_type, action, user_id, channel_id, community_id, "
-                    " input_data, output_data, success, processing_time_ms, created_at) "
+                    "(agent_name, action_type, user_id, channel_id, community_id, "
+                    " input_data, output_data, status, execution_time_ms, created_at) "
                     "VALUES ('translator', 'translate', %s, %s, %s, %s, %s, %s, %s, NOW())",
                     (
                         user_id,
@@ -316,7 +316,7 @@ class TranslatorAgent(AutonomousAgent):
                         community_id,
                         json.dumps({'message_id': message_id, 'target': target_language})[:1000],
                         json.dumps(result)[:2000],
-                        1 if result.get('provider') != 'none' else 0,
+                        'success' if result.get('provider') != 'none' else 'failed',
                         0,
                     ),
                 )
