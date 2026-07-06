@@ -56,7 +56,6 @@ import {
   Gavel,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import adminService from '@/services/adminService';
 
 // ---- Appeals sub-panel ----
 interface Appeal {

@@ -111,3 +111,19 @@ pnpm-debug.log*
 .cache/
 .next/
 .nuxt/
+
+# Local demo HTTPS certs (mkcert) — private keys, never commit
+Frontend/certs/
+
+# Runtime / build artifacts (never commit)
+dump.rdb
+*.rdb
+*.tsbuildinfo
+Backend/soak_24h_*.exit
+*.exit
+
+# Playwright MCP session snapshots / accessibility dumps (manual testing only)
+.playwright-mcp/
+/chat_mobile.yml
+/create_modal.yml
+/friends_mobile.yml

@@ -1,75 +1,113 @@
+// Frontend/src/components/ai-agents/AgentBar.tsx
+//
+// F2 — Channel Assist strip (the slim version).
+//
+// Per docs/AUTONOMOUS_AGENT_FRONTEND_REDESIGN.md §8.3 + §16/F2, this bar is
+// _not_ where autonomy lives — it is where deliberate user assistance begins.
+// Four high-intent actions:
+//
+//   • Ask              → opens an inline assistant popover (assistant agent)
+//   • Translate        → opens an inline translator popover (translator agent)
+//   • Catch me up      → generateSummary on this channel (summarizer)
+//   • Search knowledge → opens the rail's Knowledge tab (support / KB)
+//
+// Autonomous interventions (support_suggestion, summary_checkpoint,
+// focus.drift, moderation, per-viewer translation) live INLINE in the
+// message list and on the Channel Intelligence rail — not here.
+//
+// The bar gracefully degrades: each button is enabled only if its underlying
+// agent is installed (community-scoped) or active (personal). If none are
+// reachable for the current channel, the bar hides itself.
+
 import { useEffect, useMemo, useState } from 'react';
 import {
   Sparkles,
-  FileText,
-  Smile,
   Languages,
-  GraduationCap,
-  Trophy,
-  Heart,
+  FileText,
   BookOpen,
-  Target,
-  ShieldCheck,
-  MessageSquare,
   Loader2,
   Send,
-  X,
+  Zap,
+  MessageSquare,
+  BarChart3,
+  Snowflake,
+  PartyPopper,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { useAIAgents } from '@/contexts/AIAgentContext';
+import { useRealtime } from '@/hooks/useRealtime';
 import { useToast } from '@/hooks/use-toast';
+import { accentFor } from './AgentAccent';
+import { aiAgentService } from '@/services/aiAgentService';
+import type { Message } from '@/types';
 
 export interface AgentBarProps {
   channelId?: number | null;
   channelName?: string | null;
   communityId?: number | null;
-  /** Open the right-side AgentResultPanel with a given tab */
-  onOpenPanel?: (tab: 'knowledge' | 'summary' | 'mood' | 'focus' | 'translations') => void;
-  /** Toggle to refresh the result panel */
+  /** Open the Channel Intelligence rail at a given tab. */
+  onOpenPanel?: (tab: 'activity' | 'recap' | 'knowledge' | 'focus' | 'translations' | 'safety') => void;
+  /** Toggle to refresh anything the rail caches. */
   onResultUpdated?: () => void;
 }
 
-type AgentKey =
-  | 'summarizer'
-  | 'assistant'
-  | 'translator'
-  | 'support'
-  | 'mood'
-  | 'engagement'
-  | 'wellness'
-  | 'knowledge'
-  | 'focus'
-  | 'moderation';
+type ActionKey = 'ask' | 'translate' | 'catchup' | 'knowledge' | 'spark';
 
-interface AgentDef {
-  key: AgentKey;
+interface ActionDef {
+  key: ActionKey;
   label: string;
   Icon: React.ComponentType<{ className?: string }>;
-  /** DB agent_type — used to look up install/active state */
-  dbType: string;
-  scope: 'community' | 'personal';
-  tint: string;
+  /** Agent name used by AgentAccent for the icon tint. */
+  agent: string;
+  /** DB agent_type(s) that must be installed/active for this action. */
+  requires: { scope: 'community' | 'personal'; types: string[] }[];
 }
 
-const AGENTS: AgentDef[] = [
-  { key: 'summarizer',  label: 'Summarize',   Icon: FileText,      dbType: 'summarizer',   scope: 'community', tint: 'text-blue-500' },
-  { key: 'assistant',   label: 'Ask AI',      Icon: Sparkles,      dbType: 'assistant',    scope: 'personal',  tint: 'text-violet-500' },
-  { key: 'translator',  label: 'Translate',   Icon: Languages,     dbType: 'translator',   scope: 'personal',  tint: 'text-cyan-500' },
-  { key: 'support',     label: 'Support',     Icon: GraduationCap, dbType: 'support',      scope: 'community', tint: 'text-emerald-500' },
-  { key: 'mood',        label: 'Mood',        Icon: Smile,         dbType: 'mood',         scope: 'personal',  tint: 'text-pink-500' },
-  { key: 'engagement',  label: 'Engage',      Icon: Trophy,        dbType: 'engagement',   scope: 'community', tint: 'text-amber-500' },
-  { key: 'wellness',    label: 'Wellness',    Icon: Heart,         dbType: 'wellness',     scope: 'personal',  tint: 'text-rose-500' },
-  { key: 'knowledge',   label: 'Knowledge',   Icon: BookOpen,      dbType: 'knowledge',    scope: 'community', tint: 'text-indigo-500' },
-  { key: 'focus',       label: 'Focus',       Icon: Target,        dbType: 'focus',        scope: 'community', tint: 'text-orange-500' },
-  { key: 'moderation',  label: 'Moderation',  Icon: ShieldCheck,   dbType: 'moderation',   scope: 'community', tint: 'text-green-500' },
+const ACTIONS: ActionDef[] = [
+  {
+    key: 'ask',
+    label: 'Ask',
+    Icon: Sparkles,
+    agent: 'assistant',
+    requires: [{ scope: 'personal', types: ['assistant'] }],
+  },
+  {
+    key: 'translate',
+    label: 'Translate',
+    Icon: Languages,
+    agent: 'translator',
+    requires: [{ scope: 'personal', types: ['translator'] }],
+  },
+  {
+    key: 'catchup',
+    label: 'Catch me up',
+    Icon: FileText,
+    agent: 'summarizer',
+    requires: [{ scope: 'community', types: ['summarizer'] }],
+  },
+  {
+    key: 'knowledge',
+    label: 'Search knowledge',
+    Icon: BookOpen,
+    agent: 'support',
+    // Either support or knowledge_builder being installed on the community
+    // is enough to query the KB.
+    requires: [{ scope: 'community', types: ['support', 'knowledge', 'knowledge_builder'] }],
+  },
+  {
+    key: 'spark',
+    label: 'Spark',
+    Icon: Zap,
+    agent: 'engagement',
+    requires: [{ scope: 'community', types: ['engagement'] }],
+  },
 ];
 
 export default function AgentBar({
   channelId,
-  channelName,
+  channelName: _channelName,
   communityId,
   onOpenPanel,
   onResultUpdated,
@@ -80,17 +118,13 @@ export default function AgentBar({
     generateSummary,
     askAssistant,
     translateText,
-    askSupport,
-    extractKnowledge,
-    trackMood,
-    checkWellness,
-    analyzeFocus,
   } = useAIAgents() as any;
+  const { addLocalMessage } = useRealtime();
   const { toast } = useToast();
 
   const [communityActive, setCommunityActive] = useState<Set<string>>(new Set());
   const [personalActive, setPersonalActive] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState<AgentKey | null>(null);
+  const [busy, setBusy] = useState<ActionKey | null>(null);
 
   // ── Load installed/active state ───────────────────────────────────────
   useEffect(() => {
@@ -101,111 +135,84 @@ export default function AgentBar({
           const installed = await getCommunityAgentStatus(communityId);
           if (cancelled) return;
           setCommunityActive(
-            new Set((installed || [])
-              .filter((a: any) => a.enabled !== false)
-              .map((a: any) => a.agent_type)),
+            new Set(
+              (installed || [])
+                .filter((a: any) => a.enabled !== false)
+                .map((a: any) => a.agent_type),
+            ),
           );
         } else {
           setCommunityActive(new Set());
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
 
       try {
         const personal = await getPersonalAgentStatus();
         if (cancelled) return;
         setPersonalActive(
-          new Set((personal || [])
-            .filter((a: any) => a.enabled !== false)
-            .map((a: any) => a.agent_type)),
+          new Set(
+            (personal || [])
+              .filter((a: any) => a.enabled !== false)
+              .map((a: any) => a.agent_type),
+          ),
         );
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [communityId, getCommunityAgentStatus, getPersonalAgentStatus]);
 
-  const isAgentReady = (def: AgentDef): boolean => {
-    if (def.scope === 'community') {
-      if (!communityId) return false;
-      return communityActive.has(def.dbType);
-    }
-    return personalActive.has(def.dbType);
+  const isActionReady = (def: ActionDef): boolean => {
+    return def.requires.every((req) => {
+      if (req.scope === 'community') {
+        if (!communityId) return false;
+        return req.types.some((t) => communityActive.has(t));
+      }
+      return req.types.some((t) => personalActive.has(t));
+    });
   };
 
-  // ── Visible agents ────────────────────────────────────────────────────
   const visible = useMemo(
-    () => AGENTS.filter(isAgentReady),
+    () => ACTIONS.filter(isActionReady),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [communityActive, personalActive, communityId],
   );
 
-  // ── Quick actions (no popover) ────────────────────────────────────────
-  const runSummarize = async () => {
+  // ── Direct actions ────────────────────────────────────────────────────
+  const runCatchUp = async () => {
     if (!channelId) return;
     try {
-      setBusy('summarizer');
+      setBusy('catchup');
       const r = await generateSummary(channelId, 100);
       if (r?.success) {
-        toast({ title: 'Summary posted', description: 'Check the chat.' });
+        toast({ title: 'Caught you up', description: 'See the Recap tab.' });
+        onOpenPanel?.('recap');
         onResultUpdated?.();
       } else {
-        toast({ title: 'Summary failed', description: r?.error || 'Try again', variant: 'destructive' });
+        toast({
+          title: 'Could not catch up',
+          description: r?.error || 'Try again in a moment.',
+          variant: 'destructive',
+        });
       }
     } catch (e: any) {
-      toast({ title: 'Summary failed', description: e.message || '', variant: 'destructive' });
+      toast({
+        title: 'Could not catch up',
+        description: e?.message || '',
+        variant: 'destructive',
+      });
     } finally {
       setBusy(null);
     }
   };
 
-  const runMood = async () => {
-    try {
-      setBusy('mood');
-      await trackMood(24);
-      toast({ title: 'Mood updated', description: 'See the Mood tab.' });
-      onOpenPanel?.('mood');
-    } catch (e: any) {
-      toast({ title: 'Mood failed', description: e.message || '', variant: 'destructive' });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const runWellness = async () => {
-    try {
-      setBusy('wellness');
-      await checkWellness();
-      toast({ title: 'Wellness check done' });
-    } catch (e: any) {
-      toast({ title: 'Wellness failed', description: e.message || '', variant: 'destructive' });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const runFocus = async () => {
-    if (!channelId) return;
-    try {
-      setBusy('focus');
-      await analyzeFocus(24, channelId);
-      toast({ title: 'Focus analyzed' });
-      onOpenPanel?.('focus');
-    } catch (e: any) {
-      toast({ title: 'Focus failed', description: e.message || '', variant: 'destructive' });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const runExtract = async () => {
-    try {
-      setBusy('knowledge');
-      await extractKnowledge(48);
-      toast({ title: 'Knowledge extracted' });
-      onOpenPanel?.('knowledge');
-    } catch (e: any) {
-      toast({ title: 'Extraction failed', description: e.message || '', variant: 'destructive' });
-    } finally {
-      setBusy(null);
-    }
+  const openKnowledge = () => {
+    onOpenPanel?.('knowledge');
   };
 
   if (visible.length === 0) {
@@ -213,135 +220,189 @@ export default function AgentBar({
   }
 
   return (
-    <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg border border-border/50 bg-muted/30 backdrop-blur-sm overflow-x-auto">
-      <span className="text-[11px] font-medium text-muted-foreground px-1 shrink-0">
-        AI Agents
+    <div
+      className={
+        'flex items-center gap-1 overflow-x-auto rounded-md ' +
+        'border border-[hsl(var(--theme-border-default))] ' +
+        'bg-[hsl(var(--theme-bg-secondary))] px-2 py-1.5'
+      }
+      role="toolbar"
+      aria-label="Channel AI assist"
+    >
+      <span className="shrink-0 px-1 text-[11px] font-medium uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+        Assist
       </span>
-      <div className="h-4 w-px bg-border mx-1 shrink-0" />
+      <span
+        aria-hidden
+        className="mx-1 h-4 w-px shrink-0 bg-[hsl(var(--theme-border-default))]"
+      />
 
       {visible.map((def) => {
-        const Icon = def.Icon;
         const isBusy = busy === def.key;
+        const Icon = def.Icon;
+        const accent = accentFor(def.agent);
 
-        // Direct actions (no popover)
-        if (def.key === 'summarizer') {
+        if (def.key === 'ask') {
           return (
-            <AgentButton
+            <AskPopover
               key={def.key}
+              accent={accent}
+              icon={<Icon className="h-4 w-4" />}
               label={def.label}
-              tint={def.tint}
-              busy={isBusy}
-              icon={<Icon className="h-4 w-4" />}
-              onClick={runSummarize}
-              disabled={!channelId}
-            />
-          );
-        }
-        if (def.key === 'mood') {
-          return (
-            <AgentButton key={def.key} label={def.label} tint={def.tint}
-              busy={isBusy} icon={<Icon className="h-4 w-4" />} onClick={runMood} />
-          );
-        }
-        if (def.key === 'wellness') {
-          return (
-            <AgentButton key={def.key} label={def.label} tint={def.tint}
-              busy={isBusy} icon={<Icon className="h-4 w-4" />} onClick={runWellness} />
-          );
-        }
-        if (def.key === 'focus') {
-          return (
-            <AgentButton key={def.key} label={def.label} tint={def.tint}
-              busy={isBusy} icon={<Icon className="h-4 w-4" />} onClick={runFocus}
-              disabled={!channelId} />
-          );
-        }
-        if (def.key === 'knowledge') {
-          return (
-            <AgentButton key={def.key} label={def.label} tint={def.tint}
-              busy={isBusy} icon={<Icon className="h-4 w-4" />} onClick={runExtract} />
-          );
-        }
-        if (def.key === 'moderation') {
-          return (
-            <AgentButton key={def.key} label={def.label} tint={def.tint} busy={false}
-              icon={<Icon className="h-4 w-4" />}
-              onClick={() => toast({ title: 'Moderation is active',
-                description: 'Messages are scanned automatically.' })} />
-          );
-        }
-        if (def.key === 'engagement') {
-          return (
-            <AgentButton key={def.key} label={def.label} tint={def.tint}
-              busy={false} icon={<Icon className="h-4 w-4" />}
-              onClick={() => toast({ title: 'Engagement',
-                description: 'Use /icebreaker or /poll in chat.' })} />
-          );
-        }
-
-        // Popover-driven actions
-        if (def.key === 'assistant') {
-          return (
-            <AssistantPopover
-              key={def.key}
-              def={def}
               onAsk={(q) => askAssistant(q, { channelId, communityId })}
             />
           );
         }
-        if (def.key === 'translator') {
+        if (def.key === 'translate') {
           return (
-            <TranslatorPopover
+            <TranslatePopover
               key={def.key}
-              def={def}
+              accent={accent}
+              icon={<Icon className="h-4 w-4" />}
+              label={def.label}
               onTranslate={(text, target) => translateText(text, target)}
             />
           );
         }
-        if (def.key === 'support' && communityId) {
+        if (def.key === 'catchup') {
           return (
-            <SupportPopover
+            <AssistButton
               key={def.key}
-              def={def}
-              onAsk={(q) => askSupport(q, communityId, { channelId })}
+              accent={accent}
+              icon={isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
+              label={def.label}
+              onClick={runCatchUp}
+              disabled={!channelId || isBusy}
             />
           );
         }
-        return null;
+        if (def.key === 'spark') {
+          return (
+            <SparkPopover
+              key={def.key}
+              accent={accent}
+              icon={<Icon className="h-4 w-4" />}
+              label={def.label}
+              disabled={!channelId}
+              onSend={async (kind) => {
+                if (!channelId) return;
+                const r = await aiAgentService.sendEngagementContent(channelId, kind);
+                if (r?.success) {
+                  // Render each posted card immediately rather than waiting on
+                  // the socket echo (which can be missed when emitted from the
+                  // HTTP request thread). addLocalMessage dedups the echo if it
+                  // does arrive. A 'pack' posts several items (starter + poll +
+                  // icebreaker), each its own interactive card.
+                  const items = Array.isArray(r.items) ? r.items : [];
+                  for (const it of items) {
+                    if (!it?.message_id) continue;
+                    addLocalMessage({
+                      id: Number(it.message_id),
+                      channel_id: Number(it.channel_id ?? channelId),
+                      sender_id: 0,
+                      content: it.content || '',
+                      message_type: 'ai',
+                      created_at: it.created_at || new Date().toISOString(),
+                      author: it.author || 'Engagement Agent',
+                      card: it.card || undefined,
+                    } as Message);
+                  }
+                  toast({ title: 'Posted to the channel ✨', description: 'The engagement agent just shared something.' });
+                  onResultUpdated?.();
+                } else {
+                  toast({ title: 'Could not post', description: r?.error || 'Try again.', variant: 'destructive' });
+                }
+              }}
+            />
+          );
+        }
+        // knowledge
+        return (
+          <AssistButton
+            key={def.key}
+            accent={accent}
+            icon={<Icon className="h-4 w-4" />}
+            label={def.label}
+            onClick={openKnowledge}
+          />
+        );
       })}
     </div>
   );
 }
 
-// ────────────────────────────────────────────────────────────── sub-components
+/* ─── Subcomponents ───────────────────────────────────────────────── */
 
-function AgentButton({
-  label, tint, busy, icon, onClick, disabled,
-}: {
-  label: string; tint: string; busy: boolean;
-  icon: React.ReactNode; onClick: () => void; disabled?: boolean;
-}) {
+interface AssistButtonProps {
+  accent: string;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}
+
+function AssistButton({ accent, icon, label, onClick, disabled }: AssistButtonProps) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      disabled={busy || disabled}
+      disabled={disabled}
       title={label}
-      className={`group flex items-center gap-1.5 px-2.5 py-1.5 rounded-md
-        text-xs font-medium transition-all
-        hover:bg-background hover:shadow-sm
-        disabled:opacity-50 disabled:cursor-not-allowed
-        ${tint} shrink-0`}
+      className={
+        'group inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 ' +
+        'text-[12px] font-medium text-[hsl(var(--theme-text-secondary))] ' +
+        'transition-colors [transition-duration:140ms] ' +
+        'hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))] ' +
+        'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
+      }
     >
-      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : icon}
-      <span className="text-foreground hidden sm:inline">{label}</span>
+      <span style={{ color: accent }} className="inline-flex shrink-0 items-center">
+        {icon}
+      </span>
+      <span className="hidden sm:inline">{label}</span>
     </button>
   );
 }
 
-function AssistantPopover({
-  def, onAsk,
-}: { def: AgentDef; onAsk: (q: string) => Promise<any> }) {
-  const Icon = def.Icon;
+function AssistTrigger({
+  accent,
+  icon,
+  label,
+}: {
+  accent: string;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      className={
+        'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 ' +
+        'text-[12px] font-medium text-[hsl(var(--theme-text-secondary))] ' +
+        'transition-colors [transition-duration:140ms] ' +
+        'hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]'
+      }
+    >
+      <span style={{ color: accent }} className="inline-flex shrink-0 items-center">
+        {icon}
+      </span>
+      <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
+}
+
+function AskPopover({
+  accent,
+  icon,
+  label,
+  onAsk,
+}: {
+  accent: string;
+  icon: React.ReactNode;
+  label: string;
+  onAsk: (q: string) => Promise<any>;
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [a, setA] = useState<string | null>(null);
@@ -356,7 +417,7 @@ function AssistantPopover({
       const r = await onAsk(question);
       setA(r?.reply || 'No reply.');
     } catch (e: any) {
-      setA(`Error: ${e.message || 'failed'}`);
+      setA(`Error: ${e?.message || 'failed'}`);
     } finally {
       setLoading(false);
     }
@@ -365,39 +426,50 @@ function AssistantPopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium hover:bg-background hover:shadow-sm transition ${def.tint} shrink-0`}>
-          <Icon className="h-4 w-4" />
-          <span className="text-foreground hidden sm:inline">{def.label}</span>
-        </button>
+        <span>
+          <AssistTrigger accent={accent} icon={icon} label={label} />
+        </span>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-3" align="start">
+      <PopoverContent
+        align="start"
+        className="w-80 border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] p-3 shadow-none"
+      >
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold flex items-center gap-1.5">
-              <Sparkles className="h-4 w-4 text-violet-500" /> AI Assistant
-            </h4>
-            <Badge variant="secondary" className="text-[10px]">Beta</Badge>
-          </div>
+          <h4 className="flex items-center gap-1.5 text-[13px] font-semibold text-[hsl(var(--theme-text-primary))]">
+            <Sparkles className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
+            Ask the assistant
+          </h4>
           <div className="flex gap-2">
             <Input
               autoFocus
-              placeholder="Ask anything…"
+              placeholder="What do you want to know?"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
-              className="text-sm"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              className="h-8 text-[12px]"
             />
-            <Button size="sm" onClick={submit} disabled={loading || !q.trim()}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={submit}
+              disabled={loading || !q.trim()}
+              className="h-8 px-2"
+            >
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
             </Button>
           </div>
           {a && (
-            <div className="text-sm rounded-md border border-border/50 bg-muted/30 p-3 leading-relaxed whitespace-pre-wrap">
+            <div className="rounded border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] p-2.5 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))] whitespace-pre-wrap">
               {a}
             </div>
           )}
-          <p className="text-[10px] text-muted-foreground">
-            Tip: type <code className="px-1 bg-muted rounded">/ask &lt;question&gt;</code> in chat.
+          <p className="text-[10px] text-[hsl(var(--theme-text-muted))]">
+            Replies stay private to you until you choose to share.
           </p>
         </div>
       </PopoverContent>
@@ -405,10 +477,105 @@ function AssistantPopover({
   );
 }
 
-function TranslatorPopover({
-  def, onTranslate,
-}: { def: AgentDef; onTranslate: (text: string, target: string) => Promise<any> }) {
-  const Icon = def.Icon;
+function SparkPopover({
+  accent,
+  icon,
+  label,
+  disabled,
+  onSend,
+}: {
+  accent: string;
+  icon: React.ReactNode;
+  label: string;
+  disabled?: boolean;
+  onSend: (kind: 'starter' | 'poll' | 'icebreaker' | 'pack') => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const OPTIONS: {
+    kind: 'starter' | 'poll' | 'icebreaker' | 'pack';
+    label: string;
+    desc: string;
+    Icon: React.ComponentType<{ className?: string }>;
+  }[] = [
+    { kind: 'starter', label: 'Conversation starter', desc: 'A friendly question to get people talking', Icon: MessageSquare },
+    { kind: 'poll', label: 'Quick poll', desc: 'A tap-to-vote poll with a few options', Icon: BarChart3 },
+    { kind: 'icebreaker', label: 'Ice-breaker', desc: 'A short game or activity', Icon: Snowflake },
+    { kind: 'pack', label: 'Full starter pack', desc: 'Starter + poll + ice-breaker', Icon: PartyPopper },
+  ];
+
+  const run = async (kind: 'starter' | 'poll' | 'icebreaker' | 'pack') => {
+    setBusy(kind);
+    try {
+      await onSend(kind);
+      setOpen(false);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild disabled={disabled}>
+        <span>
+          <AssistTrigger accent={accent} icon={icon} label={label} />
+        </span>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-72 border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] p-2 shadow-none"
+      >
+        <h4 className="flex items-center gap-1.5 px-1.5 py-1 text-[13px] font-semibold text-[hsl(var(--theme-text-primary))]">
+          <Zap className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
+          Spark a conversation
+        </h4>
+        <p className="px-1.5 pb-1.5 text-[10px] text-[hsl(var(--theme-text-muted))]">
+          Posts into this channel for everyone to see.
+        </p>
+        <div className="space-y-1">
+          {OPTIONS.map((opt) => {
+            const isBusy = busy === opt.kind;
+            const OptIcon = opt.Icon;
+            return (
+              <button
+                key={opt.kind}
+                type="button"
+                disabled={!!busy}
+                onClick={() => run(opt.kind)}
+                className={
+                  'flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left ' +
+                  'transition-colors [transition-duration:140ms] ' +
+                  'hover:bg-[hsl(var(--theme-bg-hover))] disabled:opacity-50 disabled:cursor-not-allowed'
+                }
+              >
+                <span style={{ color: accent }} className="mt-0.5 inline-flex shrink-0 items-center">
+                  {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <OptIcon className="h-4 w-4" />}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[12px] font-medium text-[hsl(var(--theme-text-primary))]">{opt.label}</span>
+                  <span className="block text-[11px] leading-4 text-[hsl(var(--theme-text-muted))]">{opt.desc}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function TranslatePopover({
+  accent,
+  icon,
+  label,
+  onTranslate,
+}: {
+  accent: string;
+  icon: React.ReactNode;
+  label: string;
+  onTranslate: (text: string, target: string) => Promise<any>;
+}) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [target, setTarget] = useState('en');
@@ -424,7 +591,7 @@ function TranslatorPopover({
       const r = await onTranslate(t, target);
       setOut(r?.translated_text || '(no result)');
     } catch (e: any) {
-      setOut(`Error: ${e.message || 'failed'}`);
+      setOut(`Error: ${e?.message || 'failed'}`);
     } finally {
       setLoading(false);
     }
@@ -433,30 +600,40 @@ function TranslatorPopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium hover:bg-background hover:shadow-sm transition ${def.tint} shrink-0`}>
-          <Icon className="h-4 w-4" />
-          <span className="text-foreground hidden sm:inline">{def.label}</span>
-        </button>
+        <span>
+          <AssistTrigger accent={accent} icon={icon} label={label} />
+        </span>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-3" align="start">
+      <PopoverContent
+        align="start"
+        className="w-80 border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] p-3 shadow-none"
+      >
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold flex items-center gap-1.5">
-              <Languages className="h-4 w-4 text-cyan-500" /> Translator
-            </h4>
-          </div>
+          <h4 className="flex items-center gap-1.5 text-[13px] font-semibold text-[hsl(var(--theme-text-primary))]">
+            <Languages className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
+            Translate text
+          </h4>
           <textarea
-            placeholder="Text to translate…"
+            placeholder="Paste or type text to translate…"
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={3}
-            className="w-full text-sm rounded-md border border-border bg-background p-2 resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+            className={
+              'w-full resize-none rounded border border-[hsl(var(--theme-border-default))] ' +
+              'bg-[hsl(var(--theme-bg-secondary))] p-2 text-[12px] leading-5 ' +
+              'text-[hsl(var(--theme-text-primary))] focus:outline-none focus:ring-1 ' +
+              'focus:ring-[hsl(var(--theme-border-focus))]'
+            }
           />
           <div className="flex gap-2">
             <select
               value={target}
               onChange={(e) => setTarget(e.target.value)}
-              className="flex-1 text-sm rounded-md border border-border bg-background px-2 py-1.5"
+              className={
+                'flex-1 rounded border border-[hsl(var(--theme-border-default))] ' +
+                'bg-[hsl(var(--theme-bg-secondary))] px-2 py-1.5 text-[12px] ' +
+                'text-[hsl(var(--theme-text-primary))]'
+              }
             >
               <option value="en">English</option>
               <option value="ur">Urdu</option>
@@ -472,89 +649,21 @@ function TranslatorPopover({
               <option value="pt">Portuguese</option>
               <option value="bn">Bengali</option>
             </select>
-            <Button size="sm" onClick={submit} disabled={loading || !text.trim()}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={submit}
+              disabled={loading || !text.trim()}
+              className="h-8 px-3"
+            >
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Translate'}
             </Button>
           </div>
           {out && (
-            <div className="text-sm rounded-md border border-border/50 bg-muted/30 p-3 leading-relaxed whitespace-pre-wrap">
+            <div className="rounded border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] p-2.5 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))] whitespace-pre-wrap">
               {out}
             </div>
           )}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function SupportPopover({
-  def, onAsk,
-}: { def: AgentDef; onAsk: (q: string) => Promise<any> }) {
-  const Icon = def.Icon;
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
-  const [r, setR] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-
-  const submit = async () => {
-    const question = q.trim();
-    if (!question) return;
-    setLoading(true);
-    setR(null);
-    try {
-      setR(await onAsk(question));
-    } catch (e: any) {
-      setR({ matched: false, answer: `Error: ${e.message || 'failed'}` });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium hover:bg-background hover:shadow-sm transition ${def.tint} shrink-0`}>
-          <Icon className="h-4 w-4" />
-          <span className="text-foreground hidden sm:inline">{def.label}</span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-80 p-3" align="start">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold flex items-center gap-1.5">
-              <GraduationCap className="h-4 w-4 text-emerald-500" /> Knowledge Q&amp;A
-            </h4>
-          </div>
-          <div className="flex gap-2">
-            <Input
-              autoFocus
-              placeholder="Ask the knowledge base…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
-              className="text-sm"
-            />
-            <Button size="sm" onClick={submit} disabled={loading || !q.trim()}>
-              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            </Button>
-          </div>
-          {r && (
-            <div className="text-sm rounded-md border border-border/50 bg-muted/30 p-3 leading-relaxed whitespace-pre-wrap">
-              {r.answer}
-              {r.sources && r.sources.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-border/50 flex flex-wrap gap-1">
-                  {r.sources.map((s: any, i: number) => (
-                    <Badge key={i} variant="outline" className="text-[10px]">
-                      {s.title || `KB #${s.id}`}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          <p className="text-[10px] text-muted-foreground">
-            Powered by your community's Knowledge Base.
-          </p>
         </div>
       </PopoverContent>
     </Popover>

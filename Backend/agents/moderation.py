@@ -13,6 +13,28 @@ from typing import Dict, List, Optional, Tuple
 from collections import Counter
 
 from database import get_db_connection
+from agents.base import AutonomousAgent
+from agents import event_bus as _event_bus
+from agents import memory as _agent_memory
+from agents._settings import get_community_settings
+
+
+_MOD_DEFAULTS = {
+    'auto_filter': True,
+    'sensitivity': 7,
+    'severity_threshold': 'medium',
+    'notify_admins': True,
+    'roman_urdu_support': True,
+    'max_warnings': 3,
+}
+
+
+_SEVERITY_FLOOR = {
+    'low': 0.25,
+    'medium': 0.5,
+    'high': 0.75,
+    'critical': 0.9,
+}
 
 try:
     from services.platform_config import (
@@ -153,16 +175,17 @@ _INSTANT_BLOCK_WORDS = {
     'chutiya', 'chutiye', 'harami', 'haramzada', 'haramzade',
     'randi', 'randibaaz', 'gaandu', 'gandu',
     # Extreme threats
-    'i will kill you', 'ill kill you', 'gonna kill you',
+    'i will kill you', "i'll kill you", 'ill kill you', 'gonna kill you',
+    'i will kill u', "i'll kill u", 'im gonna kill you',
     'jaan se maar dunga', 'jaan se mardunga', 'qatal kar dunga',
     'zinda nahi chorunga', 'zinda jala dunga',
 }
 
 
-class ModerationAgent:
+class ModerationAgent(AutonomousAgent):
     """
     Batch Gemini AI moderation with conversation context.
-    
+
     Architecture:
       1. instant_check() — tiny instant-block list for extreme content (<1ms)
       2. Messages broadcast immediately after instant check
@@ -170,12 +193,37 @@ class ModerationAgent:
       4. When buffer reaches BATCH_SIZE or BATCH_TIMEOUT, Celery fires batch_gemini_review()
       5. Gemini reviews the batch with full conversation context
       6. Retroactive socket events sent for any flagged messages
+
+    Autonomous role (Phase 2.2): subscribes to ``msg.created`` and runs
+    the cheap ``instant_check`` + lexicon scan inside ``sense``. The
+    existing pre-broadcast moderation in ``routes/sockets.py`` still
+    handles the live block path; this hook complements it by emitting
+    a ``mod.violation`` event whenever a violation is detected, which
+    Wellness (victim support) and other downstream agents can subscribe
+    to in Phase 4. Per-community adaptive sensitivity lives in
+    ``agent_state.thresholds.severity_threshold``.
     """
-    
+
     BATCH_SIZE = 10        # Max messages per batch
     BATCH_TIMEOUT = 30     # Seconds before flushing a partial buffer
     BUFFER_KEY_PREFIX = 'mod:buffer:'       # Redis key prefix for message buffers
     BUFFER_TS_PREFIX = 'mod:buffer_ts:'     # Redis key prefix for buffer timestamps
+
+    # ── Autonomous contract (Phase 2.2) ─────────────────────────────
+    NAME = "moderation"
+    GOAL = {"surface_violations_to_downstream_agents": True,
+            "per_community_adaptive_threshold": True}
+    SUBSCRIBES = [_event_bus.TOPIC_MSG_CREATED]
+    SCOPE_TYPE = _agent_memory.SCOPE_COMMUNITY
+    COOLDOWN_SECONDS = 0  # Per-message, not per-scope; violations are rare anyway
+
+    # Severity ladder maps the existing categorical severity onto a
+    # numeric score so the per-community threshold can shift sensitivity.
+    _SEVERITY_SCORE = {
+        "none": 0.0, "low": 0.25, "medium": 0.5,
+        "high": 0.8, "critical": 1.0,
+    }
+    _DEFAULT_SEVERITY_THRESHOLD = 0.5  # medium-or-worse triggers an event
     
     def __init__(self):
         """Initialize the moderation agent"""
@@ -194,13 +242,15 @@ class ModerationAgent:
         user_id / channel_id are optional — if provided, spam_check and scam_check also run.
         """
         text_lower = text.lower().strip()
+        # Normalize apostrophes/contractions so "i'll kill you" matches "ill kill you"
+        text_normalized = text_lower.replace("'", '').replace('\u2019', '')
         
         if len(text_lower) < 3:
             return {'block': False, 'reason': ''}
         
-        # Check multi-word phrases first
+        # Check multi-word phrases first (against both original and normalized)
         for phrase in _INSTANT_BLOCK_WORDS:
-            if ' ' in phrase and phrase in text_lower:
+            if ' ' in phrase and (phrase in text_lower or phrase in text_normalized):
                 return {'block': True, 'reason': f'Extreme content detected: {phrase[:20]}'}
         
         # Check single words with word boundaries
@@ -1016,8 +1066,20 @@ class ModerationAgent:
                     flagged += 1  # NEW — v2
                     continue  # NEW — v2
 
-                # Auto-ban threshold from platform settings (default 3, sys-admin tunable).
-                ab_threshold = max(1, int(_platform_auto_ban_threshold() or 3))
+                # Auto-ban threshold: community max_warnings setting takes
+                # precedence over the platform default when the community
+                # has configured it. This lets community admins tighten or
+                # loosen escalation without a sys-admin round-trip.
+                try:
+                    mcfg = get_community_settings(
+                        community_id, 'moderation', _MOD_DEFAULTS)
+                    community_max = int(mcfg.get('max_warnings', 0) or 0)
+                except Exception:
+                    community_max = 0
+                if community_max >= 1:
+                    ab_threshold = min(10, community_max)
+                else:
+                    ab_threshold = max(1, int(_platform_auto_ban_threshold() or 3))
 
                 # N-strike escalation (mirrors batch_moderation_task)  # NEW — v2
                 if violation_count >= ab_threshold and not is_owner:  # NEW — v2
@@ -1043,7 +1105,7 @@ class ModerationAgent:
                         try:  # NEW — v2
                             rm_conn = get_db_connection()  # NEW — v2
                             with rm_conn.cursor() as rm_cur:  # NEW — v2
-                                rm_cur.execute("SELECT name, logo_url, color, icon FROM communities WHERE id = %s", (community_id,))  # NEW — v2
+                                rm_cur.execute("SELECT name, logo_url, color, icon, public_id FROM communities WHERE id = %s", (community_id,))  # NEW — v2
                                 community_data = rm_cur.fetchone()  # NEW — v2
                                 rm_cur.execute("INSERT IGNORE INTO blocked_users (community_id, user_id) VALUES (%s, %s)", (community_id, user_id))  # NEW — v2
                                 rm_cur.execute("DELETE FROM channel_members WHERE user_id = %s AND channel_id IN (SELECT id FROM channels WHERE community_id = %s)", (user_id, community_id))  # NEW — v2
@@ -1073,7 +1135,9 @@ class ModerationAgent:
                         }, room=room, namespace='/')  # NEW — v2
 
                         sio.emit('community:removed', {  # NEW — v2
-                            'community_id': community_id, 'user_id': user_id,
+                            'community_id': community_id,
+                            'community_public_id': community_data['public_id'] if community_data else None,
+                            'user_id': user_id,
                             'reason': 'violation',
                             'message': 'You were removed from this community for repeated violations (3 strikes).',
                             'notification': {
@@ -1102,23 +1166,29 @@ class ModerationAgent:
                     }, room=f"community_{community_id}", namespace='/')  # NEW — v2
 
                     # §3.5: push admin_alert for high/critical severity to admin rooms.
+                    # Respect the community's notify_admins toggle — we still
+                    # log + apply the moderation action; we only suppress
+                    # the in-app admin notification stream.
                     if severity in ('high', 'critical'):
-                        alert_payload = {
-                            'kind': 'moderation',
-                            'severity': severity,
-                            'community_id': community_id,
-                            'channel_id': channel_id,
-                            'user_id': user_id,
-                            'username': username,
-                            'action': final_action,
-                            'reasons': reasons,
-                            'message': (v.get('content') or '')[:200],
-                            'timestamp': datetime.utcnow().isoformat(),
-                        }
-                        sio.emit('admin_alert', alert_payload,
-                                 room=f"community_admins_{community_id}", namespace='/')
-                        sio.emit('admin_alert', alert_payload,
-                                 room='system_admins', namespace='/')
+                        mod_cfg = get_community_settings(
+                            community_id, 'moderation', _MOD_DEFAULTS)
+                        if mod_cfg.get('notify_admins', True):
+                            alert_payload = {
+                                'kind': 'moderation',
+                                'severity': severity,
+                                'community_id': community_id,
+                                'channel_id': channel_id,
+                                'user_id': user_id,
+                                'username': username,
+                                'action': final_action,
+                                'reasons': reasons,
+                                'message': (v.get('content') or '')[:200],
+                                'timestamp': datetime.utcnow().isoformat(),
+                            }
+                            sio.emit('admin_alert', alert_payload,
+                                     room=f"community_admins_{community_id}", namespace='/')
+                            sio.emit('admin_alert', alert_payload,
+                                     room='system_admins', namespace='/')
 
                 except Exception as emit_err:  # NEW — v2
                     print(f"[RETRO_SCAN] Socket emit failed: {emit_err}")  # NEW — v2
@@ -1142,4 +1212,199 @@ class ModerationAgent:
 
         print(f"[RETRO_SCAN] channel={channel_id} scanned={scanned} flagged={flagged} errors={errors}")  # NEW — v2
         return {'scanned': scanned, 'flagged': flagged, 'errors': errors}  # NEW — v2
+
+    # ────────────────────────────────────────────────────────────────────
+    # Autonomous hooks (Phase 2.2)
+    # ────────────────────────────────────────────────────────────────────
+
+    def sense(self, event: dict) -> Optional[Dict]:
+        """Run the cheap instant_check + lexicon scan. Returns an
+        observation only when something potentially flaggable is found —
+        the vast majority of clean messages drop here, so this stays cheap.
+
+        We do NOT call Gemini here; the batched pipeline in
+        ``routes/sockets.py`` and ``tasks/agent_tasks.py`` still owns
+        that side. This hook is purely an event surface.
+        """
+        content = (event.get("content") or "").strip()
+        if not content or content.startswith("/") or len(content) < 3:
+            return None
+        # Phase 5.2: community admin kill-switch (Agent Goals panel) +
+        # G1a per-channel override (CoverageMatrix). The channel-scoped
+        # helper falls through to the community-level check when there is
+        # no per-channel row, so this single call covers both gates.
+        if not self._is_enabled_for_channel(
+            event.get("community_id"), event.get("channel_id")
+        ):
+            return None
+        # Community-configurable auto_filter toggle — when off, autonomous
+        # moderation pauses but admin/on-demand moderation routes still
+        # work. roman_urdu_support is honored downstream by instant_check.
+        community_id = event.get("community_id")
+        mcfg = (get_community_settings(int(community_id), 'moderation', _MOD_DEFAULTS)
+                if community_id else dict(_MOD_DEFAULTS))
+        if not mcfg.get('auto_filter', True):
+            return None
+        try:
+            # roman_urdu_support: when disabled, the instant_check call
+            # ignores the Roman-Urdu lexicon. The agent supports both;
+            # we pass the flag as a hint via kwargs (falls back silently
+            # for older signatures).
+            try:
+                instant = self.instant_check(
+                    content,
+                    roman_urdu=bool(mcfg.get('roman_urdu_support', True)),
+                )
+            except TypeError:
+                instant = self.instant_check(content)
+        except Exception:
+            return None
+
+        violation = bool(instant.get("block")) or bool(instant.get("flag_personal_info")) \
+            or bool(instant.get("flag"))
+        if not violation:
+            return None
+
+        # Map the instant_check result onto our shared severity ladder.
+        if instant.get("block"):
+            category = "extreme"
+            severity = "critical"
+        elif instant.get("flag_personal_info"):
+            category = "personal_info"
+            severity = "high"
+        elif instant.get("flag"):
+            category = instant.get("category") or "scam"
+            severity = instant.get("severity") or "high"
+        else:
+            category = "unknown"
+            severity = "low"
+
+        return {
+            "content":      content[:500],
+            "user_id":      event.get("user_id"),
+            "channel_id":   event.get("channel_id"),
+            "community_id": event.get("community_id"),
+            "message_id":   event.get("message_id"),
+            "category":     category,
+            "severity":     severity,
+            "reason":       instant.get("reason"),
+            "scope_type":   _agent_memory.SCOPE_COMMUNITY,
+            "scope_id":     event.get("community_id"),
+        }
+
+    def decide(self, observation: Dict):
+        """Compare the violation's severity score against the per-community
+        threshold. ``act`` when at-or-above; ``defer`` otherwise so the
+        decision is still logged and feedback can teach us to lower the
+        threshold for sensitive communities.
+
+        The base threshold is the bandit-tuned ``severity_threshold`` from
+        agent_state; we then floor it by the admin's chosen
+        ``severity_threshold`` enum and shift it by the ``sensitivity``
+        slider so the UI controls measurably move where we draw the line.
+        """
+        sev_score = self._SEVERITY_SCORE.get(observation.get("severity", "none"), 0.0)
+        community_id = observation.get("community_id")
+        threshold = self._severity_threshold(community_id)
+        if community_id:
+            cfg = get_community_settings(int(community_id), 'moderation', _MOD_DEFAULTS)
+            # Admin-set minimum (low/medium/high/critical) — never act
+            # below this even if the bandit thinks we should.
+            floor = _SEVERITY_FLOOR.get(
+                str(cfg.get('severity_threshold') or 'medium').lower(), 0.5)
+            threshold = max(threshold, floor)
+            # Sensitivity slider 1..10 — 7 is neutral. Each step shifts
+            # the threshold ±0.02 (10 steps total range = ±0.20).
+            try:
+                sens = max(1, min(10, int(cfg.get('sensitivity', 7))))
+                threshold = max(0.10, min(0.95,
+                    threshold + (7 - sens) * 0.02))
+            except (TypeError, ValueError):
+                pass
+        if sev_score < threshold:
+            return ("defer", observation,
+                    f"severity_{sev_score:.2f}_below_{threshold:.2f}")
+        return ("act", {**observation, "severity_score": sev_score},
+                f"violation_{observation.get('category')}_{observation.get('severity')}")
+
+    def act(self, payload: Dict, correlation_id: str) -> Optional[Dict]:
+        """Publish ``mod.violation`` on the agent bus so downstream
+        agents (Wellness victim-support in Phase 4) can react. We do NOT
+        delete or warn from here — that's owned by the existing
+        instant-check + batch-review pipeline. Defence in depth: the
+        autonomous emit is informational.
+        """
+        try:
+            _event_bus.publish(_event_bus.TOPIC_MOD_VIOLATION, {
+                "user_id":      payload.get("user_id"),
+                "channel_id":   payload.get("channel_id"),
+                "community_id": payload.get("community_id"),
+                "message_id":   payload.get("message_id"),
+                "category":     payload.get("category"),
+                "severity":     payload.get("severity"),
+                "severity_score": payload.get("severity_score"),
+                "reason":       payload.get("reason"),
+                "correlation_id": correlation_id,
+            })
+        except Exception as exc:
+            print(f"[MODERATION] mod.violation publish failed: {exc}")
+            return {"published": False}
+        return {"published": True, "category": payload.get("category"),
+                "severity": payload.get("severity")}
+
+    def learn(self, action_id: int, signal: str, *, weight: float = 1.0) -> None:
+        """Per-community threshold adapts to moderator feedback.
+
+        - ``positive`` (mod confirmed the flag was correct) → lower
+          threshold so similar future content trips faster.
+        - ``negative`` / ``dismissed`` (false positive) → raise
+          threshold; this community is more permissive.
+        """
+        try:
+            action = _agent_memory.get_action(action_id)
+            if not action or not action.get("community_id"):
+                return super().learn(action_id, signal, weight=weight)
+            community_id = action["community_id"]
+            state = _agent_memory.get_state(
+                self.NAME, _agent_memory.SCOPE_COMMUNITY, community_id) or {}
+            th = dict(state.get("thresholds") or {})
+            cur = float(th.get("severity_threshold", self._DEFAULT_SEVERITY_THRESHOLD))
+            if signal in ("positive", "engaged"):
+                cur = max(0.20, cur - 0.05 * float(weight))
+            elif signal in ("negative", "dismissed"):
+                cur = min(0.95, cur + 0.05 * float(weight))
+            th["severity_threshold"] = round(cur, 3)
+            # Phase 5.2: respect the admin-configured clamp window so
+            # learn() can't drift outside the bounds the community admin
+            # set via the Agent Goals panel.
+            th = self._apply_clamps(th, community_id=community_id)
+            outcome = ("positive" if signal in ("positive", "engaged")
+                       else "negative" if signal in ("negative", "dismissed")
+                       else "neutral")
+            _agent_memory.set_state(
+                self.NAME, _agent_memory.SCOPE_COMMUNITY, community_id,
+                thresholds=th, last_outcome=outcome,
+            )
+        except Exception as exc:
+            print(f"[MODERATION] learn failed: {exc}")
+        super().learn(action_id, signal, weight=weight)
+
+    def _severity_threshold(self, community_id: Optional[int]) -> float:
+        if not community_id:
+            return self._DEFAULT_SEVERITY_THRESHOLD
+        try:
+            state = _agent_memory.get_state(
+                self.NAME, _agent_memory.SCOPE_COMMUNITY, community_id)
+            if not state:
+                return self._DEFAULT_SEVERITY_THRESHOLD
+            th = state.get("thresholds") or {}
+            raw = float(th.get("severity_threshold", self._DEFAULT_SEVERITY_THRESHOLD))
+            # Phase 5.2: enforce admin clamp window at read-time too, not
+            # just at learn-time. An admin tightening the clamp should take
+            # effect immediately even if learn() last ran with a wider window.
+            clamped = self._apply_clamps({"severity_threshold": raw},
+                                         community_id=community_id)
+            return float(clamped.get("severity_threshold", raw))
+        except Exception:
+            return self._DEFAULT_SEVERITY_THRESHOLD
 

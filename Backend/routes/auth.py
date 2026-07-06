@@ -91,11 +91,11 @@ def signup():
             
             cur.execute(
                 """
-                INSERT INTO users (email, display_name, username, password, avatar_url, is_first_login,
+                INSERT INTO users (public_id, email, display_name, username, password, avatar_url, is_first_login,
                                    email_verified, email_verification_token, email_verification_expires)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (email, display_name or username, username, hashed, avatar_url, 1,
+                (str(uuid.uuid4()), email, display_name or username, username, hashed, avatar_url, 1,
                  0, verification_token, verification_expires)
             )
         conn.commit()
@@ -353,7 +353,9 @@ def get_me():
             ns_row = cur2.fetchone()
             if ns_row:
                 user_data['notification_settings'] = {
-                    col: bool(ns_row[col]) if col != 'email_batch_interval_minutes' else ns_row[col]
+                    col: bool(ns_row.get(col, NOTIFICATION_DEFAULTS[col]))
+                    if col != 'email_batch_interval_minutes'
+                    else ns_row.get(col, NOTIFICATION_DEFAULTS[col])
                     for col in NOTIFICATION_COLUMNS
                 }
             else:
@@ -853,7 +855,7 @@ def revoke_all_sessions_endpoint():
 # All columns in user_notification_settings (except PKs and timestamps)
 NOTIFICATION_COLUMNS = [
     "notify_direct_messages", "notify_channel_messages", "notify_friend_requests",
-    "notify_friend_online", "notification_sounds",
+    "notify_friend_online", "notification_sounds", "show_agent_activity",
     "email_alerts_enabled", "email_dms_and_calls", "email_community_messages",
     "email_agent_notifications", "email_agent_summaries", "email_batch_interval_minutes",
 ]
@@ -864,6 +866,9 @@ NOTIFICATION_DEFAULTS = {
     "notify_friend_requests": True,
     "notify_friend_online": False,
     "notification_sounds": True,
+    # Off by default: new accounts never see the floating agent-activity panel
+    # until they opt in from Settings → AI Agents.
+    "show_agent_activity": False,
     "email_alerts_enabled": True,
     "email_dms_and_calls": True,
     "email_community_messages": False,
@@ -896,7 +901,9 @@ def get_notification_settings():
                 conn.commit()
                 result = dict(NOTIFICATION_DEFAULTS)
             else:
-                result = {col: bool(row[col]) if col != 'email_batch_interval_minutes' else row[col]
+                result = {col: bool(row.get(col, NOTIFICATION_DEFAULTS[col]))
+                          if col != 'email_batch_interval_minutes'
+                          else row.get(col, NOTIFICATION_DEFAULTS[col])
                           for col in NOTIFICATION_COLUMNS}
     finally:
         conn.close()
@@ -953,7 +960,9 @@ def update_notification_settings():
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM user_notification_settings WHERE user_id = %s", (user_id,))
             row = cur.fetchone()
-            result = {col: bool(row[col]) if col != 'email_batch_interval_minutes' else row[col]
+            result = {col: bool(row.get(col, NOTIFICATION_DEFAULTS[col]))
+                      if col != 'email_batch_interval_minutes'
+                      else row.get(col, NOTIFICATION_DEFAULTS[col])
                       for col in NOTIFICATION_COLUMNS}
     except Exception as e:
         logging.error(f"[NOTIF SETTINGS] Update failed: {e}")

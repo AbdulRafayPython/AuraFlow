@@ -22,6 +22,16 @@ import threading
 from typing import Dict, Optional, Tuple
 
 from database import get_db_connection
+from agents.base import AutonomousAgent
+from agents import event_bus as _event_bus
+from agents._settings import get_personal_settings
+
+
+_TRANSLATOR_DEFAULTS = {
+    'default_target': 'en',
+    'auto_detect': True,
+    'cache_enabled': True,
+}
 
 # Primary engine: deep-translator (sync, no async loop required).
 try:
@@ -69,8 +79,21 @@ _ROMAN_URDU_HINTS = re.compile(
 )
 
 
-class TranslatorAgent:
-    """Translate chat messages between supported languages."""
+class TranslatorAgent(AutonomousAgent):
+    """Translate chat messages between supported languages.
+
+    Autonomous role (Phase 1.1): subscribes to ``msg.created`` and, when
+    it detects a non-English message that *might* benefit from auto-
+    translation, publishes a ``lang.detected`` event so siblings
+    (Assistant, Support) can adapt their language. Translator does NOT
+    auto-post inline translations in Phase 1 — that requires the
+    frontend chip work in Phase 4. For now, ``act`` is detection-only.
+    """
+
+    NAME = "translator"
+    GOAL = {"detect_non_english_messages_for_routing": True}
+    SUBSCRIBES = [_event_bus.TOPIC_MSG_CREATED]
+    COOLDOWN_SECONDS = 5   # per-channel: don't spam lang.detected events
 
     def __init__(self):
         self.cache_ttl_seconds = 60 * 60 * 24  # 1 day in-memory cache
@@ -144,15 +167,44 @@ class TranslatorAgent:
         text: str,
         target_language: str = 'en',
         source_language: str = 'auto',
+        user_id: Optional[int] = None,
     ) -> Dict:
         """Translate ``text`` to ``target_language``. Returns a result dict.
 
         Always returns a dict — never raises. On hard failure ``provider`` is
         ``none`` and ``translated_text`` equals the input.
+
+        ``user_id`` is optional; when provided we honor the per-user
+        ``translator`` settings row (``default_target``, ``auto_detect``,
+        ``cache_enabled``). Missing/falsey ``user_id`` keeps the legacy
+        behaviour so socket and event-bus call sites that have no user
+        context stay unchanged.
         """
+        cfg = get_personal_settings(user_id, 'translator', _TRANSLATOR_DEFAULTS) \
+            if user_id else dict(_TRANSLATOR_DEFAULTS)
+
         text = (text or '').strip()
-        target = self._normalize_target(target_language)
-        source = (source_language or 'auto').strip() or 'auto'
+        # Fall back to the user's configured default when the caller didn't
+        # pin a target. The caller can still force 'en' by passing it
+        # explicitly.
+        if not target_language or target_language == 'en':
+            # Treat the legacy default 'en' as "no preference" so the user's
+            # configured default_target takes effect.
+            effective_target = cfg.get('default_target') or 'en' if user_id else target_language
+        else:
+            effective_target = target_language
+        target = self._normalize_target(effective_target or 'en')
+
+        # Honor auto_detect=false by pinning source to the user's default
+        # target language family — caller can still override with an
+        # explicit source.
+        raw_source = (source_language or 'auto').strip() or 'auto'
+        if raw_source == 'auto' and user_id and not cfg.get('auto_detect', True):
+            # If detection is disabled, treat source as English unless the
+            # user configured a non-en default_target (in which case use that
+            # as the source assumption). Cheap, predictable, no API call.
+            raw_source = 'en'
+        source = raw_source
 
         if not text:
             return {
@@ -164,9 +216,11 @@ class TranslatorAgent:
             }
 
         cache_key = (text, source, target)
-        cached = self._cache_get(cache_key)
-        if cached is not None:
-            return {**cached, 'cached': True}
+        cache_enabled = bool(cfg.get('cache_enabled', True))
+        if cache_enabled:
+            cached = self._cache_get(cache_key)
+            if cached is not None:
+                return {**cached, 'cached': True}
 
         # Engine 1: deep-translator
         if _DEEP_AVAILABLE:
@@ -180,7 +234,8 @@ class TranslatorAgent:
                         'provider': 'deep_translator',
                         'cached': False,
                     }
-                    self._cache_put(cache_key, result)
+                    if cache_enabled:
+                        self._cache_put(cache_key, result)
                     return result
             except Exception as exc:
                 # Fall through to googletrans
@@ -201,7 +256,8 @@ class TranslatorAgent:
                         'provider': 'googletrans',
                         'cached': False,
                     }
-                    self._cache_put(cache_key, result)
+                    if cache_enabled:
+                        self._cache_put(cache_key, result)
                     return result
             except Exception as exc:
                 print(f"[TRANSLATOR] googletrans failed: {exc}")
@@ -241,7 +297,11 @@ class TranslatorAgent:
             channel_id = row['channel_id'] if isinstance(row, dict) else row[3]
             community_id = row['community_id'] if isinstance(row, dict) else row[4]
 
-            result = self.translate(content or '', target_language=target_language)
+            result = self.translate(
+                content or '',
+                target_language=target_language,
+                user_id=user_id,
+            )
 
             # Log to ai_agent_logs (best-effort).
             try:
@@ -272,3 +332,65 @@ class TranslatorAgent:
 
     def supported_languages(self) -> Dict[str, str]:
         return dict(SUPPORTED_LANGUAGES)
+
+    # ────────────────────────────────────────────────────────────────────
+    # Autonomous hooks (Phase 1.1)
+    # ────────────────────────────────────────────────────────────────────
+
+    def sense(self, event: dict) -> Optional[dict]:
+        """Pre-filter: only consider plain text messages long enough to
+        be worth language-detecting (≥ 6 chars, no leading slash)."""
+        content = (event.get("content") or "").strip()
+        if len(content) < 6 or content.startswith("/"):
+            return None
+        # G1a per-channel override (CoverageMatrix). Falls through to
+        # community-level kill-switch via base.py helper.
+        if not self._is_enabled_for_channel(
+            event.get("community_id"), event.get("channel_id")
+        ):
+            return None
+        return {
+            "content":      content[:500],
+            "channel_id":   event.get("channel_id"),
+            "community_id": event.get("community_id"),
+            "user_id":      event.get("user_id"),
+            "message_id":   event.get("message_id"),
+            # convenience handle for the base class cooldown
+            "scope_type":   "channel",
+            "scope_id":     event.get("channel_id"),
+        }
+
+    def decide(self, observation: dict):
+        """Skip when the heuristic detector says English. Otherwise act."""
+        det = self.detect_language(observation["content"])
+        lang = (det or {}).get("language") or "en"
+        if lang == "en":
+            return ("skip", {"language": lang}, "english_message")
+        if (det or {}).get("confidence", 0) < 0.4:
+            return ("skip", {"language": lang}, f"low_confidence_{lang}")
+        return ("act", {
+            "language":    lang,
+            "confidence":  det.get("confidence"),
+            "romanized":   det.get("romanized", False),
+            "message_id":  observation.get("message_id"),
+            "channel_id":  observation.get("channel_id"),
+            "community_id": observation.get("community_id"),
+            "user_id":     observation.get("user_id"),
+        }, f"detected_{lang}")
+
+    def act(self, payload: dict, correlation_id: str) -> Optional[dict]:
+        """Publish lang.detected for siblings; do NOT auto-translate yet."""
+        try:
+            _event_bus.publish(_event_bus.TOPIC_LANG_DETECTED, {
+                "language":     payload.get("language"),
+                "confidence":   payload.get("confidence"),
+                "romanized":    payload.get("romanized", False),
+                "message_id":   payload.get("message_id"),
+                "channel_id":   payload.get("channel_id"),
+                "community_id": payload.get("community_id"),
+                "user_id":      payload.get("user_id"),
+                "correlation_id": correlation_id,
+            })
+        except Exception:
+            pass
+        return {"published": True, "language": payload.get("language")}

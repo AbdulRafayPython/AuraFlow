@@ -262,6 +262,56 @@ def invalidate_member_role(community_id, user_id):
     cache_delete(f"member_role:{community_id}:{user_id}")
 
 
+# ── Community public_id <-> internal id Cache ─────────────────────────
+# Communities are addressed externally (URLs, API) by an opaque UUID
+# `public_id`, but internally (FKs, joins, Socket.IO rooms) by the int `id`.
+# The mapping is immutable once a community is created, so a long TTL is safe.
+
+def get_community_id_by_public_id(public_id):
+    """Return cached internal int id for a public_id, or None if not in cache."""
+    return cache_get(f"community_pid:{public_id}")
+
+
+def set_community_id_by_public_id(public_id, community_id):
+    """Cache public_id -> internal id (TTL=3600s)."""
+    cache_set(f"community_pid:{public_id}", community_id, ttl=3600)
+
+
+def get_community_public_id(community_id):
+    """Return cached public_id for an internal int id, or None if not in cache."""
+    return cache_get(f"community_id_pid:{community_id}")
+
+
+def set_community_public_id(community_id, public_id):
+    """Cache internal id -> public_id (TTL=3600s)."""
+    cache_set(f"community_id_pid:{community_id}", public_id, ttl=3600)
+
+
+# ── User public_id <-> internal id Cache ───────────────────────────────
+# Same rationale as communities: users are addressed externally (DM URLs,
+# API) by an opaque UUID `public_id`, internally by the int `id`. The
+# mapping is immutable once an account is created, so a long TTL is safe.
+
+def get_user_id_by_public_id(public_id):
+    """Return cached internal int id for a user public_id, or None if not in cache."""
+    return cache_get(f"user_pid:{public_id}")
+
+
+def set_user_id_by_public_id(public_id, user_id):
+    """Cache public_id -> internal id (TTL=3600s)."""
+    cache_set(f"user_pid:{public_id}", user_id, ttl=3600)
+
+
+def get_user_public_id(user_id):
+    """Return cached public_id for an internal int user id, or None if not in cache."""
+    return cache_get(f"user_id_pid:{user_id}")
+
+
+def set_user_public_id(user_id, public_id):
+    """Cache internal id -> public_id (TTL=3600s)."""
+    cache_set(f"user_id_pid:{user_id}", public_id, ttl=3600)
+
+
 # ── Channel Message Cache ─────────────────────────────────────────────────────
 # Stores the last 100 messages per channel as a Redis List (newest = head).
 # Key: channel_msgs:{channel_id}  |  TTL: 30 min (refreshed on every push)

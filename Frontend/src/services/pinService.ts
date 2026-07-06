@@ -90,7 +90,9 @@ class PinService {
   async pinMessage(channelId: number, messageId: number, durationMinutes: PinDurationMinutes): Promise<{
     pin_id: number; expires_at: string; pinned_by: string; pinned_by_user_id: number;
   }> {
-    const { data } = await axios.post(`${API_URL}/pins/pin`, {
+    const { data } = await axios.post<{
+      pin_id: number; expires_at: string; pinned_by: string; pinned_by_user_id: number;
+    }>(`${API_URL}/pins/pin`, {
       channel_id: channelId,
       message_id: messageId,
       duration_minutes: durationMinutes,
@@ -125,7 +127,9 @@ class PinService {
   async pinDMMessage(otherUserId: number, messageId: number, durationMinutes: PinDurationMinutes): Promise<{
     pin_id: number; expires_at: string; pinned_by: string; pinned_by_user_id: number;
   }> {
-    const { data } = await axios.post(`${API_URL}/pins/dm/pin`, {
+    const { data } = await axios.post<{
+      pin_id: number; expires_at: string; pinned_by: string; pinned_by_user_id: number;
+    }>(`${API_URL}/pins/dm/pin`, {
       message_id: messageId,
       other_user_id: otherUserId,
       duration_minutes: durationMinutes,

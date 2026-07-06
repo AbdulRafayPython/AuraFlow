@@ -21,7 +21,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export interface UnreadState {
   channels: Record<number, number>;
-  communities: Record<number, number>;
+  communities: Record<string, number>;
   dms: Record<number, number>;
   totalChannelUnread: number;
   totalDMUnread: number;
@@ -61,7 +61,7 @@ export function useUnreadCounts() {
     }) => {
       console.log(`[UNREAD-HOOK] 🔄 handleInitialUnreads called:`, JSON.stringify(data));
       const channels: Record<number, number> = {};
-      const communities: Record<number, number> = {};
+      const communities: Record<string, number> = {};
       const dms: Record<number, number> = {};
       let totalChannel = 0;
       let totalDM = 0;
@@ -71,7 +71,7 @@ export function useUnreadCounts() {
         totalChannel += count;
       }
       for (const [id, count] of Object.entries(data.communities || {})) {
-        communities[Number(id)] = count;
+        communities[id] = count;
       }
       for (const [id, count] of Object.entries(data.dms || {})) {
         dms[Number(id)] = count;
@@ -102,7 +102,7 @@ export function useUnreadCounts() {
   const handleChannelActivity = useCallback(
     (data: {
       channel_id: number;
-      community_id: number;
+      community_id: string;
       sender_id: number;
       message_id: number;
     }) => {
@@ -186,7 +186,7 @@ export function useUnreadCounts() {
   const handleUnreadUpdate = useCallback(
     (data: {
       channel_id?: number;
-      community_id?: number;
+      community_id?: string;
       channel_unread?: number;
       community_unread?: number;
       total_unread?: number;
@@ -272,7 +272,7 @@ export function useUnreadCounts() {
   // ── Mark-as-read helpers (optimistic + emit) ────────────────────────
 
   const markChannelRead = useCallback(
-    (channelId: number, communityId?: number, messageId?: number) => {
+    (channelId: number, communityId?: string, messageId?: number) => {
       socketService.markChannelRead(channelId, messageId);
       setState((prev) => {
         const oldCount = prev.channels[channelId] || 0;
@@ -318,7 +318,7 @@ export function useUnreadCounts() {
   );
 
   const getCommunityUnread = useCallback(
-    (communityId: number) => stateRef.current.communities[communityId] || 0,
+    (communityId: string) => stateRef.current.communities[communityId] || 0,
     [],
   );
 

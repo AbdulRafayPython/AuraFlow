@@ -238,7 +238,7 @@ export function KnowledgePanel({ channelId, channelName, onClose }: KnowledgePan
   ];
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[380px] z-50 flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-l border-[hsl(var(--theme-border-default)/0.5)] shadow-2xl animate-in slide-in-from-right duration-200">
+    <div className="fixed inset-y-0 right-0 w-full sm:w-[380px] z-50 flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-l border-[hsl(var(--theme-border-default)/0.5)] shadow-2xl animate-in slide-in-from-right duration-200 pt-safe pb-safe">
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--theme-border-default)/0.3)]">

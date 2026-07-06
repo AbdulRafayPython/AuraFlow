@@ -57,7 +57,7 @@ type StatusHandler = (status: UserStatus) => void;
 type TypingHandler = (data: TypingIndicator) => void;
 type ErrorHandler = (error: { msg: string }) => void;
 type CommunityHandler = (data: any) => void;
-type CommunityRemovedHandler = (data: { community_id: number; user_id: number; reason: string; message?: string; notification?: { community_name: string; community_logo?: string; community_color: string; community_icon: string } }) => void;
+type CommunityRemovedHandler = (data: { community_id: number; community_public_id?: string; user_id: number; reason: string; message?: string; notification?: { community_name: string; community_logo?: string; community_color: string; community_icon: string } }) => void;
 type UserBlockedHandler = (data: { community_id: number; user_id: number; blocked_at: string }) => void;
 type ChannelHandler = (data: any) => void;
 type DirectMessageHandler = (message: DirectMessageEvent) => void;
@@ -66,12 +66,12 @@ type FriendStatusHandler = (data: { friend_id: number; status: string; request_i
 type ModerationActionHandler = (data: { community_id: number; channel_id: number; action: string; severity: string; timestamp: string }) => void;
 type ModerationInlineHandler = (data: { message_id: number; user_id: number; username: string; channel_id: number; warning_text?: string; flag_text?: string; reason?: string; violation_count: number; max_violations?: number; reasons: string[]; severity: string; timestamp: string; removed_by?: string }) => void;
 type CommandResultHandler = (data: { type: string; success: boolean; summary?: string; key_points?: string[]; method?: string; error?: string }) => void;
-type UnreadUpdateHandler = (data: { channel_id?: number; community_id?: number; channel_unread?: number; community_unread?: number; total_unread?: number }) => void;
+type UnreadUpdateHandler = (data: { channel_id?: number; community_id?: string; channel_unread?: number; community_unread?: number; total_unread?: number }) => void;
 type DMUnreadUpdateHandler = (data: { sender_id: number; unread_count: number; total_dm_unread: number; total_unread: number }) => void;
 type InitialUnreadsHandler = (data: { channels: Record<string, number>; communities: Record<string, number>; dms: Record<string, number>; total_unread: number }) => void;
 type PinEventHandler = (data: { channel_id?: number; message_id: number; pin_id?: number; type?: string; pinned_by?: string; expires_at?: string | null }) => void;
 type FriendsBulkStatusHandler = (data: Record<number, string>) => void;
-type ChannelActivityHandler = (data: { channel_id: number; community_id: number; sender_id: number; message_id: number }) => void;
+type ChannelActivityHandler = (data: { channel_id: number; community_id: string; sender_id: number; message_id: number }) => void;
 type SummaryGeneratingHandler = (data: { channel_id: number; status: string }) => void;
 type SummaryResultHandler = (data: { channel_id: number; content: string; method: string; message_count: number; created_at: string }) => void;
 type KBGeneratingHandler = (data: { channel_id: number; status: string }) => void;
@@ -94,6 +94,8 @@ class SocketService {
   private communityLeftHandlers: CommunityHandler[] = [];
   private channelHandlers: ChannelHandler[] = [];
   private directMessageHandlers: DirectMessageHandler[] = [];
+  private dmEditHandlers: ((data: any) => void)[] = [];
+  private dmDeleteHandlers: ((data: any) => void)[] = [];
   private friendRequestHandlers: FriendRequestHandler[] = [];
   private friendStatusHandlers: FriendStatusHandler[] = [];
   private moderationActionHandlers: ModerationActionHandler[] = [];
@@ -401,8 +403,18 @@ class SocketService {
       setTimeout(() => this.recentDMIds.delete(data.id), 10000);
       
       console.log('[SOCKET] DM received:', { id: data.id, from: data.sender_id, to: data.receiver_id });
-      
+
       this.directMessageHandlers.forEach(handler => handler(data));
+    });
+
+    this.socket.on('dm_message_edited', (data: any) => {
+      console.log('[SOCKET] DM edited:', data?.id);
+      this.dmEditHandlers.forEach(handler => handler(data));
+    });
+
+    this.socket.on('dm_message_deleted', (data: any) => {
+      console.log('[SOCKET] DM deleted:', data?.id);
+      this.dmDeleteHandlers.forEach(handler => handler(data));
     });
 
     this.socket.on('direct_message_read', (data: { message_id: number; read_by: number }) => {
@@ -446,6 +458,9 @@ class SocketService {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('friendRequestAccepted', {
           detail: {
+            // Carry request_id so NotificationsContext can dedup this real-time
+            // event against the persisted `notification` (related_id == request_id).
+            request_id: data.request_id,
             username: data.display_name || data.username || `User ${data.acceptor_id}`,
             from: {
               id: data.acceptor_id || data.sender_id,
@@ -970,6 +985,20 @@ class SocketService {
     this.directMessageHandlers.push(handler);
     return () => {
       this.directMessageHandlers = this.directMessageHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onDirectMessageEdited(handler: (data: any) => void) {
+    this.dmEditHandlers.push(handler);
+    return () => {
+      this.dmEditHandlers = this.dmEditHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onDirectMessageDeleted(handler: (data: any) => void) {
+    this.dmDeleteHandlers.push(handler);
+    return () => {
+      this.dmDeleteHandlers = this.dmDeleteHandlers.filter(h => h !== handler);
     };
   }
 

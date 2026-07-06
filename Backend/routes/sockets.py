@@ -10,7 +10,7 @@ import os
 import time
 from collections import defaultdict
 # FIX 1: Use cached user-id helper and Redis seed on connect
-from utils import get_user_id
+from utils import get_user_id, get_community_public_id_for
 from services.redis_client import cache_set as _redis_cache_set
 
 # Add agents directory to path
@@ -46,7 +46,12 @@ def _socket_rate_limited(sid: str) -> bool:
 
 def _post_ai_bot_message(channel_id: int, user_id: int, content: str,
                          author: str = 'AI Bot') -> None:
-    """Insert an AI bot message and broadcast it to channel_<id>."""
+    """Insert an AI bot message and broadcast it to channel_<id>.
+
+    Works from both a Socket.IO event handler and a Celery worker: uses
+    ``socketio.emit()`` (app-level, message_queue-aware) rather than the
+    context-bound ``emit()`` so cross-process workers can broadcast.
+    """
     if not content or not channel_id:
         return
     conn = None
@@ -54,9 +59,9 @@ def _post_ai_bot_message(channel_id: int, user_id: int, content: str,
         conn = get_db_connection()
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO messages (channel_id, sender_id, content, message_type) "
-                "VALUES (%s, %s, %s, 'ai')",
-                (channel_id, user_id, content),
+                "INSERT INTO messages (channel_id, sender_id, content, message_type, bot_name) "
+                "VALUES (%s, %s, %s, 'ai', %s)",
+                (channel_id, user_id, content, author),
             )
             mid = cur.lastrowid
             cur.execute(
@@ -83,8 +88,16 @@ def _post_ai_bot_message(channel_id: int, user_id: int, content: str,
                 'is_blocked': False,
                 'moderation': None,
             }
-            emit('message_received', payload,
-                 room=f"channel_{channel_id}", namespace='/')
+            # Use the app-level socketio instance so this works from Celery
+            # workers (message_queue path) as well as from event handlers.
+            try:
+                from app import socketio as _sio
+                _sio.emit('message_received', payload,
+                          room=f"channel_{channel_id}", namespace='/')
+            except Exception:
+                # Fallback: context-bound emit (works inside Socket.IO handler)
+                emit('message_received', payload,
+                     room=f"channel_{channel_id}", namespace='/')
     except Exception as exc:
         log.error(f"[BOT MESSAGE] failed: {exc}")
     finally:
@@ -148,9 +161,9 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                     conn = get_db_connection()
                     with conn.cursor() as cur:
                         cur.execute("""
-                            INSERT INTO messages (channel_id, sender_id, content, message_type)
-                            VALUES (%s, %s, %s, 'ai')
-                        """, (channel_id, user_id, bot_content))
+                            INSERT INTO messages (channel_id, sender_id, content, message_type, bot_name)
+                            VALUES (%s, %s, %s, 'ai', %s)
+                        """, (channel_id, user_id, bot_content, 'Summarizer Agent'))
                         message_id = cur.lastrowid
 
                         cur.execute("""
@@ -253,28 +266,26 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
             return {'type': 'support', 'success': True, 'posted_as_bot': True}
 
         elif command == '/icebreaker':
+            # Post as a structured ice-breaker card (same path as the Spark
+            # button) — post_engagement_content inserts the message + card and
+            # emits message_received with the card payload.
             from agents.engagement import EngagementAgent
-            r = EngagementAgent().get_icebreaker_activity()
-            activity = r.get('activity') if isinstance(r, dict) else None
-            if isinstance(activity, dict):
-                title = activity.get('title') or activity.get('question') or 'Icebreaker'
-                desc = activity.get('description') or activity.get('prompt') or ''
-                text = f"💬 **{title}**" + (f"\n{desc}" if desc else '')
-            else:
-                fallback_text = (r.get('text') if isinstance(r, dict) else None) or "Let's start a conversation!"
-                text = f"💬 {activity or fallback_text}"
-            _post_ai_bot_message(channel_id, user_id, text, author='Engagement')
+            res = EngagementAgent().post_engagement_content(
+                channel_id, community_id, kind='icebreaker')
+            if not res.get('posted'):
+                return {'type': 'icebreaker', 'success': False,
+                        'error': 'Could not create an ice-breaker right now.'}
             return {'type': 'icebreaker', 'success': True, 'posted_as_bot': True}
 
         elif command == '/poll':
+            # Post as a real interactive poll card (votes persisted), not plain
+            # text — shares post_engagement_content with the Spark button.
             from agents.engagement import EngagementAgent
-            r = EngagementAgent().get_quick_poll()
-            poll = r.get('poll') if isinstance(r, dict) and isinstance(r.get('poll'), dict) else (r if isinstance(r, dict) else {})
-            q = poll.get('question') or poll.get('poll') or 'Quick poll'
-            opts = poll.get('options') or []
-            opt_lines = '\n'.join(f"{i+1}. {o}" for i, o in enumerate(opts))
-            text = f"📊 **Poll:** {q}" + (f"\n{opt_lines}" if opt_lines else '')
-            _post_ai_bot_message(channel_id, user_id, text, author='Engagement')
+            res = EngagementAgent().post_engagement_content(
+                channel_id, community_id, kind='poll')
+            if not res.get('posted'):
+                return {'type': 'poll', 'success': False,
+                        'error': 'Could not create a poll right now.'}
             return {'type': 'poll', 'success': True, 'posted_as_bot': True}
 
         elif command == '/extract':
@@ -297,8 +308,10 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                 r = FocusAgent().analyze_focus(channel_id=channel_id)
             except AttributeError:
                 r = {}
-            score = (r or {}).get('focus_score')
-            topics = (r or {}).get('top_topics') or (r or {}).get('topics') or []
+            r = r or {}
+            score = r.get('focus_score')
+            topics = (r.get('dominant_topics') or r.get('top_topics')
+                      or r.get('topics') or [])
             topic_line = ''
             if isinstance(topics, list) and topics:
                 names = []
@@ -312,7 +325,13 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                     topic_line = f"\nTop topics: {', '.join(names)}"
             if isinstance(score, (int, float)):
                 pct = score if score > 1 else score * 100
-                text = f"🎯 Focus score: {pct:.0f}%" + topic_line
+                level = r.get('focus_level')
+                level_line = f" ({level} focus)" if level else ''
+                text = f"🎯 Focus score: {pct:.0f}%{level_line}" + topic_line
+            elif r.get('error'):
+                # Surface the real reason (e.g. "Need at least 5 messages")
+                # instead of a vague "complete" so the user knows why.
+                text = f"🎯 {r['error']}"
             else:
                 text = "🎯 Channel focus check complete." + topic_line
             _post_ai_bot_message(channel_id, user_id, text, author='Focus')
@@ -1154,10 +1173,26 @@ def register_socket_events(socketio):
 
             # ── Real-time unread delivery ──────────────────────────────────
             if final_action != 'block':
+                # Publish msg.created on the autonomous-agent event bus.
+                # Best-effort, non-blocking — orchestrator subscribers
+                # (mood, focus, knowledge, support, …) fan out from here.
+                try:
+                    from agents import event_bus as _agent_bus
+                    _agent_bus.publish(_agent_bus.TOPIC_MSG_CREATED, {
+                        'message_id':  message_id,
+                        'user_id':     user_id,
+                        'username':    username,
+                        'channel_id':  channel_id,
+                        'community_id': community_id,
+                        'content':     content,
+                    })
+                except Exception as _bus_err:
+                    log.debug(f"[event_bus] msg.created publish skipped: {_bus_err}")
+
                 if community_id:
                     socketio.emit('channel_activity', {
                         'channel_id': channel_id,
-                        'community_id': community_id,
+                        'community_id': get_community_public_id_for(community_id),
                         'sender_id': user_id,
                         'message_id': message_id,
                         'sender_name': sender_display_name,
@@ -1179,14 +1214,13 @@ def register_socket_events(socketio):
             log.info(f"[SOCKET] Message from {username} to channel {channel_id} - Action: {final_action}")
 
             # 🤖 AGENT AUTO-EXECUTION (fire-and-forget via Celery)
-            # Only dispatch for text messages that weren't blocked
+            # Only dispatch for text messages that weren't blocked.
+            # NOTE: mood tracking is no longer dispatched here — the
+            # mood_tracker autonomous agent now subscribes to msg.created
+            # (published a few lines above) via the orchestrator and
+            # writes user_moods on every message. Keeping the legacy
+            # Celery task imported here would double-write rows.
             if content and final_action != 'block' and not content.strip().startswith('/'):
-                # Mood tracking — personal agent
-                try:
-                    from tasks.agent_tasks import track_mood_task
-                    track_mood_task.delay(content, user_id, channel_id)
-                except Exception as e:
-                    log.debug(f"[AGENT_DISPATCH] Mood task skipped: {e}")
 
                 # Focus analysis — every 10 messages, count tracked in Redis (no DB query)
                 try:
@@ -1364,7 +1398,12 @@ def register_socket_events(socketio):
                 'is_read': data.get('is_read', False),
                 'sender': sender,
                 'receiver': data.get('receiver'),
-                'edited_at': data.get('edited_at')
+                'edited_at': data.get('edited_at'),
+                # Forward attachment/reply metadata so file & image DMs render on
+                # the receiver's side (previously dropped → images never appeared).
+                'attachment': data.get('attachment'),
+                'reply_to': data.get('reply_to'),
+                'reply_to_preview': data.get('reply_to_preview'),
             }
 
             # Broadcast to the DM room (for users actively in the conversation)

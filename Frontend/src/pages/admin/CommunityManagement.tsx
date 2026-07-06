@@ -1,122 +1,287 @@
 /**
- * Community Management Page (System Admin)
- * Shows ALL communities on the platform with health scores and management options.
+ * My Communities (Community Admin)
+ *
+ * Shows the communities where the current user is owner/admin — sourced from the
+ * existing GET /api/admin/owned-communities endpoint that already populates the
+ * sidebar selector via CommunityDashboardContext. Each card has a quick "Open
+ * dashboard" action that switches the selected community and routes back to the
+ * Overview at /admin.
+ *
+ * Previously this page hit /admin/system/communities (a platform-admin endpoint
+ * that returns every community on the platform). That route is wrong for the
+ * /admin/* community-admin context — see plan phase 1.7 in cached-dazzling-owl.md.
+ *
+ * Note on "last activity": the existing owned-communities payload doesn't carry
+ * a last-message timestamp and the remediation plan forbids new analytics
+ * aggregations, so the cards intentionally don't show one. If/when a future
+ * phase adds it to the backend, the field will flow through naturally.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useCommunityDashboard, OwnedCommunity } from '@/contexts/CommunityDashboardContext';
 import { cn } from '@/lib/utils';
-import { API_URL } from '@/config/api';
 import {
   Building2,
   Search,
   Users,
   Hash,
-  MessageSquare,
-  TrendingUp,
   RefreshCw,
-  ChevronLeft,
-  ChevronRight,
+  ArrowRight,
+  Shield,
+  Star,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 
-interface Community {
-  id: number;
-  name: string;
-  description: string;
-  icon: string;
-  color: string;
-  logo_url: string;
-  created_at: string;
-  member_count: number;
-  channel_count: number;
-  owner_username: string;
+function RoleBadge({ role }: { role: string }) {
+  const normalized = (role || '').toLowerCase();
+  if (normalized === 'owner') {
+    return (
+      <Badge className="gap-1 bg-amber-500/15 text-amber-600 hover:bg-amber-500/15 border-amber-500/30">
+        <Star className="h-3 w-3" />
+        Owner
+      </Badge>
+    );
+  }
+  if (normalized === 'admin') {
+    return (
+      <Badge className="gap-1 bg-sky-500/15 text-sky-600 hover:bg-sky-500/15 border-sky-500/30">
+        <Shield className="h-3 w-3" />
+        Admin
+      </Badge>
+    );
+  }
+  // Fallback — shouldn't appear because the endpoint already filters to
+  // owner/admin, but we render whatever the server sent rather than swallowing it.
+  return <Badge variant="outline">{role || 'Member'}</Badge>;
+}
+
+function CommunityCardSkeleton({ isDark }: { isDark: boolean }) {
+  return (
+    <div
+      className={cn(
+        'rounded-xl border p-5',
+        'bg-card border-border/50',
+      )}
+    >
+      <div className="flex items-start gap-4">
+        <Skeleton className="w-14 h-14 rounded-xl flex-shrink-0" />
+        <div className="flex-1 min-w-0 space-y-2">
+          <Skeleton className="h-5 w-2/3" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-border/50">
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+      </div>
+      <Skeleton className="h-9 w-full mt-4" />
+    </div>
+  );
+}
+
+interface CommunityCardProps {
+  community: OwnedCommunity;
+  isSelected: boolean;
+  isDark: boolean;
+  onOpen: () => void;
+}
+
+function CommunityCard({ community, isSelected, isDark, onOpen }: CommunityCardProps) {
+  return (
+    <div
+      className={cn(
+        'rounded-xl border p-5 transition-all hover:border-accent/50 hover:shadow-md',
+        isSelected && 'border-accent/60 ring-1 ring-accent/30',
+        'bg-card border-border/50',
+      )}
+    >
+      <div className="flex items-start gap-4">
+        {community.logo_url ? (
+          <img
+            src={community.logo_url}
+            alt=""
+            className="w-14 h-14 rounded-xl object-cover flex-shrink-0"
+          />
+        ) : (
+          <div
+            className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
+            style={{
+              backgroundColor: community.color
+                ? `${community.color}20`
+                : 'hsl(var(--accent) / 0.1)',
+            }}
+          >
+            {community.icon || <Building2 className="h-6 w-6 text-accent" />}
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="font-semibold text-lg truncate">{community.name}</h3>
+            <RoleBadge role={community.role} />
+            {isSelected && (
+              <Badge variant="outline" className="text-xs">
+                Currently selected
+              </Badge>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-border/50">
+        <div className="text-center">
+          <div className="flex items-center justify-center gap-1 text-muted-foreground">
+            <Users className="h-3.5 w-3.5" />
+            <span className="text-xs">Members</span>
+          </div>
+          <p className="font-bold mt-0.5">
+            {community.member_count.toLocaleString()}
+          </p>
+        </div>
+        <div className="text-center">
+          <div className="flex items-center justify-center gap-1 text-muted-foreground">
+            <Hash className="h-3.5 w-3.5" />
+            <span className="text-xs">Channels</span>
+          </div>
+          <p className="font-bold mt-0.5">
+            {community.channel_count.toLocaleString()}
+          </p>
+        </div>
+      </div>
+
+      <Button
+        className="w-full mt-4"
+        variant={isSelected ? 'default' : 'outline'}
+        onClick={onOpen}
+      >
+        Open dashboard
+        <ArrowRight className="h-4 w-4 ml-2" />
+      </Button>
+    </div>
+  );
 }
 
 export default function CommunityManagement() {
-  const { user } = useAuth();
   const { currentTheme, themes } = useTheme();
+  const navigate = useNavigate();
+  const {
+    ownedCommunities,
+    isLoadingCommunities,
+    selectedCommunity,
+    selectCommunity,
+    refreshOwnedCommunities,
+  } = useCommunityDashboard();
+
   const theme = themes[currentTheme];
   const isDark = theme.isDark;
 
-  const [communities, setCommunities] = useState<Community[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [page, setPage] = useState(0);
-  const [total, setTotal] = useState(0);
-  const limit = 20;
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const fetchCommunities = useCallback(async () => {
-    setLoading(true);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return ownedCommunities;
+    return ownedCommunities.filter((c) => c.name.toLowerCase().includes(q));
+  }, [ownedCommunities, search]);
+
+  const totalMembers = useMemo(
+    () => ownedCommunities.reduce((sum, c) => sum + (c.member_count || 0), 0),
+    [ownedCommunities],
+  );
+  const totalChannels = useMemo(
+    () => ownedCommunities.reduce((sum, c) => sum + (c.channel_count || 0), 0),
+    [ownedCommunities],
+  );
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
     try {
-      const token = localStorage.getItem('token');
-      const params = new URLSearchParams({
-        limit: String(limit),
-        offset: String(page * limit),
-        ...(search && { search }),
-      });
-      const res = await fetch(`${API_URL}/admin/system/communities?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setCommunities(data.communities);
-        setTotal(data.pagination.total);
-      }
-    } catch (err) {
-      console.error('Failed to fetch communities:', err);
+      await refreshOwnedCommunities();
     } finally {
-      setLoading(false);
+      setIsRefreshing(false);
     }
-  }, [page, search]);
+  };
 
-  useEffect(() => {
-    fetchCommunities();
-  }, [fetchCommunities]);
+  const handleOpen = (community: OwnedCommunity) => {
+    // selectCommunity persists to localStorage and updates context state;
+    // navigating to /admin lands on the Overview already scoped to it.
+    selectCommunity(community.id);
+    navigate('/admin');
+  };
 
-  const totalPages = Math.ceil(total / limit);
+  const isLoading = isLoadingCommunities && ownedCommunities.length === 0;
+  const refreshing = isRefreshing || isLoadingCommunities;
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <p className="text-sm text-muted-foreground">Admin &gt; Communities</p>
-          <h1 className="text-2xl font-bold">Community Management</h1>
+          <p className="text-sm text-muted-foreground">Admin &gt; My Communities</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Building2 className="h-6 w-6 text-accent" />
+            My Communities
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Communities you own or help administer. Open one to manage its
+            members, moderation, agents, and analytics.
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchCommunities} disabled={loading}>
-          <RefreshCw className={cn('h-4 w-4 mr-2', loading && 'animate-spin')} />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefresh}
+          disabled={refreshing}
+        >
+          <RefreshCw className={cn('h-4 w-4 mr-2', refreshing && 'animate-spin')} />
           Refresh
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search communities..."
-          className="pl-10"
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-        />
-      </div>
+      {/* Search — only when there's enough to bother searching */}
+      {ownedCommunities.length > 3 && (
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search your communities..."
+            className="pl-10"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      )}
 
-      {/* Stats Summary */}
+      {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className={cn('rounded-xl border p-4', isDark ? 'bg-card border-border/50' : 'bg-white border-gray-200')}>
+        <div
+          className={cn(
+            'rounded-xl border p-4',
+            'bg-card border-border/50',
+          )}
+        >
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-accent/10">
               <Building2 className="h-5 w-5 text-accent" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Total Communities</p>
-              <p className="text-2xl font-bold">{total}</p>
+              <p className="text-sm text-muted-foreground">Communities</p>
+              <p className="text-2xl font-bold">
+                {isLoading ? <Skeleton className="h-7 w-10" /> : ownedCommunities.length}
+              </p>
             </div>
           </div>
         </div>
-        <div className={cn('rounded-xl border p-4', isDark ? 'bg-card border-border/50' : 'bg-white border-gray-200')}>
+        <div
+          className={cn(
+            'rounded-xl border p-4',
+            'bg-card border-border/50',
+          )}
+        >
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-emerald-500/10">
               <Users className="h-5 w-5 text-emerald-500" />
@@ -124,12 +289,21 @@ export default function CommunityManagement() {
             <div>
               <p className="text-sm text-muted-foreground">Total Members</p>
               <p className="text-2xl font-bold">
-                {communities.reduce((sum, c) => sum + c.member_count, 0).toLocaleString()}
+                {isLoading ? (
+                  <Skeleton className="h-7 w-16" />
+                ) : (
+                  totalMembers.toLocaleString()
+                )}
               </p>
             </div>
           </div>
         </div>
-        <div className={cn('rounded-xl border p-4', isDark ? 'bg-card border-border/50' : 'bg-white border-gray-200')}>
+        <div
+          className={cn(
+            'rounded-xl border p-4',
+            'bg-card border-border/50',
+          )}
+        >
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-sky-500/10">
               <Hash className="h-5 w-5 text-sky-500" />
@@ -137,106 +311,60 @@ export default function CommunityManagement() {
             <div>
               <p className="text-sm text-muted-foreground">Total Channels</p>
               <p className="text-2xl font-bold">
-                {communities.reduce((sum, c) => sum + c.channel_count, 0).toLocaleString()}
+                {isLoading ? (
+                  <Skeleton className="h-7 w-16" />
+                ) : (
+                  totalChannels.toLocaleString()
+                )}
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Communities Grid */}
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <RefreshCw className="h-8 w-8 animate-spin text-accent" />
+      {/* Body */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
+            <CommunityCardSkeleton key={i} isDark={isDark} />
+          ))}
         </div>
-      ) : communities.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          No communities found.
+      ) : ownedCommunities.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border/60 p-12 text-center">
+          <Building2 className="h-10 w-10 mx-auto mb-3 text-muted-foreground/60" />
+          <h3 className="font-semibold mb-1">You don't manage any communities yet</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            Communities you own or admin will show up here. Ask an owner to add
+            you as an admin, or create your own community from the main app.
+          </p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border/60 p-12 text-center">
+          <Search className="h-10 w-10 mx-auto mb-3 text-muted-foreground/60" />
+          <h3 className="font-semibold mb-1">No matches</h3>
+          <p className="text-sm text-muted-foreground">
+            No community matches "{search.trim()}". Clear the search to see them all.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => setSearch('')}
+          >
+            Clear search
+          </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {communities.map((community) => (
-            <div
+          {filtered.map((community) => (
+            <CommunityCard
               key={community.id}
-              className={cn(
-                'rounded-xl border p-5 transition-all hover:border-accent/50',
-                isDark ? 'bg-card border-border/50' : 'bg-white border-gray-200'
-              )}
-            >
-              <div className="flex items-start gap-4">
-                <div
-                  className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
-                  style={{ backgroundColor: community.color ? `${community.color}20` : 'hsl(var(--accent) / 0.1)' }}
-                >
-                  {community.icon || <Building2 className="h-6 w-6 text-accent" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-lg truncate">{community.name}</h3>
-                  <p className="text-sm text-muted-foreground line-clamp-2 mt-0.5">
-                    {community.description || 'No description'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-border/50">
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-muted-foreground">
-                    <Users className="h-3.5 w-3.5" />
-                    <span className="text-xs">Members</span>
-                  </div>
-                  <p className="font-bold mt-0.5">{community.member_count.toLocaleString()}</p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-muted-foreground">
-                    <Hash className="h-3.5 w-3.5" />
-                    <span className="text-xs">Channels</span>
-                  </div>
-                  <p className="font-bold mt-0.5">{community.channel_count}</p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-muted-foreground">
-                    <Users className="h-3.5 w-3.5" />
-                    <span className="text-xs">Owner</span>
-                  </div>
-                  <p className="font-bold mt-0.5 text-sm truncate">{community.owner_username || 'N/A'}</p>
-                </div>
-              </div>
-
-              <p className="text-xs text-muted-foreground mt-3">
-                Created {community.created_at ? new Date(community.created_at).toLocaleDateString() : 'N/A'}
-              </p>
-            </div>
+              community={community}
+              isSelected={selectedCommunity?.id === community.id}
+              isDark={isDark}
+              onOpen={() => handleOpen(community)}
+            />
           ))}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-4">
-          <p className="text-sm text-muted-foreground">
-            Showing {page * limit + 1} to {Math.min((page + 1) * limit, total)} of {total}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page === 0}
-              onClick={() => setPage(p => p - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm font-medium">
-              Page {page + 1} of {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages - 1}
-              onClick={() => setPage(p => p + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
         </div>
       )}
     </div>

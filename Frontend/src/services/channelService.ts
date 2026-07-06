@@ -36,7 +36,7 @@ class ChannelService {
     }
   }
 
-  async getCommunityChannels(communityId: number): Promise<Channel[]> {
+  async getCommunityChannels(communityId: string): Promise<Channel[]> {
     try {
       const response = await axios.get<Channel[]>(
         `${API_URL}/communities/${communityId}/channels`,
@@ -85,7 +85,7 @@ class ChannelService {
   }
 
   async createChannel(
-    communityId: number, 
+    communityId: string, 
     name: string, 
     type: 'text' | 'voice' = 'text', 
     description?: string
@@ -150,7 +150,7 @@ class ChannelService {
   //   }
   // }
 
-  async getCommunityMembers(communityId: number): Promise<CommunityMember[]> {
+  async getCommunityMembers(communityId: string): Promise<CommunityMember[]> {
     if (!communityId) throw new Error('Community ID is required');
 
     try {
@@ -178,7 +178,7 @@ class ChannelService {
     }
   }
 
-  async addCommunityMember(communityId: number, userId: number): Promise<void> {
+  async addCommunityMember(communityId: string, userId: number): Promise<void> {
     if (!communityId || !userId) {
       throw new Error('Both community ID and user ID are required');
     }
@@ -234,7 +234,7 @@ class ChannelService {
     }
   }
 
-  async deleteCommunity(communityId: number): Promise<void> {
+  async deleteCommunity(communityId: string): Promise<void> {
     try {
       await axios.delete(`${API_URL}/communities/${communityId}`, this.getAuthHeaders());
     } catch (error: any) {
@@ -243,7 +243,7 @@ class ChannelService {
     }
   }
 
-  async leaveCommunity(communityId: number): Promise<void> {
+  async leaveCommunity(communityId: string): Promise<void> {
     try {
       await axios.post(
         `${API_URL}/communities/${communityId}/leave`,
@@ -275,7 +275,7 @@ class ChannelService {
     }
   }
 
-  async joinCommunity(communityId: number): Promise<void> {
+  async joinCommunity(communityId: string): Promise<void> {
     try {
       await axios.post(
         `${API_URL}/communities/${communityId}/join`,
@@ -288,7 +288,7 @@ class ChannelService {
     }
   }
 
-  async getUserRoleInCommunity(communityId: number, userId: number): Promise<'owner' | 'admin' | 'member'> {
+  async getUserRoleInCommunity(communityId: string, userId: number): Promise<'owner' | 'admin' | 'member'> {
     try {
       const members = await this.getCommunityMembers(communityId);
       const member = members.find(m => m.id === userId);
@@ -313,11 +313,30 @@ class ChannelService {
     }
   }
 
+  /** Resolve a DM URL's opaque public_id to the profile MainLayout needs.
+   *  Works even for users no longer in the friends list — DM history can
+   *  outlive a friendship. Returns null on 404 (invalid/stale link). */
+  async getUserByPublicId(publicId: string): Promise<{
+    id: number; username: string; display_name: string; avatar_url: string; status: string;
+  } | null> {
+    try {
+      const response = await axios.get(
+        `${API_URL}/users/by-public-id/${publicId}`,
+        this.getAuthHeaders()
+      );
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) return null;
+      console.error('Error resolving user by public id:', error);
+      throw new Error(error.response?.data?.error || 'Failed to resolve user');
+    }
+  }
+
   // =====================================
   // COMMUNITY DETAILS & SETTINGS
   // =====================================
   
-  async getCommunity(communityId: number): Promise<Community> {
+  async getCommunity(communityId: string): Promise<Community> {
     try {
       const response = await axios.get<Community>(
         `${API_URL}/communities/${communityId}`,
@@ -330,7 +349,7 @@ class ChannelService {
     }
   }
 
-  async updateCommunity(communityId: number, data: {
+  async updateCommunity(communityId: string, data: {
     name?: string;
     description?: string;
     icon?: string;
@@ -353,7 +372,7 @@ class ChannelService {
   // COMMUNITY IMAGE UPLOADS
   // =====================================
 
-  async uploadCommunityLogo(communityId: number, file: File): Promise<{ logo_url: string }> {
+  async uploadCommunityLogo(communityId: string, file: File): Promise<{ logo_url: string }> {
     try {
       const formData = new FormData();
       formData.append('logo', file);
@@ -376,7 +395,7 @@ class ChannelService {
     }
   }
 
-  async removeCommunityLogo(communityId: number): Promise<void> {
+  async removeCommunityLogo(communityId: string): Promise<void> {
     try {
       await axios.delete(
         `${API_URL}/communities/${communityId}/logo`,
@@ -388,7 +407,7 @@ class ChannelService {
     }
   }
 
-  async uploadCommunityBanner(communityId: number, file: File): Promise<{ banner_url: string }> {
+  async uploadCommunityBanner(communityId: string, file: File): Promise<{ banner_url: string }> {
     try {
       const formData = new FormData();
       formData.append('banner', file);
@@ -411,7 +430,7 @@ class ChannelService {
     }
   }
 
-  async removeCommunityBanner(communityId: number): Promise<void> {
+  async removeCommunityBanner(communityId: string): Promise<void> {
     try {
       await axios.delete(
         `${API_URL}/communities/${communityId}/banner`,

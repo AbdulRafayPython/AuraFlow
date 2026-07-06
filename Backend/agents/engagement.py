@@ -23,6 +23,28 @@ from agents.base import AutonomousAgent
 from agents import event_bus as _event_bus
 from agents import memory as _agent_memory
 from agents._settings import get_community_settings
+from services.redis_client import get_redis as _get_redis
+
+
+# Per-channel nudge cooldown. Set to the documented 6-hour spec
+# (docs/AUTONOMOUS_AGENTS_PLAN.md §4.4), NOT the silence probe's 1-hour
+# re-fire cadence. Matching the probe cadence (the original value) was the
+# spam bug: the cooldown expired exactly as the next channel.silent event
+# arrived, so it never actually blocked and a still-silent channel got
+# re-nudged every single hour.
+_COOLDOWN_SECONDS = 6 * 60 * 60  # 6 hours
+
+# TTL on the per-channel nudge claim. The base-class cooldown is durable but
+# only enforced *within* one orchestrator process: it reads last_acted_at,
+# then acts, then stamps it — so two orchestrator loops (a stray second
+# Celery worker, or a second app.py running its own silence probe — both
+# common after restarts on Windows) each read "no recent act", both pass the
+# cooldown, and both post the same starter. An atomic Redis SET NX collapses
+# that fan-out to a single post across every process. TTL is derived from
+# _COOLDOWN_SECONDS so the "claim window == cooldown window" invariant holds
+# by construction — if one changes, so does the other. See
+# auto_message._claim_welcome for the same pattern.
+_NUDGE_DEDUPE_TTL = _COOLDOWN_SECONDS
 
 
 _ENGAGEMENT_DEFAULTS = {
@@ -45,11 +67,20 @@ class EngagementAgent(AutonomousAgent):
     GOAL = {"revive_silent_channels": True, "low_intrusiveness": True}
     SUBSCRIBES = [_event_bus.TOPIC_CHANNEL_SILENT]
     SCOPE_TYPE = _agent_memory.SCOPE_CHANNEL
-    COOLDOWN_SECONDS = 60 * 60  # one nudge per channel per hour, max
+    # 6h per channel — see _COOLDOWN_SECONDS above (AUTONOMOUS_AGENTS_PLAN §4.4).
+    COOLDOWN_SECONDS = _COOLDOWN_SECONDS
 
     # Minimum bucket we'll act on. Anything shorter is just typical
     # background quiet, not actionable.
     _MIN_BUCKET_MINUTES = 15
+
+    # Give-up cap: after this many consecutive nudges into a channel that
+    # never woke up (no human message arrived between nudges), stop nudging
+    # it entirely until a real message resets the counter. Stands in for the
+    # documented "last nudge was not 👎'd" check — there's no real per-nudge
+    # dismissal signal today, so "channel stayed silent through N nudges" is
+    # the proxy for "these nudges aren't landing."
+    _MAX_CONSECUTIVE_IGNORED = 3
 
     def __init__(self):
         """Initialize the engagement agent"""
@@ -1204,6 +1235,25 @@ class EngagementAgent(AutonomousAgent):
     # Autonomous hooks (Phase 3.1)
     # ────────────────────────────────────────────────────────────────────
 
+    def _claim_nudge(self, channel_id: int) -> bool:
+        """Atomically claim the right to nudge this channel once per TTL.
+
+        Returns True if this caller won the claim (should post), False if a
+        concurrent orchestrator already claimed it. Fail-open: if Redis is
+        unavailable we return True — duplicate posting only happens *with*
+        Redis + multiple loops anyway, and a single-process setup must still
+        nudge. Mirrors auto_message._claim_welcome.
+        """
+        try:
+            r = _get_redis()
+            if r is None:
+                return True
+            key = f"engagement:nudged:{channel_id}"
+            # SET NX EX — only the first caller across all processes succeeds.
+            return bool(r.set(key, "1", nx=True, ex=_NUDGE_DEDUPE_TTL))
+        except Exception:
+            return True
+
     def sense(self, event: dict) -> Optional[Dict]:
         """Accept only ``channel.silent`` events at-or-above the minimum
         bucket. The presence probe already rate-limits to one event per
@@ -1236,13 +1286,47 @@ class EngagementAgent(AutonomousAgent):
                     return None
             except Exception:
                 pass
+
+        # Give-up gate — stop nudging a channel that has stayed silent through
+        # _MAX_CONSECUTIVE_IGNORED nudges in a row (no human message arrived to
+        # reset it). The silence probe recomputes silent_minutes fresh from
+        # MAX(created_at) each pass, so a real message would drop it back toward
+        # zero: if this event's silent_minutes is LOWER than the value recorded
+        # at our last nudge, the channel woke up in between → fresh episode,
+        # reset the counter; if it's the same or higher, the channel never woke
+        # → this nudge would be another unanswered one.
+        #
+        # Runs BEFORE _claim_nudge so a given-up channel doesn't needlessly
+        # consume (and churn) its Redis claim key every probe cycle.
+        silent_minutes = int(event.get("silent_minutes") or bucket)
+        _state = _agent_memory.get_state(
+            self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id)
+        _th = (_state or {}).get("thresholds") or {}
+        last_silent = _th.get("last_nudge_silent_minutes")
+        consecutive = int(_th.get("consecutive_ignored") or 0)
+        # First-ever nudge (no prior record) must never be skipped.
+        silence_reset = last_silent is not None and silent_minutes < last_silent
+        if (last_silent is not None and not silence_reset
+                and consecutive >= self._MAX_CONSECUTIVE_IGNORED):
+            return None
+
+        # Idempotency guard — collapse duplicate dispatch from multiple
+        # orchestrator loops / silence probes to a single nudge. Must be the
+        # last gate so we only claim when we're otherwise going to act
+        # (decide() always returns 'act' for engagement).
+        if not self._claim_nudge(int(channel_id)):
+            return None
         return {
             "channel_id":     channel_id,
             "community_id":   event.get("community_id"),
-            "silent_minutes": int(event.get("silent_minutes") or bucket),
+            "silent_minutes": silent_minutes,
             "bucket":         bucket,
             "scope_type":     _agent_memory.SCOPE_CHANNEL,
             "scope_id":       channel_id,
+            # Consumed by act() when persisting the give-up counter — carried
+            # forward so act() reuses the exact silent_minutes/reset decision
+            # sense() made, rather than re-deriving from a fresher probe value.
+            "_silence_reset": silence_reset,
         }
 
     def decide(self, observation: Dict):
@@ -1278,6 +1362,29 @@ class EngagementAgent(AutonomousAgent):
 
         post = self.post_engagement_content(
             channel_id, community_id, kind=kind, category=category)
+
+        # Advance the give-up counter — but ONLY when a message actually
+        # posted. The base-class cooldown (base.py handle()) runs between
+        # decide() and act(), so persisting in sense() could count a nudge
+        # that never went out. Reset on a fresh silence episode (a human
+        # message arrived, per sense()'s _silence_reset), else increment.
+        # Re-read state fresh so we don't clobber a concurrent learn() write
+        # to the same thresholds blob.
+        if post.get("posted"):
+            try:
+                st = _agent_memory.get_state(
+                    self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id) or {}
+                th = dict(st.get("thresholds") or {})
+                th["last_nudge_silent_minutes"] = int(
+                    payload.get("silent_minutes") or bucket)
+                th["consecutive_ignored"] = (
+                    0 if payload.get("_silence_reset")
+                    else int(th.get("consecutive_ignored") or 0) + 1)
+                _agent_memory.set_state(
+                    self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id,
+                    thresholds=th)
+            except Exception as exc:
+                print(f"[ENGAGEMENT] give-up counter persist failed: {exc}")
 
         # Surface the decision on the dashboard timeline (non-blocking).
         try:

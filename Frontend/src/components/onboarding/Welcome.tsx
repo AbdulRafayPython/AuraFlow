@@ -37,7 +37,7 @@ export default function Welcome({ onContinue }: WelcomeProps) {
             <img src="/AuraflowLogo.png" alt="AuraFlow" className="h-full w-full object-cover" />
           </div>
           <h1 className={`text-2xl font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-            Welcome{user?.name ? `, ${user.name}` : ''} 👋
+            Welcome{user?.display_name || user?.username ? `, ${user.display_name || user.username}` : ''} 👋
           </h1>
           <p className={`text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Let's set up your workspace

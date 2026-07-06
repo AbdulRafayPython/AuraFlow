@@ -11,6 +11,7 @@ import time
 import logging
 from collections import defaultdict
 from database import get_db_connection
+from utils import get_community_public_id_for
 
 log = logging.getLogger(__name__)
 
@@ -182,7 +183,7 @@ def increment_channel_unread(channel_id, sender_id, community_id=None):
                     
                     emit_data = {
                         'channel_id': channel_id,
-                        'community_id': community_id,
+                        'community_id': get_community_public_id_for(community_id) if community_id else None,
                         'channel_unread': ch_count,
                         'community_unread': comm_count,
                         'total_unread': total_channel + total_dm,
@@ -270,7 +271,7 @@ def mark_channel_read(user_id, channel_id, message_id=None):
             
             _socketio.emit('unread_update', {
                 'channel_id': channel_id,
-                'community_id': community_id,
+                'community_id': get_community_public_id_for(community_id) if community_id else None,
                 'channel_unread': 0,
                 'community_unread': comm_count,
                 'total_unread': total_channel + total_dm,
@@ -325,10 +326,18 @@ def get_user_unreads(user_id):
         dms = dict(_dm_unread.get(user_id, {}))
         total_dm = sum(dms.values())
         total_channel = sum(channels.values())
-    
+
+    # Client keys communities by the external public_id (UUID), not the
+    # internal int — translate at this boundary, same as elsewhere.
+    communities_public = {}
+    for comm_id, count in communities.items():
+        pid = get_community_public_id_for(comm_id)
+        if pid:
+            communities_public[pid] = count
+
     return {
         'channels': channels,
-        'communities': communities,
+        'communities': communities_public,
         'dms': dms,
         'total_dm_unread': total_dm,
         'total_channel_unread': total_channel,

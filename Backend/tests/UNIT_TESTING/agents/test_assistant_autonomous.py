@@ -125,3 +125,83 @@ class TestAssistantHandle:
         acts = chain_store.act_rows_for("assistant")
         assert len(acts) == 1
         assert acts[0]["payload"]["question"] == "explain auraflow"
+
+
+class TestAssistantMemoryPause:
+    """memory_paused short-circuits Redis read/write while keeping settings
+    intact. The agent must still answer — only the rolling context is
+    suspended."""
+
+    def _db_with_settings(self, settings_json):
+        """Return a fake get_db_connection callable whose cursor.fetchone
+        yields ``{'settings': settings_json}`` for the user_agents lookup."""
+        import json as _json
+        raw = (settings_json if isinstance(settings_json, str)
+               else _json.dumps(settings_json))
+        cur = MagicMock()
+        cur.fetchone.return_value = {"settings": raw}
+        cur.__enter__ = lambda s: s
+        cur.__exit__ = MagicMock(return_value=False)
+        conn = MagicMock()
+        conn.cursor.return_value = cur
+        return MagicMock(return_value=conn)
+
+    def test_memory_paused_skips_redis_reads(self):
+        agent = AssistantAgent()
+        fake_redis = MagicMock()
+        with patch("agents.assistant.get_db_connection",
+                   self._db_with_settings({"memory_paused": True})), \
+             patch("agents.assistant._get_redis", return_value=fake_redis):
+            recalled = agent._recall_memory(42)
+        assert recalled == []
+        fake_redis.lrange.assert_not_called()
+
+    def test_memory_paused_skips_redis_writes(self):
+        agent = AssistantAgent()
+        fake_redis = MagicMock()
+        with patch("agents.assistant.get_db_connection",
+                   self._db_with_settings({"memory_paused": True})), \
+             patch("agents.assistant._get_redis", return_value=fake_redis):
+            agent._append_memory(42, "User: hello")
+        fake_redis.pipeline.assert_not_called()
+
+    def test_memory_active_when_setting_off(self):
+        agent = AssistantAgent()
+        fake_redis = MagicMock()
+        fake_redis.lrange.return_value = ["Assistant: hi", "User: hi"]
+        with patch("agents.assistant.get_db_connection",
+                   self._db_with_settings({"memory_paused": False})), \
+             patch("agents.assistant._get_redis", return_value=fake_redis):
+            recalled = agent._recall_memory(42)
+        # Redis was consulted and the lines come back oldest-first.
+        fake_redis.lrange.assert_called_once()
+        assert recalled == ["User: hi", "Assistant: hi"]
+
+    def test_memory_active_when_no_user_agent_row(self):
+        """Brand-new user with no row in user_agents → not paused."""
+        agent = AssistantAgent()
+        cur = MagicMock()
+        cur.fetchone.return_value = None  # no row
+        cur.__enter__ = lambda s: s
+        cur.__exit__ = MagicMock(return_value=False)
+        conn = MagicMock()
+        conn.cursor.return_value = cur
+        fake_redis = MagicMock()
+        fake_redis.lrange.return_value = []
+        with patch("agents.assistant.get_db_connection",
+                   MagicMock(return_value=conn)), \
+             patch("agents.assistant._get_redis", return_value=fake_redis):
+            agent._recall_memory(42)
+        fake_redis.lrange.assert_called_once()
+
+    def test_memory_paused_db_error_does_not_block(self):
+        """A DB outage during the paused-flag lookup falls back to *not
+        paused* — better to keep memory hot than silently strip context."""
+        agent = AssistantAgent()
+        fake_redis = MagicMock()
+        fake_redis.lrange.return_value = []
+        with patch("agents.assistant.get_db_connection",
+                   side_effect=RuntimeError("db down")), \
+             patch("agents.assistant._get_redis", return_value=fake_redis):
+            agent._recall_memory(42)
+        fake_redis.lrange.assert_called_once()

@@ -220,11 +220,22 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       const row = event.detail;
       const notif = serverToLocal(row);
       if (processedIdsRef.current.has(notif.id)) return;
+      // Bidirectional dedup: a dedicated real-time listener (friendRequestReceived,
+      // newMessageReceived, etc.) may have already shown this same notification via
+      // addNotification before this persisted event arrived. The backend emits the
+      // domain event (e.g. friend_request_received) BEFORE create_notification's
+      // `notification` event, so this path usually runs second — skip it if the
+      // related entity was already surfaced locally.
+      const relatedKey = row.related_id ? `${notif.type}-related-${row.related_id}` : null;
+      if (relatedKey && processedIdsRef.current.has(relatedKey)) {
+        processedIdsRef.current.add(notif.id);
+        return;
+      }
       processedIdsRef.current.add(notif.id);
       // Register related_id key so that dedicated CustomEvent listeners
       // (friendRequestReceived, newMessageReceived, etc.) won't duplicate
-      if (row.related_id) {
-        processedIdsRef.current.add(`${notif.type}-related-${row.related_id}`);
+      if (relatedKey) {
+        processedIdsRef.current.add(relatedKey);
       }
       setNotifications(prev => [notif, ...prev].slice(0, 50));
       playNotificationSound();
@@ -292,6 +303,12 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     };
 
     processedIdsRef.current.add(contentHash);
+    // Register the related-entity key so the persisted `server-notification` event
+    // (which arrives just after this real-time event) dedups against this entry
+    // instead of adding a second, duplicate notification for the same thing.
+    if (dataId) {
+      processedIdsRef.current.add(`${notification.type}-related-${dataId}`);
+    }
     setNotifications(prev => [newNotification, ...prev]);
 
     // Show toast notification

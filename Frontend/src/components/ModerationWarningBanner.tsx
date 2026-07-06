@@ -2,7 +2,7 @@ import { Shield, AlertTriangle, Flag, UserX } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ModerationWarningBannerProps {
-  action: 'warn' | 'flag' | 'remove_user' | 'block' | 'remove_message' | 'block_user';
+  action: 'allow' | 'warn' | 'flag' | 'remove_user' | 'block' | 'remove_message' | 'block_user';
   severity?: 'none' | 'low' | 'medium' | 'high' | 'critical';
   reasons?: string[];
   username?: string;

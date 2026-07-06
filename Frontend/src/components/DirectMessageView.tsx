@@ -1,6 +1,8 @@
 // components/DirectMessageView.tsx - DM conversation view
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video } from 'lucide-react';
+import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video, Sparkles } from 'lucide-react';
+import AgentMessageShell from '@/components/ai-agents/AgentMessageShell';
+import { aiAgentService, type DMSummaryResult } from '@/services/aiAgentService';
 import { useDirectMessages } from '@/contexts/DirectMessagesContext';
 import { useFriends } from '@/contexts/FriendsContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -37,7 +39,7 @@ interface DirectMessageViewProps {
 }
 
 export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, username, displayName, avatar, onClose }) => {
-  const { conversations, messages, sendMessage, deleteMessage, editMessage, markAsRead } = useDirectMessages();
+  const { conversations, messages, sendMessage, deleteMessage, editMessage, markAsRead, deliverUploadedMessage } = useDirectMessages();
   const { friends } = useFriends();
   const { user: currentUser } = useAuth();
   const { isDarkMode } = useTheme();
@@ -54,6 +56,9 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const prevMessagesLengthRef = useRef(0);
   const isInitialLoadRef = useRef(true);
+  // While true, keep the view pinned to the newest message (used to survive
+  // async image/attachment loads that grow the list height after render).
+  const stickToBottomRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -63,6 +68,19 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const [newMessageCount, setNewMessageCount] = useState(0);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
+
+  // Ephemeral DM summary state — mirrors the channel ``/summarize`` UX
+  // from Dashboard.tsx but scoped to a single 1:1 thread. Result is only
+  // ever shown to the requester (the backend route is requester-private),
+  // dismissed on close, and rerendered fresh per request.
+  const [dmSummary, setDmSummary] = useState<{
+    content: string;
+    method: string;
+    message_count: number;
+    created_at: string;
+  } | null>(null);
+  const [isGeneratingDmSummary, setIsGeneratingDmSummary] = useState(false);
+  const [displayedDmSummaryText, setDisplayedDmSummaryText] = useState('');
 
   // Profile popover state
   const [profilePopover, setProfilePopover] = useState<{ username: string; rect: DOMRect | null } | null>(null);
@@ -279,6 +297,28 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   useEffect(() => {
     isInitialLoadRef.current = true;
     prevMessagesLengthRef.current = 0;
+    stickToBottomRef.current = true;
+  }, [userId]);
+
+  // Keep the view pinned to the bottom while the conversation's images/videos
+  // load in. scrollIntoView on first render fires BEFORE media has height, so
+  // without this the view lands on old messages. We re-pin on each media load
+  // until the user scrolls up (stickToBottomRef flips false in handleScroll).
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const pin = () => {
+      if (stickToBottomRef.current) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+      }
+    };
+    const onMediaLoad = (e: Event) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'IMG' || el.tagName === 'VIDEO')) pin();
+    };
+    // 'load' doesn't bubble, so listen in the capture phase.
+    container.addEventListener('load', onMediaLoad, true);
+    return () => container.removeEventListener('load', onMediaLoad, true);
   }, [userId]);
 
   useEffect(() => {
@@ -299,8 +339,13 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
     prevMessagesLengthRef.current = enrichedMessages.length;
 
     if (isInitial) {
-      // Jump instantly to bottom on first load
-      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+      // Jump to bottom on first load, then re-pin across the next few frames to
+      // catch async layout shifts (images/attachments loading their height).
+      const jump = () => messagesEndRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+      jump();
+      requestAnimationFrame(jump);
+      setTimeout(jump, 150);
+      setTimeout(jump, 450);
       setNewMessageCount(0);
     } else if (isNearBottom || (hasNewMessage && enrichedMessages.length > 0 && enrichedMessages[enrichedMessages.length - 1]?.sender_id === currentUserId)) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -318,6 +363,8 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
     setShouldAutoScroll(isNearBottom);
+    // Stop auto-pinning once the user deliberately scrolls up.
+    stickToBottomRef.current = isNearBottom;
     setShowJumpToLatest(!isNearBottom);
     if (isNearBottom) {
       setNewMessageCount(0);
@@ -346,19 +393,115 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
     }
   };
 
+  /** Kick off a private DM summary — used by the header button and by
+   *  the ``/summarize`` slash-intercept. Skeleton appears immediately;
+   *  the result replaces it (or an error toast does). */
+  const requestDmSummary = useCallback(async (messageCount = 100) => {
+    if (isGeneratingDmSummary) return;
+    setIsGeneratingDmSummary(true);
+    setDmSummary(null);
+    setDisplayedDmSummaryText('');
+    try {
+      const result: DMSummaryResult = await aiAgentService.summarizeDM(userId, messageCount);
+      if (result.success) {
+        setDmSummary({
+          content: result.summary,
+          method: result.method || 'extractive',
+          message_count: result.message_count,
+          created_at: new Date().toISOString(),
+        });
+      } else {
+        toast({
+          title: 'Could not summarize',
+          description: result.error || 'Not enough messages to summarize yet.',
+          variant: 'default',
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Summary failed',
+        description: err?.message || 'Could not generate DM summary.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGeneratingDmSummary(false);
+    }
+  }, [userId, isGeneratingDmSummary, toast]);
+
+  // Scroll the skeleton/summary card into view as soon as it mounts so
+  // the user doesn't have to hunt for it. Mirrors Dashboard.tsx:227.
+  useEffect(() => {
+    if ((isGeneratingDmSummary || dmSummary) && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [isGeneratingDmSummary, dmSummary]);
+
+  // Typewriter effect for the summary body — matches the channel
+  // ephemeral card. Skipped when prefers-reduced-motion is on (the
+  // pulse is already gated via Tailwind ``motion-reduce`` elsewhere;
+  // here we just reveal the full text instantly).
+  useEffect(() => {
+    if (!dmSummary) {
+      setDisplayedDmSummaryText('');
+      return;
+    }
+    const reduce = typeof window !== 'undefined'
+      && window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) {
+      setDisplayedDmSummaryText(dmSummary.content);
+      return;
+    }
+    const text = dmSummary.content;
+    let i = 0;
+    setDisplayedDmSummaryText('');
+    const tick = () => {
+      i = Math.min(text.length, i + 3);
+      setDisplayedDmSummaryText(text.slice(0, i));
+      if (i < text.length) timer = window.setTimeout(tick, 14);
+    };
+    let timer = window.setTimeout(tick, 14);
+    return () => window.clearTimeout(timer);
+  }, [dmSummary]);
+
+  // Clear the ephemeral card when the user navigates to a different
+  // DM — the result is requester-private and conversation-scoped.
+  useEffect(() => {
+    setDmSummary(null);
+    setIsGeneratingDmSummary(false);
+    setDisplayedDmSummaryText('');
+  }, [userId]);
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // /summarize is intercepted client-side — it is not a real DM, just
+    // a request for a private summary card. Mirrors Dashboard.tsx:736.
+    const trimmed = message.trim();
+    if (trimmed.toLowerCase().startsWith('/summarize') && !pendingFile) {
+      const parts = trimmed.split(/\s+/);
+      let count = 100;
+      if (parts[1] && /^\d+$/.test(parts[1])) {
+        count = Math.min(parseInt(parts[1], 10), 200);
+      }
+      setMessage('');
+      setReplyingTo(null);
+      void requestDmSummary(count);
+      return;
+    }
 
     // File upload flow
     if (pendingFile) {
       setUploadProgress(0);
       try {
-        await uploadService.uploadDMFile(
+        const uploaded = await uploadService.uploadDMFile(
           pendingFile,
           userId,
           message.trim() || undefined,
           (p: UploadProgress) => setUploadProgress(p.percent)
         );
+        // Show it locally + broadcast to the receiver immediately (no reload).
+        deliverUploadedMessage(uploaded as unknown as DirectMessage);
         setPendingFile(null);
         setMessage('');
       } catch (error: any) {
@@ -412,13 +555,15 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
     setUploadProgress(0);
     try {
-      await uploadService.uploadDMFile(
+      const uploaded = await uploadService.uploadDMFile(
         audioFile,
         userId,
         undefined, // No caption for voice messages
         (p: UploadProgress) => setUploadProgress(p.percent),
         duration
       );
+      // Show it locally + broadcast to the receiver immediately (no reload).
+      deliverUploadedMessage(uploaded as unknown as DirectMessage);
       toast({ title: 'Voice message sent', description: `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}` });
     } catch (error: any) {
       console.error('Voice message upload failed:', error);
@@ -535,8 +680,17 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             </p>
           </div>
 
-          {/* Call buttons */}
+          {/* Header actions: Catch-me-up + call buttons */}
           <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => requestDmSummary(100)}
+              disabled={isGeneratingDmSummary}
+              className="p-2.5 rounded-xl transition-all [transition-duration:140ms] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--agent-accent-community))] disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
+              title="Catch me up — summarize this conversation"
+              aria-label="Summarize this conversation"
+            >
+              <Sparkles className="w-[18px] h-[18px]" />
+            </button>
             <button
               onClick={handleAudioCall}
               disabled={callState !== 'idle'}
@@ -561,7 +715,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
       <main 
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 relative"
+        className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-4 py-4 relative"
       >
         {enrichedMessages.length === 0 ? (
           <div className="h-full flex items-center justify-center">
@@ -691,7 +845,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                                 )}
                               </div>
                             ) : (
-                            <p className={`text-sm leading-relaxed break-words px-4 py-2.5 w-fit text-[hsl(var(--theme-text-primary))] bg-[hsl(var(--theme-message-other))] transition-colors duration-200 ${showAvatar ? 'rounded-2xl rounded-tl-md' : 'rounded-2xl rounded-tl-md'}`}>
+                            <p className={`text-sm leading-relaxed break-words [overflow-wrap:anywhere] max-w-full px-4 py-2.5 w-fit text-[hsl(var(--theme-text-primary))] bg-[hsl(var(--theme-message-other))] transition-colors duration-200 ${showAvatar ? 'rounded-2xl rounded-tl-md' : 'rounded-2xl rounded-tl-md'}`}>
                               <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-normal' : ''}>
                                 {msg.content}
                               </span>
@@ -763,10 +917,14 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                     onMouseEnter={() => setHoveredMessageId(msg.id)}
                     onMouseLeave={() => setHoveredMessageId(null)}
                   >
-                    {/* Message Menu — 3-dot */}
+                    {/* Message Menu — 3-dot.
+                        self-start stops this wrapper from stretching to the full
+                        (possibly tall, e.g. image) message height — otherwise the
+                        dropdown's `top-full` anchors to the bottom of the message
+                        instead of just below the button. */}
                     <div
                       data-message-menu
-                      className="opacity-0 group-hover:opacity-100 transition-all duration-200 relative flex-shrink-0 flex items-center"
+                      className="opacity-0 group-hover:opacity-100 transition-all duration-200 relative flex-shrink-0 self-start flex items-center"
                     >
                       <button
                         onClick={() => setMenuOpen(menuOpen === msg.id ? null : msg.id)}
@@ -871,7 +1029,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                                 )}
                               </div>
                             ) : (
-                            <p className={`text-sm leading-relaxed break-words text-white bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] px-4 py-2.5 w-fit shadow-md hover:shadow-lg transition-all duration-200 ml-auto ${showAvatar ? 'rounded-2xl rounded-tr-md' : 'rounded-2xl rounded-tr-md'}`}>
+                            <p className={`text-sm leading-relaxed break-words [overflow-wrap:anywhere] max-w-full text-white bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] px-4 py-2.5 w-fit shadow-md hover:shadow-lg transition-all duration-200 ml-auto ${showAvatar ? 'rounded-2xl rounded-tr-md' : 'rounded-2xl rounded-tr-md'}`}>
                               <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-normal' : ''}>
                                 {msg.content}
                               </span>
@@ -956,6 +1114,41 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             avatar={getAvatarUrl(avatar, username)}
           />
         )}
+
+        {/* DM summary — skeleton while generating, ephemeral card on result.
+            Only the requester sees this; nothing is persisted. */}
+        {isGeneratingDmSummary && (
+          <AgentMessageShell
+            agentName="summarizer"
+            isPrivate
+            variant="skeleton"
+            skeletonLabel="Generating summary"
+          />
+        )}
+        {dmSummary && (
+          <AgentMessageShell
+            agentName="summarizer"
+            isPrivate
+            timestamp={formatTime(dmSummary.created_at)}
+            onDismiss={() => { setDmSummary(null); setDisplayedDmSummaryText(''); }}
+          >
+            <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+              {displayedDmSummaryText}
+              {displayedDmSummaryText.length < dmSummary.content.length && (
+                <span
+                  className="inline-block w-0.5 h-4 ml-0.5 animate-pulse motion-reduce:animate-none align-middle"
+                  style={{ backgroundColor: 'hsl(var(--agent-accent-community))' }}
+                />
+              )}
+            </div>
+            <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
+              <span>Method: {dmSummary.method}</span>
+              <span>•</span>
+              <span>{dmSummary.message_count} messages analyzed</span>
+            </div>
+          </AgentMessageShell>
+        )}
+
         <div ref={messagesEndRef} />
 
         {/* Jump to latest button */}
@@ -1014,6 +1207,11 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             </button>
             <input
               type="text"
+              enterKeyHint="send"
+              inputMode="text"
+              autoCapitalize="sentences"
+              autoComplete="off"
+              autoCorrect="on"
               placeholder={`Message @${displayName || username}`}
               value={message}
               onChange={(e) => {

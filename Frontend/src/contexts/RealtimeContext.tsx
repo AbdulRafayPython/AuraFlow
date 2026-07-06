@@ -9,11 +9,12 @@ import authService from '@/services/authService';
 
 interface RealtimeContextType {
   isConnected: boolean;
+  hasConnectedOnce: boolean;
   communities: Community[];
   currentCommunity: Community | null;
   channels: Channel[];
   currentChannel: Channel | null;
-  selectCommunity: (communityId: number | null) => void;
+  selectCommunity: (communityId: string | null) => void;
   selectChannel: (channelId: number) => void;
   addChannel: (channel: Channel) => void;
   friends: Friend[];
@@ -21,6 +22,7 @@ interface RealtimeContextType {
   selectFriend: (friendId: number) => void;
   messages: Message[];
   sendMessage: (content: string, messageType?: 'text' | 'image' | 'file', replyTo?: number) => Promise<SendMessageResponse | undefined>;
+  addLocalMessage: (message: Message) => void;
   updateMessageField: (messageId: number, fields: Partial<Message>) => void;
   loadMoreMessages: () => Promise<void>;
   typingUsers: TypingUser[];
@@ -39,6 +41,11 @@ export const RealtimeContext = createContext<RealtimeContextType | undefined>(un
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
+  // Distinguishes "never connected yet" (show "Connecting...") from "was
+  // connected, lost it" (show "Reconnecting..."). Without this, the header
+  // shows the alarming "Reconnecting..." label even on the very first,
+  // perfectly normal socket handshake after a page load.
+  const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [currentCommunity, setCurrentCommunity] = useState<Community | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -59,7 +66,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoadingCurrentUser, setIsLoadingCurrentUser] = useState(true);
 
-  const typingTimeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const typingTimeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const previousChannelRef = useRef<number | null>(null);
   const messageIdsRef = useRef<Set<string>>(new Set());
   const currentUserRef = useRef<User | null>(null);
@@ -123,6 +130,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       console.log('[REALTIME] Loaded channels:', data);
       setChannels(data);
       if (data.length > 0 && !currentChannel) {
+        // Set the loading flag in the same tick as the channel so React never
+        // paints a frame with messages=[] and isLoadingMessages=false for a
+        // channel we haven't fetched yet (that frame renders as a false
+        // "this channel is empty" placeholder — see selectChannel below).
+        setIsLoadingMessages(true);
         setCurrentChannel(data[0]);
       }
     } catch (error) {
@@ -153,6 +165,15 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     setIsLoadingMessages(true);
     try {
       const data = await messageService.getChannelMessages(channelId, 50, offset);
+
+      // Stale-request guard: if the user switched channels while the request
+      // was in flight, discard the response so it doesn't overwrite the
+      // correct channel's messages.
+      if (currentChannelRef.current?.id !== channelId) {
+        console.log(`[REALTIME] Discarding stale messages for channel ${channelId} (current: ${currentChannelRef.current?.id})`);
+        return;
+      }
+
       console.log('[REALTIME] Loaded messages:', data.length);
       
       // Debug: Check for blocked users
@@ -208,8 +229,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const checkConnection = setInterval(() => {
       const connected = socketService.isConnected();
       setIsConnected(connected);
-      
       if (connected) {
+        setHasConnectedOnce(true);
         console.log('[REALTIME] Socket connected, ready to load data');
         clearInterval(checkConnection);
       }
@@ -324,12 +345,13 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       console.log('[REALTIME] Community deleted:', data);
       
       const deletedCommunityId = data.community_id;
-      
+      const deletedCommunityPublicId = data.community_public_id;
+
       // Remove community from list
-      setCommunities((prev) => prev.filter(c => c.id !== deletedCommunityId));
-      
+      setCommunities((prev) => prev.filter(c => c.id !== deletedCommunityPublicId));
+
       // If this was the current community, navigate to Home
-      if (currentCommunity?.id === deletedCommunityId) {
+      if (currentCommunity?.id === deletedCommunityPublicId) {
         console.log('[REALTIME] Current community was deleted, navigating to Home');
         setCurrentCommunity(null);
         setCurrentChannel(null);
@@ -352,12 +374,13 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       // Only process if it's the current user who left
       if (currentUserRef.current && data.user_id === currentUserRef.current.id) {
         const leftCommunityId = data.community_id;
-        
+        const leftCommunityPublicId = data.community_public_id;
+
         // Remove community from list
-        setCommunities((prev) => prev.filter(c => c.id !== leftCommunityId));
-        
+        setCommunities((prev) => prev.filter(c => c.id !== leftCommunityPublicId));
+
         // If this was the current community, navigate to Home
-        if (currentCommunityRef.current?.id === leftCommunityId) {
+        if (currentCommunityRef.current?.id === leftCommunityPublicId) {
           console.log('[REALTIME] Left current community, navigating to Home');
           setCurrentCommunity(null);
           setCurrentChannel(null);
@@ -403,10 +426,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       }
       
       // Remove community from list
-      setCommunities((prev) => prev.filter(c => c.id !== data.community_id));
-      
+      setCommunities((prev) => prev.filter(c => c.id !== data.community_public_id));
+
       // ALWAYS navigate to home if current community was removed, regardless of other communities
-      if (currentCommunityRef.current?.id === data.community_id) {
+      if (currentCommunityRef.current?.id === data.community_public_id) {
         setCurrentCommunity(null);
         setCurrentChannel(null);
         setChannels([]);
@@ -522,9 +545,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
           ? { 
               ...m, 
               moderation: {
-                ...m.moderation,
-                action: data.action,
-                severity: data.severity,
+                ...(m.moderation ?? {}),
+                action: data.action as 'allow' | 'warn' | 'flag' | 'block' | 'remove_message' | 'remove_user' | 'block_user',
+                severity: data.severity as 'none' | 'low' | 'medium' | 'high',
                 reasons: data.reasons,
                 explanation: data.explanation,
                 violation_count: data.violation_count,
@@ -574,25 +597,31 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   // Connection status polling
   useEffect(() => {
     const interval = setInterval(() => {
-      setIsConnected(socketService.isConnected());
+      const connected = socketService.isConnected();
+      setIsConnected(connected);
+      if (connected) setHasConnectedOnce(true);
     }, 1000);
 
     return () => clearInterval(interval);
   }, []);
 
-  // Load initial data - only when socket is connected
+  // Load initial data (user, friends) as soon as we have a token — this used
+  // to wait on `isConnected`, but the socket handshake has nothing to do with
+  // these plain REST calls, and gating on it just added the full Socket.IO
+  // connect time as extra latency in front of every page load. Communities
+  // load in their own effect below (was already ungated, kept separate to
+  // avoid double-fetching it here).
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (!token || !isConnected) {
-      console.log('[REALTIME] Skipping data load - no token or not connected');
+    if (!token) {
+      console.log('[REALTIME] Skipping data load - no token');
       return;
     }
 
-    console.log('[REALTIME] Loading initial data (user, communities, friends)');
+    console.log('[REALTIME] Loading initial data (user, friends)');
     loadCurrentUser();
-    loadCommunities();
     loadFriends();
-  }, [isConnected, loadCurrentUser, loadCommunities, loadFriends]);
+  }, [loadCurrentUser, loadFriends]);
 
   // ALSO load communities immediately when token is available (faster initial load)
   useEffect(() => {
@@ -668,7 +697,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentChannel, isLoadingMessages, messageOffset, loadMessages]);
 
-  const selectCommunity = useCallback((communityId: number | null) => {
+  const selectCommunity = useCallback((communityId: string | null) => {
     if (communityId === null) {
       console.log('[REALTIME] Clearing community selection');
       setCurrentCommunity(null);
@@ -683,7 +712,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
     const community = communities.find((c) => c.id === communityId);
     if (community) {
-      console.log('[REALTIME] Selected community:', community.name);
+      console.log('[REALTIME SOCKET EVENT] Selected community:', community.name);
       setCurrentCommunity(community);
       currentCommunityRef.current = community;
       setCurrentChannel(null);
@@ -698,6 +727,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const channel = channels.find((c) => c.id === channelId);
     if (channel) {
       console.log('[REALTIME] Selected channel:', channel.name);
+      // See loadChannels' auto-select branch for why this is set here,
+      // synchronously with setCurrentChannel/setMessages([]), rather than
+      // waiting for the loadMessages effect to fire.
+      setIsLoadingMessages(true);
       setCurrentChannel(channel);
       currentChannelRef.current = channel;
       setCurrentFriend(null);
@@ -730,11 +763,37 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const channelId = currentChannel.id;
+
+    // OPTIMISTIC RENDER: plain text/image/file messages show up instantly with
+    // a temporary negative id, matching DirectMessagesContext's pattern — the
+    // bubble no longer waits on the DB round trip. Slash commands (/summarize,
+    // /mood, etc.) are excluded: they don't always create a persisted message
+    // (many are ephemeral) and Dashboard already renders a dedicated skeleton
+    // for them, so speculatively rendering the raw "/command" text would just
+    // flicker in and out.
+    const isCommand = content.trim().startsWith('/');
+    const tempId = -(Date.now() * 1000 + Math.floor(Math.random() * 1000));
+    if (!isCommand) {
+      const optimisticMessage: Message = {
+        id: tempId,
+        channel_id: channelId,
+        sender_id: currentUser?.id ?? 0,
+        content,
+        message_type: messageType,
+        created_at: new Date().toISOString(),
+        author: currentUser?.display_name || currentUser?.username || 'You',
+        avatar_url: currentUser?.avatar_url,
+        reply_to: replyTo ?? null,
+      };
+      setMessages((prev) => [...prev, optimisticMessage]);
+    }
+
     try {
-      console.log('[REALTIME] Sending message to channel:', currentChannel.id);
+      console.log('[REALTIME] Sending message to channel:', channelId);
 
       const response = await messageService.sendChannelMessage({
-        channel_id: currentChannel.id,
+        channel_id: channelId,
         content,
         message_type: messageType,
         ...(replyTo ? { reply_to: replyTo } : {}),
@@ -744,30 +803,52 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         const messageId = String(response.message.id);
         if (!messageIdsRef.current.has(messageId)) {
           messageIdsRef.current.add(messageId);
-          
-          // Attach moderation data if it exists (for warning tags)
-          const messageToAdd = {
-            ...response.message,
-            moderation: response.moderation || undefined
-          } as Message;
-          
-          setMessages((prev) => [...prev, messageToAdd]);
         }
+
+        // Attach moderation data if it exists (for warning tags)
+        const messageToAdd = {
+          ...response.message,
+          moderation: response.moderation || undefined
+        } as Message;
+
+        setMessages((prev) => {
+          // Guard the optimistic-echo race: the server broadcasts
+          // `message_received` to the whole channel room — sender included —
+          // and on fast/local connections that socket echo can beat this HTTP
+          // response back. If it did, the real row (messageId) is already in
+          // the list; strip any such echo first so swapping the placeholder
+          // can't leave two copies of the same server id. Dedup is by id only,
+          // never by content — identical messages sent twice stay distinct.
+          const withoutEcho = prev.filter((m) => String(m.id) !== messageId);
+          // Swap the optimistic placeholder for the real, server-confirmed
+          // message if we rendered one; otherwise (commands) just append.
+          const hasPlaceholder = withoutEcho.some((m) => m.id === tempId);
+          if (hasPlaceholder) {
+            return withoutEcho.map((m) => (m.id === tempId ? messageToAdd : m));
+          }
+          return [...withoutEcho, messageToAdd];
+        });
         // Server now broadcasts message_received; no client rebroadcast needed
         console.log('[REALTIME] Message sent successfully (server will broadcast):', response.message.id);
         if (response.moderation) {
           console.log('[REALTIME] Message has moderation data:', response.moderation);
         }
-      } else if (response?.moderation) {
-        console.warn('[REALTIME] Message moderated:', response.moderation);
+      } else {
+        // No persisted message (ephemeral command result, or moderation block)
+        // — drop the optimistic placeholder if we rendered one.
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        if (response?.moderation) {
+          console.warn('[REALTIME] Message moderated:', response.moderation);
+        }
       }
 
       return response;
     } catch (error) {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
       console.error('[REALTIME] Failed to send message:', error);
       throw error;
     }
-  }, [currentChannel]);
+  }, [currentChannel, currentUser]);
 
   const sendTyping = useCallback(() => {
     if (currentChannel && isConnected) {
@@ -784,6 +865,19 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Optimistically append a message that originated locally (e.g. an agent
+  // posted via HTTP). Dedups against messageIdsRef so the server's socket echo
+  // — if it arrives — is ignored. Scoped to the currently open channel.
+  const addLocalMessage = useCallback((message: Message) => {
+    if (currentChannelRef.current && message.channel_id !== currentChannelRef.current.id) {
+      return;
+    }
+    const messageId = String(message.id);
+    if (messageIdsRef.current.has(messageId)) return;
+    messageIdsRef.current.add(messageId);
+    setMessages((prev) => [...prev, message]);
+  }, []);
+
   // Granular message field updater — avoids full refetch
   const updateMessageField = useCallback((messageId: number, fields: Partial<Message>) => {
     setMessages(prev => prev.map(m => m.id === messageId ? { ...m, ...fields } : m));
@@ -791,6 +885,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
   const value: RealtimeContextType = useMemo(() => ({
     isConnected,
+    hasConnectedOnce,
     communities,
     currentCommunity,
     channels,
@@ -803,6 +898,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     selectFriend,
     messages,
     sendMessage,
+    addLocalMessage,
     updateMessageField,
     loadMoreMessages,
     typingUsers,
@@ -811,13 +907,13 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     isLoadingMessages,
     isLoadingCommunities,
     isLoadingFriends,
-    currentUser,               
+    currentUser,
     isLoadingCurrentUser,
     reloadCommunities,
   }), [
-    isConnected, communities, currentCommunity, channels, currentChannel,
+    isConnected, hasConnectedOnce, communities, currentCommunity, channels, currentChannel,
     selectCommunity, selectChannel, addChannel, friends, currentFriend,
-    selectFriend, messages, sendMessage, updateMessageField, loadMoreMessages,
+    selectFriend, messages, sendMessage, addLocalMessage, updateMessageField, loadMoreMessages,
     typingUsers, sendTyping, userStatuses, isLoadingMessages,
     isLoadingCommunities, isLoadingFriends, currentUser, isLoadingCurrentUser,
     reloadCommunities,

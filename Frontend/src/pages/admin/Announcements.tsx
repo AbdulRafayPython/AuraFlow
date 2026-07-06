@@ -69,8 +69,8 @@ export default function Announcements() {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/community-admin/community/${selectedCommunity.id}/announcements`,
-        { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }
+        `/api/admin/community/${selectedCommunity.id}/announcements`,
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
       );
       const data = await res.json();
       setAnnouncements(data.announcements || []);
@@ -108,13 +108,13 @@ export default function Announcements() {
     try {
       const method = editing ? 'PUT' : 'POST';
       const url = editing
-        ? `/api/community-admin/community/${selectedCommunity!.id}/announcements/${editing.id}`
-        : `/api/community-admin/community/${selectedCommunity!.id}/announcements`;
+        ? `/api/admin/community/${selectedCommunity!.id}/announcements/${editing.id}`
+        : `/api/admin/community/${selectedCommunity!.id}/announcements`;
 
       const res = await fetch(url, {
         method,
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('access_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -140,10 +140,10 @@ export default function Announcements() {
     if (!confirm('Delete this announcement?')) return;
     try {
       const res = await fetch(
-        `/api/community-admin/community/${selectedCommunity!.id}/announcements/${id}`,
+        `/api/admin/community/${selectedCommunity!.id}/announcements/${id}`,
         {
           method: 'DELETE',
-          headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
         }
       );
       if (!res.ok) throw new Error(await res.text());

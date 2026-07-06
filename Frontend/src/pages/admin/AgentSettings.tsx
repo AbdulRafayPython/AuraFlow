@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { useCommunityDashboard } from '@/contexts/CommunityDashboardContext';
 import adminService from '@/services/adminService';
 import { Bot, Loader2, Check, AlertCircle, RefreshCw } from 'lucide-react';
+import { settingMeta, formatDefault } from '@/components/ai-agents/agentSettingsMeta';
 
 interface AgentRow {
   agent_type: string;
@@ -21,6 +22,10 @@ interface AgentRow {
   usage_count: number;
   last_active: string | null;
 }
+
+// Plain-English labels for the raw setting keys live in the shared
+// `agentSettingsMeta` module so this page and the personal-agent settings panel
+// stay in sync. See Frontend/src/components/ai-agents/agentSettingsMeta.ts.
 
 export default function AgentSettings() {
   const { selectedCommunity } = useCommunityDashboard();
@@ -36,6 +41,22 @@ export default function AgentSettings() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCommunity?.id]);
+
+  // After agents render, honor `#agent-<type>` deep-links from
+  // /admin/agents → Configure so the right card scrolls into view.
+  useEffect(() => {
+    if (loading || agents.length === 0) return;
+    const hash = window.location.hash;
+    if (!hash || !hash.startsWith('#agent-')) return;
+    // Wait one frame so the card refs are in the DOM.
+    const id = window.requestAnimationFrame(() => {
+      const target = document.getElementById(hash.slice(1));
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [loading, agents.length]);
 
   const load = async () => {
     if (!selectedCommunity?.id) return;
@@ -96,10 +117,10 @@ export default function AgentSettings() {
     <div className="space-y-6 max-w-4xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[hsl(var(--theme-text-primary))]">AI Agents</h1>
+          <h1 className="text-2xl font-bold text-[hsl(var(--theme-text-primary))]">AI Helpers</h1>
           <p className="text-sm text-[hsl(var(--theme-text-muted))] mt-1">
-            Toggle and tune AI agents for <span className="font-medium">{selectedCommunity.name}</span>. Platform defaults
-            apply when no override is set.
+            Turn AI helpers on or off for <span className="font-medium">{selectedCommunity.name}</span> and adjust how they
+            behave. Anything you don’t change keeps the recommended setting.
           </p>
         </div>
         <button
@@ -125,7 +146,7 @@ export default function AgentSettings() {
       ) : agents.length === 0 ? (
         <div className="text-center py-16 rounded-2xl border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.5)]">
           <Bot className="w-10 h-10 text-[hsl(var(--theme-text-muted))] mx-auto mb-3" />
-          <p className="text-[hsl(var(--theme-text-secondary))] font-medium">No community agents available</p>
+          <p className="text-[hsl(var(--theme-text-secondary))] font-medium">No AI helpers available yet</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -170,7 +191,10 @@ function AgentCard({
   const editableKeys = Object.keys(agent.default_settings || agent.settings || {});
 
   return (
-    <div className="rounded-2xl border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.5)] overflow-hidden">
+    <div
+      id={`agent-${agent.agent_type}`}
+      className="rounded-2xl border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.5)] overflow-hidden scroll-mt-24"
+    >
       <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-[hsl(var(--theme-border-default))]">
         <div className="flex items-start gap-3 min-w-0">
           <div className="text-2xl flex-shrink-0">{agent.icon || '🤖'}</div>
@@ -178,17 +202,16 @@ function AgentCard({
             <h3 className="font-semibold text-[hsl(var(--theme-text-primary))]">{agent.display_name}</h3>
             <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5 line-clamp-2">{agent.description}</p>
             <div className="flex items-center gap-3 mt-2 text-xs text-[hsl(var(--theme-text-muted))]">
-              <span className="font-mono">{agent.agent_type}</span>
               {agent.has_override ? (
                 <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                  Custom override
+                  Customized
                 </span>
               ) : (
                 <span className="px-2 py-0.5 rounded-full bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))]">
-                  Using platform defaults
+                  Using recommended settings
                 </span>
               )}
-              {agent.usage_count > 0 && <span>{agent.usage_count} runs</span>}
+              {agent.usage_count > 0 && <span>Used {agent.usage_count} time{agent.usage_count === 1 ? '' : 's'}</span>}
             </div>
           </div>
         </div>
@@ -205,19 +228,23 @@ function AgentCard({
       {editableKeys.length > 0 && (
         <div className="p-6 space-y-4">
           <p className="text-xs text-[hsl(var(--theme-text-muted))]">
-            Per-community tunables. Leave blank to inherit platform defaults.
+            Fine-tune how this helper works. Anything you leave as-is keeps the recommended setting.
           </p>
           {editableKeys.map((k) => {
             const def = agent.default_settings?.[k];
             const current = settings[k] ?? '';
             const isBool = typeof def === 'boolean' || typeof current === 'boolean';
             const isNumber = typeof def === 'number' || (typeof current === 'number');
+            const meta = settingMeta(k);
             return (
               <div key={k} className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">{k}</p>
-                  <p className="text-xs text-[hsl(var(--theme-text-muted))]">
-                    Default: <span className="font-mono">{JSON.stringify(def)}</span>
+                  <p className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">{meta.label}</p>
+                  {meta.help && (
+                    <p className="text-xs text-[hsl(var(--theme-text-secondary))] mt-0.5">{meta.help}</p>
+                  )}
+                  <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
+                    Recommended: <span className="font-medium">{formatDefault(def)}</span>
                   </p>
                 </div>
                 {isBool ? (

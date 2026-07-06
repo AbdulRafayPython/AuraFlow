@@ -327,7 +327,7 @@ def _emit_moderation_event(sio, final_action, room, channel_id, community_id,
             try:
                 rm_conn = get_db_connection()
                 with rm_conn.cursor() as rm_cur:
-                    rm_cur.execute("SELECT name, logo_url, color, icon FROM communities WHERE id = %s", (community_id,))
+                    rm_cur.execute("SELECT name, logo_url, color, icon, public_id FROM communities WHERE id = %s", (community_id,))
                     community_data = rm_cur.fetchone()
                     rm_cur.execute("INSERT IGNORE INTO blocked_users (community_id, user_id) VALUES (%s, %s)", (community_id, user_id))
                     rm_cur.execute("DELETE FROM channel_members WHERE user_id = %s AND channel_id IN (SELECT id FROM channels WHERE community_id = %s)", (user_id, community_id))
@@ -357,7 +357,9 @@ def _emit_moderation_event(sio, final_action, room, channel_id, community_id,
             }, room=room, namespace='/')
             
             sio.emit('community:removed', {
-                'community_id': community_id, 'user_id': user_id,
+                'community_id': community_id,
+                'community_public_id': community_data['public_id'] if community_data else None,
+                'user_id': user_id,
                 'reason': 'violation',
                 'message': 'You were removed from this community for repeated violations (3 strikes).',
                 'notification': {
@@ -845,9 +847,9 @@ def _post_bot_message(channel_id, community_id, content, sender_id):
         with conn.cursor() as cur:
             # Insert the message
             cur.execute("""
-                INSERT INTO messages (channel_id, sender_id, content, message_type)
-                VALUES (%s, %s, %s, 'ai')
-            """, (channel_id, sender_id, content))
+                INSERT INTO messages (channel_id, sender_id, content, message_type, bot_name)
+                VALUES (%s, %s, %s, 'ai', %s)
+            """, (channel_id, sender_id, content, 'Summarizer Agent'))
             message_id = cur.lastrowid
 
             # Fetch for broadcast payload
@@ -1079,9 +1081,10 @@ def check_user_summary_schedules(self):
             # Find schedules due this minute (UTC) that haven't been triggered today
             cur.execute("""
                 SELECT s.id, s.user_id, s.channel_id, s.community_id, s.timezone,
-                       c.name AS channel_name
+                       c.name AS channel_name, co.public_id AS community_public_id
                 FROM user_summary_schedules s
                 JOIN channels c ON c.id = s.channel_id
+                JOIN communities co ON co.id = s.community_id
                 WHERE s.is_active = TRUE
                   AND TIME_FORMAT(s.schedule_time, '%%H:%%i') = %s
                   AND (s.last_triggered_at IS NULL OR DATE(s.last_triggered_at) < CURDATE())
@@ -1157,7 +1160,7 @@ def check_user_summary_schedules(self):
                                 title=f"📝 Summary ready — #{schedule['channel_name']}",
                                 body=f"Your scheduled summary ({msg_count} messages) is ready to view.",
                                 icon_url='/AuraflowLogo.png',
-                                link=f"/community/{schedule['community_id']}",
+                                link=f"/community/{schedule['community_public_id']}",
                                 related_id=schedule['channel_id'],
                                 emit=False,  # _socketio is None in Celery, we emit manually below
                             )

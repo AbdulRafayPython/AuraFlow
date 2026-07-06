@@ -16,6 +16,15 @@ Usage:
 
 import os
 import sys
+
+# Same rationale as app.py: Windows' console defaults to cp1252, which can't
+# encode the emoji used throughout this codebase's print()/log statements —
+# any of them would crash a task with UnicodeEncodeError.
+if sys.platform == 'win32':
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, 'reconfigure'):
+            _stream.reconfigure(encoding='utf-8', errors='replace')
+
 from celery import Celery
 from celery.schedules import crontab
 from kombu import Exchange, Queue
@@ -38,7 +47,7 @@ celery_app = Celery(
     'auraflow',
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=['tasks.agent_tasks', 'tasks.email_tasks']
+    include=['tasks.agent_tasks', 'tasks.email_tasks', 'tasks.orchestrator_tasks']
 )
 
 if _ssl_opts:
@@ -139,6 +148,14 @@ celery_app.conf.beat_schedule = {
         'schedule': 30.0,                             # Every 30 seconds — flush stale mod buffers
         'options': {'queue': 'high_priority'},
     },
+    # Autonomous-agent heartbeat. Replaces fixed-cadence periodic crons
+    # one at a time — each adaptive agent subscribes to tick.minute and
+    # decides for itself whether its schedule is due.
+    'autonomous-tick-minute': {
+        'task': 'tasks.orchestrator_tasks.publish_minute_tick',
+        'schedule': crontab(minute='*'),               # Every minute
+        'options': {'queue': 'periodic'},
+    },
 }
 
 # ── Task Routing ──────────────────────────────────────────────────────
@@ -156,4 +173,26 @@ celery_app.conf.task_routes = {
     'tasks.agent_tasks.cleanup_old_logs': {'queue': 'periodic'},
     'tasks.agent_tasks.auto_summarize_communities': {'queue': 'periodic'},
     'tasks.agent_tasks.check_user_summary_schedules': {'queue': 'periodic'},
+    'tasks.orchestrator_tasks.publish_minute_tick':    {'queue': 'periodic'},
+    'tasks.orchestrator_tasks.run_orchestrator':       {'queue': 'periodic'},
 }
+
+# ── Auto-start orchestrator on worker boot ────────────────────────────
+# The orchestrator (agents.orchestrator.run_loop) is an INFINITE blocking
+# Redis pub/sub loop. It must NOT run as a normal queued Celery task:
+#   • on a solo pool it would occupy the single execution slot forever, so
+#     no periodic/agent task would ever run again;
+#   • under task_acks_late + visibility_timeout it would be redelivered
+#     every 5 min, spawning duplicate orchestrators that double-dispatch
+#     every bus event.
+# Instead we run it in a daemon THREAD, off the task pool: it leaves all
+# worker threads free for real tasks, is never redelivered, and there is
+# exactly one instance per worker process (so run a SINGLE worker).
+from celery.signals import worker_ready
+
+@worker_ready.connect
+def _start_orchestrator(sender, **kwargs):
+    import threading
+    from agents.orchestrator import run_loop
+    t = threading.Thread(target=run_loop, name="AgentOrchestrator", daemon=True)
+    t.start()

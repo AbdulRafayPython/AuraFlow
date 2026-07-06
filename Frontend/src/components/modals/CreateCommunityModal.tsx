@@ -6,7 +6,7 @@ import { channelService } from "@/services/channelService";
 import { useRealtime } from "@/hooks/useRealtime";
 import type { Community } from "@/types";
 import { X, Sparkles, ArrowRight, ArrowLeft, UploadCloud } from "lucide-react";
-import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
+import { ResponsiveModal, ResponsiveModalContent, ResponsiveModalTitle } from "@/components/ui/responsive-modal";
 
 interface CreateCommunityModalProps {
   isOpen: boolean;
@@ -203,9 +203,9 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
               <Sparkles className="w-[18px] h-[18px] text-white" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-[hsl(var(--theme-text-primary))]">
+              <ResponsiveModalTitle className="text-base font-semibold text-[hsl(var(--theme-text-primary))]">
                 Create Community
-              </h2>
+              </ResponsiveModalTitle>
               <p className="text-[11px] text-[hsl(var(--theme-text-muted))] mt-0.5">
                 Step {step} of 2 — {step === 1 ? 'Basic Details' : 'Branding'}
               </p>

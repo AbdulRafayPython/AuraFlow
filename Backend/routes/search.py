@@ -2,7 +2,7 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
-from utils import get_avatar_url, get_user_id
+from utils import get_avatar_url, get_user_id, get_community_id_from_public_id
 import logging
 
 log = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ def search_messages():
         if len(query) < 2:
             return jsonify({'error': 'Search query must be at least 2 characters'}), 400
 
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
         channel_id = request.args.get('channel_id', type=int)
         scope = request.args.get('scope', 'all')
         limit = min(request.args.get('limit', 20, type=int), 50)

@@ -4,7 +4,7 @@
  * All data is scoped to the selected community.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { useCommunityDashboard } from '@/contexts/CommunityDashboardContext';
 import adminService, { DailyEngagement, HourlyActivity, ChannelStats } from '@/services/adminService';
@@ -96,33 +96,73 @@ export default function EngagementAnalytics() {
   }, [selectedCommunity?.id, days]);
 
   // Format daily data for chart
-  const formattedDailyData = dailyData.map(d => ({
-    date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    messages: d.messages,
-    users: d.active_users,
-  }));
+  const formattedDailyData = useMemo(
+    () =>
+      dailyData.map(d => ({
+        date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        messages: d.messages,
+        users: d.active_users,
+      })),
+    [dailyData]
+  );
 
-  // Create heatmap data (24 hours x 7 days)
+  // The backend currently returns hourly totals without a day_of_week breakdown
+  // (see community_admin.py:1602 — `GROUP BY HOUR(created_at)` only). If any row
+  // *does* carry day_of_week, we honor it; otherwise every day-row reuses the
+  // same hourly aggregate. The old `|| undefined` fallback silently matched
+  // any day on every hour, which inflated intensities.
+  const hasDayOfWeek = useMemo(
+    () => hourlyData.some(h => typeof h.day_of_week === 'number'),
+    [hourlyData]
+  );
+
+  // Index hourly data once so the heatmap render is O(168) lookups, not O(168 * N).
+  const hourlyIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const h of hourlyData) {
+      const key = hasDayOfWeek ? `${h.day_of_week}-${h.hour}` : `${h.hour}`;
+      map.set(key, h.count ?? h.messages ?? 0);
+    }
+    return map;
+  }, [hourlyData, hasDayOfWeek]);
+
   const getHeatmapIntensity = (hour: number, day: number) => {
-    const activity = hourlyData.find(h => h.hour === hour && (h.day_of_week === day || h.day_of_week === undefined));
-    return activity?.count || activity?.messages || 0;
+    const key = hasDayOfWeek ? `${day}-${hour}` : `${hour}`;
+    return hourlyIndex.get(key) ?? 0;
   };
 
-  const maxActivity = Math.max(...hourlyData.map(h => h.count || h.messages || 0), 1);
+  const maxActivity = useMemo(
+    () => Math.max(...hourlyData.map(h => h.count || h.messages || 0), 1),
+    [hourlyData]
+  );
 
   // Summary stats
-  const totalMessages = dailyData.reduce((sum, d) => sum + (d.message_count || d.messages || 0), 0);
-  const avgDailyMessages = dailyData.length > 0 ? Math.round(totalMessages / dailyData.length) : 0;
-  const avgActiveUsers = dailyData.length > 0 
-    ? Math.round(dailyData.reduce((sum, d) => sum + d.active_users, 0) / dailyData.length) 
-    : 0;
-  const peakHour = hourlyData.length > 0 
-    ? hourlyData.reduce((max, h) => {
-        const hCount = h.count || h.messages || 0;
-        const maxCount = max.count || max.messages || 0;
-        return hCount > maxCount ? h : max;
-      }, hourlyData[0])
-    : null;
+  const totalMessages = useMemo(
+    () => dailyData.reduce((sum, d) => sum + (d.message_count || d.messages || 0), 0),
+    [dailyData]
+  );
+  const avgDailyMessages = useMemo(
+    () => (dailyData.length > 0 ? Math.round(totalMessages / dailyData.length) : 0),
+    [dailyData.length, totalMessages]
+  );
+  const avgActiveUsers = useMemo(
+    () =>
+      dailyData.length > 0
+        ? Math.round(dailyData.reduce((sum, d) => sum + d.active_users, 0) / dailyData.length)
+        : 0,
+    [dailyData]
+  );
+  const peakHour = useMemo(
+    () =>
+      hourlyData.length > 0
+        ? hourlyData.reduce((max, h) => {
+            const hCount = h.count || h.messages || 0;
+            const maxCount = max.count || max.messages || 0;
+            return hCount > maxCount ? h : max;
+          }, hourlyData[0])
+        : null,
+    [hourlyData]
+  );
 
   return (
     <div className="space-y-6">

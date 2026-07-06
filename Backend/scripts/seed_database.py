@@ -551,11 +551,11 @@ def run_seed():
     for username, display_name, email in USERS:
         bio = f"Hey! I'm {display_name}. Love tech and connecting with people on AuraFlow."
         cur.execute("""
-            INSERT INTO users (username, display_name, email, password, bio, avatar_url, 
+            INSERT INTO users (public_id, username, display_name, email, password, bio, avatar_url,
                              status, is_first_login, otp_verified, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, 'offline', 0, 1, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'offline', 0, 1, %s)
         """, (
-            username, display_name, email, HASHED_PW, bio,
+            str(uuid.uuid4()), username, display_name, email, HASHED_PW, bio,
             avatar_url(username),
             datetime.now() - timedelta(days=random.randint(10, 120)),
         ))

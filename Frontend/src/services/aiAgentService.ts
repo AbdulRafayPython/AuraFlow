@@ -12,6 +12,20 @@ export interface SummaryResult {
   error?: string;
 }
 
+export interface DMSummaryResult {
+  success: boolean;
+  summary: string;
+  key_points: string[];
+  action_items?: string[];
+  message_count: number;
+  participants: string[];
+  method?: 'extractive' | 'gemini-ai';
+  summary_length?: 'brief' | 'standard' | 'detailed';
+  peer_user_id: number;
+  time_range?: { start: string; end: string } | string;
+  error?: string;
+}
+
 export interface MoodAnalysis {
   sentiment: 'positive' | 'negative' | 'neutral';
   confidence: number;
@@ -209,6 +223,84 @@ export interface AgentLogsResponse {
   };
 }
 
+// Autonomous-agent metrics shape returned by GET /api/agents/metrics.
+// Matches the same JSON consumed by Frontend/src/pages/system-admin/AgentMetrics.tsx;
+// promoted here so the Community Intelligence Hub (F4) can share the type.
+export interface PerAgentMetricsRow {
+  agent_name: string;
+  acts: number;
+  defers: number;
+  skips: number;
+  total: number;
+  autonomy_ratio: number;
+}
+
+export interface MetricsResponse {
+  window_days: number;
+  community_id: number | null;
+  autonomy: {
+    acts: number;
+    defers: number;
+    skips: number;
+    total_decisions: number;
+    autonomy_ratio: number;
+    human_triggered: number;
+    autonomous_share: number;
+  };
+  goal_attainment: {
+    goal_threshold: number;
+    buckets: number;
+    met: number;
+    ratio: number;
+    avg_sentiment: number;
+  };
+  feedback: {
+    positive: number;
+    negative: number;
+    engaged: number;
+    dismissed: number;
+    ignored: number;
+    feedback_ratio: number;
+    total: number;
+  };
+  per_agent: PerAgentMetricsRow[];
+}
+
+/**
+ * G1a — per-channel agent overrides keyed `channel_id → agent_type → enabled`.
+ *
+ * Returned by `getChannelCoverage`. Cells absent from this map inherit the
+ * community-wide enabled flag from `getCommunityAgentStatus()`. Cells present
+ * here win — `enabled: false` means "disabled on this channel even when the
+ * agent is enabled community-wide".
+ */
+export interface ChannelCoverage {
+  [channelId: number]: { [agentType: string]: boolean };
+}
+
+/**
+ * G1b — autonomous-decision log row from `agent_actions`.
+ *
+ * Distinct from {@link AgentLog} (which reads `ai_agent_logs`, the human-
+ * triggered post-execution log). The `correlation_id` here is a real UUID
+ * that resolves against `POST /api/agents/<name>/feedback`, so Helpful /
+ * Not helpful / Dismiss votes persist instead of 404ing.
+ */
+export type AgentDecisionLiteral = 'act' | 'defer' | 'skip';
+
+export interface AgentAction {
+  id: number;
+  agent_name: string;
+  community_id: number | null;
+  channel_id: number | null;
+  user_id: number | null;
+  decision: AgentDecisionLiteral;
+  reason: string;
+  correlation_id: string;
+  created_at: string | null;
+  has_feedback: boolean;
+}
+
 class AIAgentService {
   // =====================================================
   // SUMMARIZER AGENT
@@ -221,6 +313,21 @@ class AIAgentService {
       return response as any;
     } catch (error: any) {
       throw new Error(error.data?.error || error.message || 'Failed to generate summary');
+    }
+  }
+
+  /**
+   * Ephemeral 1:1 DM summary. Result is only ever returned to the
+   * requester — nothing persists server-side.
+   */
+  async summarizeDM(peerUserId: number, messageCount: number = 100): Promise<DMSummaryResult> {
+    try {
+      const response = await api.post(`/api/agents/summarize/dm/${peerUserId}`, {
+        message_count: messageCount,
+      });
+      return response as any;
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to generate DM summary');
     }
   }
 
@@ -370,7 +477,7 @@ class AIAgentService {
 
   async getModerationLog(channelId: number, limit: number = 20): Promise<any[]> {
     try {
-      const response = await api.get(`/api/agents/moderation/log/${channelId}?limit=${limit}`);
+      const response: any = await api.get(`/api/agents/moderation/log/${channelId}?limit=${limit}`);
       return response.data.log || [];
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to fetch moderation log');
@@ -493,6 +600,41 @@ class AIAgentService {
     }
   }
 
+  /**
+   * Post engagement content into a channel as a real AI bot message.
+   * kind: 'starter' | 'poll' | 'icebreaker' | 'challenge' | 'pack'
+   */
+  async sendEngagementContent(
+    channelId: number,
+    kind: 'starter' | 'poll' | 'icebreaker' | 'challenge' | 'pack' = 'pack',
+    category?: string
+  ): Promise<any> {
+    try {
+      const response = await api.post('/api/agents/engagement/send', {
+        channel_id: channelId,
+        kind,
+        category,
+      });
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || error.message || 'Failed to send engagement content');
+    }
+  }
+
+  /** Fetch current poll tallies + the caller's vote for a poll card. */
+  async getPoll(messageId: number): Promise<{ tallies: number[]; total: number; my_vote: number | null }> {
+    const response = await api.get(`/api/agents/engagement/poll/${messageId}`);
+    return response as any;
+  }
+
+  /** Cast or change the caller's vote on a poll card. */
+  async votePoll(messageId: number, optionIndex: number): Promise<{ tallies: number[]; total: number; my_vote: number }> {
+    const response = await api.post(`/api/agents/engagement/poll/${messageId}/vote`, {
+      option_index: optionIndex,
+    });
+    return response as any;
+  }
+
   async logActivity(channelId: number, activityType: string, activityTitle: string): Promise<any> {
     try {
       const response = await api.post('/api/agents/engagement/activity/log', {
@@ -598,7 +740,7 @@ class AIAgentService {
   // =====================================================
   async extractKnowledgeByChannel(channelId: number, messageCount: number = 50): Promise<KnowledgeEntry[]> {
     try {
-      const response = await api.post(`/api/agents/knowledge/extract/${channelId}`, {
+      const response: any = await api.post(`/api/agents/knowledge/extract/${channelId}`, {
         message_count: messageCount
       });
       return response.data.knowledge || [];
@@ -699,7 +841,7 @@ class AIAgentService {
   // =====================================================
   async startFocusSession(sessionType: 'work' | 'break' | 'meeting', durationMinutes: number): Promise<FocusSession> {
     try {
-      const response = await api.post('/api/agents/focus/session/start', {
+      const response: any = await api.post('/api/agents/focus/session/start', {
         session_type: sessionType,
         duration_minutes: durationMinutes
       });
@@ -711,7 +853,7 @@ class AIAgentService {
 
   async endFocusSession(sessionId: number): Promise<FocusSession> {
     try {
-      const response = await api.post(`/api/agents/focus/session/${sessionId}/end`);
+      const response: any = await api.post(`/api/agents/focus/session/${sessionId}/end`);
       return response.data.session;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to end focus session');
@@ -720,7 +862,7 @@ class AIAgentService {
 
   async getFocusStats(userId: number, days: number = 7): Promise<any> {
     try {
-      const response = await api.get(`/api/agents/focus/stats/${userId}?days=${days}`);
+      const response: any = await api.get(`/api/agents/focus/stats/${userId}?days=${days}`);
       return response.data.stats;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to fetch focus stats');
@@ -779,7 +921,7 @@ class AIAgentService {
   // =====================================================
   async getAgentStatus(): Promise<Record<string, string>> {
     try {
-      const response = await api.get('/api/agents/health');
+      const response: any = await api.get('/api/agents/health');
       return response.data.agents;
     } catch (error: any) {
       throw new Error('Failed to check agent status');
@@ -793,7 +935,7 @@ class AIAgentService {
   async getAgentCatalog(communityId?: number): Promise<AgentCatalogEntry[]> {
     try {
       const params = communityId ? `?community_id=${communityId}` : '';
-      const response = await api.get(`/api/agents/catalog${params}`);
+      const response: any = await api.get(`/api/agents/catalog${params}`);
       return response.agents || [];
     } catch (error: any) {
       console.error('[Agent Service] Catalog error:', error);
@@ -836,9 +978,53 @@ class AIAgentService {
     }
   }
 
+  /**
+   * G1a — per-channel agent overrides (CoverageMatrix).
+   * Returns the override map; cells absent from the map inherit the
+   * community-wide enabled flag from getCommunityAgentStatus.
+   */
+  async getChannelCoverage(communityId: number): Promise<ChannelCoverage> {
+    try {
+      const response = await api.get(`/api/agents/coverage/${communityId}`) as { coverage?: ChannelCoverage };
+      const raw = response?.coverage ?? {};
+      // Backend keys channel_id as a string (JSON object key). Re-key as number
+      // so callers can index by Channel.id without string casts at every site.
+      const out: ChannelCoverage = {};
+      for (const [chKey, agentMap] of Object.entries(raw)) {
+        const chId = Number(chKey);
+        if (Number.isFinite(chId)) out[chId] = agentMap as Record<string, boolean>;
+      }
+      return out;
+    } catch (error: any) {
+      console.error('[Agent Service] Get coverage error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to load channel coverage');
+    }
+  }
+
+  async configureChannelAgent(
+    communityId: number,
+    channelId: number,
+    agentType: string,
+    enabled: boolean,
+  ): Promise<{ success: boolean; enabled: boolean }> {
+    try {
+      const response = await api.put(
+        `/api/agents/configure/channel/${communityId}/${channelId}/${agentType}`,
+        { enabled },
+      ) as { success?: boolean; enabled?: boolean };
+      return {
+        success: response?.success === true,
+        enabled: response?.enabled === true,
+      };
+    } catch (error: any) {
+      console.error('[Agent Service] Configure channel agent error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to configure channel override');
+    }
+  }
+
   async getCommunityAgentStatus(communityId: number): Promise<InstalledAgent[]> {
     try {
-      const response = await api.get(`/api/agents/status/community/${communityId}`);
+      const response: any = await api.get(`/api/agents/status/community/${communityId}`);
       return response.agents || [];
     } catch (error: any) {
       console.error('[Agent Service] Community status error:', error);
@@ -871,7 +1057,7 @@ class AIAgentService {
 
   async getPersonalAgentStatus(): Promise<InstalledAgent[]> {
     try {
-      const response = await api.get('/api/agents/status/personal');
+      const response: any = await api.get('/api/agents/status/personal');
       return response.agents || [];
     } catch (error: any) {
       console.error('[Agent Service] Personal status error:', error);
@@ -891,6 +1077,21 @@ class AIAgentService {
     }
   }
 
+  /**
+   * Clear the user's rolling assistant conversation memory.
+   * Backend deletes the `assistant:mem:{user_id}` Redis LIST.
+   * Used by the My Assistant panel (Settings → AI Agents).
+   */
+  async clearAssistantMemory(): Promise<{ success: boolean }> {
+    try {
+      const response = await api.del('/api/agents/assistant/memory') as { success?: boolean };
+      return { success: !!response?.success };
+    } catch (error: any) {
+      console.error('[Agent Service] Clear assistant memory error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to clear assistant memory');
+    }
+  }
+
   async getAgentLogs(params?: { agent_type?: string; community_id?: number; status?: string; page?: number; limit?: number }): Promise<AgentLogsResponse> {
     try {
       const searchParams = new URLSearchParams();
@@ -899,11 +1100,54 @@ class AIAgentService {
       if (params?.status) searchParams.set('status', params.status);
       if (params?.page) searchParams.set('page', String(params.page));
       if (params?.limit) searchParams.set('limit', String(params.limit));
-      const response = await api.get(`/api/agents/logs?${searchParams.toString()}`);
+      const response: any = await api.get(`/api/agents/logs?${searchParams.toString()}`);
       return response;
     } catch (error: any) {
       console.error('[Agent Service] Logs error:', error);
       throw new Error(error.data?.error || error.message || 'Failed to fetch agent logs');
+    }
+  }
+
+  /**
+   * G1b — autonomous-decision rows from `agent_actions`. Distinct from
+   * getAgentLogs (which reads `ai_agent_logs`). Each row carries a real
+   * UUID correlation_id usable for /agents/<name>/feedback.
+   */
+  async getAgentActions(params: {
+    community_id: number;
+    limit?: number;
+    agent_name?: string;
+    decision?: AgentDecisionLiteral;
+  }): Promise<AgentAction[]> {
+    try {
+      const sp = new URLSearchParams();
+      sp.set('community_id', String(params.community_id));
+      if (params.limit !== undefined) sp.set('limit', String(params.limit));
+      if (params.agent_name) sp.set('agent_name', params.agent_name);
+      if (params.decision) sp.set('decision', params.decision);
+      const response = await api.get(`/api/agents/actions?${sp.toString()}`) as { actions?: AgentAction[] };
+      return Array.isArray(response?.actions) ? response.actions : [];
+    } catch (error: any) {
+      console.error('[Agent Service] Actions error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to fetch agent actions');
+    }
+  }
+
+  // Autonomy / goal-attainment / feedback metrics. Backs the
+  // Community Intelligence Hub outcome tiles + intelligence state pill (F4)
+  // and shares the response shape with the platform-wide AgentMetrics page.
+  async getAgentMetrics(params: { days?: number; community_id?: number } = {}): Promise<MetricsResponse> {
+    try {
+      const searchParams = new URLSearchParams();
+      if (params.days !== undefined) searchParams.set('days', String(params.days));
+      if (params.community_id !== undefined) searchParams.set('community_id', String(params.community_id));
+      const qs = searchParams.toString();
+      const url = qs ? `/api/agents/metrics?${qs}` : '/api/agents/metrics';
+      const response = await api.get(url);
+      return response as unknown as MetricsResponse;
+    } catch (error: any) {
+      console.error('[Agent Service] Metrics error:', error);
+      throw new Error(error.data?.error || error.message || 'Failed to fetch agent metrics');
     }
   }
 

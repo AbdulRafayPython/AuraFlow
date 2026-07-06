@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 import json
 import logging
+from utils import resolve_public_community_id, get_community_id_from_public_id
 
 log = logging.getLogger(__name__)
 
@@ -590,7 +591,7 @@ def get_flagged_messages():
         status = request.args.get('status')  # flagged, warned, resolved
         severity = request.args.get('severity')  # low, medium, high, critical
         flag_type = request.args.get('flag_type')  # toxic, spam, harassment, etc.
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
         limit = min(request.args.get('limit', 20, type=int), 100)
         offset = max(request.args.get('offset', 0, type=int), 0)
         
@@ -822,7 +823,7 @@ def get_blocked_users():
     """Get all blocked users across communities."""
     conn = None
     try:
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
         limit = min(request.args.get('limit', 20, type=int), 100)
         offset = max(request.args.get('offset', 0, type=int), 0)
         
@@ -1362,7 +1363,7 @@ def get_mood_trends():
     conn = None
     try:
         days = min(request.args.get('days', 7, type=int), 30)
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
         
         conn = get_db_connection()
         with conn.cursor() as cur:
@@ -1725,8 +1726,9 @@ def get_weekly_report():
 # COMMUNITY-SPECIFIC ADMIN ROUTES
 # =====================================
 
-@admin_bp.route('/community/<int:community_id>/stats', methods=['GET'])
+@admin_bp.route('/community/<uuid:public_id>/stats', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def get_community_admin_stats(community_id):
     """Get admin statistics for a specific community."""
@@ -1811,8 +1813,9 @@ def get_community_admin_stats(community_id):
 # COMMUNITY-SCOPED ROUTES (for community admin dashboard)
 # =====================================
 
-@admin_bp.route('/community/<int:community_id>/overview', methods=['GET'])
+@admin_bp.route('/community/<uuid:public_id>/overview', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def get_community_overview(community_id):
     """Get overview stats for a specific community (community admin dashboard)."""
@@ -1930,8 +1933,9 @@ def get_community_overview(community_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/alerts', methods=['GET'])
+@admin_bp.route('/community/<uuid:public_id>/alerts', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def get_community_alerts(community_id):
     """Get recent moderation alerts for a specific community."""
@@ -1982,8 +1986,9 @@ def get_community_alerts(community_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/moderation/flagged', methods=['GET'])
+@admin_bp.route('/community/<uuid:public_id>/moderation/flagged', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def get_community_flagged(community_id):
     """Get flagged messages scoped to a specific community."""
@@ -2053,8 +2058,9 @@ def get_community_flagged(community_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/moderation/resolve/<int:log_id>', methods=['POST'])
+@admin_bp.route('/community/<uuid:public_id>/moderation/resolve/<int:log_id>', methods=['POST'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def resolve_community_flag(community_id, log_id):
     """Resolve a moderation flag within a community."""
@@ -2112,8 +2118,9 @@ def resolve_community_flag(community_id, log_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/moderation/blocked', methods=['GET'])
+@admin_bp.route('/community/<uuid:public_id>/moderation/blocked', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def get_community_blocked(community_id):
     """Get blocked users in a specific community."""
@@ -2156,8 +2163,9 @@ def get_community_blocked(community_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/moderation/unblock/<int:user_id>', methods=['DELETE'])
+@admin_bp.route('/community/<uuid:public_id>/moderation/unblock/<int:user_id>', methods=['DELETE'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def unblock_community_user(community_id, user_id):
     """Unblock a user from a specific community."""
@@ -2186,8 +2194,9 @@ def unblock_community_user(community_id, user_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/moderation/block', methods=['POST'])
+@admin_bp.route('/community/<uuid:public_id>/moderation/block', methods=['POST'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def block_community_user(community_id):
     """Block a user from a specific community."""
@@ -2222,8 +2231,9 @@ def block_community_user(community_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/members', methods=['GET'])
+@admin_bp.route('/community/<uuid:public_id>/members', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def get_community_members(community_id):
     """Get members of a specific community."""
@@ -2302,8 +2312,9 @@ def get_community_members(community_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/members/<int:user_id>', methods=['GET'])
+@admin_bp.route('/community/<uuid:public_id>/members/<int:user_id>', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def get_community_member_details(community_id, user_id):
     """Get details of a specific member in a community."""
@@ -2355,8 +2366,9 @@ def get_community_member_details(community_id, user_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/analytics/health', methods=['GET'])
+@admin_bp.route('/community/<uuid:public_id>/analytics/health', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def get_community_health_scoped(community_id):
     """Get health metrics for a specific community."""
@@ -2413,8 +2425,9 @@ def get_community_health_scoped(community_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/analytics/mood', methods=['GET'])
+@admin_bp.route('/community/<uuid:public_id>/analytics/mood', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def get_community_mood(community_id):
     """Get mood trends for a specific community."""
@@ -2477,8 +2490,9 @@ def get_community_mood(community_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/analytics/engagement', methods=['GET'])
+@admin_bp.route('/community/<uuid:public_id>/analytics/engagement', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def get_community_engagement(community_id):
     """Get engagement analytics for a specific community."""
@@ -2525,8 +2539,9 @@ def get_community_engagement(community_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/reports/daily', methods=['GET'])
+@admin_bp.route('/community/<uuid:public_id>/reports/daily', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def get_community_daily_report(community_id):
     """Get daily report for a specific community."""
@@ -2596,8 +2611,9 @@ def get_community_daily_report(community_id):
             conn.close()
 
 
-@admin_bp.route('/community/<int:community_id>/reports/weekly', methods=['GET'])
+@admin_bp.route('/community/<uuid:public_id>/reports/weekly', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_admin
 def get_community_weekly_report(community_id):
     """Get weekly report for a specific community."""
@@ -2688,8 +2704,8 @@ def get_all_communities():
         conn = get_db_connection()
         with conn.cursor() as cur:
             query = """
-                SELECT 
-                    c.id, c.name, c.description, c.icon, c.color, c.logo_url, c.created_at,
+                SELECT
+                    c.id, c.public_id, c.name, c.description, c.icon, c.color, c.logo_url, c.created_at,
                     (SELECT COUNT(*) FROM community_members WHERE community_id = c.id) as member_count,
                     (SELECT COUNT(*) FROM channels WHERE community_id = c.id) as channel_count,
                     (SELECT u.username FROM users u 
@@ -2725,7 +2741,7 @@ def get_all_communities():
             communities = cur.fetchall()
             
             result = [{
-                'id': c['id'],
+                'id': c['public_id'],
                 'name': c['name'],
                 'description': c['description'],
                 'icon': c['icon'],
@@ -3212,8 +3228,9 @@ def toggle_agent(agent_id):
             conn.close()
 
 
-@admin_bp.route('/system/communities/<int:community_id>/activity', methods=['GET'])
+@admin_bp.route('/system/communities/<uuid:public_id>/activity', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_true_system_admin
 def get_community_activity(community_id):
     """Get community activity heatmap and trend data. System admin only."""
@@ -3276,8 +3293,9 @@ def get_community_activity(community_id):
             conn.close()
 
 
-@admin_bp.route('/system/communities/<int:community_id>', methods=['GET'])
+@admin_bp.route('/system/communities/<uuid:public_id>', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_true_system_admin
 def get_community_details(community_id):
     """Get detailed info for a single community. System admin only."""
@@ -3286,7 +3304,7 @@ def get_community_details(community_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT c.id, c.name, c.description, c.icon, c.color, c.logo_url, c.banner_url, c.created_at,
+                SELECT c.id, c.public_id, c.name, c.description, c.icon, c.color, c.logo_url, c.banner_url, c.created_at,
                        (SELECT COUNT(*) FROM community_members WHERE community_id = c.id) as member_count,
                        (SELECT COUNT(*) FROM channels WHERE community_id = c.id) as channel_count,
                        (SELECT COUNT(*) FROM blocked_users WHERE community_id = c.id) as blocked_count,
@@ -3338,7 +3356,7 @@ def get_community_details(community_id):
             return jsonify({
                 'success': True,
                 'community': {
-                    'id': community['id'],
+                    'id': community['public_id'],
                     'name': community['name'],
                     'description': community['description'],
                     'icon': community['icon'],
@@ -3378,8 +3396,9 @@ def get_community_details(community_id):
             conn.close()
 
 
-@admin_bp.route('/system/communities/<int:community_id>', methods=['PUT'])
+@admin_bp.route('/system/communities/<uuid:public_id>', methods=['PUT'])
 @jwt_required()
+@resolve_public_community_id
 @require_true_system_admin
 def update_community_details(community_id):
     """Update a community's name/description. System admin only."""
@@ -3428,8 +3447,9 @@ def update_community_details(community_id):
             conn.close()
 
 
-@admin_bp.route('/system/communities/<int:community_id>', methods=['DELETE'])
+@admin_bp.route('/system/communities/<uuid:public_id>', methods=['DELETE'])
 @jwt_required()
+@resolve_public_community_id
 @require_true_system_admin
 def delete_community(community_id):
     """Delete a community and all its data. System admin only."""
@@ -3467,8 +3487,9 @@ def delete_community(community_id):
             conn.close()
 
 
-@admin_bp.route('/system/communities/<int:community_id>/members', methods=['GET'])
+@admin_bp.route('/system/communities/<uuid:public_id>/members', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_true_system_admin
 def get_community_members_system(community_id):
     """List members of a community with stats. System admin only."""
@@ -3550,8 +3571,9 @@ def get_community_members_system(community_id):
             conn.close()
 
 
-@admin_bp.route('/system/communities/<int:community_id>/members/<int:user_id>/role', methods=['PUT'])
+@admin_bp.route('/system/communities/<uuid:public_id>/members/<int:user_id>/role', methods=['PUT'])
 @jwt_required()
+@resolve_public_community_id
 @require_true_system_admin
 def update_community_member_role(community_id, user_id):
     """Change a member's role in a community. System admin only."""
@@ -3606,8 +3628,9 @@ def update_community_member_role(community_id, user_id):
             conn.close()
 
 
-@admin_bp.route('/system/communities/<int:community_id>/members/<int:user_id>', methods=['DELETE'])
+@admin_bp.route('/system/communities/<uuid:public_id>/members/<int:user_id>', methods=['DELETE'])
 @jwt_required()
+@resolve_public_community_id
 @require_true_system_admin
 def remove_community_member(community_id, user_id):
     """Remove a member from a community. System admin only. Cannot remove owner."""
@@ -3713,6 +3736,112 @@ def get_platform_stats():
 
 
 # =====================================
+# SYSTEM-ADMIN NOTIFICATIONS
+# =====================================
+
+@admin_bp.route('/system/notifications', methods=['GET'])
+@jwt_required()
+@require_true_system_admin
+def get_system_notifications():
+    """
+    Platform-wide notification feed for the system admin.
+
+    Aggregates recent admin-relevant events from real data — high/critical
+    moderation flags, newly created communities, and newly registered users —
+    into a single time-ordered feed. Stateless: read/unread tracking is handled
+    client-side against the most recent `created_at`, so there is no schema or
+    per-admin storage to maintain here.
+    """
+    conn = None
+    try:
+        limit = min(request.args.get('limit', 15, type=int), 50)
+        conn = get_db_connection()
+        notifications = []
+        with conn.cursor() as cur:
+            # --- High/critical moderation flags (last 14 days) ---
+            cur.execute("""
+                SELECT
+                    l.id, l.created_at,
+                    JSON_UNQUOTE(JSON_EXTRACT(l.output_data, '$.severity')) AS severity,
+                    JSON_UNQUOTE(JSON_EXTRACT(l.output_data, '$.reasons[0]')) AS reason,
+                    u.username, u.display_name,
+                    c.name AS community_name
+                FROM ai_agent_logs l
+                JOIN users u ON l.user_id = u.id
+                LEFT JOIN channels ch ON l.channel_id = ch.id
+                LEFT JOIN communities c ON ch.community_id = c.id
+                WHERE l.agent_name = 'moderation'
+                  AND JSON_UNQUOTE(JSON_EXTRACT(l.output_data, '$.action')) NOT IN ('allow', 'null')
+                  AND JSON_UNQUOTE(JSON_EXTRACT(l.output_data, '$.severity')) IN ('high', 'critical')
+                  AND l.created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+                ORDER BY l.created_at DESC
+                LIMIT %s
+            """, (limit,))
+            for r in cur.fetchall():
+                who = r['display_name'] or r['username']
+                where = f" in {r['community_name']}" if r['community_name'] else ''
+                notifications.append({
+                    'id': f"flag-{r['id']}",
+                    'type': 'moderation',
+                    'severity': 'critical' if r['severity'] == 'critical' else 'high',
+                    'title': f"{(r['severity'] or 'High').capitalize()} moderation flag",
+                    'message': f"{who}'s message was flagged for {r['reason'] or 'a policy violation'}{where}.",
+                    'link': '/system-admin/moderation/flagged',
+                    'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+                })
+
+            # --- New communities (last 7 days) ---
+            cur.execute("""
+                SELECT id, name, created_at
+                FROM communities
+                WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                ORDER BY created_at DESC
+                LIMIT %s
+            """, (limit,))
+            for r in cur.fetchall():
+                notifications.append({
+                    'id': f"community-{r['id']}",
+                    'type': 'community',
+                    'severity': 'info',
+                    'title': 'New community created',
+                    'message': f"\"{r['name']}\" was created on the platform.",
+                    'link': '/system-admin/communities',
+                    'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+                })
+
+            # --- New members (last 7 days) ---
+            cur.execute("""
+                SELECT id, username, display_name, created_at
+                FROM users
+                WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                ORDER BY created_at DESC
+                LIMIT %s
+            """, (limit,))
+            for r in cur.fetchall():
+                notifications.append({
+                    'id': f"user-{r['id']}",
+                    'type': 'user',
+                    'severity': 'info',
+                    'title': 'New member registered',
+                    'message': f"{r['display_name'] or r['username']} joined AuraFlow.",
+                    'link': '/system-admin/users',
+                    'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+                })
+
+        # Merge sources, newest first, and cap the feed.
+        notifications.sort(key=lambda n: n['created_at'] or '', reverse=True)
+        notifications = notifications[:limit]
+
+        return jsonify({'success': True, 'notifications': notifications}), 200
+    except Exception as e:
+        log.error(f"[ADMIN] Error getting system notifications: {e}")
+        return jsonify({'error': 'Failed to fetch notifications'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
 # AUDIT LOGS
 # =====================================
 
@@ -3735,7 +3864,7 @@ def get_audit_logs():
         action = request.args.get('action')
         action_type = request.args.get('action_type')  # legacy: 'warn', 'suspend', etc.
         target_type = request.args.get('target_type')
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
         search = request.args.get('search', '')
         limit = min(request.args.get('limit', 20, type=int), 100)
         offset = max(request.args.get('offset', 0, type=int), 0)
@@ -3801,7 +3930,12 @@ def get_audit_logs():
             """, params + [limit, offset])
             rows = cur.fetchall()
 
-            logs = []
+            # Parse metadata up-front and gather any user IDs buried inside it
+            # (e.g. flag.resolve stores target_user_id in metadata, not as the
+            # row's target_id, so the username join above misses them).
+            _USER_ID_KEYS = ('target_user_id', 'user_id', 'author_id', 'member_id', 'actor_id')
+            parsed = []
+            extra_user_ids = set()
             for r in rows:
                 metadata = r['metadata']
                 if isinstance(metadata, str):
@@ -3809,15 +3943,48 @@ def get_audit_logs():
                         metadata = json.loads(metadata)
                     except Exception:
                         metadata = None
+                if isinstance(metadata, dict):
+                    for k in _USER_ID_KEYS:
+                        v = metadata.get(k)
+                        if isinstance(v, int):
+                            extra_user_ids.add(v)
+                parsed.append((r, metadata))
+
+            name_map = {}
+            if extra_user_ids:
+                placeholders = ','.join(['%s'] * len(extra_user_ids))
+                cur.execute(
+                    f"SELECT id, username, display_name FROM users WHERE id IN ({placeholders})",
+                    list(extra_user_ids),
+                )
+                for u in cur.fetchall():
+                    name_map[u['id']] = {
+                        'username': u['username'],
+                        'display_name': u['display_name'],
+                    }
+
+            logs = []
+            for r, metadata in parsed:
                 reason = ''
+                target_username = r['target_username']
+                target_display_name = r['target_display_name']
                 if isinstance(metadata, dict):
                     reason = metadata.get('reason') or metadata.get('note') or ''
+                    # Backfill the target name from a metadata user id when the
+                    # row itself didn't target a user (message/flag actions).
+                    if not target_username:
+                        for k in _USER_ID_KEYS:
+                            resolved = name_map.get(metadata.get(k))
+                            if resolved:
+                                target_username = resolved['username']
+                                target_display_name = resolved['display_name']
+                                break
                 logs.append({
                     'id': r['id'],
                     'admin_username': r['admin_username'],
                     'admin_display_name': r['admin_display_name'],
-                    'target_username': r['target_username'],
-                    'target_display_name': r['target_display_name'],
+                    'target_username': target_username,
+                    'target_display_name': target_display_name,
                     'action_type': r['action'],
                     'action': r['action'],
                     'target_type': r['target_type'],

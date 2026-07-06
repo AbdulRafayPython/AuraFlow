@@ -19,6 +19,8 @@ import MainLayout from './components/layout/MainLayout';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from './components/ui/toaster';
 import { ModerationToastListener } from './components/ModerationToast';
+import { AgentEventListener } from './components/AgentEventListener';
+import { AgentActivityTimeline } from './components/AgentActivityTimeline';
 import IncomingCallOverlay from './components/call/IncomingCallOverlay';
 import OutgoingCallOverlay from './components/call/OutgoingCallOverlay';
 import CallScreen from './components/call/CallScreen';
@@ -50,10 +52,10 @@ const CommunityHealth = lazy(() => import('./pages/admin').then(m => ({ default:
 const EngagementAnalytics = lazy(() => import('./pages/admin').then(m => ({ default: m.EngagementAnalytics })));
 const MoodTrends = lazy(() => import('./pages/admin').then(m => ({ default: m.MoodTrends })));
 const UserManagement = lazy(() => import('./pages/admin').then(m => ({ default: m.UserManagement })));
-const Reports = lazy(() => import('./pages/admin').then(m => ({ default: m.Reports })));
 const CommunityManagement = lazy(() => import('./pages/admin').then(m => ({ default: m.CommunityManagement })));
 const AIAgentsManagement = lazy(() => import('./pages/admin').then(m => ({ default: m.AIAgentsManagement })));
 const AgentSettings = lazy(() => import('./pages/admin').then(m => ({ default: m.AgentSettings })));
+const AgentGoals = lazy(() => import('./pages/admin').then(m => ({ default: m.AgentGoals })));
 const Announcements = lazy(() => import('./pages/admin').then(m => ({ default: m.Announcements })));
 
 // System Admin Dashboard Pages (lazy) - Platform-wide Admin
@@ -66,6 +68,8 @@ const SysUserManagement = lazy(() => import('./pages/system-admin').then(m => ({
 const SysCommunityHealth = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysCommunityHealth })));
 const SysMoodTrends = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysMoodTrends })));
 const SysEngagementAnalytics = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysEngagementAnalytics })));
+const SysAgentMetrics = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysAgentMetrics })));
+const SysAgentCollaboration = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysAgentCollaboration })));
 const SysReports = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysReports })));
 const SysCommunityManagement = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysCommunityManagement })));
 const SysAIAgentsManagement = lazy(() => import('./pages/system-admin').then(m => ({ default: m.SysAIAgentsManagement })));
@@ -253,6 +257,8 @@ export default function App() {
                         <BrowserRouter>
                           <Suspense fallback={<PageSpinner />}>
                           <ModerationToastListener />
+                          <AgentEventListener />
+                          <AgentActivityTimeline />
                           <Routes>
                             <Route path="/forgot-password" element={<ForgotPassword />} />
                             <Route path="/otp-verification" element={<OtpVerification />} />
@@ -273,6 +279,8 @@ export default function App() {
                                 <Route path="health" element={<SysCommunityHealth />} />
                                 <Route path="engagement" element={<SysEngagementAnalytics />} />
                                 <Route path="mood" element={<SysMoodTrends />} />
+                                <Route path="agents" element={<SysAgentMetrics />} />
+                                <Route path="agent-collaboration" element={<SysAgentCollaboration />} />
                               </Route>
                               <Route path="reports" element={<SysReports />} />
                               <Route path="audit-logs" element={<SysAuditLogs />} />
@@ -295,10 +303,10 @@ export default function App() {
                                 <Route path="engagement" element={<EngagementAnalytics />} />
                                 <Route path="mood" element={<MoodTrends />} />
                               </Route>
-                              <Route path="reports" element={<Reports />} />
                               <Route path="communities" element={<CommunityManagement />} />
                               <Route path="agents" element={<AIAgentsManagement />} />
                               <Route path="agents/settings" element={<AgentSettings />} />
+                              <Route path="agents/goals" element={<AgentGoals />} />
                               <Route path="announcements" element={<Announcements />} />
                             </Route>
                             <Route path="/*" element={<AppRouter />} />

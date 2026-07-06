@@ -682,6 +682,50 @@
 }
 
 /* ============================================
+   THEME: MONOCHROME (Light Theme)
+   Premium white & black — no glows, pure editorial elegance
+   Inspired by Linear / Apple / Notion aesthetic
+   ============================================ */
+[data-theme="monochrome"] {
+  --theme-bg-primary: 0 0% 100%;
+  --theme-bg-secondary: 0 0% 97%;
+  --theme-bg-tertiary: 0 0% 93%;
+  --theme-bg-elevated: 0 0% 100%;
+  --theme-bg-hover: 0 0% 95%;
+  --theme-bg-active: 0 0% 90%;
+
+  /* Flat solid — no gradients, no glow */
+  --theme-bg-gradient: hsl(0, 0%, 100%);
+  --theme-sidebar-gradient: hsl(0, 0%, 97%);
+
+  --theme-text-primary: 0 0% 6%;
+  --theme-text-secondary: 0 0% 28%;
+  --theme-text-muted: 0 0% 50%;
+  --theme-text-accent: 0 0% 6%;
+
+  --theme-accent-primary: 0 0% 8%;
+  --theme-accent-secondary: 0 0% 26%;
+  --theme-accent-gradient: hsl(0, 0%, 8%);
+
+  --theme-border-default: 0 0% 87%;
+  --theme-border-hover: 0 0% 40%;
+
+  /* Zero glow — premium flat shadows only */
+  --theme-glow-primary: 0 1px 3px 0 rgba(0,0,0,0.08), 0 1px 2px -1px rgba(0,0,0,0.08);
+  --theme-glow-secondary: 0 1px 3px 0 rgba(0,0,0,0.06);
+
+  /* No overlay shimmer effects */
+  --theme-overlay-visible: 0;
+
+  --theme-message-self: 0 0% 8%;
+  --theme-message-other: 0 0% 93%;
+
+  --theme-sidebar-bg: 0 0% 97%;
+  --theme-header-bg: 0 0% 100%;
+  --theme-input-bg: 0 0% 100%;
+}
+
+/* ============================================
    UTILITY CLASSES FOR THEMES
    ============================================ */
 
@@ -970,8 +1014,131 @@
   height: 100%;
   pointer-events: none;
   opacity: 0.03;
-  background: 
+  background:
     radial-gradient(circle at 30% 70%, hsla(25, 100%, 55%, 0.4) 0%, transparent 50%),
     radial-gradient(circle at 70% 30%, hsla(0, 100%, 60%, 0.3) 0%, transparent 50%);
   z-index: 0;
+}
+
+/* ============================================
+   THEME: AURA-CALM-OPS
+   The autonomous-agent redesign theme.
+   See docs/AUTONOMOUS_AGENT_FRONTEND_REDESIGN.md §5.7.
+   Production-grade calm operations: matte neutrals,
+   no gradients on operational surfaces, six per-domain
+   semantic accents tinting icons/chips only.
+   ============================================ */
+[data-theme="aura-calm-ops"] {
+  /* Surfaces — matte, no gradient, depth via border + bg-elevated */
+  --theme-bg-primary:   222 12% 9%;
+  --theme-bg-secondary: 222 12% 11%;
+  --theme-bg-tertiary:  222 11% 13%;
+  --theme-bg-elevated:  222 11% 13%;
+  --theme-bg-hover:     222 10% 16%;
+  --theme-bg-active:    222 10% 19%;
+
+  /* Text scale */
+  --theme-text-primary:   220 20% 94%;
+  --theme-text-secondary: 220 12% 70%;
+  --theme-text-muted:     220 10% 50%;
+  --theme-text-accent:    229 56% 68%;
+
+  /* Default accent — Community Intelligence indigo.
+     Per-domain accents below override this on agent surfaces. */
+  --theme-accent-primary:   229 56% 58%;
+  --theme-accent-secondary: 220 12% 70%;
+  --theme-accent-gradient:  none;
+
+  /* Hairline borders only */
+  --theme-border-default: 222 10% 20%;
+  --theme-border-hover:   222 10% 28%;
+
+  /* No glow, no gradient, no overlay */
+  --theme-bg-gradient:      none;
+  --theme-sidebar-gradient: none;
+  --theme-glow-primary:     none;
+  --theme-glow-secondary:   none;
+  --theme-overlay-visible:  0;
+
+  /* Messages / sidebar / header */
+  --theme-message-self:  229 56% 58%;
+  --theme-message-other: 222 10% 16%;
+  --theme-sidebar-bg:    222 12% 8%;
+  --theme-header-bg:     222 12% 10%;
+  --theme-input-bg:      222 11% 12%;
+
+  /* ── Per-domain semantic accents ─────────────────────────
+     Used by autonomous-agent components for icon/chip tint only.
+     Never apply these to a panel background.
+     Lightness verified against --theme-bg-elevated (222 11% 13%) at
+     ≥ 4.5 : 1 (WCAG AA non-text contrast) — see §14 / §5.7. Bumps
+     applied 2026-05-26: community 58→65, support 39→45,
+     translation 36→46, wellness 56→61. */
+  --agent-accent-community:   229 56% 65%;  /* ratio 4.79 : 1 */
+  --agent-accent-support:     150 39% 45%;  /* ratio 5.06 : 1 */
+  --agent-accent-translation: 191 47% 46%;  /* ratio 4.92 : 1 */
+  --agent-accent-wellness:    344 50% 61%;  /* ratio 4.67 : 1 */
+  --agent-accent-safety:        8 62% 59%;  /* ratio 4.65 : 1 */
+  --agent-accent-focus:        34 57% 50%;  /* ratio 5.54 : 1 */
+
+  /* Outcome state colors (positive / warning / attention) */
+  --agent-state-positive:  150 35% 45%;
+  --agent-state-warning:    34 50% 48%;
+  --agent-state-attention:   8 62% 55%;
+}
+
+/* Reduced-motion: collapse all non-essential transitions on the calm theme */
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="aura-calm-ops"] * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================
+   ADMIN DASHBOARD THEME BRIDGE
+   ============================================
+   The Community admin dashboard (`/admin/*`) is built on shadcn
+   primitives that read the static semantic tokens defined in
+   index.css (`--card`, `--accent`, `--muted-foreground`, …). Those
+   tokens are a single fixed palette and DON'T follow the live
+   `data-theme`, which is why the dashboard looked like a different
+   product from the rest of AuraFlow.
+
+   This scope re-aliases each shadcn token to the matching
+   `--theme-*` variable. Both are raw `H S% L%` triplets consumed via
+   `hsl(var(--x))`, so the aliasing is lossless. Wrap the admin shell
+   in `className="admin-themed"` and every <Card>, <Button>,
+   `text-accent`, `bg-accent/10`, `text-muted-foreground`, `border-border`
+   used across all 14 admin pages instantly tracks the active theme —
+   no per-page edits required. Works for both dark and light themes
+   because the `--theme-*` text/surface scales already cover both. */
+.admin-themed {
+  /* Surfaces */
+  --background:        var(--theme-bg-primary);
+  --foreground:        var(--theme-text-primary);
+  --card:              var(--theme-bg-secondary);
+  --card-foreground:   var(--theme-text-primary);
+  --popover:           var(--theme-bg-elevated);
+  --popover-foreground:var(--theme-text-primary);
+
+  /* Brand / accent — admin pages use `accent` as the brand colour
+     (StatCard icons, section headers), so both primary and accent
+     point at the theme's primary accent. */
+  --primary:            var(--theme-accent-primary);
+  --primary-foreground: 0 0% 100%;
+  --accent:             var(--theme-accent-primary);
+  --accent-foreground:  0 0% 100%;
+  --ring:               var(--theme-accent-primary);
+
+  /* Neutral fills */
+  --secondary:           var(--theme-bg-tertiary);
+  --secondary-foreground:var(--theme-text-primary);
+  --muted:               var(--theme-bg-tertiary);
+  --muted-foreground:    var(--theme-text-muted);
+
+  /* Lines + inputs */
+  --border: var(--theme-border-default);
+  --input:  var(--theme-border-default);
 }

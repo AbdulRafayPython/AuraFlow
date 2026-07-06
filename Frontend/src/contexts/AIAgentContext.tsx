@@ -34,6 +34,7 @@ interface AIAgentContextType {
   deactivatePersonalAgent: (agentType: string) => Promise<any>;
   getPersonalAgentStatus: () => Promise<InstalledAgent[]>;
   configurePersonalAgent: (agentType: string, settings: Record<string, any>, enabled?: boolean) => Promise<any>;
+  clearAssistantMemory: () => Promise<{ success: boolean }>;
   getAgentLogs: (params?: { agent_type?: string; community_id?: number; status?: string; page?: number; limit?: number }) => Promise<AgentLogsResponse>;
   
   // Summarizer
@@ -245,6 +246,17 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
   const configurePersonalAgent = useCallback(async (agentType: string, settings: Record<string, any>, enabled?: boolean) => {
     try {
       const result = await aiAgentService.configurePersonalAgent(agentType, settings, enabled);
+      setError(null);
+      return result;
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  const clearAssistantMemory = useCallback(async () => {
+    try {
+      const result = await aiAgentService.clearAssistantMemory();
       setError(null);
       return result;
     } catch (err: any) {
@@ -918,6 +930,7 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
     deactivatePersonalAgent,
     getPersonalAgentStatus,
     configurePersonalAgent,
+    clearAssistantMemory,
     getAgentLogs,
     
     // Summarizer

@@ -175,7 +175,9 @@ const SearchModal: React.FC<SearchModalProps> = ({
           <Search className="w-5 h-5 text-[hsl(var(--theme-text-muted))] flex-shrink-0" />
           <input
             ref={inputRef}
-            type="text"
+            type="search"
+            inputMode="search"
+            enterKeyHint="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}

@@ -132,6 +132,20 @@ def add_message_reaction(message_id):
 
         result = toggle_reaction("msg", message_id, user_id, emoji, current_user)
 
+        # Publish msg.reacted on the autonomous-agent event bus when a
+        # reaction is *added* (a removal is rarely interesting signal).
+        if result['action'] == 'added':
+            try:
+                from agents import event_bus as _agent_bus
+                _agent_bus.publish(_agent_bus.TOPIC_MSG_REACTED, {
+                    'message_id': message_id,
+                    'user_id':    user_id,
+                    'username':   current_user,
+                    'emoji':      emoji,
+                })
+            except Exception as _bus_err:
+                log.debug(f"[event_bus] msg.reacted publish skipped: {_bus_err}")
+
         status = 200 if result['action'] == 'removed' else 201
         return jsonify({
             'message': f"Reaction {result['action']}",

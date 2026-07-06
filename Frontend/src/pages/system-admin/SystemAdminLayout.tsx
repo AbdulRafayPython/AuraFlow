@@ -20,14 +20,16 @@ import {
   LogOut,
   Building2,
   Brain,
+  Activity,
+  Network,
   Search,
-  Bell,
   Sun,
   Moon,
   Settings,
   ScrollText,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import NotificationsBell from './NotificationsBell';
 
 interface NavItem {
   title: string;
@@ -45,6 +47,8 @@ const navItems: NavItem[] = [
   { title: 'Analytics', href: '/system-admin/analytics/engagement', icon: BarChart3 },
   { title: 'Reports', href: '/system-admin/reports', icon: FileText },
   { title: 'AI Agents', href: '/system-admin/agents', icon: Brain },
+  { title: 'Agent Metrics', href: '/system-admin/analytics/agents', icon: Activity },
+  { title: 'Agent Collaboration', href: '/system-admin/analytics/agent-collaboration', icon: Network },
   { title: 'Audit Logs', href: '/system-admin/audit-logs', icon: ScrollText },
   { title: 'Settings', href: '/system-admin/settings', icon: Settings },
 ];
@@ -210,10 +214,7 @@ export default function SystemAdminLayout() {
             >
               {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </button>
-            <button className="w-10 h-10 flex items-center justify-center text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))] rounded-lg transition-colors relative">
-              <Bell className="h-5 w-5" />
-              <span className="absolute top-2 right-2.5 h-2 w-2 bg-red-500 rounded-full" />
-            </button>
+            <NotificationsBell />
           </div>
         </header>
 

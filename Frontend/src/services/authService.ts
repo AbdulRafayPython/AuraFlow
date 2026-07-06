@@ -53,7 +53,7 @@ export async function getProtected() {
 }
 
 export async function getMe(): Promise<User> {
-  return (await api.get(`${AUTH_PREFIX}/me`)) as User;
+  return (await api.get(`${AUTH_PREFIX}/me`)) as unknown as User;
 }
 
 export async function updateFirstLogin() {
@@ -193,8 +193,22 @@ export async function revokeAllSessions() {
 
 // ─── Notification Settings ────────────────────────────────────────
 
-export async function getNotificationSettings() {
-  return await api.get(`${AUTH_PREFIX}/users/settings/notifications`);
+export interface NotificationSettings {
+  notify_direct_messages?: boolean;
+  notify_channel_messages?: boolean;
+  notify_friend_requests?: boolean;
+  notify_friend_online?: boolean;
+  notification_sounds?: boolean;
+  email_alerts_enabled?: boolean;
+  email_dms_and_calls?: boolean;
+  email_community_messages?: boolean;
+  email_agent_notifications?: boolean;
+  email_agent_summaries?: boolean;
+  show_agent_activity?: boolean;
+}
+
+export async function getNotificationSettings(): Promise<NotificationSettings> {
+  return (await api.get(`${AUTH_PREFIX}/users/settings/notifications`)) as NotificationSettings;
 }
 
 export async function updateNotificationSettings(settings: Record<string, boolean | number>) {

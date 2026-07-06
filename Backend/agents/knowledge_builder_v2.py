@@ -12,13 +12,52 @@ Features:
 - Gemini AI: Enhanced extraction with fallback to rule-based
 
 Approach: Hybrid (Gemini AI primary, rule-based fallback)
+
+Autonomous role (Phase 3.4): subscribes to ``focus.drift`` — exactly the
+moments when a topic is being "closed" and is most valuable to
+crystallise into the KB. Avoids subscribing to ``msg.created`` directly,
+which would be far too hot for an LLM-backed extractor. After a
+successful extraction, publishes ``kb.created`` per item so downstream
+agents (support, summarizer) can update caches.
 """
 
 import re
 import json
+from typing import Optional, Dict
 from datetime import datetime
 from database import get_db_connection
 from difflib import SequenceMatcher
+from agents.base import AutonomousAgent
+from agents import event_bus as _event_bus
+from agents import memory as _agent_memory
+from agents._settings import get_community_settings
+
+
+_KB_DEFAULTS = {
+    'auto_extract': True,
+    'extraction_interval_hours': 2,
+    'min_quality_score': 5,
+    'auto_categorize': True,
+}
+
+
+def _item_quality_score(item: dict) -> int:
+    """Heuristic 1..10 quality score for an extracted KB item.
+
+    No ML; just length + tag-presence signals so the min_quality_score
+    slider has something to filter against without us having to add a
+    scoring stage. Tuned so the schema's default of 5 admits most
+    non-trivial items.
+    """
+    if not item:
+        return 0
+    text_len = len(((item.get('answer') or '') + ' ' + (item.get('question') or '')).strip())
+    tags = (item.get('tags') or '')
+    tag_count = len([t for t in (tags.split(',') if isinstance(tags, str) else tags) if t])
+    # Each ~40 chars adds a point, capped at 7; tags top it up.
+    score = min(7, text_len // 40)
+    score += min(3, tag_count)
+    return max(1, min(10, score))
 
 # ── Gemini AI integration (same pattern as summarizer.py) ────────────────────
 try:
@@ -41,8 +80,18 @@ except Exception as _e:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class KnowledgeBuilderAgent:
+class KnowledgeBuilderAgent(AutonomousAgent):
     """Extracts and stores knowledge from chat conversations"""
+
+    # ── Autonomous contract (Phase 3.4) ─────────────────────────────
+    NAME = "knowledge_builder"
+    GOAL = {"crystallise_completed_topics_into_kb": True}
+    SUBSCRIBES = [_event_bus.TOPIC_FOCUS_DRIFT]
+    SCOPE_TYPE = _agent_memory.SCOPE_CHANNEL
+    COOLDOWN_SECONDS = 30 * 60  # at most one extraction / channel / 30 min
+
+    _DEFAULT_MIN_MESSAGES = 10
+    _LOOKBACK_HOURS = 2  # how far back extract_knowledge scans on drift
     
     # Question patterns for FAQ detection
     QUESTION_PATTERNS = [
@@ -92,22 +141,44 @@ class KnowledgeBuilderAgent:
         self.gemini_available = _KB_GEMINI_AVAILABLE
         self.gemini_client = _kb_gemini_client
         self.gemini_model = 'gemini-2.5-flash'
+        # Stash for the in-flight extract_knowledge() so _save_knowledge_items
+        # can honor the community's quality + categorize settings without
+        # us threading them through three layers of helpers.
+        self._current_kb_cfg: Optional[Dict] = None
     
     # ========================================
     # MAIN EXTRACTION PIPELINE
     # ========================================
     
-    def extract_knowledge(self, channel_id, time_period_hours=None):
+    def extract_knowledge(self, channel_id, time_period_hours=None,
+                          *, community_id: Optional[int] = None,
+                          scheduled: bool = False):
         """
         Main pipeline: Extract knowledge from recent messages
-        
+
         Args:
             channel_id: ID of the channel to analyze
             time_period_hours: How far back to look. None = all messages (default)
-        
+            community_id: Optional community id. When provided we honor
+                ``auto_extract`` (gates scheduled runs), ``min_quality_score``
+                (filters items pre-save), and ``auto_categorize``.
+            scheduled: True for periodic Celery beat runs. Gated by
+                ``auto_extract``; on-demand /kb clicks are not.
+
         Returns:
             dict with extraction results and statistics
         """
+        cfg = (get_community_settings(community_id, 'knowledge_builder', _KB_DEFAULTS)
+               if community_id else dict(_KB_DEFAULTS))
+        if scheduled and not cfg.get('auto_extract', True):
+            return {
+                'success': True,
+                'total_items': 0,
+                'skipped': 'auto_extract_disabled',
+                'message': 'Auto-extract is paused for this community.',
+            }
+        # Stash settings for downstream helpers (no signature churn).
+        self._current_kb_cfg = cfg
         try:
             # Step 1: Fetch recent messages
             messages = self._fetch_messages(channel_id, time_period_hours)
@@ -166,6 +237,10 @@ class KnowledgeBuilderAgent:
                 'success': False,
                 'error': str(e)
             }
+        finally:
+            # Per-call config doesn't leak into a sibling invocation that
+            # hits the same process.
+            self._current_kb_cfg = None
 
     # ========================================
     # GEMINI-ENHANCED EXTRACTION
@@ -715,18 +790,35 @@ Chat transcript:
     def _save_knowledge_items(self, items, channel_id):
         """
         Save knowledge items to database
-        
-        Includes duplicate checking
+
+        Includes duplicate checking. When a community has
+        ``min_quality_score`` configured, items below the heuristic
+        threshold are dropped silently.
         """
         if not items:
             return 0
-        
+
+        cfg = self._current_kb_cfg or {}
+        try:
+            min_quality = max(1, min(10, int(cfg.get('min_quality_score', 1))))
+        except (TypeError, ValueError):
+            min_quality = 1
+        auto_categorize = bool(cfg.get('auto_categorize', True))
+
         conn = get_db_connection()
         saved_count = 0
-        
+
         try:
             with conn.cursor() as cur:
                 for item in items:
+                    # Quality gate: heuristic 1..10 score must clear the
+                    # community's slider value.
+                    if _item_quality_score(item) < min_quality:
+                        continue
+                    # auto_categorize=false → blank the tag list so we
+                    # don't surface categories the admin opted out of.
+                    if not auto_categorize:
+                        item = {**item, 'tags': ''}
                     # Check for duplicates
                     if self._is_duplicate(cur, item, channel_id):
                         continue
@@ -827,7 +919,159 @@ Chat transcript:
                         ORDER BY created_at DESC
                         LIMIT %s
                     """, (f'%{query}%', f'%{query}%', limit))
-                
+
                 return cur.fetchall()
         finally:
             conn.close()
+
+    # ────────────────────────────────────────────────────────────────────
+    # Autonomous hooks (Phase 3.4) — Focus→KB chain
+    # ────────────────────────────────────────────────────────────────────
+
+    def sense(self, event: dict) -> Optional[Dict]:
+        """On focus.drift, count recent messages in the channel to decide
+        whether there's enough material to extract. We don't call Gemini
+        here — extract_knowledge runs in act().
+        """
+        channel_id = event.get("channel_id")
+        if not channel_id:
+            return None
+        # Honor the community's auto_extract toggle for autonomous runs.
+        community_id = event.get("community_id")
+        if community_id:
+            try:
+                cfg = get_community_settings(int(community_id), 'knowledge_builder', _KB_DEFAULTS)
+                if not cfg.get('auto_extract', True):
+                    return None
+            except Exception:
+                pass
+        # Quick row count to skip dead channels cheaply.
+        conn = None
+        msg_count = 0
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS c FROM messages "
+                    "WHERE channel_id=%s AND message_type='text' "
+                    "  AND created_at >= (NOW() - INTERVAL %s HOUR)",
+                    (channel_id, self._LOOKBACK_HOURS),
+                )
+                row = cur.fetchone()
+                msg_count = int((row or {}).get("c") or 0)
+        except Exception:
+            msg_count = 0
+        finally:
+            if conn:
+                conn.close()
+        return {
+            "channel_id":   channel_id,
+            "community_id": event.get("community_id"),
+            "user_id":      event.get("user_id"),
+            "msg_count":    msg_count,
+            "old_topics":   event.get("old_topics") or [],
+            "new_topics":   event.get("new_topics") or [],
+            # Propagate the upstream correlation_id so the collaboration
+            # graph (focus → knowledge_builder edge) can self-join
+            # agent_actions on it. Without this the base class mints a
+            # fresh UUID and the edge never forms.
+            "correlation_id": event.get("correlation_id"),
+            "scope_type":   _agent_memory.SCOPE_CHANNEL,
+            "scope_id":     channel_id,
+        }
+
+    def decide(self, observation: Dict):
+        """Defer if too little material; act otherwise."""
+        msg_count = observation.get("msg_count", 0)
+        threshold = self._min_messages(observation["channel_id"])
+        if msg_count < threshold:
+            return ("defer", observation,
+                    f"msg_count_{msg_count}_below_{threshold}")
+        return ("act", observation,
+                f"extract_msgs_{msg_count}_topics_{len(observation.get('old_topics') or [])}")
+
+    def act(self, payload: Dict, correlation_id: str) -> Optional[Dict]:
+        """Run the existing ``extract_knowledge`` pipeline over the
+        last ``_LOOKBACK_HOURS`` of messages and publish a ``kb.created``
+        event with the totals.
+        """
+        channel_id = payload["channel_id"]
+        community_id = payload.get("community_id")
+        try:
+            result = self.extract_knowledge(
+                channel_id,
+                time_period_hours=self._LOOKBACK_HOURS,
+                community_id=community_id,
+            )
+        except Exception as exc:
+            print(f"[KB] auto extract_knowledge failed: {exc}")
+            return {"extracted": False}
+        if not result or not result.get("success"):
+            return {"extracted": False, "reason": (result or {}).get("error")}
+
+        total = int(result.get("total_items") or 0)
+        if total == 0:
+            return {"extracted": True, "total_items": 0}
+
+        try:
+            _event_bus.publish(_event_bus.TOPIC_KB_CREATED, {
+                "channel_id":   channel_id,
+                "community_id": payload.get("community_id"),
+                "total_items":  total,
+                "faqs":         result.get("faqs"),
+                "definitions":  result.get("definitions"),
+                "decisions":    result.get("decisions"),
+                "correlation_id": correlation_id,
+            })
+        except Exception as exc:
+            print(f"[KB] kb.created publish failed: {exc}")
+        return {"extracted": True, "total_items": total,
+                "faqs": result.get("faqs"),
+                "definitions": result.get("definitions"),
+                "decisions": result.get("decisions")}
+
+    def learn(self, action_id: int, signal: str, *, weight: float = 1.0) -> None:
+        """Per-channel min-messages threshold.
+
+        - positive/engaged (KB item was useful) → lower threshold so we
+          extract earlier in similar future situations.
+        - negative/dismissed (irrelevant/noisy) → raise threshold so we
+          wait for richer conversations.
+        """
+        try:
+            action = _agent_memory.get_action(action_id)
+            if not action or not action.get("channel_id"):
+                return super().learn(action_id, signal, weight=weight)
+            channel_id = action["channel_id"]
+            state = _agent_memory.get_state(
+                self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id) or {}
+            th = dict(state.get("thresholds") or {})
+            cur = float(th.get("min_messages", self._DEFAULT_MIN_MESSAGES))
+            if signal in ("positive", "engaged"):
+                cur = max(4.0, cur - 1.0 * float(weight))
+            elif signal in ("negative", "dismissed"):
+                cur = min(60.0, cur + 2.0 * float(weight))
+            th["min_messages"] = int(round(cur))
+            outcome = ("positive" if signal in ("positive", "engaged")
+                       else "negative" if signal in ("negative", "dismissed")
+                       else "neutral")
+            _agent_memory.set_state(
+                self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id,
+                thresholds=th, last_outcome=outcome,
+            )
+        except Exception as exc:
+            print(f"[KB] learn failed: {exc}")
+        super().learn(action_id, signal, weight=weight)
+
+    def _min_messages(self, channel_id: Optional[int]) -> int:
+        if not channel_id:
+            return self._DEFAULT_MIN_MESSAGES
+        try:
+            state = _agent_memory.get_state(
+                self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id)
+            if not state:
+                return self._DEFAULT_MIN_MESSAGES
+            return int((state.get("thresholds") or {})
+                       .get("min_messages", self._DEFAULT_MIN_MESSAGES))
+        except Exception:
+            return self._DEFAULT_MIN_MESSAGES

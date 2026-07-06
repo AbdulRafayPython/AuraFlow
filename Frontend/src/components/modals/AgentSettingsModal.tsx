@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  X, RotateCcw, Check, Loader2, Shield, TrendingUp, BookOpen,
+  RotateCcw, Check, Loader2, Shield, TrendingUp, BookOpen,
   Brain, Heart, Focus, Sliders, Bell, Eye, Save, Zap, CalendarClock, Trash2, Plus
 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/hooks/useNotifications';
 import { aiAgentService } from '@/services/aiAgentService';
 import { channelService } from '@/services/channelService';
+import { ResponsiveModal, ResponsiveModalContent } from '@/components/ui/responsive-modal';
 
 interface AgentSettingsModalProps {
   open: boolean;
@@ -341,22 +342,9 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
     }
   }, [showSuccess, showError]);
 
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" />
-
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className={`relative w-full max-w-[560px] max-h-[80vh] overflow-hidden flex flex-col
-          ${isBasicTheme ? 'rounded-lg' : 'rounded-2xl'}
-          bg-[hsl(var(--theme-bg-elevated))] border border-[hsl(var(--theme-border-default)/0.5)]
-          shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300`}
-      >
+    <ResponsiveModal open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <ResponsiveModalContent size="lg" className="flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[hsl(var(--theme-border-default)/0.3)] flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -370,12 +358,6 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
         </div>
 
         {/* Content */}
@@ -687,7 +669,7 @@ export const AgentSettingsModal: React.FC<AgentSettingsModalProps> = ({
           </div>
           </div>
         </div>
-      </div>
-    </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
   );
 };

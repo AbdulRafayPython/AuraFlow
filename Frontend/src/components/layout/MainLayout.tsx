@@ -13,6 +13,9 @@ import { useRealtime } from "@/hooks/useRealtime";
 import { useDirectMessages } from "@/contexts/DirectMessagesContext";
 import { useFriends } from "@/contexts/FriendsContext";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useEdgeSwipe } from "@/hooks/use-edge-swipe";
+import { channelService } from "@/services/channelService";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
 // Lazy: needed only when /settings is opened on top of /community/:id so the
 // Dashboard stays mounted underneath the modal.
@@ -33,6 +36,14 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isMobile = useIsMobile();
   const [selectedDMUser, setSelectedDMUser] = useState<{ id: number; username: string; display_name: string; avatar_url?: string } | null>(null);
+  // Tracks which DM conversation we've already told the context to load, so we
+  // don't refetch on every friends-list update.
+  const loadedDMRef = useRef<number | null>(null);
+  // The URL now carries an opaque public_id, not the int id DirectMessageView
+  // needs — tracks which public_id we've already resolved (or failed to
+  // resolve) via the backend lookup, so we don't refetch on every render.
+  const dmLookupRef = useRef<string | null>(null);
+  const [dmLookupNotFound, setDmLookupNotFound] = useState(false);
   const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
   const [isCommunityManagementModalOpen, setIsCommunityManagementModalOpen] = useState(false);
 
@@ -70,12 +81,19 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const isAgentPage = effectiveView === "agent";
   const isDiscoverPage = effectiveView === "discover";
 
+  // The /dm/:userId URL segment is now an opaque public_id (UUID), not the
+  // int id DirectMessageView needs, so we can no longer render an instant
+  // placeholder parsed straight from the URL the way communities do — the
+  // resolution below (friends list, then backend lookup) has to complete
+  // first. See the loading branch in the render tree.
+  const dmUserToRender = selectedDMUser;
+
   // --- URL → State sync: community ---
   useEffect(() => {
     const communityIdStr = params.communityId;
     if (communityIdStr) {
-      const communityId = parseInt(communityIdStr, 10);
-      if (!isNaN(communityId) && currentCommunity?.id !== communityId) {
+      const communityId = communityIdStr;
+      if (currentCommunity?.id !== communityId) {
         // Only select if community exists in loaded communities list
         const exists = communities.find(c => c.id === communityId);
         if (exists) {
@@ -115,35 +133,71 @@ export default function MainLayout({ children }: MainLayoutProps) {
         }
       }
     } else if (!channelIdStr && params.communityId && channels.length > 0 && !currentChannel) {
-      // At /community/:id without /channel/:id — auto-select first channel and update URL
-      const firstChannel = channels[0];
+      // At /community/:id without /channel/:id — auto-select the first non-voice
+      // channel (voice channels have no message view to land on) and update the URL.
+      const firstChannel = channels.find(c => c.type !== 'voice') || channels[0];
       selectChannel(firstChannel.id);
       navigate(`/community/${params.communityId}/channel/${firstChannel.id}`, { replace: true });
     }
   }, [params.channelId, params.communityId, channels, currentChannel, navigate, selectChannel]);
 
   // --- URL → State sync: DM user ---
+  // params.userId is now an opaque public_id (UUID), not the int id
+  // DirectMessageView/selectConversation need. Resolve it in two steps:
+  // fast path against the already-loaded friends list, falling back to a
+  // backend lookup for DM history with someone no longer on that list.
   useEffect(() => {
-    if (currentView === "direct-message") {
-      const userIdStr = params.userId;
-      if (userIdStr) {
-        const userId = parseInt(userIdStr, 10);
-        if (!isNaN(userId) && selectedDMUser?.id !== userId) {
-          const friend = friends.find(f => f.id === userId);
-          if (friend) {
-            setSelectedDMUser({
-              id: friend.id,
-              username: friend.username,
-              display_name: friend.display_name,
-              avatar_url: friend.avatar_url
-            });
-            selectConversation(userId);
-          }
-        }
+    if (currentView !== "direct-message") {
+      loadedDMRef.current = null;
+      dmLookupRef.current = null;
+      setDmLookupNotFound(false);
+      return;
+    }
+    const publicId = params.userId;
+    if (!publicId) return;
+
+    const applyResolved = (resolved: { id: number; username: string; display_name: string; avatar_url?: string }) => {
+      if (selectedDMUser?.id !== resolved.id || !selectedDMUser?.username) {
+        setSelectedDMUser(resolved);
       }
+      if (loadedDMRef.current !== resolved.id) {
+        loadedDMRef.current = resolved.id;
+        selectConversation(resolved.id);
+      }
+    };
+
+    const friend = friends.find(f => f.public_id === publicId);
+    if (friend) {
+      applyResolved({ id: friend.id, username: friend.username, display_name: friend.display_name, avatar_url: friend.avatar_url });
+      return;
+    }
+
+    // Not a current friend — fall back to the backend, but only once per
+    // public_id (avoid refiring on every friends-list update while we wait).
+    if (dmLookupRef.current !== publicId) {
+      dmLookupRef.current = publicId;
+      setDmLookupNotFound(false);
+      channelService.getUserByPublicId(publicId).then(user => {
+        if (dmLookupRef.current !== publicId) return; // URL moved on while this was in flight
+        if (user) {
+          applyResolved(user);
+        } else {
+          setDmLookupNotFound(true);
+        }
+      }).catch(() => {
+        if (dmLookupRef.current === publicId) setDmLookupNotFound(true);
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentView, params.userId, friends]);
+
+  // A resolved-but-stale/invalid DM link (404 from the lookup) bounces to
+  // the friends list rather than getting stuck on a loading spinner forever.
+  useEffect(() => {
+    if (dmLookupNotFound) {
+      navigate('/friends', { replace: true });
+    }
+  }, [dmLookupNotFound, navigate]);
 
   // Listen for navigate-home events from RealtimeContext (community deleted/left/removed)
   useEffect(() => {
@@ -170,6 +224,20 @@ export default function MainLayout({ children }: MainLayoutProps) {
     if (!isMobile) setMobileMenuOpen(false);
   }, [isMobile]);
 
+  // Edge-pull from the left edge opens the sidebar drawer.
+  // Only active on mobile, when the drawer is closed, and only inside views
+  // where the drawer is actually reachable (chat / DM / friends pages).
+  useEdgeSwipe({
+    enabled:
+      isMobile &&
+      !mobileMenuOpen &&
+      (currentView === "dashboard" ||
+        currentView === "direct-message" ||
+        currentView === "friends" ||
+        currentView === "home"),
+    onSwipe: () => setMobileMenuOpen(true),
+  });
+
   // Lock body scroll when mobile menu is open
   useEffect(() => {
     if (mobileMenuOpen && isMobile) {
@@ -195,8 +263,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
       // communityId is overloaded as userId for DMs
       const userId = parseInt(communityId);
       const friend = friends.find(f => f.id === userId);
-      if (friend) {
-        navigate(`/dm/${userId}`);
+      if (friend?.public_id) {
+        navigate(`/dm/${friend.public_id}`);
         return;
       }
     }
@@ -205,7 +273,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
   const handleOpenDM = async (friendId: number) => {
     const friend = friends.find(f => f.id === friendId);
-    if (friend) {
+    if (friend?.public_id) {
       try {
         setSelectedDMUser({
           id: friend.id,
@@ -214,7 +282,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
           avatar_url: friend.avatar_url
         });
         await selectConversation(friendId);
-        navigate(`/dm/${friendId}`);
+        navigate(`/dm/${friend.public_id}`);
         setMobileMenuOpen(false);
       } catch (error) {
         console.error("Failed to open DM:", error);
@@ -228,6 +296,16 @@ export default function MainLayout({ children }: MainLayoutProps) {
   };
 
   const hasCommunitySelected = currentCommunity !== null;
+
+  // Inside an active conversation (a channel's chat, or a DM), the message
+  // composer sits at the very bottom of the view — same spot the fixed
+  // bottom nav occupies on mobile, so the nav would sit on top of/hide it.
+  // Standard chat-app pattern (WhatsApp/Discord/Telegram mobile): hide the
+  // tab bar once you've drilled into a conversation; the hamburger drawer
+  // remains the way back out.
+  const isInActiveChat =
+    (effectiveView === "direct-message" && !!dmUserToRender) ||
+    (hasCommunitySelected && effectiveView === "dashboard" && !isAgentPage && !isDiscoverPage);
 
   return (
     <div 
@@ -256,48 +334,49 @@ export default function MainLayout({ children }: MainLayoutProps) {
         </div>
       )}
 
-      {/* Mobile Menu Button */}
-      <button
-        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-        className={`md:hidden fixed top-4 left-4 z-[60] p-3 rounded-xl transition-all shadow-lg ${
-          mobileMenuOpen 
-            ? 'bg-red-500 hover:bg-red-600 text-white' 
-            : 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
-        }`}
-      >
-        {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-      </button>
+      {/* Mobile Menu Button — hamburger toggles the Sheet drawer below.
+          Hidden while the drawer is open so it doesn't sit on top of the
+          drawer's own header/close button. */}
+      {!mobileMenuOpen && (
+        <button
+          onClick={() => setMobileMenuOpen(true)}
+          aria-label="Open navigation"
+          className={`md:hidden fixed top-4 left-4 z-[60] p-3 rounded-xl transition-colors shadow-lg
+            bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]`}
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+      )}
 
-      {/* Mobile Overlay & Sidebars */}
-      {mobileMenuOpen && isMobile && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            onClick={() => setMobileMenuOpen(false)}
-          />
-          
-          {/* Sidebars Container */}
-          <div className="relative flex max-w-[85vw] h-full overflow-x-auto">
-            {/* Friends Sidebar */}
-            <div className="flex-shrink-0 h-full overflow-y-auto">
-              <FriendsSidebar 
-                onNavigate={handleNavigation} 
-                currentView={currentView}
-                selectedCommunity={currentCommunity?.id.toString()}
-              />
-            </div>
-            
-            {/* Channel Sidebar - Show when community is selected and not on agent/discover page */}
-            {effectiveView === "dashboard" && hasCommunitySelected && !isAgentPage && !isDiscoverPage && (
-              <div className="flex-shrink-0 h-full overflow-y-auto">
-                <ChannelSidebar
-                  onNavigate={handleNavigation}
+      {/* Mobile Sidebars: Friends + Channels as a left-slide Sheet drawer.
+          Replaces the hand-rolled overlay with Radix's accessible sheet —
+          gives us focus-trap, ESC handling, scroll-lock, and animation. */}
+      {isMobile && (
+        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+          <SheetContent
+            side="left"
+            className="p-0 w-[88vw] max-w-[420px] sm:max-w-[420px] bg-transparent border-0 overflow-hidden"
+          >
+            <SheetTitle className="sr-only">Navigation</SheetTitle>
+            <div className="flex h-full overflow-x-auto snap-x snap-mandatory pt-safe pb-safe">
+              <div className="w-full flex-shrink-0 h-full overflow-y-auto snap-start">
+                <FriendsSidebar
+                  onNavigate={(v) => { handleNavigation(v); setMobileMenuOpen(false); }}
+                  currentView={currentView}
+                  selectedCommunity={currentCommunity?.id.toString()}
+                  hideIconRail
                 />
               </div>
-            )}
-          </div>
-        </div>
+              {effectiveView === "dashboard" && hasCommunitySelected && !isAgentPage && !isDiscoverPage && (
+                <div className="w-full flex-shrink-0 h-full overflow-y-auto snap-start">
+                  <ChannelSidebar
+                    onNavigate={(v) => { handleNavigation(v); setMobileMenuOpen(false); }}
+                  />
+                </div>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
       )}
 
       {/* Main Content Area */}
@@ -310,22 +389,32 @@ export default function MainLayout({ children }: MainLayoutProps) {
             </div>
           </div>
         ) : effectiveView === "home" ? (
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto pb-24 md:pb-0">
             <HomePage />
           </div>
         ) : effectiveView === "friends" ? (
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden pb-24 md:pb-0">
             <Friends onOpenDM={handleOpenDM} />
           </div>
-        ) : effectiveView === "direct-message" && selectedDMUser ? (
+        ) : effectiveView === "direct-message" && dmUserToRender ? (
           <div className="flex-1 overflow-hidden">
             <DirectMessageView
-              userId={selectedDMUser.id}
-              username={selectedDMUser.username}
-              displayName={selectedDMUser.display_name}
-              avatar={selectedDMUser.avatar_url}
+              userId={dmUserToRender.id}
+              username={dmUserToRender.username}
+              displayName={dmUserToRender.display_name}
+              avatar={dmUserToRender.avatar_url}
               onClose={handleCloseDM}
             />
+          </div>
+        ) : effectiveView === "direct-message" ? (
+          // public_id in the URL hasn't resolved yet (friends list still
+          // loading, or the backend lookup is in flight) — dmLookupNotFound
+          // handles the invalid-link case by redirecting away.
+          <div className="flex items-center justify-center h-full bg-[hsl(var(--theme-bg-primary))]">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-10 h-10 border-4 border-[hsl(var(--theme-accent-primary))] border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-[hsl(var(--theme-text-secondary))]">Loading conversation...</p>
+            </div>
           </div>
         ) : hasCommunitySelected ? (
           // Show main content (Dashboard) when a community is selected.
@@ -410,8 +499,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
         )}
       </div>
 
-      {/* Mobile Bottom Navigation - Only show when no menu is open */}
-      {isMobile && !mobileMenuOpen && (
+      {/* Mobile Bottom Navigation — hidden when the drawer is open or while
+          inside an active chat (see isInActiveChat above). */}
+      {isMobile && !mobileMenuOpen && !isInActiveChat && (
         <div className={`md:hidden fixed bottom-0 left-0 right-0 z-40 border-t ${
           isDarkMode 
             ? 'bg-slate-900/95 border-slate-700 backdrop-blur-lg' 

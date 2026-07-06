@@ -260,6 +260,11 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   <Mail className="auth-input-icon" />
                   <input
                     type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    enterKeyHint="next"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="auth-input"
@@ -282,6 +287,10 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="one-time-code"
+                  enterKeyHint="done"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value)}
                   maxLength={6}
@@ -312,6 +321,8 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   <Lock className="auth-input-icon" />
                   <input
                     type="password"
+                    autoComplete="new-password"
+                    enterKeyHint="next"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     className="auth-input"
@@ -327,6 +338,8 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   <Lock className="auth-input-icon" />
                   <input
                     type="password"
+                    autoComplete="new-password"
+                    enterKeyHint="done"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     className="auth-input"
@@ -481,6 +494,11 @@ const Login: React.FC<{
             <UserIcon className="auth-input-icon" />
             <input
               type="email"
+              inputMode="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              enterKeyHint="next"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="auth-input"
@@ -497,6 +515,8 @@ const Login: React.FC<{
             <Lock className="auth-input-icon" />
             <input
               type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              enterKeyHint="go"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="auth-input"
@@ -534,12 +554,12 @@ const Login: React.FC<{
         </button>
 
         {/* Divider */}
-        <div className="auth-divider">
+        {/* <div className="auth-divider">
           <span>OR</span>
-        </div>
+        </div> */}
 
         {/* Google */}
-        <button 
+        {/* <button 
           onClick={handleGoogleLogin}
           className="auth-btn-google w-full"
         >
@@ -550,7 +570,7 @@ const Login: React.FC<{
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
           </svg>
           Continue with Google
-        </button>
+        </button> */}
 
         {/* Error messages */}
         {errors.general && (
@@ -791,6 +811,11 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
               <Mail className="auth-input-icon" />
               <input
                 type="email"
+                inputMode="email"
+                autoComplete="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                enterKeyHint="next"
                 value={formData.email}
                 onChange={(e) => handleChange('email', e.target.value)}
                 placeholder="you@example.com"
@@ -806,6 +831,9 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
               <UserIcon className="auth-input-icon" />
               <input
                 type="text"
+                autoComplete="name"
+                autoCapitalize="words"
+                enterKeyHint="next"
                 value={formData.displayName}
                 onChange={(e) => handleChange('displayName', e.target.value)}
                 className="auth-input"
@@ -820,6 +848,10 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
               <UserIcon className="auth-input-icon" />
               <input
                 type="text"
+                autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                enterKeyHint="next"
                 value={formData.username}
                 onChange={(e) => handleChange('username', e.target.value)}
                 placeholder="letters, numbers, underscores"
@@ -835,6 +867,8 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
               <Lock className="auth-input-icon" />
               <input
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                enterKeyHint="next"
                 value={formData.password}
                 onChange={(e) => handleChange('password', e.target.value)}
                 className="auth-input"

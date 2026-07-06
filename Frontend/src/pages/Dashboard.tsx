@@ -6,6 +6,7 @@ import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
 import { getAvatarUrl } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 import EmojiPickerButton from "@/components/EmojiPickerButton";
 import ReactionPicker from "@/components/ReactionPicker";
 import MessageReactions from "@/components/MessageReactions";
@@ -19,6 +20,7 @@ import FileUploadPreview from "@/components/chat/FileUploadPreview";
 import ReplyPreview from "@/components/chat/ReplyPreview";
 import ReplyBar from "@/components/chat/ReplyBar";
 import VoiceRecorder from "@/components/chat/VoiceRecorder";
+import SystemEventMessage from "@/components/chat/SystemEventMessage";
 import { uploadService, validateFile, type UploadProgress } from "@/services/uploadService";
 import SearchModal from "@/components/search/SearchModal";
 import UserProfilePopover from "@/components/profile/UserProfilePopover";
@@ -30,7 +32,10 @@ import { pinService, type PinDurationMinutes } from "@/services/pinService";
 import { useAuth } from "@/contexts/AuthContext";
 import { KnowledgePanel } from "@/components/ai-agents/KnowledgePanel";
 import AgentBar from "@/components/ai-agents/AgentBar";
+import AgentMessageShell from "@/components/ai-agents/AgentMessageShell";
+import EngagementCard from "@/components/ai-agents/cards/EngagementCard";
 import AgentResultPanel, { AgentResultTab, TranslationHistoryItem } from "@/components/ai-agents/AgentResultPanel";
+import ChannelInterventions from "@/components/ai-agents/ChannelInterventions";
 import QuickReplyChips from "@/components/chat/QuickReplyChips";
 import { statusService } from "@/services/statusService";
 import { friendService } from "@/services/friendService";
@@ -39,11 +44,36 @@ import { aiAgentService } from "@/services/aiAgentService";
 import type { Message } from "@/types";
 import type { SearchResult } from "@/services/searchService";
 
+/**
+ * Map the human-readable `author` field on AI bot messages back to the
+ * canonical agent slug used by AgentMessageShell / AgentAccent. The backend
+ * posts these via `_post_ai_bot_message(..., author='Summarizer Agent')` etc.,
+ * so all we have at render time is the display string. Anything we don't
+ * recognise falls back to `'assistant'` (community indigo) — the same default
+ * AgentAccent uses for unknown agents.
+ */
+function agentSlugFromAuthor(author: unknown): string {
+  const s = (typeof author === 'string' ? author : '').toLowerCase().trim();
+  if (!s) return 'assistant';
+  if (s.includes('summariz')) return 'summarizer';
+  if (s.includes('knowledge')) return 'knowledge_builder';
+  if (s.includes('moderation')) return 'moderation';
+  if (s.includes('wellness')) return 'wellness';
+  if (s.includes('mood')) return 'mood_tracker';
+  if (s.includes('focus')) return 'focus';
+  if (s.includes('translat')) return 'translator';
+  if (s.includes('support')) return 'support';
+  if (s.includes('engagement')) return 'engagement';
+  if (s.includes('welcome') || s.includes('auto')) return 'auto_message';
+  return 'assistant';
+}
+
 export default function Dashboard() {
   const { isDarkMode, toggleTheme, currentTheme, setTheme, themes } = useTheme();
   const { user: authUser } = useAuth();
   const {
     isConnected,
+    hasConnectedOnce,
     currentChannel,
     currentCommunity,
     channels,
@@ -65,6 +95,10 @@ export default function Dashboard() {
   const [isSending, setIsSending] = useState(false);
   const [showVoiceChannel, setShowVoiceChannel] = useState(false);
   const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
+  // Mobile-only: tap a message to reveal its action bar (iMessage-style).
+  // Hover doesn't fire on touch, so on phones we use selectedMessageId instead.
+  const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null);
+  const isMobile = useIsMobile();
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<number, any[]>>({});
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
@@ -101,6 +135,13 @@ export default function Dashboard() {
 
   // Centralised unread tracking (socket-driven, no HTTP polling)
   const { markChannelRead: markChRead } = useUnreadCounts();
+
+  // Pending skeleton for synchronous personal/channel agent commands
+  // (/mood, /wellness, /focus). These run inside the HTTP request and their
+  // result arrives as a toast or a bot message, so without this the user sees
+  // nothing while the agent works. Shown on send, cleared when the request
+  // resolves.
+  const [pendingCommand, setPendingCommand] = useState<{ agent: string; label: string; displayName?: string } | null>(null);
 
   // Ephemeral summary state (private /summarize results)
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
@@ -276,6 +317,16 @@ export default function Dashboard() {
         });
         return;
       }
+      // Personal results (/mood, /wellness) are private to the requester and
+      // carry a formatted `message` — surface them as a toast.
+      if (data?.success && data?.message && (data.type === 'mood' || data.type === 'wellness')) {
+        toast({
+          title: data.type === 'mood' ? '🎭 Mood Analysis' : '💚 Wellness Check',
+          description: String(data.message).replace(/[*`]/g, ''),
+          duration: 12000,
+        });
+        return;
+      }
       if (!data?.success) {
         toast({
           title: '❌ Command Failed',
@@ -413,7 +464,7 @@ export default function Dashboard() {
   // --- Mark channel as read when switching (socket-driven, replaces HTTP) ---
   useEffect(() => {
     if (!currentChannel || messages.length === 0) return;
-    markChRead(currentChannel.id, currentCommunity?.id ? Number(currentCommunity.id) : undefined);
+    markChRead(currentChannel.id, currentCommunity?.id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChannel?.id, messages.length, markChRead, currentCommunity?.id]);
 
@@ -622,6 +673,8 @@ export default function Dashboard() {
     if (element.scrollTop === 0 && !isLoadingMessages) {
       loadMoreMessages();
     }
+    // Dismiss the mobile tap-revealed action bar when the user scrolls.
+    if (selectedMessageId !== null) setSelectedMessageId(null);
   };
 
   // Reply helpers
@@ -712,6 +765,18 @@ export default function Dashboard() {
       setEphemeralKBResult(null);
     }
 
+    // Show a calm skeleton for synchronous agent commands whose result is a
+    // toast (/mood, /wellness) or a posted bot message (/focus) — otherwise the
+    // user gets no feedback while the agent runs. Cleared in `finally`.
+    const lowerCmd = messageToSend.trim().toLowerCase();
+    if (lowerCmd.startsWith('/mood')) {
+      setPendingCommand({ agent: 'mood_tracker', label: 'Analyzing your mood' });
+    } else if (lowerCmd.startsWith('/wellness')) {
+      setPendingCommand({ agent: 'wellness', label: 'Checking in on your wellbeing' });
+    } else if (lowerCmd.startsWith('/focus')) {
+      setPendingCommand({ agent: 'focus', label: 'Measuring channel focus' });
+    }
+
     try {
       const response = await sendMessage(messageToSend, 'text', replyToId);
       const moderation = response?.moderation;
@@ -736,6 +801,9 @@ export default function Dashboard() {
       setMessage(messageToSend);
     } finally {
       setIsSending(false);
+      // The agent ran synchronously in the request — clear its skeleton now
+      // that the result (toast / bot message) has been delivered.
+      setPendingCommand(null);
       // Use setTimeout to ensure focus happens after React re-render
       setTimeout(() => {
         inputRef.current?.focus();
@@ -1001,21 +1069,26 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Connection Status - Subtle */}
-          <div className={`ml-2 flex items-center gap-1 px-2 ${
-            isConnected 
-              ? "text-green-400/70"
-              : "text-red-400 animate-pulse"
-          }`}>
-            {isConnected ? (
-              <Wifi className="w-3.5 h-3.5" />
-            ) : (
-              <>
-                <WifiOff className="w-3.5 h-3.5" />
-                <span className="text-xs">Reconnecting...</span>
-              </>
-            )}
-          </div>
+          {/* Connection Status - Subtle. Hidden entirely during the very
+              first (normal, harmless) socket handshake on page load — only
+              shown once connected, or if a connection that existed before
+              actually drops. Nothing to alarm the user about before then. */}
+          {(isConnected || hasConnectedOnce) && (
+            <div className={`ml-2 flex items-center gap-1 px-2 ${
+              isConnected
+                ? "text-green-400/70"
+                : "text-red-400 animate-pulse"
+            }`}>
+              {isConnected ? (
+                <Wifi className="w-3.5 h-3.5" />
+              ) : (
+                <>
+                  <WifiOff className="w-3.5 h-3.5" />
+                  <span className="text-xs">Reconnecting...</span>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-1 sm:gap-2 pr-2 sm:pr-4">
@@ -1226,49 +1299,36 @@ export default function Dashboard() {
                       </div>
                     )}
 
-                    {/* ── Bot / AI Agent Message ────────────────── */}
-                    {msg.message_type === 'ai' ? (
+                    {/* ── System Event Label (join / leave / remove / ban) ── */}
+                    {msg.message_type === 'system' ? (
+                      <SystemEventMessage
+                        content={msg.content}
+                        timestamp={formatMessageTime(msg.created_at)}
+                      />
+                    ) : msg.message_type === 'ai' ? (
                       <div
                         id={`msg-${msg.id}`}
-                        className="cv-auto group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-colors duration-150"
                         onMouseEnter={() => setHoveredMessageId(msg.id)}
                         onMouseLeave={() => setHoveredMessageId(null)}
                       >
-                        {/* Bot Avatar */}
-                        <div className="absolute left-2 sm:left-4 mt-0.5">
-                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-500/80 to-blue-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(168,85,247,0.3)]">
-                            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 13 22h-2a7 7 0 0 1-6.73-3H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
-                              <circle cx="10" cy="15" r="1" fill="currentColor" />
-                              <circle cx="14" cy="15" r="1" fill="currentColor" />
-                            </svg>
-                          </div>
-                        </div>
-
-                        {/* Bot Content */}
-                        <div className="flex-1 min-w-0 overflow-hidden">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold text-[15px] text-purple-400">
-                              {((msg as any).author && String((msg as any).author).trim()) || 'AI Bot'}
-                            </span>
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-400 border border-purple-500/30">
-                              BOT
-                            </span>
-                            <span className="text-[11px] ml-1 text-[hsl(var(--theme-text-muted))]">
-                              {formatMessageTime(msg.created_at)}
-                            </span>
-                          </div>
-                          <div className="p-4 rounded-xl border-l-[3px] border-l-purple-500/60 bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default))]">
+                        <AgentMessageShell
+                          agentName={agentSlugFromAuthor((msg as any).author)}
+                          displayName={((msg as any).author && String((msg as any).author).trim()) || 'AI Bot'}
+                          timestamp={formatMessageTime(msg.created_at)}
+                        >
+                          {(msg as any).card ? (
+                            <EngagementCard card={(msg as any).card} messageId={msg.id} />
+                          ) : (
                             <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
                               {msg.content}
                             </div>
-                          </div>
-                        </div>
+                          )}
+                        </AgentMessageShell>
                       </div>
                     ) : (
 
                     /* ── Regular User Message ────────────────── */
-                    <div 
+                    <div
                       id={`msg-${msg.id}`}
                       className={`group relative flex py-0.5 pr-4 sm:pr-12 pl-14 sm:pl-[72px] ${
                         shouldShowHeader ? 'mt-[17px]' : 'mt-0'
@@ -1276,9 +1336,13 @@ export default function Dashboard() {
                         msg.is_pinned
                           ? 'bg-[hsl(var(--theme-accent-primary)/0.04)] border-l-2 border-l-[hsl(var(--theme-accent-primary)/0.5)] hover:bg-[hsl(var(--theme-accent-primary)/0.07)]'
                           : 'hover:bg-[hsl(var(--theme-bg-hover)/0.3)]'
-                      } transition-colors duration-150`}
+                      } ${isMobile && selectedMessageId === msg.id ? 'bg-[hsl(var(--theme-bg-hover)/0.4)]' : ''} transition-colors duration-150`}
                       onMouseEnter={() => setHoveredMessageId(msg.id)}
                       onMouseLeave={() => setHoveredMessageId(null)}
+                      onClick={() => {
+                        if (!isMobile) return;
+                        setSelectedMessageId((prev) => (prev === msg.id ? null : msg.id));
+                      }}
                     >
                       {/* Avatar - Positioned absolutely */}
                       {shouldShowHeader ? (
@@ -1411,9 +1475,13 @@ export default function Dashboard() {
                         )}
                       </div>
 
-                      {/* Action Buttons - Floating on hover */}
-                      <div className="absolute -top-4 right-2 sm:right-4 opacity-0 group-hover:opacity-100 transition-all">
-                        <div className="flex items-center rounded-md shadow-lg border bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]">
+                      {/* Action Buttons - Floating on hover (desktop) / tap (mobile) */}
+                      <div className={`absolute -top-4 right-2 sm:right-4 transition-all ${
+                        isMobile
+                          ? (selectedMessageId === msg.id ? 'opacity-100' : 'opacity-0 pointer-events-none')
+                          : 'opacity-0 group-hover:opacity-100'
+                      }`}>
+                        <div className={`flex items-center rounded-md shadow-lg border bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] ${isMobile ? '[&_button]:min-w-[44px] [&_button]:min-h-[44px] [&_button]:justify-center' : ''}`}>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1500,227 +1568,109 @@ export default function Dashboard() {
 
             {/* Summary Skeleton Screen - Shows immediately when generating */}
             {isGeneratingSummary && (
-              <div className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] animate-in fade-in slide-in-from-bottom-2 duration-300">
-                {/* Bot Avatar — pulsing */}
-                <div className="absolute left-2 sm:left-4 mt-0.5">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-500/80 to-blue-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(168,85,247,0.3)] animate-pulse">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 13 22h-2a7 7 0 0 1-6.73-3H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
-                      <circle cx="10" cy="15" r="1" fill="currentColor" />
-                      <circle cx="14" cy="15" r="1" fill="currentColor" />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Skeleton Content */}
-                <div className="flex-1 min-w-0 overflow-hidden">
-                  {/* Header row — real name + badges */}
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold text-[15px] text-purple-400">Summarizer Agent</span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-400 border border-purple-500/30">BOT</span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Only visible to you</span>
-                  </div>
-
-                  {/* Skeleton card — same shape as the real summary card */}
-                  <div className="p-4 rounded-xl border-l-[3px] border-l-purple-500/40 bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default))]">
-                    {/* Shimmer text lines */}
-                    <div className="space-y-2.5">
-                      <div className="h-3.5 w-[90%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" />
-                      <div className="h-3.5 w-[75%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" style={{ animationDelay: '150ms' }} />
-                      <div className="h-3.5 w-[82%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" style={{ animationDelay: '300ms' }} />
-                      <div className="h-3.5 w-[60%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" style={{ animationDelay: '450ms' }} />
-                      <div className="h-3.5 w-[70%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" style={{ animationDelay: '600ms' }} />
-                    </div>
-
-                    {/* Shimmer footer row */}
-                    <div className="mt-4 flex items-center gap-3">
-                      <div className="h-2.5 w-20 rounded bg-[hsl(var(--theme-text-muted)/0.08)] animate-pulse" />
-                      <div className="h-2.5 w-2 rounded bg-[hsl(var(--theme-text-muted)/0.08)]" />
-                      <div className="h-2.5 w-28 rounded bg-[hsl(var(--theme-text-muted)/0.08)] animate-pulse" style={{ animationDelay: '200ms' }} />
-                    </div>
-                  </div>
-
-                  {/* Status line with animated dots */}
-                  <div className="mt-2 flex items-center gap-2 text-[12px] text-purple-400/70">
-                    <span>Generating summary</span>
-                    <div className="flex items-center gap-0.5">
-                      <div className="w-1 h-1 rounded-full animate-bounce bg-purple-400" style={{ animationDelay: "0ms", animationDuration: "1s" }}></div>
-                      <div className="w-1 h-1 rounded-full animate-bounce bg-purple-400" style={{ animationDelay: "200ms", animationDuration: "1s" }}></div>
-                      <div className="w-1 h-1 rounded-full animate-bounce bg-purple-400" style={{ animationDelay: "400ms", animationDuration: "1s" }}></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <AgentMessageShell
+                agentName="summarizer"
+                isPrivate
+                variant="skeleton"
+                skeletonLabel="Generating summary"
+              />
             )}
 
             {/* Ephemeral Summary Card (private, only visible to sender) */}
             {ephemeralSummary && (
-              <div className="cv-auto group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-colors duration-150">
-                {/* Bot Avatar */}
-                <div className="absolute left-2 sm:left-4 mt-0.5">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-500/80 to-blue-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(168,85,247,0.3)]">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 13 22h-2a7 7 0 0 1-6.73-3H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
-                      <circle cx="10" cy="15" r="1" fill="currentColor" />
-                      <circle cx="14" cy="15" r="1" fill="currentColor" />
-                    </svg>
-                  </div>
+              <AgentMessageShell
+                agentName="summarizer"
+                isPrivate
+                timestamp={formatMessageTime(ephemeralSummary.created_at)}
+                onDismiss={() => { setEphemeralSummary(null); setDisplayedSummaryText(''); }}
+              >
+                <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+                  {displayedSummaryText}
+                  {displayedSummaryText.length < ephemeralSummary.content.length && (
+                    <span
+                      className="inline-block w-0.5 h-4 ml-0.5 animate-pulse motion-reduce:animate-none align-middle"
+                      style={{ backgroundColor: 'hsl(var(--agent-accent-community))' }}
+                    />
+                  )}
                 </div>
-
-                {/* Bot Content */}
-                <div className="flex-1 min-w-0 overflow-hidden">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold text-[15px] text-purple-400">Summarizer Agent</span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-400 border border-purple-500/30">BOT</span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Only visible to you</span>
-                    <span className="text-[11px] ml-1 text-[hsl(var(--theme-text-muted))]">
-                      {formatMessageTime(ephemeralSummary.created_at)}
-                    </span>
-                  </div>
-                  <div className="p-4 rounded-xl border-l-[3px] border-l-purple-500/60 bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default))]">
-                    <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
-                      {displayedSummaryText}
-                      {displayedSummaryText.length < ephemeralSummary.content.length && (
-                        <span className="inline-block w-0.5 h-4 bg-purple-400 ml-0.5 animate-pulse" />
-                      )}
-                    </div>
-                    <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
-                      <span>Method: {ephemeralSummary.method}</span>
-                      <span>•</span>
-                      <span>{ephemeralSummary.message_count} messages analyzed</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => { setEphemeralSummary(null); setDisplayedSummaryText(''); }}
-                    className="mt-2 text-[11px] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] transition-colors"
-                  >
-                    Dismiss
-                  </button>
+                <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
+                  <span>Method: {ephemeralSummary.method}</span>
+                  <span>•</span>
+                  <span>{ephemeralSummary.message_count} messages analyzed</span>
                 </div>
-              </div>
+              </AgentMessageShell>
             )}
 
             {/* Pending Scheduled Summaries (delivered when user enters channel) */}
             {pendingScheduledSummaries.map((sched) => (
-              <div key={sched.id} className="cv-auto group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-colors duration-150">
-                <div className="absolute left-2 sm:left-4 mt-0.5">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-blue-500/80 to-cyan-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(59,130,246,0.3)]">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 13 22h-2a7 7 0 0 1-6.73-3H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
-                      <circle cx="10" cy="15" r="1" fill="currentColor" />
-                      <circle cx="14" cy="15" r="1" fill="currentColor" />
-                    </svg>
+              <div key={sched.id}>
+                <AgentMessageShell
+                  agentName="summarizer"
+                  isScheduled
+                  isPrivate
+                  timestamp={formatMessageTime(sched.created_at)}
+                  onDismiss={() => setPendingScheduledSummaries(prev => prev.filter(s => s.id !== sched.id))}
+                >
+                  <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+                    {sched.content}
                   </div>
-                </div>
-                <div className="flex-1 min-w-0 overflow-hidden">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold text-[15px] text-blue-400">Summarizer Agent</span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/30">SCHEDULED</span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Only visible to you</span>
-                    <span className="text-[11px] ml-1 text-[hsl(var(--theme-text-muted))]">
-                      {formatMessageTime(sched.created_at)}
-                    </span>
-                  </div>
-                  <div className="p-4 rounded-xl border-l-[3px] border-l-blue-500/60 bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default))]">
-                    <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
-                      {sched.content}
+                  {(sched.method || sched.message_count) && (
+                    <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
+                      {sched.method && <span>Method: {sched.method}</span>}
+                      {sched.method && sched.message_count && <span>•</span>}
+                      {sched.message_count && <span>{sched.message_count} messages analyzed</span>}
                     </div>
-                    {(sched.method || sched.message_count) && (
-                      <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
-                        {sched.method && <span>Method: {sched.method}</span>}
-                        {sched.method && sched.message_count && <span>•</span>}
-                        {sched.message_count && <span>{sched.message_count} messages analyzed</span>}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => setPendingScheduledSummaries(prev => prev.filter(s => s.id !== sched.id))}
-                    className="mt-2 text-[11px] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] transition-colors"
-                  >
-                    Dismiss
-                  </button>
-                </div>
+                  )}
+                </AgentMessageShell>
               </div>
             ))}
 
             {/* KB Skeleton Screen — shows immediately when /kb is processing */}
             {isGeneratingKB && (
-              <div className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="absolute left-2 sm:left-4 mt-0.5">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-amber-500/80 to-yellow-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(251,191,36,0.3)] animate-pulse">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                    </svg>
-                  </div>
-                </div>
-                <div className="flex-1 min-w-0 overflow-hidden">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold text-[15px] text-amber-400">Knowledge Builder</span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">BOT</span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Only visible to you</span>
-                  </div>
-                  <div className="p-4 rounded-xl border-l-[3px] border-l-amber-500/40 bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default))]">
-                    <div className="space-y-2.5">
-                      <div className="h-3.5 w-[85%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" />
-                      <div className="h-3.5 w-[70%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" style={{ animationDelay: '150ms' }} />
-                      <div className="h-3.5 w-[78%] rounded-md bg-[hsl(var(--theme-text-muted)/0.12)] animate-pulse" style={{ animationDelay: '300ms' }} />
-                    </div>
-                  </div>
-                  <div className="mt-2 flex items-center gap-2 text-[12px] text-amber-400/70">
-                    <span>Extracting knowledge</span>
-                    <div className="flex items-center gap-0.5">
-                      <div className="w-1 h-1 rounded-full animate-bounce bg-amber-400" style={{ animationDelay: "0ms", animationDuration: "1s" }}></div>
-                      <div className="w-1 h-1 rounded-full animate-bounce bg-amber-400" style={{ animationDelay: "200ms", animationDuration: "1s" }}></div>
-                      <div className="w-1 h-1 rounded-full animate-bounce bg-amber-400" style={{ animationDelay: "400ms", animationDuration: "1s" }}></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <AgentMessageShell
+                agentName="knowledge_builder"
+                displayName="Knowledge Builder"
+                isPrivate
+                variant="skeleton"
+                skeletonLabel="Extracting knowledge"
+              />
+            )}
+
+            {/* Skeleton for synchronous agent commands (/mood, /wellness, /focus) */}
+            {pendingCommand && (
+              <AgentMessageShell
+                agentName={pendingCommand.agent}
+                displayName={pendingCommand.displayName}
+                isPrivate={pendingCommand.agent !== 'focus'}
+                variant="skeleton"
+                skeletonLabel={pendingCommand.label}
+              />
             )}
 
             {/* Ephemeral KB Result Card (private, only visible to sender) */}
             {ephemeralKBResult && (
-              <div className="group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-colors duration-150 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="absolute left-2 sm:left-4 mt-0.5">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-amber-500/80 to-yellow-500/80 flex items-center justify-center shadow-[0_0_12px_rgba(251,191,36,0.3)]">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                    </svg>
-                  </div>
+              <AgentMessageShell
+                agentName="knowledge_builder"
+                displayName="Knowledge Builder"
+                isPrivate
+                timestamp={formatMessageTime(ephemeralKBResult.created_at)}
+                onDismiss={() => setEphemeralKBResult(null)}
+              >
+                <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+                  {ephemeralKBResult.content}
                 </div>
-                <div className="flex-1 min-w-0 overflow-hidden">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold text-[15px] text-amber-400">Knowledge Builder</span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">BOT</span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Only visible to you</span>
-                    <span className="text-[11px] ml-1 text-[hsl(var(--theme-text-muted))]">
-                      {formatMessageTime(ephemeralKBResult.created_at)}
-                    </span>
-                  </div>
-                  <div className="p-4 rounded-xl border-l-[3px] border-l-amber-500/60 bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default))]">
-                    <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
-                      {ephemeralKBResult.content}
-                    </div>
-                    {ephemeralKBResult.subtype === 'extract' && (
-                      <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
-                        <span>Method: {ephemeralKBResult.method}</span>
-                        {ephemeralKBResult.total_items > 0 && (
-                          <>
-                            <span>•</span>
-                            <span>{ephemeralKBResult.total_items} items saved</span>
-                          </>
-                        )}
-                      </div>
+                {ephemeralKBResult.subtype === 'extract' && (
+                  <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
+                    <span>Method: {ephemeralKBResult.method}</span>
+                    {ephemeralKBResult.total_items > 0 && (
+                      <>
+                        <span>•</span>
+                        <span>{ephemeralKBResult.total_items} items saved</span>
+                      </>
                     )}
                   </div>
-                  <button
-                    onClick={() => setEphemeralKBResult(null)}
-                    className="mt-2 text-[11px] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] transition-colors"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
+                )}
+              </AgentMessageShell>
             )}
 
             <div ref={messagesEndRef} className="h-4" />
@@ -1815,6 +1765,21 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* F2 — pinned inline interventions (support / recap / focus drift) */}
+          {currentChannel && (
+            <ChannelInterventions
+              channelId={currentChannel.id}
+              onOpenPanel={(tab) => {
+                setAgentPanelTab(tab as AgentResultTab);
+                setAgentPanelOpen(true);
+              }}
+              onRecenter={() => {
+                setAgentPanelTab('focus' as AgentResultTab);
+                setAgentPanelOpen(true);
+              }}
+            />
+          )}
+
           {/* Quick reply chips — last inbound message in the channel */}
           {currentChannel && (
             <QuickReplyChips
@@ -1840,10 +1805,13 @@ export default function Dashboard() {
               ? "bg-[hsl(var(--theme-accent-primary)/0.15)] ring-1 ring-[hsl(var(--theme-accent-primary)/0.5)] border-[hsl(var(--theme-accent-primary)/0.3)]"
               : "bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary)/0.6)] border-[hsl(var(--theme-border-default)/0.4)]"
           }`}>
-            {/* Plus Button - File Upload */}
+            {/* Plus Button - File Upload. Sending/uploading go over plain
+                HTTP, not the socket, so none of the compose controls need to
+                wait on isConnected — that only gates real-time delivery to
+                OTHER users, not your own ability to type and send. */}
             <button
               className="flex-shrink-0 p-3 rounded-l-lg transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
-              disabled={!currentChannel || !isConnected}
+              disabled={!currentChannel}
               onClick={() => fileInputRef.current?.click()}
               title="Upload a file"
             >
@@ -1853,17 +1821,22 @@ export default function Dashboard() {
             <input
               ref={inputRef}
               type="text"
+              enterKeyHint="send"
+              inputMode="text"
+              autoCapitalize="sentences"
+              autoComplete="off"
+              autoCorrect="on"
               placeholder={
-                message.startsWith('/') 
-                  ? "Type a command..." 
-                  : currentChannel 
-                    ? `Message #${currentChannel.name}` 
+                message.startsWith('/')
+                  ? "Type a command..."
+                  : currentChannel
+                    ? `Message #${currentChannel.name}`
                     : "Select a channel to start messaging"
               }
               value={message}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              disabled={!currentChannel || isSending || !isConnected}
+              disabled={!currentChannel || isSending}
               className={`flex-1 bg-transparent outline-none text-sm sm:text-[15px] py-2.5 min-w-0 ${
                 message.startsWith('/')
                   ? "text-[hsl(var(--theme-accent-primary))] placeholder-[hsl(var(--theme-accent-primary)/0.6)]"
@@ -1874,7 +1847,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-1 pr-2">
               <button
                 className="p-2 rounded-md transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
-                disabled={!currentChannel || !isConnected}
+                disabled={!currentChannel}
                 onClick={() => fileInputRef.current?.click()}
                 title="Attach a file"
               >
@@ -1883,19 +1856,23 @@ export default function Dashboard() {
               <EmojiPickerButton
                 onEmojiSelect={handleEmojiSelect}
                 pickerPosition="top"
-                disabled={!currentChannel || !isConnected}
+                disabled={!currentChannel}
               />
               <VoiceRecorder
                 onSend={handleVoiceSend}
-                disabled={!currentChannel || !isConnected}
+                disabled={!currentChannel}
               />
             </div>
           </div>
 
-          {!isConnected && (
+          {/* Only warn about a dropped connection if we were actually
+              connected before — never during the initial handshake, and
+              sending/uploading still work over HTTP regardless. This is
+              informational, not blocking. */}
+          {hasConnectedOnce && !isConnected && (
             <div className="mt-2 flex items-center gap-2 text-xs text-red-400">
               <WifiOff className="w-3.5 h-3.5 animate-pulse" />
-              <span>Connection lost. Attempting to reconnect...</span>
+              <span>Realtime connection lost — messages still send, but live updates may lag until it reconnects.</span>
             </div>
           )}
         </div>
@@ -1927,7 +1904,7 @@ export default function Dashboard() {
 
       {/* --- Summary History Panel --- */}
       {summaryHistoryOpen && currentChannel && (
-        <div className="fixed inset-y-0 right-0 w-[380px] z-50 flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-l border-[hsl(var(--theme-border-default)/0.5)] shadow-2xl animate-in slide-in-from-right duration-200">
+        <div className="fixed inset-y-0 right-0 w-full sm:w-[380px] z-50 flex flex-col bg-[hsl(var(--theme-bg-elevated))] border-l border-[hsl(var(--theme-border-default)/0.5)] shadow-2xl animate-in slide-in-from-right duration-200 pt-safe pb-safe">
           {/* Panel Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--theme-border-default)/0.3)]">
             <div className="flex items-center gap-2">
@@ -1997,7 +1974,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* --- Agent Insights Panel (Knowledge / Summary / Mood / Focus / Translations) --- */}
+      {/* --- Channel Intelligence rail (Activity / Recap / Knowledge / Focus / Translations / Safety) --- */}
       {currentChannel && (
         <AgentResultPanel
           open={agentPanelOpen || kbPanelOpen}
@@ -2006,6 +1983,7 @@ export default function Dashboard() {
           channelName={currentChannel.name}
           communityId={currentCommunity?.id ?? null}
           initialTab={kbPanelOpen ? 'knowledge' : agentPanelTab}
+          isAdmin={currentCommunity?.role === 'admin' || currentCommunity?.role === 'owner'}
           translations={translationHistory}
         />
       )}

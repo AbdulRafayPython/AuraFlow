@@ -18,12 +18,12 @@ import { useToast } from '@/components/ui/use-toast';
 
 // ── Types ──
 interface CommunityRow {
-  id: number; name: string; description: string; icon: string; color: string;
+  id: string; name: string; description: string; icon: string; color: string;
   logo_url: string; created_at: string; member_count: number; channel_count: number;
   owner_username: string; messages_7d: number;
 }
 interface CommunityDetail {
-  id: number; name: string; description: string; icon: string; color: string;
+  id: string; name: string; description: string; icon: string; color: string;
   logo_url: string; banner_url: string; created_at: string;
   member_count: number; channel_count: number; blocked_count: number;
   total_messages: number; messages_7d: number; flagged_count: number;
@@ -152,7 +152,7 @@ export default function SysCommunityManagement() {
   const limit = 20;
 
   // ── Selected community state ──
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<CommunityDetail | null>(null);
   const [activity, setActivity] = useState<ActivityData | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -237,7 +237,7 @@ export default function SysCommunityManagement() {
   }, [loading, communities]);
 
   // ── Select community ──
-  const selectCommunity = async (id: number) => {
+  const selectCommunity = async (id: string) => {
     if (selectedId === id) return;
     setSelectedId(id);
     setActiveTab('overview');
@@ -788,7 +788,9 @@ export default function SysCommunityManagement() {
 
               {/* ─────────── SETTINGS TAB ─────────── */}
               {activeTab === 'settings' && (
-                <div className="max-w-xl space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start max-w-5xl">
+                  {/* Left column: Edit + Danger Zone */}
+                  <div className="space-y-6">
                   {/* Edit Section */}
                   <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl p-6 space-y-4">
                     <h3 className="text-sm font-semibold flex items-center gap-2"><Pencil className="h-4 w-4" /> Edit Community</h3>
@@ -818,7 +820,22 @@ export default function SysCommunityManagement() {
                     </button>
                   </div>
 
-                  {/* Info */}
+                  {/* Danger Zone */}
+                  <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-6 space-y-3">
+                    <h3 className="text-sm font-semibold text-red-400 flex items-center gap-2"><Trash2 className="h-4 w-4" /> Danger Zone</h3>
+                    <p className="text-xs text-[hsl(var(--theme-text-muted))]">
+                      Permanently delete this community and all its channels, messages, and member data. This cannot be undone.
+                    </p>
+                    <button
+                      onClick={() => setDeleteOpen(true)}
+                      className="h-10 px-6 rounded-xl bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors"
+                    >
+                      Delete Community
+                    </button>
+                  </div>
+                  </div>
+
+                  {/* Right column: Community Details */}
                   <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl p-6 space-y-3">
                     <h3 className="text-sm font-semibold flex items-center gap-2"><Building2 className="h-4 w-4" /> Community Details</h3>
                     {[
@@ -834,20 +851,6 @@ export default function SysCommunityManagement() {
                         <span className="font-medium">{row.value}</span>
                       </div>
                     ))}
-                  </div>
-
-                  {/* Danger Zone */}
-                  <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-6 space-y-3">
-                    <h3 className="text-sm font-semibold text-red-400 flex items-center gap-2"><Trash2 className="h-4 w-4" /> Danger Zone</h3>
-                    <p className="text-xs text-[hsl(var(--theme-text-muted))]">
-                      Permanently delete this community and all its channels, messages, and member data. This cannot be undone.
-                    </p>
-                    <button
-                      onClick={() => setDeleteOpen(true)}
-                      className="h-10 px-6 rounded-xl bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors"
-                    >
-                      Delete Community
-                    </button>
                   </div>
                 </div>
               )}

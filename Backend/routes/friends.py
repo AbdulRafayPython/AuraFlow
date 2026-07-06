@@ -155,15 +155,14 @@ def send_friend_request():
             # Get full sender data for notification
             cur.execute("""
                 SELECT id, username, display_name, avatar_url
-                FROM users 
+                FROM users
                 WHERE id = %s
             """, (sender_id,))
             sender_info = cur.fetchone()
-            
-            # Get receiver's username for socket lookup
-            cur.execute("SELECT username FROM users WHERE id = %s", (receiver_id,))
-            receiver_user = cur.fetchone()
-            receiver_username = receiver_user['username'] if receiver_user else None
+
+            # Receiver's username is already known from the lookup above — no
+            # need for another round-trip to fetch it.
+            receiver_username = receiver_row['username'] if isinstance(receiver_row, dict) else None
 
         conn.commit()
         
@@ -250,20 +249,29 @@ def send_friend_request():
         except Exception as socket_error:
             log.error(f"[FRIEND_REQUEST] ❌ Failed to emit event: {socket_error}", exc_info=True)
         
-        # Persist notification to DB
-        try:
-            sender_display = sender_info['display_name'] or sender_info['username'] if sender_info else current_user
-            create_notification(
-                user_id=receiver_id,
-                type='friend_request',
-                title='New Friend Request',
-                body=f'{sender_display} sent you a friend request',
-                icon_url=sender_info['avatar_url'] if sender_info else None,
-                link='/friends',
-                related_id=request_id,
-            )
-        except Exception as notif_err:
-            log.warning(f"[FRIEND_REQUEST] Notification persistence failed: {notif_err}")
+        # Persist notification to DB OFF the critical path. This opens its own
+        # connection (insert + select + commit ≈ 5 round-trips); on a remote DB
+        # it would otherwise dominate the response time. The receiver already got
+        # the request in real-time via the socket emit above.
+        _sender_display = sender_info['display_name'] or sender_info['username'] if sender_info else current_user
+        _sender_avatar = sender_info['avatar_url'] if sender_info else None
+
+        def _persist_request_notification():
+            try:
+                create_notification(
+                    user_id=receiver_id,
+                    type='friend_request',
+                    title='New Friend Request',
+                    body=f'{_sender_display} sent you a friend request',
+                    icon_url=_sender_avatar,
+                    link='/friends',
+                    related_id=request_id,
+                )
+            except Exception as notif_err:
+                log.warning(f"[FRIEND_REQUEST] Notification persistence failed: {notif_err}")
+
+        import threading
+        threading.Thread(target=_persist_request_notification, daemon=True).start()
 
         return jsonify(response_data), 201
 
@@ -467,20 +475,29 @@ def accept_friend_request(request_id):
         except Exception as socket_error:
             print(f"[WARNING] Failed to emit friend_request_accepted event: {socket_error}")
         
-        # Persist notification to DB
-        try:
-            acceptor_display = acceptor_info['display_name'] or acceptor_info['username'] if acceptor_info else current_user
-            create_notification(
-                user_id=req['sender_id'],
-                type='friend_accepted',
-                title='Friend Request Accepted',
-                body=f'{acceptor_display} accepted your friend request',
-                icon_url=acceptor_info['avatar_url'] if acceptor_info else None,
-                link='/friends',
-                related_id=request_id,
-            )
-        except Exception as notif_err:
-            log.warning(f"[FRIEND_ACCEPT] Notification persistence failed: {notif_err}")
+        # Persist notification to DB OFF the critical path (own connection,
+        # ~5 round-trips). The sender already learned of the accept in real-time
+        # via the socket emit above.
+        _acceptor_display = acceptor_info['display_name'] or acceptor_info['username'] if acceptor_info else current_user
+        _acceptor_avatar = acceptor_info['avatar_url'] if acceptor_info else None
+        _sender_uid = req['sender_id']
+
+        def _persist_accept_notification():
+            try:
+                create_notification(
+                    user_id=_sender_uid,
+                    type='friend_accepted',
+                    title='Friend Request Accepted',
+                    body=f'{_acceptor_display} accepted your friend request',
+                    icon_url=_acceptor_avatar,
+                    link='/friends',
+                    related_id=request_id,
+                )
+            except Exception as notif_err:
+                log.warning(f"[FRIEND_ACCEPT] Notification persistence failed: {notif_err}")
+
+        import threading
+        threading.Thread(target=_persist_accept_notification, daemon=True).start()
 
         return jsonify({'message': 'Friend request accepted'}), 200
 

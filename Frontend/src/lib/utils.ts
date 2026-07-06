@@ -53,3 +53,21 @@ function formatCallDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+/**
+ * Human-friendly one-line preview of a message for conversation lists.
+ * Non-text messages must NOT show the raw file path/content — show a label.
+ */
+export function formatMessagePreview(
+  message: { message_type?: string; content?: string } | null | undefined
+): string {
+  if (!message) return '';
+  switch (message.message_type) {
+    case 'call':  return formatCallPreview(message.content || '');
+    case 'image': return '📷 Photo';
+    case 'video': return '🎬 Video';
+    case 'voice': return '🎙️ Voice message';
+    case 'file':  return '📎 File';
+    default:      return message.content || '';
+  }
+}
+

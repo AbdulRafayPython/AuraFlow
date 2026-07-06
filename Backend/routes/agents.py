@@ -7,7 +7,7 @@ RESTful endpoints for AI agent functionalities
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
-from utils import get_user_id
+from utils import get_user_id, resolve_public_community_id, get_community_id_from_public_id
 import json
 
 # Create blueprint
@@ -67,6 +67,16 @@ AGENT_TYPE_ALIASES: dict[str, str] = {
 # Reverse: DB name â†’ frontend-friendly name (for catalog responses)
 AGENT_TYPE_DISPLAY: dict[str, str] = {v: k for k, v in AGENT_TYPE_ALIASES.items()}
 
+# Agents that are inherently per-user and cannot be installed at community
+# scope. The registry's `category` column is used for catalog grouping, but
+# install-gating is a narrower concern: several `personal`-category agents
+# (summarizer, translator, assistant) legitimately run at community scope —
+# e.g. tasks/agent_tasks.py::auto_summarize_periodic reads
+# `community_agents WHERE agent_type='summarizer'`. Only mood/wellness are
+# truly per-user (they track an individual's sentiment/burnout) and have no
+# community-level dispatch path or UI.
+_PERSONAL_ONLY_AGENTS: set[str] = {'mood', 'wellness'}
+
 def _normalize_agent_type(agent_type: str) -> str:
     """Resolve frontend alias â†’ DB agent_type."""
     return AGENT_TYPE_ALIASES.get(agent_type, agent_type)
@@ -74,6 +84,176 @@ def _normalize_agent_type(agent_type: str) -> str:
 def _display_agent_type(agent_type: str) -> str:
     """Resolve DB agent_type â†’ frontend display name."""
     return AGENT_TYPE_DISPLAY.get(agent_type, agent_type)
+
+
+# Per-agent settings whitelist + coercion. Keyed by DB agent_type (after
+# alias normalisation), so 'mood' covers the 'mood_tracker' alias and
+# 'knowledge' covers 'knowledge_builder'. The matrix mirrors
+# Frontend/src/components/modals/AgentSettingsModal.tsx::SETTINGS_SCHEMA.
+# Each tuple is (python_type, optional_min, optional_max, optional_choices).
+_SETTINGS_VALIDATORS: dict[str, dict[str, tuple]] = {
+    'moderation': {
+        'auto_filter':         (bool, None, None, None),
+        'sensitivity':         (int, 1, 10, None),
+        'severity_threshold':  (str, None, None, ('low', 'medium', 'high', 'critical')),
+        'notify_admins':       (bool, None, None, None),
+        'roman_urdu_support':  (bool, None, None, None),
+        'max_warnings':        (int, 1, 10, None),
+    },
+    'engagement': {
+        'auto_analyze':        (bool, None, None, None),
+        'analysis_interval':   (int, 10, 120, None),
+        'track_threads':       (bool, None, None, None),
+        'leaderboard':         (bool, None, None, None),
+        'inactivity_alerts':   (bool, None, None, None),
+    },
+    'knowledge': {
+        'auto_extract':              (bool, None, None, None),
+        'extraction_interval_hours': (int, 1, 12, None),
+        'min_quality_score':         (int, 1, 10, None),
+        'auto_categorize':           (bool, None, None, None),
+    },
+    'summarizer': {
+        'auto_summarize_enabled':       (bool, None, None, None),
+        'schedule_time':                (str, None, None, None),  # 'HH:MM'
+        'auto_summarize_message_count': (int, 50, 200, None),
+        'summary_length':               (str, None, None, ('brief', 'standard', 'detailed')),
+        'include_topics':               (bool, None, None, None),
+        'include_action_items':         (bool, None, None, None),
+        # Server-tracked field — not user-editable but written by the
+        # scheduler. Allow as a pass-through so saving doesn't strip it.
+        'last_auto_summary_date':       (str, None, None, None),
+    },
+    'mood': {
+        'track_per_message':    (bool, None, None, None),
+        'alert_negative_trend': (bool, None, None, None),
+        'sensitivity':          (int, 1, 10, None),
+        'language':             (str, None, None, ('english', 'roman_urdu', 'auto')),
+    },
+    'wellness': {
+        'auto_check':          (bool, None, None, None),
+        'break_reminders':     (bool, None, None, None),
+        'check_interval_hours': (int, 1, 8, None),
+        'burnout_detection':   (bool, None, None, None),
+    },
+    'focus': {
+        'auto_analyze':       (bool, None, None, None),
+        'session_reminders':  (bool, None, None, None),
+        'analyze_threshold':  (int, 20, 100, None),
+        'daily_reports':      (bool, None, None, None),
+    },
+    'assistant': {
+        'use_gemini':       (bool, None, None, None),
+        'reply_style':      (str, None, None, ('concise', 'friendly', 'detailed')),
+        'max_history':      (int, 1, 10, None),
+        'allow_jokes':      (bool, None, None, None),
+        'allow_motivation': (bool, None, None, None),
+        'memory_paused':    (bool, None, None, None),
+    },
+    'auto_message': {
+        'welcome_enabled':         (bool, None, None, None),
+        'post_in_default_channel': (bool, None, None, None),
+        'quick_replies_enabled':   (bool, None, None, None),
+        'use_gemini_polish':       (bool, None, None, None),
+    },
+    'support': {
+        'min_score':         (int, 1, 10, None),
+        'max_docs':          (int, 100, 1000, None),
+        'use_gemini_polish': (bool, None, None, None),
+        'show_sources':      (bool, None, None, None),
+    },
+    'translator': {
+        'default_target': (str, None, None, (
+            'en', 'ur', 'hi', 'es', 'fr', 'de', 'ar', 'zh-CN',
+            'pt', 'ru', 'ja', 'tr', 'id', 'bn',
+        )),
+        'auto_detect':    (bool, None, None, None),
+        'cache_enabled':  (bool, None, None, None),
+    },
+}
+
+
+def _coerce_setting(value, spec: tuple):
+    """Return ``(coerced, error_message_or_None)`` for one (key, value) pair.
+
+    Handles JSON's bool/int/string trinity tolerantly: HTML form posts can
+    arrive as the strings ``"true"`` / ``"false"`` / ``"5"`` for what is
+    semantically bool/int.
+    """
+    py_type, lo, hi, choices = spec
+    # Bool: accept JSON bool, 0/1, common strings
+    if py_type is bool:
+        if isinstance(value, bool):
+            return value, None
+        if isinstance(value, (int, float)):
+            return bool(value), None
+        if isinstance(value, str):
+            lc = value.strip().lower()
+            if lc in ('true', '1', 'yes', 'on'):
+                return True, None
+            if lc in ('false', '0', 'no', 'off'):
+                return False, None
+        return None, "expected boolean"
+    # Int: coerce + range-check
+    if py_type is int:
+        try:
+            coerced = int(value)
+        except (TypeError, ValueError):
+            return None, "expected integer"
+        if lo is not None and coerced < lo:
+            return None, f"min {lo}"
+        if hi is not None and coerced > hi:
+            return None, f"max {hi}"
+        return coerced, None
+    # String / enum
+    if py_type is str:
+        if not isinstance(value, str):
+            return None, "expected string"
+        if choices and value not in choices:
+            return None, f"must be one of {choices}"
+        return value, None
+    return value, None
+
+
+def _validate_agent_settings(agent_type_db: str, raw_settings: dict):
+    """Validate ``raw_settings`` against the per-agent whitelist.
+
+    Returns ``(coerced_dict, error_response_or_None)``. ``error_response``
+    is a Flask ``jsonify, status`` tuple when validation fails, ``None``
+    otherwise. Unknown agents are passed through unchanged so newly-added
+    agents don't break before their schema entry is added — the call site
+    can decide whether to be strict.
+    """
+    if not isinstance(raw_settings, dict):
+        return {}, (jsonify({'error': 'settings must be an object'}), 400)
+    schema = _SETTINGS_VALIDATORS.get(agent_type_db)
+    if schema is None:
+        # Unknown agent: pass through unchanged. Keeps the endpoint
+        # forward-compatible.
+        return raw_settings, None
+    coerced: dict = {}
+    errors: dict = {}
+    unknown: list = []
+    for key, val in raw_settings.items():
+        if key not in schema:
+            unknown.append(key)
+            continue
+        out, err = _coerce_setting(val, schema[key])
+        if err:
+            errors[key] = err
+        else:
+            coerced[key] = out
+    if unknown:
+        return coerced, (jsonify({
+            'error': 'unknown setting keys',
+            'unknown': unknown,
+        }), 400)
+    if errors:
+        return coerced, (jsonify({
+            'error': 'invalid setting values',
+            'invalid': errors,
+        }), 400)
+    return coerced, None
 
 
 # =====================================
@@ -142,6 +322,91 @@ def summarize_channel(channel_id):
             
     except Exception as e:
         print(f"[AGENTS API] Error in summarize_channel: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@agents_bp.route('/summarize/dm/<int:peer_user_id>', methods=['POST'])
+@jwt_required()
+def summarize_dm(peer_user_id):
+    """
+    Generate an ephemeral summary of the 1:1 DM thread between the
+    requester and ``peer_user_id``. Result is returned inline and is
+    visible only to the requester — nothing is persisted to
+    ``conversation_summaries`` (that table is channel-scoped).
+
+    Body (optional):
+        - message_count: messages to analyse (default 100, max 200).
+
+    Returns 200 on success, 404 if the peer doesn't exist, 403 if the
+    requester is not friends with the peer (DM access mirrors how the
+    DM feature itself gates), and 400 if the summariser couldn't
+    produce a result (e.g. too few messages).
+    """
+    try:
+        username = get_jwt_identity()
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            requester_id = get_user_id(username, cur)
+            if requester_id is None:
+                return jsonify({'error': 'User not found'}), 404
+
+            if peer_user_id == requester_id:
+                return jsonify(
+                    {'error': 'Cannot summarize a thread with yourself'}
+                ), 400
+
+            cur.execute("SELECT 1 FROM users WHERE id = %s",
+                        (peer_user_id,))
+            if not cur.fetchone():
+                return jsonify({'error': 'Peer user not found'}), 404
+
+            # DM is only available between friends — mirror that gate.
+            cur.execute("""
+                SELECT 1 FROM friends
+                WHERE (user_id = %s AND friend_id = %s)
+                   OR (user_id = %s AND friend_id = %s)
+                LIMIT 1
+            """, (requester_id, peer_user_id,
+                  peer_user_id, requester_id))
+            if not cur.fetchone():
+                return jsonify(
+                    {'error': 'You can only summarize DMs with friends'}
+                ), 403
+        conn.close()
+
+        data = request.get_json(silent=True) or {}
+        message_count = min(int(data.get('message_count', 100) or 100), 200)
+
+        result = _get_agent("summarizer").summarize_dm(
+            peer_user_id=peer_user_id,
+            requester_user_id=requester_id,
+            message_count=message_count,
+        )
+
+        if result.get('success'):
+            return jsonify({
+                'success': True,
+                'summary': result['summary'],
+                'key_points': result.get('key_points', []),
+                'action_items': result.get('action_items', []),
+                'message_count': result['message_count'],
+                'participants': result.get('participants', []),
+                'method': result.get('method', 'extractive'),
+                'summary_length': result.get('summary_length', 'standard'),
+                'peer_user_id': peer_user_id,
+                'time_range': result.get('time_range'),
+            }), 200
+        return jsonify({
+            'success': False,
+            'error': result.get('error', 'Failed to generate DM summary'),
+            'message_count': result.get('message_count', 0),
+        }), 400
+
+    except Exception as e:
+        print(f"[AGENTS API] Error in summarize_dm: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -270,6 +535,706 @@ def health_check():
             'knowledge_builder': 'pending',
             'focus': 'pending'
         }
+    }), 200
+
+
+# =====================================
+# AUTONOMOUS-AGENT METRICS DASHBOARD
+# =====================================
+# GET /api/agents/metrics?days=7[&community_id=N]
+#
+# Returns the three KPIs from §5.3 of AUTONOMOUS_AGENTS_PLAN.md:
+#   - autonomy_ratio  = act decisions / total decisions  (over agent_actions)
+#                       — measures how often the orchestrator decided to do
+#                         something vs deferring/skipping. A "human-triggered"
+#                         counter-point (slash-command + button invocations
+#                         from ai_agent_logs) is included alongside so the
+#                         jury can see autonomous : on-demand at a glance.
+#   - goal_attainment = % windows where the community avg sentiment_score
+#                       stayed >= 0.0 (i.e. mood was "ok or better"). Goal is
+#                       intentionally simple here; per-channel/per-goal
+#                       tuning belongs to the 5.2 admin panel.
+#   - feedback_ratio  = positive feedback / (positive + negative)
+#                       — counts thumbs-up vs thumbs-down only. engaged /
+#                         ignored / dismissed are returned separately so the
+#                         frontend can render the breakdown.
+#
+# Per-agent breakdown is included so the dashboard can show "which of the
+# 11 agents is doing the most work" without a second round-trip.
+
+@agents_bp.route('/metrics', methods=['GET'])
+@jwt_required()
+def get_agent_metrics():
+    """Aggregate autonomy / goal / feedback KPIs for the last N days."""
+    import logging
+    log = logging.getLogger(__name__)
+
+    try:
+        days = int(request.args.get('days', 7))
+    except (TypeError, ValueError):
+        days = 7
+    days = max(1, min(days, 90))  # clamp 1..90
+
+    community_id = get_community_id_from_public_id(request.args.get('community_id'))
+
+    # Build a single optional WHERE clause we can reuse across queries.
+    scope_sql = ""
+    scope_args: list = [days]
+    if community_id:
+        scope_sql = " AND community_id = %s"
+        scope_args.append(community_id)
+
+    # Same filter, but qualified with the agent_actions alias `aa` for
+    # the feedback join query below.
+    scope_sql_aa = scope_sql.replace("community_id = %s", "aa.community_id = %s") if scope_sql else ""
+
+    out: dict = {
+        'window_days': days,
+        'community_id': community_id,
+        'autonomy': {},
+        'goal_attainment': {},
+        'feedback': {},
+        'per_agent': [],
+    }
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # ── 1. Autonomy: act/defer/skip mix from agent_actions ────
+            cur.execute(
+                f"""
+                SELECT decision, COUNT(*) AS n
+                FROM agent_actions
+                WHERE created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
+                  {scope_sql}
+                GROUP BY decision
+                """,
+                tuple(scope_args),
+            )
+            decision_counts = {r['decision']: int(r['n']) for r in cur.fetchall()}
+            acts = decision_counts.get('act', 0)
+            defers = decision_counts.get('defer', 0)
+            skips = decision_counts.get('skip', 0)
+            total_decisions = acts + defers + skips
+
+            # Human-triggered actions from ai_agent_logs (slash commands,
+            # button clicks, REST agent endpoints). Best-effort: the table
+            # may not always carry community_id for personal-scope calls.
+            try:
+                ai_log_scope_sql = ""
+                ai_log_args: list = [days]
+                if community_id:
+                    ai_log_scope_sql = " AND community_id = %s"
+                    ai_log_args.append(community_id)
+                cur.execute(
+                    f"""
+                    SELECT COUNT(*) AS n
+                    FROM ai_agent_logs
+                    WHERE created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
+                      {ai_log_scope_sql}
+                    """,
+                    tuple(ai_log_args),
+                )
+                row = cur.fetchone() or {}
+                human_triggered = int(row.get('n') or 0)
+            except Exception as exc:
+                log.debug(f"[metrics] ai_agent_logs query skipped: {exc}")
+                human_triggered = 0
+
+            denom_decisions = total_decisions or 1
+            out['autonomy'] = {
+                'acts': acts,
+                'defers': defers,
+                'skips': skips,
+                'total_decisions': total_decisions,
+                'autonomy_ratio': round(acts / denom_decisions, 4),
+                'human_triggered': human_triggered,
+                # "Autonomous share" of all visible AI activity — how often
+                # the agent decided unprompted vs the user pressing a button.
+                'autonomous_share': round(
+                    acts / max(1, acts + human_triggered), 4,
+                ),
+            }
+
+            # ── 2. Goal attainment: mood stability over the window ────
+            # "Goal met" = avg sentiment_score per hour >= 0.0 across the
+            # community (or all communities if community_id is None).
+            mood_scope_sql = ""
+            mood_args: list = [days]
+            if community_id:
+                mood_scope_sql = (
+                    " AND um.channel_id IN ("
+                    "   SELECT id FROM channels WHERE community_id = %s"
+                    " )"
+                )
+                mood_args.append(community_id)
+            cur.execute(
+                f"""
+                SELECT DATE_FORMAT(um.created_at, '%%Y-%%m-%%d %%H:00:00') AS bucket,
+                       AVG(um.sentiment_score) AS avg_score,
+                       COUNT(*) AS n
+                FROM user_moods um
+                WHERE um.created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
+                  AND um.sentiment_score IS NOT NULL
+                  {mood_scope_sql}
+                GROUP BY bucket
+                """,
+                tuple(mood_args),
+            )
+            buckets = cur.fetchall() or []
+            total_buckets = len(buckets)
+            met = sum(1 for b in buckets if (b['avg_score'] or 0) >= 0.0)
+            denom_buckets = total_buckets or 1
+            out['goal_attainment'] = {
+                'goal_threshold': 0.0,
+                'buckets': total_buckets,
+                'met': met,
+                'ratio': round(met / denom_buckets, 4),
+                'avg_sentiment': round(
+                    sum((b['avg_score'] or 0) for b in buckets) / denom_buckets, 4,
+                ),
+            }
+
+            # ── 3. Feedback: counts per signal across agent_feedback ──
+            # Join through agent_actions for the scope filter.
+            cur.execute(
+                f"""
+                SELECT af.`signal` AS sig, COUNT(*) AS n
+                FROM agent_feedback af
+                JOIN agent_actions aa ON aa.id = af.action_id
+                WHERE af.created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
+                  {scope_sql_aa}
+                GROUP BY af.`signal`
+                """,
+                tuple(scope_args),
+            )
+            sig_counts = {r['sig']: int(r['n']) for r in cur.fetchall()}
+            pos = sig_counts.get('positive', 0)
+            neg = sig_counts.get('negative', 0)
+            denom_pn = (pos + neg) or 1
+            out['feedback'] = {
+                'positive': pos,
+                'negative': neg,
+                'engaged': sig_counts.get('engaged', 0),
+                'dismissed': sig_counts.get('dismissed', 0),
+                'ignored': sig_counts.get('ignored', 0),
+                'feedback_ratio': round(pos / denom_pn, 4),
+                'total': sum(sig_counts.values()),
+            }
+
+            # ── 4. Per-agent breakdown ───────────────────────────────
+            cur.execute(
+                f"""
+                SELECT agent_name,
+                       SUM(decision='act')   AS acts,
+                       SUM(decision='defer') AS defers,
+                       SUM(decision='skip')  AS skips,
+                       COUNT(*)              AS total
+                FROM agent_actions
+                WHERE created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
+                  {scope_sql}
+                GROUP BY agent_name
+                ORDER BY acts DESC, total DESC
+                """,
+                tuple(scope_args),
+            )
+            rows = cur.fetchall() or []
+            out['per_agent'] = [
+                {
+                    'agent_name': r['agent_name'],
+                    'acts': int(r['acts'] or 0),
+                    'defers': int(r['defers'] or 0),
+                    'skips': int(r['skips'] or 0),
+                    'total': int(r['total'] or 0),
+                    'autonomy_ratio': round(
+                        (int(r['acts'] or 0)) / max(1, int(r['total'] or 0)), 4,
+                    ),
+                }
+                for r in rows
+            ]
+
+        return jsonify(out), 200
+    except Exception as exc:
+        log.exception(f"[metrics] failed: {exc}")
+        return jsonify({'error': 'metrics aggregation failed', 'detail': str(exc)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================================================
+# AUTONOMOUS-AGENT COLLABORATION GRAPH                       (Phase 4.4)
+# =====================================================================
+# GET /api/agents/collaboration-graph?hours=24
+#
+# Returns a force-directed view of which autonomous agents triggered
+# which over the last N hours, joined on agent_actions.correlation_id.
+# This is *the* visualisation of the three known chains documented in
+# docs/AUTONOMOUS_AGENTS_PLAN.md §4:
+#
+#   mood_tracker  → wellness          (mood.escalation)
+#   moderation    → wellness          (mod.violation, victim chain)
+#   focus         → summarizer + knowledge_builder  (focus.drift)
+#
+# Edges are directed: any pair (a1.agent, a2.agent) sharing the same
+# correlation_id where a2 is the strictly-later 'act' row.
+#
+# Capped at 50 edges so the graph stays readable and one bad chain can't
+# tank the page. The idx_correlation index on agent_actions keeps the
+# self-join cheap for the typical 24-h window.
+# ---------------------------------------------------------------------
+
+@agents_bp.route('/collaboration-graph', methods=['GET'])
+@jwt_required()
+def get_agent_collaboration_graph():
+    """Return {nodes, edges, window_hours} for the agent collaboration view."""
+    import logging
+    log = logging.getLogger(__name__)
+
+    try:
+        hours = int(request.args.get('hours', 24))
+    except (TypeError, ValueError):
+        hours = 24
+    hours = max(1, min(hours, 24 * 90))  # clamp 1h..90d
+
+    # Optional community scope — gated by community-admin check when set.
+    community_id = get_community_id_from_public_id(request.args.get('community_id'))
+    if community_id:
+        user_id = get_jwt_identity()
+        if not _check_community_admin(user_id, community_id):
+            return jsonify({'error': 'forbidden'}), 403
+
+    scope_sql = ""
+    scope_args_node: list = [hours]
+    scope_args_edge: list = [hours]
+    if community_id:
+        # Apply to both legs of the self-join so we don't see cross-community
+        # correlation collisions (cheap UUIDs are globally unique anyway,
+        # but a JSON-payload reused across communities could otherwise pair).
+        scope_sql = " AND community_id = %s"
+        scope_args_node.append(community_id)
+        scope_args_edge.extend([community_id, community_id])
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # ── Nodes: one row per agent that did anything in the window ──
+            # Includes 'act' AND 'defer'/'skip' so the panel can show even
+            # quiet agents (with 0 acts) — useful when the jury asks
+            # "why isn't translator on the graph?"
+            cur.execute(
+                f"""
+                SELECT agent_name,
+                       SUM(decision='act')   AS acts,
+                       SUM(decision='defer') AS defers,
+                       SUM(decision='skip')  AS skips,
+                       COUNT(*)              AS total,
+                       MAX(created_at)       AS last_acted
+                FROM agent_actions
+                WHERE created_at >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+                  {scope_sql}
+                GROUP BY agent_name
+                ORDER BY acts DESC, total DESC
+                """,
+                tuple(scope_args_node),
+            )
+            node_rows = cur.fetchall() or []
+
+            # Last feedback signal per agent — gives the node an "outcome"
+            # color. positive/engaged → green, negative/dismissed → red,
+            # else neutral. One round-trip with a window function.
+            # `signal` is a reserved word in MySQL 8 — the bare alias
+            # (and even the bare column reference in some 8.0.x point
+            # releases) trips a 1064 syntax error. Backtick the column
+            # and alias to something neutral.
+            cur.execute(
+                f"""
+                SELECT aa.agent_name AS agent_name, af.`signal` AS sig
+                FROM agent_feedback af
+                JOIN agent_actions aa ON aa.id = af.action_id
+                JOIN (
+                    SELECT aa2.agent_name AS agent_name, MAX(af2.created_at) AS mx
+                    FROM agent_feedback af2
+                    JOIN agent_actions aa2 ON aa2.id = af2.action_id
+                    WHERE af2.created_at >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+                      {scope_sql.replace('community_id = %s', 'aa2.community_id = %s')}
+                    GROUP BY aa2.agent_name
+                ) latest
+                  ON latest.agent_name = aa.agent_name
+                 AND latest.mx        = af.created_at
+                """,
+                tuple(scope_args_node),
+            )
+            last_signal = {r['agent_name']: r['sig'] for r in (cur.fetchall() or [])}
+
+            def _outcome_for(signal):
+                if signal in ('positive', 'engaged'):
+                    return 'positive'
+                if signal in ('negative', 'dismissed'):
+                    return 'negative'
+                return 'neutral'
+
+            nodes = [
+                {
+                    'id': r['agent_name'],
+                    'acts': int(r['acts'] or 0),
+                    'defers': int(r['defers'] or 0),
+                    'skips': int(r['skips'] or 0),
+                    'total': int(r['total'] or 0),
+                    'last_acted': r['last_acted'].isoformat() if r['last_acted'] else None,
+                    'last_signal': last_signal.get(r['agent_name']),
+                    'outcome': _outcome_for(last_signal.get(r['agent_name'])),
+                }
+                for r in node_rows
+            ]
+
+            # ── Edges: self-join on correlation_id, strict time order ──
+            # `a1.decision = 'act'` ensures the source agent actually fired
+            # (defers shouldn't trigger a downstream chain). `a2.decision`
+            # is left open so we surface the downstream agent's reaction
+            # even when it deferred — that's exactly the audit story we
+            # want (mod → wellness deferred during quiet hours).
+            if community_id:
+                edge_filter = " AND a1.community_id = %s AND a2.community_id = %s"
+            else:
+                edge_filter = ""
+
+            cur.execute(
+                f"""
+                SELECT a1.agent_name AS source,
+                       a2.agent_name AS target,
+                       COUNT(*)      AS count,
+                       MAX(a2.created_at) AS last_seen,
+                       SUBSTRING_INDEX(GROUP_CONCAT(a1.correlation_id ORDER BY a2.created_at DESC), ',', 1) AS sample_correlation
+                FROM agent_actions a1
+                JOIN agent_actions a2
+                  ON a1.correlation_id = a2.correlation_id
+                 AND a2.created_at > a1.created_at
+                 AND a2.agent_name <> a1.agent_name
+                WHERE a1.created_at >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+                  AND a1.decision = 'act'
+                  {edge_filter}
+                GROUP BY a1.agent_name, a2.agent_name
+                ORDER BY count DESC, last_seen DESC
+                LIMIT 50
+                """,
+                tuple(scope_args_edge),
+            )
+            edge_rows = cur.fetchall() or []
+
+            edges = [
+                {
+                    'source': r['source'],
+                    'target': r['target'],
+                    'count': int(r['count'] or 0),
+                    'last_seen': r['last_seen'].isoformat() if r['last_seen'] else None,
+                    'sample_correlation': r.get('sample_correlation'),
+                }
+                for r in edge_rows
+            ]
+
+        # If an edge references an agent that wasn't in node_rows (e.g.
+        # the window slice cut off its own action row but kept the
+        # downstream row — rare but possible at the boundary), inject
+        # a stub node so the frontend graph doesn't drop the edge.
+        known = {n['id'] for n in nodes}
+        for e in edges:
+            for endpoint in (e['source'], e['target']):
+                if endpoint not in known:
+                    nodes.append({
+                        'id': endpoint, 'acts': 0, 'defers': 0, 'skips': 0,
+                        'total': 0, 'last_acted': None,
+                        'last_signal': None, 'outcome': 'neutral',
+                    })
+                    known.add(endpoint)
+
+        return jsonify({
+            'nodes': nodes,
+            'edges': edges,
+            'window_hours': hours,
+            'community_id': community_id,
+        }), 200
+    except Exception as exc:
+        log.exception(f"[collaboration-graph] failed: {exc}")
+        return jsonify({'error': 'collaboration graph failed', 'detail': str(exc)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# AUTONOMOUS-AGENT FEEDBACK ENDPOINT
+# =====================================
+# POST /api/agents/<name>/feedback
+# Body: { "action_id": <int>, "signal": "positive|negative|dismissed|engaged|ignored",
+#         "weight": <float, optional> }
+#
+# Writes one agent_feedback row keyed on the originating agent_actions
+# row, then asks the autonomous agent (if registered) to learn from it.
+# Both writes are best-effort: a missing/unregistered agent does NOT
+# prevent the feedback row from being stored.
+
+@agents_bp.route('/<name>/feedback', methods=['POST'])
+@jwt_required()
+def submit_agent_feedback(name):
+    """Record user feedback on a logged agent action and trigger learn()."""
+    from agents import memory as agent_memory
+
+    body = request.get_json(silent=True) or {}
+    action_id = body.get('action_id')
+    correlation_id = body.get('correlation_id')
+    signal = body.get('signal')
+    try:
+        weight = float(body.get('weight', 1.0))
+    except (TypeError, ValueError):
+        weight = 1.0
+
+    if signal not in agent_memory.VALID_SIGNALS:
+        return jsonify({
+            'error': f"signal must be one of {agent_memory.VALID_SIGNALS}",
+        }), 400
+
+    # The frontend timeline/toast only has the correlation_id (it's the
+    # stable identifier on emitted socket events). The legacy callers
+    # still send action_id. Accept either — but require one.
+    action = None
+    if isinstance(action_id, int) and action_id > 0:
+        action = agent_memory.get_action(action_id)
+        if not action:
+            return jsonify({'error': 'action_id not found'}), 404
+        if action.get('agent_name') != name:
+            return jsonify({'error': 'action_id does not belong to this agent'}), 400
+    elif isinstance(correlation_id, str) and correlation_id:
+        action = agent_memory.get_action_by_correlation(name, correlation_id)
+        if not action:
+            return jsonify({'error': 'no action found for this correlation_id'}), 404
+        action_id = action['id']
+    else:
+        return jsonify({'error': 'action_id (int) or correlation_id (str) is required'}), 400
+
+    current_user = get_jwt_identity()
+    user_id = get_user_id(current_user) if current_user else None
+
+    fb_id = agent_memory.record_feedback(
+        action_id=action_id, signal=signal, user_id=user_id, weight=weight,
+    )
+    if not fb_id:
+        return jsonify({'error': 'failed to record feedback'}), 500
+
+    # Best-effort: trigger the agent's learn() hook. We resolve the
+    # autonomous registry first (lighter), then fall back to the legacy
+    # _get_agent() singleton if the agent exposes a `learn` method.
+    try:
+        from agents.orchestrator import _resolve  # autonomous registry
+        agent = _resolve(name)
+        if agent is None:
+            try:
+                agent = _get_agent(name)
+            except Exception:
+                agent = None
+        if agent is not None and hasattr(agent, 'learn'):
+            try:
+                agent.learn(action_id, signal, weight=weight)
+            except TypeError:
+                # Older signature compatibility.
+                agent.learn(action_id, signal)
+    except Exception as exc:
+        # Learning failure is non-fatal — the feedback row is what matters.
+        import logging
+        logging.getLogger(__name__).debug(f"[agents/feedback] learn() skipped: {exc}")
+
+    return jsonify({
+        'success': True,
+        'feedback_id': fb_id,
+        'action_id': action_id,
+        'agent': name,
+        'signal': signal,
+    }), 201
+
+
+# =====================================
+# AGENT GOALS — PHASE 5.2
+# =====================================
+# GET /api/agents/<name>/state?community_id=N
+#   →  { agent, community_id, enabled, current, defaults, clamps, specs,
+#         last_acted_at, last_outcome }
+#
+# PUT /api/agents/<name>/state
+#   body: { community_id, enabled?, thresholds?: {...}, clamps?: {...} }
+#   →  { agent, community_id, enabled, current, clamps }
+#
+# Both require community-admin membership for the supplied community_id.
+# Storage uses the existing agent_state table:
+#   - learned values live in thresholds[<key>]
+#   - admin clamp windows live in thresholds["_clamps"] = {<key>: {"min":x,"max":y}}
+#   - kill-switch lives in goal_value.enabled (True by default when missing)
+
+@agents_bp.route('/<name>/state', methods=['GET'])
+@jwt_required()
+def get_agent_state(name):
+    """Return the per-community tunables / clamps / kill-switch for one agent."""
+    from agents import memory as agent_memory
+    from agents.tunables import specs_for, defaults_for, known_agents
+
+    if name not in known_agents():
+        return jsonify({'error': f'unknown agent {name!r}'}), 404
+
+    raw_community_id = request.args.get('community_id')
+    community_id = get_community_id_from_public_id(raw_community_id) if raw_community_id else None
+    if not community_id:
+        return jsonify({'error': 'community_id is required'}), 400
+
+    username = get_jwt_identity()
+    user_id = _get_user_id(username) if username else None
+    if not user_id:
+        return jsonify({'error': 'User not found'}), 404
+    if not _check_community_admin(user_id, community_id):
+        return jsonify({'error': 'Forbidden: community admin only'}), 403
+
+    specs = specs_for(name)
+    defaults = defaults_for(name)
+    state = agent_memory.get_state(
+        name, agent_memory.SCOPE_COMMUNITY, community_id) or {}
+    th = dict(state.get("thresholds") or {})
+    clamps = dict(th.pop("_clamps", {}) or {})  # surface clamps separately
+    gv = state.get("goal_value") or {}
+    enabled = bool(gv.get("enabled", True))
+
+    # Fill in defaults for any tunable the row doesn't carry yet.
+    current = {k: th.get(k, defaults.get(k)) for k in defaults.keys()}
+
+    return jsonify({
+        'agent': name,
+        'community_id': community_id,
+        'enabled': enabled,
+        'current': current,
+        'defaults': defaults,
+        'clamps': clamps,
+        'specs': specs,
+        'last_acted_at': (state.get('last_acted_at').isoformat()
+                          if state.get('last_acted_at') and hasattr(state['last_acted_at'], 'isoformat')
+                          else state.get('last_acted_at')),
+        'last_outcome': state.get('last_outcome'),
+    }), 200
+
+
+@agents_bp.route('/<name>/state', methods=['PUT'])
+@jwt_required()
+def put_agent_state(name):
+    """Update tunables / clamps / kill-switch for one agent in one community.
+
+    Validates the agent name against the tunables catalog. Numeric fields
+    are coerced and clipped to the catalog's absolute min/max so the panel
+    can't write outside the floor/ceiling defined in tunables.py.
+    """
+    from agents import memory as agent_memory
+    from agents.tunables import (specs_for, defaults_for,
+                                 known_agents, apply_clamps)
+
+    if name not in known_agents():
+        return jsonify({'error': f'unknown agent {name!r}'}), 404
+
+    body = request.get_json(silent=True) or {}
+    raw_community_id = body.get('community_id')
+    community_id = get_community_id_from_public_id(raw_community_id) if raw_community_id else None
+    if not community_id:
+        return jsonify({'error': 'community_id is required'}), 400
+
+    username = get_jwt_identity()
+    user_id = _get_user_id(username) if username else None
+    if not user_id:
+        return jsonify({'error': 'User not found'}), 404
+    if not _check_community_admin(user_id, community_id):
+        return jsonify({'error': 'Forbidden: community admin only'}), 403
+
+    specs = specs_for(name)
+    # Load existing row so we can do a partial update.
+    state = agent_memory.get_state(
+        name, agent_memory.SCOPE_COMMUNITY, community_id) or {}
+    th = dict(state.get("thresholds") or {})
+    existing_clamps = dict(th.get("_clamps") or {})
+    gv = dict(state.get("goal_value") or {})
+
+    # ── thresholds (current learned values) ─────────────────────────
+    new_thresholds = body.get('thresholds')
+    if isinstance(new_thresholds, dict):
+        for key, val in new_thresholds.items():
+            if key == '_clamps' or key not in specs:
+                continue  # reject unknown keys (and never let the client overwrite _clamps via this path)
+            th[key] = val
+
+    # ── clamps (admin overrides on top of catalog min/max) ──────────
+    new_clamps = body.get('clamps')
+    if isinstance(new_clamps, dict):
+        for key, window in new_clamps.items():
+            if key not in specs or not isinstance(window, dict):
+                continue
+            spec = specs[key]
+            sub: dict = {}
+            for end in ('min', 'max'):
+                if end in window and window[end] is not None:
+                    try:
+                        v = float(window[end])
+                    except (TypeError, ValueError):
+                        continue
+                    # Clip the clamp itself to the catalog's absolute window.
+                    cat_min = spec.get('min')
+                    cat_max = spec.get('max')
+                    if cat_min is not None:
+                        v = max(float(cat_min), v)
+                    if cat_max is not None:
+                        v = min(float(cat_max), v)
+                    sub[end] = v
+            if sub:
+                existing_clamps[key] = sub
+            elif key in existing_clamps:
+                del existing_clamps[key]
+        th['_clamps'] = existing_clamps
+
+    # Re-apply clamps to current values so saving a tighter window
+    # immediately pulls drifted thresholds back in.
+    learned_only = {k: v for k, v in th.items() if k != '_clamps'}
+    learned_only = apply_clamps(name, learned_only, existing_clamps)
+    th = dict(learned_only)
+    th['_clamps'] = existing_clamps
+
+    # ── kill-switch ─────────────────────────────────────────────────
+    if 'enabled' in body:
+        gv['enabled'] = bool(body['enabled'])
+
+    ok = agent_memory.set_state(
+        name, agent_memory.SCOPE_COMMUNITY, community_id,
+        thresholds=th,
+        goal_value=gv if 'enabled' in body else None,
+    )
+    if not ok:
+        return jsonify({'error': 'failed to persist agent state'}), 500
+
+    defaults = defaults_for(name)
+    current = {k: th.get(k, defaults.get(k)) for k in defaults.keys()}
+    return jsonify({
+        'agent': name,
+        'community_id': community_id,
+        'enabled': bool(gv.get('enabled', True)),
+        'current': current,
+        'clamps': existing_clamps,
+    }), 200
+
+
+@agents_bp.route('/state/catalog', methods=['GET'])
+@jwt_required()
+def get_agent_state_catalog():
+    """List all known agents + their tunable specs in one shot.
+
+    Used by the Agent Goals frontend to render the page in a single
+    request instead of 11 GETs on mount.
+    """
+    from agents.tunables import TUNABLES
+    return jsonify({
+        'agents': list(TUNABLES.keys()),
+        'tunables': TUNABLES,
     }), 200
 
 
@@ -494,7 +1459,7 @@ def get_community_mood():
         Community-wide mood statistics
     """
     try:
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
         channel_id = request.args.get('channel_id', type=int)
         hours = request.args.get('hours', 24, type=int)
         
@@ -626,7 +1591,7 @@ def get_moderation_history():
     try:
         username = get_jwt_identity()
         limit = request.args.get('limit', 10, type=int)
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
         channel_id = request.args.get('channel_id', type=int)
         
         if not community_id:
@@ -722,7 +1687,7 @@ def get_moderation_stats():
     try:
         username = get_jwt_identity()
         days = request.args.get('days', 7, type=int)
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
         
         if not community_id:
             return jsonify({'error': 'community_id is required'}), 400
@@ -1086,6 +2051,205 @@ def get_booster_pack():
         return jsonify(result), 200 if result.get('success') else 400
     except Exception as e:
         print(f"[AGENTS API] Error in get_booster_pack: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@agents_bp.route('/engagement/send', methods=['POST'])
+@jwt_required()
+def send_engagement_content():
+    """Post engagement content (starter / poll / icebreaker / challenge /
+    pack) into a channel as a real AI bot message. Used by the engagement
+    agent UI so admins can spark a conversation on demand."""
+    try:
+        username = get_jwt_identity()
+        data = request.get_json() or {}
+        channel_id = data.get('channel_id')
+        kind = (data.get('kind') or 'pack').lower()
+        category = data.get('category')
+
+        if not channel_id:
+            return jsonify({'error': 'channel_id is required'}), 400
+        if kind not in ('starter', 'poll', 'icebreaker', 'challenge', 'pack'):
+            return jsonify({'error': f'Unknown kind: {kind}'}), 400
+
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                user_id = get_user_id(username, cur)
+                if user_id is None:
+                    return jsonify({'error': 'User not found'}), 404
+
+                # Resolve community + verify the caller is a member.
+                cur.execute("""
+                    SELECT c.community_id
+                    FROM channels c
+                    JOIN channel_members cm ON cm.channel_id = c.id
+                    WHERE c.id = %s AND cm.user_id = %s
+                """, (channel_id, user_id))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({'error': 'Access denied to this channel'}), 403
+                community_id = row['community_id']
+        finally:
+            conn.close()
+
+        result = _get_agent("engagement").post_engagement_content(
+            channel_id, community_id, kind=kind, category=category)
+
+        if not result.get('posted'):
+            return jsonify({'success': False,
+                            'error': result.get('error', 'Failed to post')}), 500
+
+        # Each booster is posted as its own message/card. Return the full list
+        # so the frontend can optimistically render each card immediately.
+        items = [{
+            'message_id': it.get('message_id'),
+            'channel_id': channel_id,
+            'content': it.get('content'),
+            'author': it.get('author', 'Engagement Agent'),
+            'created_at': it.get('created_at'),
+            'kind': it.get('kind'),
+            'card': it.get('card'),
+        } for it in result.get('items', [])]
+
+        return jsonify({'success': True, 'kind': result.get('kind'),
+                        'channel_id': channel_id, 'items': items}), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error in send_engagement_content: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+def _poll_tallies(cur, message_id, num_options=None):
+    """Return (tallies_list, total) for a poll. ``tallies_list`` is a list of
+    vote counts indexed by option_index. If ``num_options`` is known the list
+    is padded to that length so every option has a slot."""
+    cur.execute(
+        "SELECT option_index, COUNT(*) AS c FROM engagement_poll_votes "
+        "WHERE message_id = %s GROUP BY option_index",
+        (message_id,),
+    )
+    rows = cur.fetchall()
+    counts = {int(r['option_index']): int(r['c']) for r in rows}
+    size = num_options if num_options is not None else (
+        (max(counts.keys()) + 1) if counts else 0)
+    tallies = [counts.get(i, 0) for i in range(size)]
+    total = sum(counts.values())
+    return tallies, total
+
+
+def _resolve_poll(cur, message_id):
+    """Return (channel_id, num_options) for a poll card, or (None, None) if the
+    message isn't a poll."""
+    cur.execute(
+        "SELECT channel_id, payload FROM engagement_cards "
+        "WHERE message_id = %s AND kind = 'poll'",
+        (message_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None, None
+    payload = row['payload']
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            payload = {}
+    options = payload.get('options') if isinstance(payload, dict) else None
+    return row['channel_id'], (len(options) if options else None)
+
+
+@agents_bp.route('/engagement/poll/<int:message_id>', methods=['GET'])
+@jwt_required()
+def get_poll(message_id):
+    """Return current poll tallies + the caller's vote (or null)."""
+    try:
+        username = get_jwt_identity()
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                user_id = get_user_id(username, cur)
+                if user_id is None:
+                    return jsonify({'error': 'User not found'}), 404
+                channel_id, num_options = _resolve_poll(cur, message_id)
+                if channel_id is None:
+                    return jsonify({'error': 'Poll not found'}), 404
+                cur.execute(
+                    "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
+                    (channel_id, user_id))
+                if not cur.fetchone():
+                    return jsonify({'error': 'Access denied'}), 403
+                tallies, total = _poll_tallies(cur, message_id, num_options)
+                cur.execute(
+                    "SELECT option_index FROM engagement_poll_votes "
+                    "WHERE message_id = %s AND user_id = %s",
+                    (message_id, user_id))
+                mv = cur.fetchone()
+                my_vote = int(mv['option_index']) if mv else None
+            return jsonify({'tallies': tallies, 'total': total,
+                            'my_vote': my_vote}), 200
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[AGENTS API] Error in get_poll: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@agents_bp.route('/engagement/poll/<int:message_id>/vote', methods=['POST'])
+@jwt_required()
+def vote_poll(message_id):
+    """Cast or change the caller's vote on a poll. One vote per user; voting a
+    different option moves the vote. Emits ``poll_vote_update`` to the channel."""
+    try:
+        username = get_jwt_identity()
+        data = request.get_json() or {}
+        option_index = data.get('option_index')
+        if option_index is None or not isinstance(option_index, int) or option_index < 0:
+            return jsonify({'error': 'option_index (int >= 0) is required'}), 400
+
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                user_id = get_user_id(username, cur)
+                if user_id is None:
+                    return jsonify({'error': 'User not found'}), 404
+                channel_id, num_options = _resolve_poll(cur, message_id)
+                if channel_id is None:
+                    return jsonify({'error': 'Poll not found'}), 404
+                if num_options is not None and option_index >= num_options:
+                    return jsonify({'error': 'option_index out of range'}), 400
+                cur.execute(
+                    "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
+                    (channel_id, user_id))
+                if not cur.fetchone():
+                    return jsonify({'error': 'Access denied'}), 403
+
+                cur.execute(
+                    "INSERT INTO engagement_poll_votes "
+                    "(message_id, user_id, option_index) VALUES (%s, %s, %s) "
+                    "ON DUPLICATE KEY UPDATE option_index = VALUES(option_index)",
+                    (message_id, user_id, option_index))
+                tallies, total = _poll_tallies(cur, message_id, num_options)
+                conn.commit()
+        finally:
+            conn.close()
+
+        try:
+            from app import socketio
+            socketio.emit('poll_vote_update', {
+                'message_id': message_id,
+                'channel_id': channel_id,
+                'tallies': tallies,
+                'total': total,
+            }, room=f'channel_{channel_id}', namespace='/')
+        except Exception as emit_exc:
+            print(f"[AGENTS API] poll_vote_update emit failed: {emit_exc}")
+
+        return jsonify({'success': True, 'tallies': tallies, 'total': total,
+                        'my_vote': option_index}), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error in vote_poll: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -2005,7 +3169,7 @@ def get_knowledge_insights():
     try:
         username = get_jwt_identity()
         time_period_hours = request.args.get('time_period_hours', 24, type=int)
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
 
         if not community_id:
             return jsonify({'error': 'community_id is required'}), 400
@@ -2128,7 +3292,7 @@ def get_knowledge_topics():
     try:
         username = get_jwt_identity()
         limit = request.args.get('limit', 20, type=int)
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
 
         if not community_id:
             return jsonify({'error': 'community_id is required'}), 400
@@ -2388,7 +3552,8 @@ def extract_knowledge_time():
         data = request.get_json() or {}
         time_period_hours = int(data.get('time_period_hours', 24))
         topic_filter = data.get('topic')
-        community_id = data.get('community_id')
+        raw_community_id = data.get('community_id')
+        community_id = get_community_id_from_public_id(raw_community_id) if raw_community_id else None
 
         if not community_id:
             return jsonify({'error': 'community_id is required'}), 400
@@ -2475,7 +3640,8 @@ def search_knowledge():
         username = get_jwt_identity()
         query = request.args.get('query', '', type=str)
         channel_id = request.args.get('channel_id', None, type=int)
-        community_id = request.args.get('community_id', None, type=int)
+        raw_community_id = request.args.get('community_id')
+        community_id = get_community_id_from_public_id(raw_community_id) if raw_community_id else None
 
         # Basic access validation if channel_id provided
         conn = get_db_connection()
@@ -2791,7 +3957,7 @@ def get_knowledge_stats():
     conn = None
     try:
         username = get_jwt_identity()
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
         
         if not community_id:
             return jsonify({'error': 'community_id is required'}), 400
@@ -2872,7 +4038,7 @@ def get_recent_knowledge():
     conn = None
     try:
         username = get_jwt_identity()
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
         limit = request.args.get('limit', default=20, type=int)
         
         if not community_id:
@@ -3009,7 +4175,7 @@ def get_agent_catalog():
         if not user_id:
             return jsonify({'error': 'User not found'}), 404
         
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
         
         conn = get_db_connection()
         with conn.cursor() as cur:
@@ -3098,8 +4264,9 @@ def get_agent_catalog():
             conn.close()
 
 
-@agents_bp.route('/install/community/<int:community_id>', methods=['POST'])
+@agents_bp.route('/install/community/<uuid:public_id>', methods=['POST'])
 @jwt_required()
+@resolve_public_community_id
 def install_community_agent(community_id):
     """
     Install an agent for a community. Only admins/owners can install.
@@ -3136,7 +4303,7 @@ def install_community_agent(community_id):
             
             if not agent:
                 return jsonify({'error': 'Agent not found'}), 404
-            if agent['category'] != 'community':
+            if agent_type in _PERSONAL_ONLY_AGENTS:
                 return jsonify({'error': 'This is a personal agent, use /activate/personal instead'}), 400
             
             # Check if already installed
@@ -3187,8 +4354,9 @@ def install_community_agent(community_id):
             conn.close()
 
 
-@agents_bp.route('/uninstall/community/<int:community_id>/<agent_type>', methods=['DELETE'])
+@agents_bp.route('/uninstall/community/<uuid:public_id>/<agent_type>', methods=['DELETE'])
 @jwt_required()
+@resolve_public_community_id
 def uninstall_community_agent(community_id, agent_type):
     """Uninstall an agent from a community. Admins/owners only."""
     agent_type = _normalize_agent_type(agent_type)
@@ -3237,8 +4405,9 @@ def uninstall_community_agent(community_id, agent_type):
             conn.close()
 
 
-@agents_bp.route('/configure/community/<int:community_id>/<agent_type>', methods=['PUT'])
+@agents_bp.route('/configure/community/<uuid:public_id>/<agent_type>', methods=['PUT'])
 @jwt_required()
+@resolve_public_community_id
 def configure_community_agent(community_id, agent_type):
     """
     Update settings for an installed community agent. Admins/owners only.
@@ -3274,9 +4443,14 @@ def configure_community_agent(community_id, agent_type):
             
             # Merge settings
             current_settings = json.loads(current['settings']) if current['settings'] else {}
-            new_settings = data.get('settings', {})
-            merged = {**current_settings, **new_settings}
-            
+            raw_new_settings = data.get('settings', {}) or {}
+            # Schema-validate the patch (not the merged dict — only the
+            # bits the caller is changing must clear the whitelist).
+            coerced_new, err = _validate_agent_settings(agent_type, raw_new_settings)
+            if err is not None:
+                return err
+            merged = {**current_settings, **coerced_new}
+
             # Update
             enabled = data.get('enabled', current['enabled'])
             cur.execute("""
@@ -3301,7 +4475,7 @@ def configure_community_agent(community_id, agent_type):
             'settings': merged,
             'enabled': enabled,
         }), 200
-        
+
     except Exception as e:
         print(f"[AGENTS API] Error configuring agent: {e}")
         return jsonify({'error': 'Internal server error'}), 500
@@ -3310,10 +4484,166 @@ def configure_community_agent(community_id, agent_type):
             conn.close()
 
 
+# ── Per-channel coverage overrides (G1a) ──────────────────────────────────
+#
+# Two-state overrides on top of community_agents.enabled. Backed by
+# community_channel_agents (see migrations/add_community_channel_agents.sql).
+# Wired into dispatch via AutonomousAgent._is_enabled_for_channel
+# (Backend/agents/base.py). Read/write surface is CoverageMatrix in
+# Frontend/src/components/ai-agents/CommunityAgentsTab.tsx §D.
+#
+# A community-installed agent must exist for the override to be meaningful
+# (the matrix UI only exposes cells whose agent is in community_agents).
+# We still allow writing an override for an uninstalled agent — it sits
+# dormant until install — because the alternative (deleting overrides on
+# uninstall) would silently lose admin intent.
+
+# Agents that the CoverageMatrix exposes as columns. Mirrors COVERAGE_COLUMNS
+# in CommunityAgentsTab.tsx. Other agent types reject so accidental admin
+# panel typos can't smuggle in arbitrary rows.
+_COVERAGE_AGENT_TYPES: set[str] = {
+    'moderation', 'support', 'summarizer', 'focus', 'engagement', 'translator',
+}
+
+
+@agents_bp.route(
+    '/configure/channel/<uuid:public_id>/<int:channel_id>/<agent_type>',
+    methods=['PUT'])
+@jwt_required()
+@resolve_public_community_id
+def configure_channel_agent(community_id, channel_id, agent_type):
+    """
+    Per-channel override of an installed community agent.
+
+    Body: {enabled: bool}.
+    Two-state — settings/clamps still live on community_agents.settings.
+
+    Auth: community admin/owner only.
+    """
+    agent_type = _normalize_agent_type(agent_type)
+    if agent_type not in _COVERAGE_AGENT_TYPES:
+        return jsonify({
+            'error': f'agent_type must be one of {sorted(_COVERAGE_AGENT_TYPES)}'
+        }), 400
+
+    data = request.get_json(silent=True) or {}
+    if 'enabled' not in data:
+        return jsonify({'error': "missing 'enabled' (bool)"}), 400
+    coerced_enabled, err = _coerce_setting(data['enabled'], (bool, None, None, None))
+    if err is not None:
+        return jsonify({'error': f"enabled: {err}"}), 400
+    enabled_int = 1 if coerced_enabled else 0
+
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+        if not _check_community_admin(user_id, community_id):
+            return jsonify({
+                'error': 'Only community admins can configure agents'
+            }), 403
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Channel must belong to this community — prevents an admin in
+            # community A from poking community B's channel rows.
+            cur.execute("""
+                SELECT 1 FROM channels
+                WHERE id = %s AND community_id = %s
+            """, (channel_id, community_id))
+            if not cur.fetchone():
+                return jsonify({
+                    'error': 'Channel not found in this community'
+                }), 404
+
+            cur.execute("""
+                INSERT INTO community_channel_agents
+                    (community_id, channel_id, agent_type, enabled, updated_by)
+                VALUES (%s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    enabled = VALUES(enabled),
+                    updated_by = VALUES(updated_by)
+            """, (community_id, channel_id, agent_type, enabled_int, user_id))
+            conn.commit()
+
+        return jsonify({
+            'success': True,
+            'community_id': community_id,
+            'channel_id': channel_id,
+            'agent_type': agent_type,
+            'enabled': bool(enabled_int),
+        }), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error configuring channel agent: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@agents_bp.route('/coverage/<uuid:public_id>', methods=['GET'])
+@jwt_required()
+@resolve_public_community_id
+def get_channel_coverage(community_id):
+    """
+    Returns per-channel agent overrides for a community.
+
+    Shape:
+        {coverage: {channel_id (str): {agent_type: enabled (bool), ...}}}
+
+    Only override rows are returned. Cells without an override should be
+    rendered using the community-wide enabled flag from the installed-agents
+    endpoint — the CoverageMatrix in CommunityAgentsTab.tsx merges these two
+    sources.
+
+    Auth: community membership (read-only is broader than admin write).
+    """
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+        if not _check_community_member(user_id, community_id):
+            return jsonify({
+                'error': 'Only community members can view coverage'
+            }), 403
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT channel_id, agent_type, enabled
+                FROM community_channel_agents
+                WHERE community_id = %s
+            """, (community_id,))
+            rows = cur.fetchall() or []
+
+        # Nested dict keyed by channel_id as string (JSON object keys must be
+        # strings — frontend re-keys to number via Object.entries when it
+        # consumes the shape).
+        coverage: dict[str, dict[str, bool]] = {}
+        for row in rows:
+            ch = str(row['channel_id'])
+            coverage.setdefault(ch, {})[row['agent_type']] = bool(row['enabled'])
+
+        return jsonify({'coverage': coverage}), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error fetching channel coverage: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
 # â”€â”€ Summarizer Scheduler Endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-@agents_bp.route('/summarizer/schedule/<int:community_id>', methods=['GET'])
+@agents_bp.route('/summarizer/schedule/<uuid:public_id>', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 def get_summarizer_schedule(community_id):
     """Get the auto-summarize schedule settings for a community."""
     conn = None
@@ -3355,8 +4685,9 @@ def get_summarizer_schedule(community_id):
             conn.close()
 
 
-@agents_bp.route('/summarizer/trigger/<int:community_id>', methods=['POST'])
+@agents_bp.route('/summarizer/trigger/<uuid:public_id>', methods=['POST'])
 @jwt_required()
+@resolve_public_community_id
 def trigger_auto_summarize(community_id):
     """Manually trigger auto-summarize for a community (admin only). Posts bot messages."""
     conn = None
@@ -3446,8 +4777,9 @@ def trigger_auto_summarize(community_id):
             conn.close()
 
 
-@agents_bp.route('/status/community/<int:community_id>', methods=['GET'])
+@agents_bp.route('/status/community/<uuid:public_id>', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 def get_community_agent_status(community_id):
     """Get all installed agents for a community with their status."""
     conn = None
@@ -3736,10 +5068,14 @@ def configure_personal_agent(agent_type):
                 return jsonify({'error': 'Agent not activated'}), 404
             
             current_settings = json.loads(current['settings']) if current['settings'] else {}
-            new_settings = data.get('settings', {})
-            merged = {**current_settings, **new_settings}
+            raw_new_settings = data.get('settings', {}) or {}
+            # Schema-validate against the per-agent whitelist before merge.
+            coerced_new, err = _validate_agent_settings(agent_type, raw_new_settings)
+            if err is not None:
+                return err
+            merged = {**current_settings, **coerced_new}
             enabled = data.get('enabled', current['enabled'])
-            
+
             cur.execute("""
                 UPDATE user_agents SET settings = %s, enabled = %s
                 WHERE user_id = %s AND agent_type = %s
@@ -3760,6 +5096,43 @@ def configure_personal_agent(agent_type):
     finally:
         if conn:
             conn.close()
+
+
+# DELETE /api/agents/assistant/memory
+#
+# Clears the per-user rolling assistant memory (Redis LIST at
+# ``assistant:mem:{user_id}``, see Backend/agents/assistant.py).
+# Powers the "Clear conversation memory" control in the My Assistant
+# panel (frontend F3). No DB hit, no schema change — only Redis state.
+@agents_bp.route('/assistant/memory', methods=['DELETE'])
+@jwt_required()
+def clear_assistant_memory():
+    """Delete the rolling per-user assistant memory."""
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+
+        try:
+            from services.redis_client import get_redis
+            r = get_redis()
+        except Exception as exc:
+            print(f"[AGENTS API] clear_assistant_memory: redis unavailable: {exc}")
+            r = None
+
+        if r is not None:
+            try:
+                r.delete(f"assistant:mem:{user_id}")
+            except Exception as exc:
+                print(f"[AGENTS API] clear_assistant_memory: redis delete failed: {exc}")
+                return jsonify({'error': 'Failed to clear memory'}), 500
+
+        return jsonify({'success': True}), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] clear_assistant_memory error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @agents_bp.route('/logs', methods=['GET'])
@@ -3783,7 +5156,7 @@ def get_agent_logs():
             return jsonify({'error': 'User not found'}), 404
         
         agent_type = request.args.get('agent_type')
-        community_id = request.args.get('community_id', type=int)
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
         status = request.args.get('status')
         page = max(1, request.args.get('page', 1, type=int))
         limit = min(100, max(1, request.args.get('limit', 20, type=int)))
@@ -3850,6 +5223,113 @@ def get_agent_logs():
         
     except Exception as e:
         print(f"[AGENTS API] Error getting logs: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ======================================================================
+# AGENT ACTIONS — admin-scoped reads from agent_actions (G1b)
+# ======================================================================
+#
+# `ai_agent_logs` (the /logs route above) is the post-execution log used
+# by slash commands and human-triggered actions. `agent_actions` is the
+# autonomous-decision log written by AutonomousAgent.handle() — each row
+# carries the real UUID correlation_id needed for /agents/<name>/feedback
+# to resolve. Section E of the Community Intelligence Hub now reads this
+# route so Helpful / Not helpful / Dismiss votes resolve against real
+# rows instead of synthetic 'log-<id>' strings.
+
+
+@agents_bp.route('/actions', methods=['GET'])
+@jwt_required()
+def list_agent_actions():
+    """
+    Admin-scoped paginated reads from agent_actions.
+
+    Query params:
+      community_id (required, int)
+      limit        (default 25, max 100)
+      agent_name   (optional, exact match)
+      decision     (optional, 'act'|'defer'|'skip')
+
+    Returns:
+      {actions: [...]}
+      Each row: id, agent_name, community_id, channel_id, user_id,
+                decision, reason, correlation_id, created_at, has_feedback.
+      `has_feedback` is True iff the calling user has already voted on the row.
+    """
+    conn = None
+    try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        if not user_id:
+            return jsonify({'error': 'User not found'}), 404
+
+        community_id = get_community_id_from_public_id(request.args.get('community_id'))
+        if community_id is None:
+            return jsonify({'error': "missing 'community_id'"}), 400
+        if not _check_community_admin(user_id, community_id):
+            return jsonify({
+                'error': 'Only community admins can view agent actions'
+            }), 403
+
+        limit = min(100, max(1, request.args.get('limit', 25, type=int)))
+        agent_name = request.args.get('agent_name')
+        decision = request.args.get('decision')
+        if decision and decision not in ('act', 'defer', 'skip'):
+            return jsonify({
+                'error': "decision must be one of 'act','defer','skip'"
+            }), 400
+
+        where = ["a.community_id = %s"]
+        params: list = [community_id]
+        if agent_name:
+            where.append("a.agent_name = %s")
+            params.append(agent_name)
+        if decision:
+            where.append("a.decision = %s")
+            params.append(decision)
+        where_clause = " AND ".join(where)
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT a.id, a.agent_name, a.community_id, a.channel_id,
+                       a.user_id, a.decision, a.reason, a.correlation_id,
+                       a.created_at,
+                       EXISTS(
+                         SELECT 1 FROM agent_feedback f
+                         WHERE f.action_id = a.id AND f.user_id = %s
+                       ) AS has_feedback
+                FROM agent_actions a
+                WHERE {where_clause}
+                ORDER BY a.created_at DESC
+                LIMIT %s
+            """, [user_id] + params + [limit])
+            rows = cur.fetchall() or []
+
+        actions = []
+        for r in rows:
+            actions.append({
+                'id': r['id'],
+                'agent_name': r['agent_name'],
+                'community_id': r['community_id'],
+                'channel_id': r['channel_id'],
+                'user_id': r['user_id'],
+                'decision': r['decision'],
+                'reason': r['reason'] or '',
+                'correlation_id': r['correlation_id'],
+                'created_at': r['created_at'].isoformat()
+                              if r['created_at'] else None,
+                'has_feedback': bool(r['has_feedback']),
+            })
+
+        return jsonify({'actions': actions}), 200
+
+    except Exception as e:
+        print(f"[AGENTS API] Error listing agent actions: {e}")
         return jsonify({'error': 'Internal server error'}), 500
     finally:
         if conn:
@@ -4286,11 +5766,12 @@ def assistant_ask():
         if not question:
             return jsonify({'error': 'question is required'}), 400
 
+        raw_community_id = data.get('community_id')
         result = _get_agent('assistant').ask(
             question=question,
             user_id=user_id,
             channel_id=data.get('channel_id'),
-            community_id=data.get('community_id'),
+            community_id=get_community_id_from_public_id(raw_community_id) if raw_community_id else None,
             context=data.get('context'),
         )
         return jsonify(result), 200
@@ -4303,7 +5784,9 @@ def assistant_ask():
 @jwt_required()
 def assistant_joke():
     try:
-        return jsonify(_get_agent('assistant').random_joke()), 200
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        return jsonify(_get_agent('assistant').random_joke(user_id=user_id)), 200
     except Exception as e:
         print(f"[AGENTS API] assistant_joke error: {e}")
         return jsonify({'error': 'Internal server error'}), 500
@@ -4313,7 +5796,9 @@ def assistant_joke():
 @jwt_required()
 def assistant_motivation():
     try:
-        return jsonify(_get_agent('assistant').random_motivation()), 200
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
+        return jsonify(_get_agent('assistant').random_motivation(user_id=user_id)), 200
     except Exception as e:
         print(f"[AGENTS API] assistant_motivation error: {e}")
         return jsonify({'error': 'Internal server error'}), 500
@@ -4328,15 +5813,20 @@ def assistant_motivation():
 def translator_translate():
     """Translate arbitrary text."""
     try:
+        username = get_jwt_identity()
+        user_id = _get_user_id(username)
         data = request.get_json(silent=True) or {}
         text = (data.get('text') or '').strip()
         if not text:
             return jsonify({'error': 'text is required'}), 400
 
+        # Pass user_id so the agent picks up the personal default_target,
+        # auto_detect, and cache_enabled toggles from user_agents.settings.
         result = _get_agent('translator').translate(
             text=text,
             target_language=data.get('target_language', 'en'),
             source_language=data.get('source_language', 'auto'),
+            user_id=user_id,
         )
         return jsonify({'success': True, **result}), 200
     except Exception as e:
@@ -4409,13 +5899,14 @@ def support_ask():
         user_id = _get_user_id(username)
         data = request.get_json(silent=True) or {}
         question = (data.get('question') or '').strip()
-        community_id = data.get('community_id')
+        raw_community_id = data.get('community_id')
+        community_id = get_community_id_from_public_id(raw_community_id) if raw_community_id else None
         if not question or not community_id:
             return jsonify({'error': 'question and community_id are required'}), 400
 
         result = _get_agent('support').ask(
             question=question,
-            community_id=int(community_id),
+            community_id=community_id,
             user_id=user_id,
             channel_id=data.get('channel_id'),
             polish=bool(data.get('polish', True)),
@@ -4426,8 +5917,9 @@ def support_ask():
         return jsonify({'error': 'Internal server error'}), 500
 
 
-@agents_bp.route('/support/refresh/<int:community_id>', methods=['POST'])
+@agents_bp.route('/support/refresh/<uuid:public_id>', methods=['POST'])
 @jwt_required()
+@resolve_public_community_id
 def support_refresh(community_id: int):
     try:
         _get_agent('support').invalidate(community_id)
@@ -4452,11 +5944,12 @@ def automessage_welcome_preview():
         if not community_name or not username_target:
             return jsonify({'error': 'community_name and username are required'}), 400
 
+        raw_community_id = data.get('community_id')
         result = _get_agent('auto_message').generate_welcome(
             community_name=community_name,
             username=username_target,
             community_description=data.get('community_description'),
-            community_id=data.get('community_id'),
+            community_id=get_community_id_from_public_id(raw_community_id) if raw_community_id else None,
             channel_id=data.get('channel_id'),
             post=False,
         )

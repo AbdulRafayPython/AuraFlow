@@ -96,7 +96,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
   // ── Mark channel as read when selected ──────────────────────────────
   useEffect(() => {
     if (currentChannel?.id && currentCommunity?.id) {
-      markChRead(currentChannel.id, Number(currentCommunity.id));
+      markChRead(currentChannel.id, currentCommunity.id);
     }
   }, [currentChannel?.id, currentCommunity?.id, markChRead]);
 
@@ -178,7 +178,10 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
 
   const handleFriendClick = (friendId: number) => {
     selectFriend(friendId);
-    navigate(`/dm/${friendId}`);
+    const friend = friends.find((f) => f.id === friendId);
+    if (friend?.public_id) {
+      navigate(`/dm/${friend.public_id}`);
+    }
   };
 
   const handleChannelContextMenu = (e: React.MouseEvent, channelId: number) => {

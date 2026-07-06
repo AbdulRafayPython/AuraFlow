@@ -95,6 +95,66 @@ export default function AuditLogs() {
     return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   };
 
+  // Turn snake_case / camelCase keys into "Title Case" labels.
+  const humanizeKey = (key: string) =>
+    key
+      .replace(/_id$/i, '')
+      .replace(/_/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const humanizeValue = (value: any): string => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (Array.isArray(value)) return value.map(humanizeValue).filter(Boolean).join(', ');
+    if (typeof value === 'object') {
+      return Object.entries(value)
+        .map(([k, v]) => `${humanizeKey(k)}: ${humanizeValue(v)}`)
+        .filter((s) => !s.endsWith(': '))
+        .join(', ');
+    }
+    const str = String(value);
+    // Sentence-case short snake_case enum values (e.g. "role_change" -> "Role change").
+    if (/^[a-z][a-z0-9_]*$/.test(str)) {
+      const words = str.replace(/_/g, ' ');
+      return words.charAt(0).toUpperCase() + words.slice(1);
+    }
+    return str;
+  };
+
+  // Friendly phrasing for the common "action" verbs stored in metadata.
+  const ACTION_VERB: Record<string, string> = {
+    delete: 'Deleted message',
+    dismiss: 'Dismissed flag',
+    warn: 'Warned user',
+    ban: 'Banned user',
+    suspend: 'Suspended user',
+    approve: 'Approved',
+    reject: 'Rejected',
+    resolve: 'Resolved',
+  };
+
+  // Keys already represented elsewhere in the row (name in header, reason line)
+  // or that are raw IDs — hide them so details stay readable.
+  const HIDDEN_DETAIL_KEYS = new Set([
+    'target_user_id', 'user_id', 'author_id', 'member_id', 'actor_id',
+    'note', 'reason',
+  ]);
+
+  // Render a details object as readable "Label: value" chips instead of raw JSON.
+  const formatDetails = (details: any): { label: string; value: string }[] => {
+    if (!details || typeof details !== 'object') return [];
+    return Object.entries(details)
+      .filter(([key]) => !HIDDEN_DETAIL_KEYS.has(key))
+      .map(([key, value]) => {
+        if (key === 'action' && typeof value === 'string' && ACTION_VERB[value]) {
+          return { label: 'Resolution', value: ACTION_VERB[value] };
+        }
+        return { label: humanizeKey(key), value: humanizeValue(value) };
+      })
+      .filter((d) => d.value !== '');
+  };
+
   const getActionBadge = (actionType: string) => {
     const badge = ACTION_BADGES[actionType] || { label: actionType, color: 'bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-secondary))] border-[hsl(var(--theme-border-default))]', icon: Eye };
     const Icon = badge.icon;
@@ -203,10 +263,15 @@ export default function AuditLogs() {
                       Reason: {log.reason}
                     </p>
                   )}
-                  {log.details && typeof log.details === 'object' && (
-                    <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5 font-mono line-clamp-2">
-                      {JSON.stringify(log.details)}
-                    </p>
+                  {log.details && typeof log.details === 'object' && formatDetails(log.details).length > 0 && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                      {formatDetails(log.details).map((d) => (
+                        <span key={d.label} className="text-xs text-[hsl(var(--theme-text-muted))]">
+                          <span className="text-[hsl(var(--theme-text-secondary))]">{d.label}:</span>{' '}
+                          {d.value}
+                        </span>
+                      ))}
+                    </div>
                   )}
                   {log.details && typeof log.details === 'string' && (
                     <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">

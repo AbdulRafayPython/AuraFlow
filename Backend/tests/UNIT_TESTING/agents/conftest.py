@@ -187,6 +187,31 @@ def chain_store():
         yield store
 
 
+@pytest.fixture(autouse=True)
+def _no_redis_claims():
+    """Neutralise the Redis idempotency claims (`auto_message._claim_welcome`,
+    `engagement._claim_nudge`) for unit tests.
+
+    Those helpers call ``services.redis_client.get_redis`` (aliased
+    ``_get_redis`` at import in each agent module) and fail-open to ``True``
+    only when Redis is *absent*. CI has no Redis so they no-op, but a dev box
+    with ``redis-server`` running for the app would let a claim persist across
+    tests — coupling e.g. ``test_sense_passes`` to ``test_handle_end_to_end``
+    on the same channel/community. Forcing ``get_redis() -> None`` makes the
+    claims deterministically fail-open regardless of the environment."""
+    with ExitStack() as stack:
+        for mod in ("agents.auto_message", "agents.engagement"):
+            if mod in sys.modules and hasattr(sys.modules[mod], "_get_redis"):
+                stack.enter_context(patch(f"{mod}._get_redis",
+                                          return_value=None))
+        try:
+            stack.enter_context(patch("services.redis_client.get_redis",
+                                      return_value=None))
+        except (AttributeError, ModuleNotFoundError):
+            pass
+        yield
+
+
 @pytest.fixture
 def bus_captured():
     """Capture every `agents.event_bus.publish(topic, payload)` call."""

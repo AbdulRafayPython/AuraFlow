@@ -7,7 +7,6 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
 import { useCommunityDashboard } from '@/contexts/CommunityDashboardContext';
 import { cn } from '@/lib/utils';
 import {
@@ -15,8 +14,6 @@ import {
   Shield,
   Users,
   BarChart3,
-  FileText,
-  Settings,
   ChevronLeft,
   ChevronRight,
   AlertTriangle,
@@ -33,6 +30,7 @@ import {
   Check,
   Bot,
   Megaphone,
+  Sliders,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -95,39 +93,31 @@ const navItems: NavItem[] = [
   },
   {
     title: 'AI Agents',
-    href: '/admin/agents/settings',
+    href: '/admin/agents',
     icon: Bot,
+    children: [
+      { title: 'Settings', href: '/admin/agents/settings', icon: Bot },
+      { title: 'Goals', href: '/admin/agents/goals', icon: Sliders },
+    ],
   },
   {
     title: 'Announcements',
     href: '/admin/announcements',
     icon: Megaphone,
   },
-  {
-    title: 'Reports',
-    href: '/admin/reports',
-    icon: FileText,
-    disabled: true,
-    comingSoon: 'FYP 2',
-  },
-  {
-    title: 'Settings',
-    href: '/admin/settings',
-    icon: Settings,
-    disabled: true,
-    comingSoon: 'FYP 2',
-  },
 ];
 
-// Role check for community admin access
-function isCommunityAdmin(role?: string): boolean {
-  return role === 'admin' || role === 'community_admin' || role === 'owner' || role === 'system_admin';
+// System-level role check (platform admins always have access regardless of community membership).
+// Community owner/admin status is per-community, tracked in `community_members.role` and surfaced
+// via /api/admin/owned-communities — so we gate on `ownedCommunities.length > 0` separately below
+// instead of trying to read it off the user object's global `role`.
+function isSystemAdmin(role?: string): boolean {
+  return role === 'system_admin';
 }
 
 export default function AdminLayout() {
   const { user, logout, isLoading, isAuthenticated } = useAuth();
-  const { currentTheme, themes } = useTheme();
-  const { 
+  const {
     ownedCommunities: communities, 
     selectedCommunity, 
     selectCommunity: setSelectedCommunityId, 
@@ -136,18 +126,18 @@ export default function AdminLayout() {
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [expandedItems, setExpandedItems] = useState<string[]>(['Moderation', 'Analytics']);
-
-  const theme = themes[currentTheme];
-  const isDark = theme.isDark;
+  const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
   // Show loading while authentication is being verified
   if (isLoading || isLoadingCommunities) {
     return (
-      <div className="flex items-center justify-center w-full h-screen bg-gradient-to-br from-slate-900 to-slate-800">
+      <div
+        className="admin-themed flex items-center justify-center w-full h-screen text-[hsl(var(--theme-text-primary))]"
+        style={{ background: 'var(--theme-bg-gradient)' }}
+      >
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-white text-lg font-medium">
+          <div className="w-12 h-12 border-4 border-[hsl(var(--theme-accent-primary))] border-t-transparent rounded-full animate-spin" />
+          <p className="text-lg font-medium text-[hsl(var(--theme-text-secondary))]">
             {isLoading ? 'Verifying access...' : 'Loading communities...'}
           </p>
         </div>
@@ -160,20 +150,24 @@ export default function AdminLayout() {
     return <Navigate to="/" replace />;
   }
 
-  // Role-based access control - user is loaded but not community admin
-  if (!user || !isCommunityAdmin(user.role)) {
-    console.log('Community admin access denied. User role:', user?.role);
+  // Must be logged in to view any admin surface.
+  if (!user) {
     return <Navigate to="/" replace />;
   }
 
-  // No communities owned - show message
-  if (communities.length === 0) {
+  // Access rule: system admins always pass; everyone else needs at least one
+  // community where they're owner/admin (provided by /api/admin/owned-communities,
+  // which only returns rows for cm.role IN ('owner', 'admin')).
+  if (!isSystemAdmin(user.role) && communities.length === 0) {
     return (
-      <div className="flex items-center justify-center w-full h-screen bg-gradient-to-br from-slate-900 to-slate-800">
+      <div
+        className="admin-themed flex items-center justify-center w-full h-screen text-[hsl(var(--theme-text-primary))]"
+        style={{ background: 'var(--theme-bg-gradient)' }}
+      >
         <div className="flex flex-col items-center gap-4 max-w-md text-center p-8">
-          <Building2 className="w-16 h-16 text-slate-400" />
-          <h2 className="text-2xl font-bold text-white">No Communities</h2>
-          <p className="text-slate-300">
+          <Building2 className="w-16 h-16 text-[hsl(var(--theme-text-muted))]" />
+          <h2 className="text-2xl font-bold">No Communities</h2>
+          <p className="text-[hsl(var(--theme-text-secondary))]">
             You don't own or manage any communities yet. Create a community first to access the dashboard.
           </p>
           <Button asChild className="mt-4">
@@ -259,9 +253,9 @@ export default function AdminLayout() {
           <button
             onClick={() => toggleExpanded(item.title)}
             className={cn(
-              'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-              'hover:bg-accent/10',
-              isActive && 'bg-accent/20 text-accent',
+              'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150',
+              'hover:bg-muted/60',
+              isActive && 'bg-accent/15 text-accent',
               !isActive && 'text-muted-foreground hover:text-foreground'
             )}
           >
@@ -295,9 +289,9 @@ export default function AdminLayout() {
         end={item.href === '/admin'}
         className={({ isActive: active }) =>
           cn(
-            'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-            'hover:bg-accent/10',
-            active && 'bg-accent/20 text-accent',
+            'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150',
+            'hover:bg-muted/60',
+            active && 'bg-accent/15 text-accent',
             !active && 'text-muted-foreground hover:text-foreground',
             depth > 0 && 'text-xs'
           )
@@ -343,12 +337,11 @@ export default function AdminLayout() {
         isCollapsed ? 'justify-center' : 'gap-3'
       )}>
         <div className="relative">
-          <div className={cn(
-            'rounded-xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center',
-            isCollapsed ? 'w-10 h-10' : 'w-10 h-10'
-          )}>
-            <Shield className="w-5 h-5 text-accent" />
-          </div>
+          <img
+            src="/AuraflowLogo.png"
+            alt="AuraFlow"
+            className={cn('object-contain', isCollapsed ? 'w-8 h-8' : 'w-10 h-10')}
+          />
         </div>
         {!isCollapsed && (
           <div className="flex flex-col">
@@ -495,8 +488,8 @@ export default function AdminLayout() {
         )}
 
         <div className={cn(
-          'flex gap-2 mt-3',
-          isCollapsed && 'flex-col mt-2'
+          'flex flex-col gap-1 mt-3',
+          isCollapsed && 'mt-2'
         )}>
           <TooltipProvider>
             <Tooltip>
@@ -504,11 +497,14 @@ export default function AdminLayout() {
                 <Button
                   variant="ghost"
                   size={isCollapsed ? 'icon' : 'sm'}
-                  className="flex-1 text-muted-foreground hover:text-foreground"
+                  className={cn(
+                    'w-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors duration-150',
+                    isCollapsed ? 'justify-center' : 'justify-start'
+                  )}
                   asChild
                 >
                   <NavLink to="/">
-                    <Home className="h-4 w-4" />
+                    <Home className="h-4 w-4 flex-shrink-0" />
                     {!isCollapsed && <span className="ml-2">Back to App</span>}
                   </NavLink>
                 </Button>
@@ -523,10 +519,13 @@ export default function AdminLayout() {
                 <Button
                   variant="ghost"
                   size={isCollapsed ? 'icon' : 'sm'}
-                  className="text-muted-foreground hover:text-destructive"
+                  className={cn(
+                    'w-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-150',
+                    isCollapsed ? 'justify-center' : 'justify-start'
+                  )}
                   onClick={logout}
                 >
-                  <LogOut className="h-4 w-4" />
+                  <LogOut className="h-4 w-4 flex-shrink-0" />
                   {!isCollapsed && <span className="ml-2">Logout</span>}
                 </Button>
               </TooltipTrigger>
@@ -558,15 +557,18 @@ export default function AdminLayout() {
   );
 
   return (
-    <div className={cn(
-      'min-h-screen flex',
-      isDark ? 'bg-background text-foreground' : 'bg-gray-50 text-gray-900'
-    )}>
-      {/* Mobile Menu Button */}
+    <div
+      className="admin-themed min-h-screen flex text-[hsl(var(--theme-text-primary))]"
+      style={{ background: 'var(--theme-bg-gradient)' }}
+    >
+      {/* Mobile Menu Button — solid background (not `ghost`) so it reads as
+          a distinct control instead of blending into whatever heading
+          happens to scroll underneath it. */}
       <Button
-        variant="ghost"
+        variant="secondary"
         size="icon"
-        className="fixed top-4 left-4 z-50 lg:hidden"
+        aria-label={isMobileOpen ? 'Close navigation' : 'Open navigation'}
+        className="fixed top-4 left-4 z-50 lg:hidden shadow-lg bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))]"
         onClick={() => setIsMobileOpen(!isMobileOpen)}
       >
         {isMobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -580,14 +582,18 @@ export default function AdminLayout() {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar — mirrors the app's ChannelSidebar chrome (theme sidebar
+          gradient + hairline theme border) so the dashboard reads as the
+          same product as the main app. */}
       <aside
         className={cn(
           'fixed lg:sticky top-0 left-0 z-40 h-screen transition-all duration-300',
-          'bg-card/95 backdrop-blur-xl border-r border-border/50',
+          'backdrop-blur-xl border-r border-[hsl(var(--theme-border-default)/0.5)]',
+          'text-[hsl(var(--theme-text-primary))]',
           isCollapsed ? 'w-[72px]' : 'w-64',
           isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         )}
+        style={{ background: 'var(--theme-sidebar-gradient)' }}
       >
         <SidebarContent />
       </aside>
@@ -595,7 +601,9 @@ export default function AdminLayout() {
       {/* Main Content */}
       <main className={cn(
         'flex-1 min-h-screen transition-all duration-300',
-        'px-4 lg:px-8 py-6 lg:py-8'
+        // Extra top clearance on mobile so page headings don't sit under
+        // the fixed hamburger button; lg+ has a static sidebar instead.
+        'px-4 lg:px-8 pt-20 pb-6 lg:pt-8 lg:pb-8'
       )}>
         <div className="max-w-7xl mx-auto">
           <Outlet />

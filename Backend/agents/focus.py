@@ -1,41 +1,111 @@
 """
 Focus Agent for AuraFlow
-Helps users stay on topic and tracks conversation focus
+Helps users stay on topic and tracks conversation focus.
+
+Autonomous role (Phase 2.3): subscribes to ``msg.created`` and maintains
+a tiny in-memory rolling keyword window per channel. When the Jaccard
+overlap between the older half and newer half drops below the
+per-channel threshold, it publishes a ``focus.drift`` event for
+Summarizer / KnowledgeBuilder to consume. Pure lexical, no embeddings —
+keeps the hot path cheap (no Gemini, no DB).
 """
 
 import json
 import os
+import threading
+import time
+from collections import deque, Counter
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
-from collections import Counter
 import re
 
 from database import get_db_connection
 from utils.ai.text_processor import TextProcessor
+from agents.base import AutonomousAgent
+from agents import event_bus as _event_bus
+from agents import memory as _agent_memory
+from agents._settings import get_personal_settings
 
 
-class FocusAgent:
+_FOCUS_DEFAULTS = {
+    'auto_analyze': True,
+    'session_reminders': True,
+    'analyze_threshold': 50,
+    'daily_reports': True,
+}
+
+
+class FocusAgent(AutonomousAgent):
     """
     Monitors conversation topics and helps users stay focused
     Detects topic drift and provides focus metrics
     """
-    
+
+    # ── Autonomous contract (Phase 2.3) ─────────────────────────────
+    NAME = "focus"
+    GOAL = {"detect_topic_drift": True, "feed_summarizer_and_kb": True}
+    SUBSCRIBES = [_event_bus.TOPIC_MSG_CREATED]
+    SCOPE_TYPE = _agent_memory.SCOPE_CHANNEL
+    COOLDOWN_SECONDS = 15 * 60  # at most one drift event per channel / 15 min
+
+    # In-memory rolling keyword window per channel. Kept tiny — only the
+    # last _WINDOW_MSGS messages contribute. Wrapped in a lock because
+    # the orchestrator dispatches inline.
+    _WINDOW_MSGS = 12
+    _HALF = 6  # split point: oldest 6 vs newest 6
+    _DEFAULT_DRIFT_THRESHOLD = 0.25  # Jaccard ≤ 0.25 → drift
+
     def __init__(self):
         """Initialize the focus agent"""
         self.text_processor = TextProcessor()
         self.min_messages_for_analysis = 5
+        self._windows: Dict[int, deque] = {}
+        self._win_lock = threading.Lock()
         
-    def analyze_focus(self, channel_id: int, time_period_hours: int = 1) -> Dict[str, any]:
+    def analyze_focus(
+        self,
+        channel_id: int,
+        time_period_hours: int = 1,
+        *,
+        user_id: Optional[int] = None,
+        scheduled: bool = False,
+    ) -> Dict[str, any]:
         """
         Analyze conversation focus in a channel
-        
+
         Args:
             channel_id: Channel to analyze
             time_period_hours: Time window for analysis
-            
+            user_id: Optional requester id; when given we honor the
+                per-user focus settings (``auto_analyze``, ``analyze_threshold``).
+            scheduled: True for periodic Celery runs — these are gated
+                by the ``auto_analyze`` toggle. On-demand calls (user
+                clicks "Analyze") are NOT gated.
+
         Returns:
             Focus analysis results
         """
+        cfg = (get_personal_settings(user_id, 'focus', _FOCUS_DEFAULTS)
+               if user_id else dict(_FOCUS_DEFAULTS))
+        if scheduled and not cfg.get('auto_analyze', True):
+            return {
+                'success': False,
+                'skipped': 'auto_analyze_disabled',
+                'error': 'Auto-analyze is paused for this user.',
+            }
+        # Honor analyze_threshold only for scheduled (autonomous) sweeps —
+        # that bar tunes how much traffic the periodic run waits for before
+        # bothering to report. On-demand calls (the /focus slash command and
+        # the "Analyze" button) must stay responsive on quiet channels, so
+        # they only enforce the hard sanity floor of min_messages_for_analysis.
+        if scheduled:
+            try:
+                min_msgs = max(self.min_messages_for_analysis,
+                               int(cfg.get('analyze_threshold', 50)))
+            except (TypeError, ValueError):
+                min_msgs = self.min_messages_for_analysis
+        else:
+            min_msgs = self.min_messages_for_analysis
         conn = None
         try:
             print(f"[FOCUS] Starting analysis for channel {channel_id}, hours={time_period_hours}")
@@ -59,11 +129,11 @@ class FocusAgent:
                 
                 print(f"[FOCUS] Found {len(messages)} messages in channel {channel_id}")
                 
-                if len(messages) < self.min_messages_for_analysis:
-                    print(f"[FOCUS] Not enough messages: {len(messages)} < {self.min_messages_for_analysis}")
+                if len(messages) < min_msgs:
+                    print(f"[FOCUS] Not enough messages: {len(messages)} < {min_msgs}")
                     return {
                         'success': False,
-                        'error': f'Need at least {self.min_messages_for_analysis} messages for analysis. Found {len(messages)} messages in the last {time_period_hours} hours.'
+                        'error': f'Need at least {min_msgs} messages for analysis. Found {len(messages)} messages in the last {time_period_hours} hours.'
                     }
                 
                 # Extract topics from messages
@@ -366,4 +436,166 @@ class FocusAgent:
             'current_focus_level': current_focus.get('focus_level'),
             'current_score': current_focus.get('focus_score')
         }
+
+    # ────────────────────────────────────────────────────────────────────
+    # Autonomous hooks (Phase 2.3)
+    # ────────────────────────────────────────────────────────────────────
+
+    def sense(self, event: dict) -> Optional[Dict]:
+        """Push the message's keywords onto the per-channel rolling window
+        and return an observation describing the window's current state.
+        """
+        content = (event.get("content") or "").strip()
+        channel_id = event.get("channel_id")
+        if not content or not channel_id or len(content) < 6 or content.startswith("/"):
+            return None
+        # G1a per-channel override (CoverageMatrix). Falls through to
+        # community-level kill-switch when no override row exists, so this
+        # is safe even though focus historically had no community gate.
+        if not self._is_enabled_for_channel(
+            event.get("community_id"), channel_id
+        ):
+            return None
+        # Per-user opt-out for autonomous focus signals. We use the
+        # sender's setting here as a proxy for "should focus react to
+        # this user's traffic" — a user can stop the agent from churning
+        # the rolling window with their messages.
+        sender_id = event.get("user_id")
+        if sender_id:
+            try:
+                fcfg = get_personal_settings(int(sender_id), 'focus', _FOCUS_DEFAULTS)
+                if not fcfg.get('auto_analyze', True):
+                    return None
+            except Exception:
+                pass
+        try:
+            keywords = self.text_processor.extract_keywords(content, top_n=5) or []
+        except Exception:
+            return None
+        if not keywords:
+            return None
+
+        kw_set = {k.lower() for k in keywords if k and isinstance(k, str)}
+        if not kw_set:
+            return None
+
+        with self._win_lock:
+            window = self._windows.setdefault(
+                channel_id, deque(maxlen=self._WINDOW_MSGS))
+            window.append({"ts": time.time(), "kws": kw_set,
+                           "msg_id": event.get("message_id")})
+            snapshot = list(window)
+
+        # Only consider drift once the window is full enough.
+        if len(snapshot) < self._WINDOW_MSGS:
+            return None
+
+        return {
+            "channel_id":   channel_id,
+            "community_id": event.get("community_id"),
+            "user_id":      event.get("user_id"),
+            "message_id":   event.get("message_id"),
+            "snapshot":     snapshot,
+            "scope_type":   _agent_memory.SCOPE_CHANNEL,
+            "scope_id":     channel_id,
+        }
+
+    def decide(self, observation: Dict):
+        """Compute Jaccard overlap between older half and newer half;
+        low overlap → drift.
+        """
+        snap = observation["snapshot"]
+        older = set().union(*[m["kws"] for m in snap[:self._HALF]])
+        newer = set().union(*[m["kws"] for m in snap[self._HALF:]])
+        if not older or not newer:
+            return ("skip", observation, "empty_keyword_set")
+        union = older | newer
+        inter = older & newer
+        jaccard = (len(inter) / len(union)) if union else 1.0
+
+        threshold = self._drift_threshold(observation["channel_id"])
+        if jaccard > threshold:
+            return ("defer", {**observation, "jaccard": round(jaccard, 3)},
+                    f"jaccard_{jaccard:.2f}_above_{threshold:.2f}")
+
+        # Drifted: surface the new topics for downstream consumers.
+        new_topics = list(newer - older)[:10]
+        return ("act", {
+            **observation,
+            "jaccard":      round(jaccard, 3),
+            "old_topics":   list(older - newer)[:10],
+            "new_topics":   new_topics,
+            "shared":       list(inter)[:10],
+            "threshold":    threshold,
+        }, f"drift_jaccard_{jaccard:.2f}_below_{threshold:.2f}")
+
+    def act(self, payload: Dict, correlation_id: str) -> Optional[Dict]:
+        """Publish ``focus.drift`` so Summarizer / KnowledgeBuilder can
+        decide whether to checkpoint the previous topic.
+        """
+        try:
+            _event_bus.publish(_event_bus.TOPIC_FOCUS_DRIFT, {
+                "channel_id":   payload.get("channel_id"),
+                "community_id": payload.get("community_id"),
+                "user_id":      payload.get("user_id"),
+                "message_id":   payload.get("message_id"),
+                "jaccard":      payload.get("jaccard"),
+                "old_topics":   payload.get("old_topics"),
+                "new_topics":   payload.get("new_topics"),
+                "shared":       payload.get("shared"),
+                "correlation_id": correlation_id,
+            })
+        except Exception as exc:
+            print(f"[FOCUS] focus.drift publish failed: {exc}")
+            return {"published": False}
+        return {"published": True, "jaccard": payload.get("jaccard"),
+                "new_topics": payload.get("new_topics")}
+
+    def learn(self, action_id: int, signal: str, *, weight: float = 1.0) -> None:
+        """Per-channel threshold tuning.
+
+        - ``positive`` / ``engaged`` → users agreed the drift was real;
+          keep sensitivity (small downward nudge OK).
+        - ``negative`` / ``dismissed`` → we over-fired; lower the
+          threshold (require stronger drift signal next time).
+        """
+        try:
+            action = _agent_memory.get_action(action_id)
+            if not action or not action.get("channel_id"):
+                return super().learn(action_id, signal, weight=weight)
+            channel_id = action["channel_id"]
+            state = _agent_memory.get_state(
+                self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id) or {}
+            th = dict(state.get("thresholds") or {})
+            cur = float(th.get("drift_threshold", self._DEFAULT_DRIFT_THRESHOLD))
+            if signal in ("negative", "dismissed"):
+                # False positive — be stricter (require lower Jaccard).
+                cur = max(0.05, cur - 0.03 * float(weight))
+            elif signal in ("positive", "engaged"):
+                # Mild upward nudge so we don't drift the threshold away.
+                cur = min(0.45, cur + 0.01 * float(weight))
+            th["drift_threshold"] = round(cur, 3)
+            outcome = ("positive" if signal in ("positive", "engaged")
+                       else "negative" if signal in ("negative", "dismissed")
+                       else "neutral")
+            _agent_memory.set_state(
+                self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id,
+                thresholds=th, last_outcome=outcome,
+            )
+        except Exception as exc:
+            print(f"[FOCUS] learn failed: {exc}")
+        super().learn(action_id, signal, weight=weight)
+
+    def _drift_threshold(self, channel_id: Optional[int]) -> float:
+        if not channel_id:
+            return self._DEFAULT_DRIFT_THRESHOLD
+        try:
+            state = _agent_memory.get_state(
+                self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id)
+            if not state:
+                return self._DEFAULT_DRIFT_THRESHOLD
+            return float((state.get("thresholds") or {})
+                         .get("drift_threshold", self._DEFAULT_DRIFT_THRESHOLD))
+        except Exception:
+            return self._DEFAULT_DRIFT_THRESHOLD
 

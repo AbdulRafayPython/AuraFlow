@@ -46,6 +46,11 @@ export default function ForgotPassword() {
 
           <input
             type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            enterKeyHint="send"
             placeholder="Email"
             className="w-full border p-3 rounded-lg mb-4"
             value={email}

@@ -9,7 +9,7 @@ import { useAuth } from './AuthContext';
 import api from '@/services/appService';
 
 export interface OwnedCommunity {
-  id: number;
+  id: string;
   name: string;
   icon: string;
   color: string;
@@ -26,7 +26,7 @@ interface CommunityDashboardContextType {
   
   // Selected community
   selectedCommunity: OwnedCommunity | null;
-  selectCommunity: (communityId: number) => void;
+  selectCommunity: (communityId: string) => void;
   
   // Refresh
   refreshOwnedCommunities: () => Promise<void>;
@@ -87,12 +87,12 @@ export function CommunityDashboardProvider({ children }: { children: React.React
   }, [fetchOwnedCommunities]);
 
   // Select a community
-  const selectCommunity = useCallback((communityId: number) => {
+  const selectCommunity = useCallback((communityId: string) => {
     const community = ownedCommunities.find(c => c.id === communityId);
     if (community) {
       setSelectedCommunity(community);
       // Persist selection
-      localStorage.setItem('selectedDashboardCommunity', communityId.toString());
+      localStorage.setItem('selectedDashboardCommunity', communityId);
     }
   }, [ownedCommunities]);
 
@@ -101,7 +101,7 @@ export function CommunityDashboardProvider({ children }: { children: React.React
     if (ownedCommunities.length > 0 && !selectedCommunity) {
       const savedId = localStorage.getItem('selectedDashboardCommunity');
       if (savedId) {
-        const saved = ownedCommunities.find(c => c.id === parseInt(savedId));
+        const saved = ownedCommunities.find(c => c.id === savedId);
         if (saved) {
           setSelectedCommunity(saved);
           return;
@@ -133,4 +133,15 @@ export function useCommunityDashboard() {
     throw new Error('useCommunityDashboard must be used within CommunityDashboardProvider');
   }
   return context;
+}
+
+/**
+ * Variant of useCommunityDashboard that returns null instead of throwing when
+ * called outside CommunityDashboardProvider. Used by components like
+ * AgentGoals.tsx that can render in two contexts: the admin dashboard route
+ * (provider present, throw-version semantics), and embedded inside other
+ * surfaces (e.g. the Community Intelligence Hub drawer, no provider above).
+ */
+export function useOptionalCommunityDashboard(): CommunityDashboardContextType | null {
+  return useContext(CommunityDashboardContext) ?? null;
 }

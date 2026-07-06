@@ -188,6 +188,28 @@ export const THEMES = {
       accent: '#5865f2',
       secondary: '#4752c4'
     }
+  },
+  monochrome: {
+    id: 'monochrome',
+    name: 'Monochrome',
+    description: 'Premium white & black — clean, no glows, pure elegance',
+    isDark: false,
+    preview: {
+      bg: '#ffffff',
+      accent: '#0a0a0a',
+      secondary: '#404040'
+    }
+  },
+  'aura-calm-ops': {
+    id: 'aura-calm-ops',
+    name: 'Aura Calm Ops',
+    description: 'Autonomous-agent redesign — matte neutrals, hairline borders, restrained motion',
+    isDark: true,
+    preview: {
+      bg: '#14171C',
+      accent: '#5A6ACF',
+      secondary: '#3E8B6D'
+    }
   }
 } as const;
 

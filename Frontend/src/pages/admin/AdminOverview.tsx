@@ -38,7 +38,6 @@ import {
   XCircle,
   RefreshCw,
   ArrowRight,
-  BarChart3,
   UserCheck,
   Hash
 } from 'lucide-react';
@@ -268,7 +267,6 @@ export default function AdminOverview() {
 
   const quickActions = [
     { label: 'Review Flagged Content', href: '/admin/moderation/flagged', icon: AlertTriangle },
-    { label: 'View User Reports', href: '/admin/reports', icon: BarChart3 },
     { label: 'Manage Users', href: '/admin/users', icon: Users },
     { label: 'Community Health', href: '/admin/analytics/health', icon: Heart },
   ];

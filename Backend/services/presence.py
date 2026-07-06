@@ -37,11 +37,19 @@ def init(socketio_instance):
     """Initialize presence service."""
     global _socketio
     _socketio = socketio_instance
-    
+
     # Start presence monitor thread
     t = threading.Thread(target=_monitor_loop, daemon=True, name="PresenceMonitorThread")
     t.start()
     log.info("[PRESENCE] Service started")
+
+    # Start channel-silence probe thread. Emits `channel.silent` events
+    # onto the autonomous-agent event bus for channels with no activity
+    # in the last N minutes — feeds the Engagement agent's adaptive
+    # scheduling. Cheap one-query-per-minute probe, daemon thread so it
+    # does not block shutdown.
+    s = threading.Thread(target=_silence_probe_loop, daemon=True, name="ChannelSilenceProbeThread")
+    s.start()
 
 
 def user_connected(user_id, username, socket_id):
@@ -213,6 +221,93 @@ def _monitor_loop():
                             _broadcast_status(user_id, username, 'idle')
                             _persist_status(user_id, 'idle')
                             log.info(f"[PRESENCE] {username} marked idle")
-                            
+
+                        # Publish user.idle on the autonomous-agent event
+                        # bus. Best-effort — never blocks presence logic.
+                        try:
+                            from agents import event_bus as _agent_bus
+                            _agent_bus.publish(_agent_bus.TOPIC_USER_IDLE, {
+                                'user_id':      user_id,
+                                'username':     username,
+                                'last_seen_ts': last_hb.timestamp() if hasattr(last_hb, 'timestamp') else None,
+                            })
+                        except Exception as _bus_err:
+                            log.debug(f"[event_bus] user.idle publish skipped: {_bus_err}")
+
         except Exception as e:
             log.error(f"[PRESENCE] Monitor error: {e}")
+
+
+# ── Channel-silence probe ────────────────────────────────────────────
+# One MAX(created_at) GROUP BY channel_id query per minute against the
+# messages table. Channels whose silence has just crossed a 15 / 60 /
+# 240-minute bucket emit one `channel.silent` event — the bucketing
+# keeps the firing rate bounded even if a channel stays silent for days.
+
+_SILENCE_BUCKETS_MIN = (15, 60, 240)         # silence thresholds (minutes)
+_SILENCE_PROBE_INTERVAL = 60                  # seconds between probes
+_silence_last_fired: dict = {}                # (channel_id, bucket) -> ts
+
+
+def _silence_probe_loop():
+    while True:
+        try:
+            time.sleep(_SILENCE_PROBE_INTERVAL)
+            _run_silence_probe_once()
+        except Exception as exc:
+            log.debug(f"[PRESENCE] silence probe error: {exc}")
+
+
+def _run_silence_probe_once():
+    """One pass: find each channel's silence minutes; emit on bucket crossing."""
+    try:
+        from agents import event_bus as _agent_bus
+    except Exception:
+        return  # bus unavailable — skip
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Limit to channels that have had at least one message ever,
+            # and skip channels older than 7 days of silence — those will
+            # never wake up from this probe and shouldn't churn the bus.
+            cur.execute("""
+                SELECT c.id AS channel_id,
+                       c.community_id AS community_id,
+                       TIMESTAMPDIFF(MINUTE, MAX(m.created_at), NOW()) AS silent_minutes
+                FROM channels c
+                JOIN messages m ON m.channel_id = c.id
+                GROUP BY c.id, c.community_id
+                HAVING silent_minutes BETWEEN 15 AND 10080
+            """)
+            rows = cur.fetchall() or []
+    except Exception as exc:
+        log.debug(f"[PRESENCE] silence probe query failed: {exc}")
+        return
+    finally:
+        if conn:
+            conn.close()
+
+    now_ts = time.time()
+    for row in rows:
+        silent = int(row.get('silent_minutes') or 0)
+        # Highest bucket whose threshold the silence has crossed.
+        bucket = max((b for b in _SILENCE_BUCKETS_MIN if silent >= b), default=None)
+        if bucket is None:
+            continue
+        key = (row['channel_id'], bucket)
+        last = _silence_last_fired.get(key, 0)
+        # Re-emit at most once per hour per bucket.
+        if now_ts - last < 3600:
+            continue
+        _silence_last_fired[key] = now_ts
+        try:
+            _agent_bus.publish(_agent_bus.TOPIC_CHANNEL_SILENT, {
+                'channel_id':     row['channel_id'],
+                'community_id':   row.get('community_id'),
+                'silent_minutes': silent,
+                'bucket':         bucket,
+            })
+        except Exception as _bus_err:
+            log.debug(f"[event_bus] channel.silent publish skipped: {_bus_err}")

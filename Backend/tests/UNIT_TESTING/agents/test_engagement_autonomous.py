@@ -15,7 +15,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from agents.engagement import EngagementAgent
+from agents.engagement import EngagementAgent, _NUDGE_DEDUPE_TTL
 from agents import event_bus as _bus
 
 
@@ -31,11 +31,12 @@ def _fake_conn(lastrowid=42):
     return conn, cur
 
 
-def _silent_event(bucket=60, channel_id=100):
+def _silent_event(bucket=60, channel_id=100, silent_minutes=None):
     return {
         "topic": _bus.TOPIC_CHANNEL_SILENT,
         "channel_id": channel_id, "community_id": 7,
-        "bucket": bucket, "silent_minutes": bucket,
+        "bucket": bucket,
+        "silent_minutes": bucket if silent_minutes is None else silent_minutes,
         "correlation_id": f"silent-{bucket}",
     }
 
@@ -229,3 +230,111 @@ class TestEngagementLearn:
         # 0.3 - 0.5 * 2 = -0.7 → floored at 0
         assert rewards.get("casual") == 0.0, \
             f"reward must floor at 0, got {rewards}"
+
+
+class TestEngagementConsecutiveIgnored:
+    """TC-UT-AGT-ENG-16 … 22 — the give-up mechanism for channels that stay
+    silent through repeated nudges (stops the spam into dead channels)."""
+
+    # Patch set shared by the handle()/act() path tests: pin the category and
+    # make the actual post succeed without a DB write.
+    def _act_patches(self):
+        return (
+            patch.object(EngagementAgent, "_pick_category",
+                         return_value="casual"),
+            patch.object(EngagementAgent, "_suggest_conversation_starter",
+                         return_value="What's everyone up to?"),
+            patch.object(EngagementAgent, "_post_as_ai_bot",
+                         return_value={"posted": True, "message_id": 1,
+                                       "kind": "starter"}),
+        )
+
+    def test_constants_track_the_6h_spec(self):
+        # Regression guard against the exact bug this fix addresses: the two
+        # constants must stay in lock-step, and at the documented 6h value.
+        assert EngagementAgent.COOLDOWN_SECONDS == 6 * 60 * 60
+        assert _NUDGE_DEDUPE_TTL == EngagementAgent.COOLDOWN_SECONDS
+
+    def test_first_ever_nudge_not_skipped(self, chain_store):
+        # No prior state for this channel → must be eligible (last_silent None).
+        a = EngagementAgent()
+        obs = a.sense(_silent_event(bucket=240, silent_minutes=245))
+        assert obs is not None
+        assert obs["_silence_reset"] is False
+
+    def test_counter_accumulates_on_unanswered_nudge(self, chain_store,
+                                                     socketio_emits):
+        chain_store.set_state(
+            "engagement", "channel", 100,
+            thresholds={"last_nudge_silent_minutes": 60,
+                        "consecutive_ignored": 0},
+        )
+        p1, p2, p3 = self._act_patches()
+        with p1, p2, p3:
+            EngagementAgent().handle(
+                _silent_event(bucket=240, silent_minutes=245))
+        st = chain_store.get_state("engagement", "channel", 100) or {}
+        th = st.get("thresholds") or {}
+        assert th["consecutive_ignored"] == 1
+        assert th["last_nudge_silent_minutes"] == 245
+
+    def test_cap_reached_skips_and_does_not_over_increment(self, chain_store):
+        chain_store.set_state(
+            "engagement", "channel", 100,
+            thresholds={"last_nudge_silent_minutes": 60,
+                        "consecutive_ignored": 3},
+        )
+        # sense() itself must bail out.
+        assert EngagementAgent().sense(
+            _silent_event(bucket=240, silent_minutes=245)) is None
+        # And end-to-end: no act row logged, counter unchanged.
+        EngagementAgent().handle(_silent_event(bucket=240, silent_minutes=245))
+        assert chain_store.act_rows_for("engagement") == []
+        th = (chain_store.get_state("engagement", "channel", 100)
+              or {}).get("thresholds") or {}
+        assert th["consecutive_ignored"] == 3
+
+    def test_human_message_resets_counter(self, chain_store, socketio_emits):
+        # Seed a channel that had gone silent for a long time and been nudged
+        # twice; now silent_minutes is LOW again → a human posted in between.
+        chain_store.set_state(
+            "engagement", "channel", 100,
+            thresholds={"last_nudge_silent_minutes": 245,
+                        "consecutive_ignored": 2},
+        )
+        p1, p2, p3 = self._act_patches()
+        with p1, p2, p3:
+            EngagementAgent().handle(
+                _silent_event(bucket=15, silent_minutes=20))
+        th = (chain_store.get_state("engagement", "channel", 100)
+              or {}).get("thresholds") or {}
+        assert th["consecutive_ignored"] == 0
+        assert th["last_nudge_silent_minutes"] == 20
+
+    def test_failed_post_does_not_advance_counter(self, chain_store,
+                                                  socketio_emits):
+        with patch.object(EngagementAgent, "post_engagement_content",
+                          return_value={"posted": False, "message_id": None}):
+            EngagementAgent().act(
+                {"channel_id": 100, "community_id": 7, "bucket": 240,
+                 "silent_minutes": 245, "category": "casual",
+                 "_silence_reset": False},
+                "corr-fail-1",
+            )
+        # Nothing persisted — the nudge never actually went out.
+        assert chain_store.get_state("engagement", "channel", 100) is None
+
+    def test_give_up_gate_runs_before_redis_claim(self, chain_store):
+        # Ordering guarantee: a given-up channel must not even reach (and burn)
+        # the Redis claim. Fully replace _claim_nudge so we can assert it's
+        # never consulted once the cap is hit.
+        chain_store.set_state(
+            "engagement", "channel", 100,
+            thresholds={"last_nudge_silent_minutes": 60,
+                        "consecutive_ignored": 3},
+        )
+        with patch.object(EngagementAgent, "_claim_nudge") as claim:
+            result = EngagementAgent().sense(
+                _silent_event(bucket=240, silent_minutes=245))
+        assert result is None
+        claim.assert_not_called()

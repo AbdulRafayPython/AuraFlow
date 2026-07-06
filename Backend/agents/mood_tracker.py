@@ -16,12 +16,30 @@ Features:
 
 import json
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from collections import Counter
 import re
 
 from database import get_db_connection
+from agents.base import AutonomousAgent
+from agents import event_bus as _event_bus
+from agents import memory as _agent_memory
+from agents._settings import get_personal_settings
+from services.redis_client import get_redis as _get_redis
+
+
+# The user_agents row uses agent_type='mood' (legacy from the
+# substrate). The frontend AgentSettingsModal exposes both 'mood' and
+# 'mood_tracker' schemas writing into the same row.
+_MOOD_AGENT_TYPE = 'mood'
+_MOOD_DEFAULTS = {
+    'track_per_message': True,
+    'alert_negative_trend': True,
+    'sensitivity': 7,
+    'language': 'auto',
+}
 
 # Lightweight sentiment engines — VADER (NLTK) for English, lexicon for Roman Urdu.
 # No local transformer models. Heavy ML deps (transformers/torch) have been removed.
@@ -61,11 +79,34 @@ except ImportError:
     print("[MOOD TRACKER] textblob not installed. English sentiment fallback disabled.")
 
 
-class MoodTrackerAgent:
+class MoodTrackerAgent(AutonomousAgent):
     """
     Tracks user mood and emotional state based on message content
     Supports Roman Urdu and emoji analysis with advanced features
+
+    Autonomous role (Phase 2.1): subscribes to ``msg.created``. On every
+    text message the user has opted in to mood tracking for, we push the
+    message's ``sentiment_score`` onto a per-user rolling Redis ZSET
+    (last 20). When the rolling mean of the last 5 scores drops below
+    an adaptive threshold (default −0.4) AND we have not already
+    escalated this user in the past 30 minutes, we publish
+    ``mood.escalation`` — the gateway event for the empathy chain
+    (Wellness + Engagement subscribe in Phase 3).
     """
+
+    NAME = "mood_tracker"
+    GOAL = {"detect_mood_escalations": True, "respect_per_user_opt_in": True}
+    SUBSCRIBES = [_event_bus.TOPIC_MSG_CREATED]
+    SCOPE_TYPE = _agent_memory.SCOPE_USER
+    COOLDOWN_SECONDS = 0  # logged per-message; escalation is the rate-limited side
+
+    # ── Rolling-window + escalation tuning (defaults; learnable per-user) ──
+    _ROLLING_KEY      = "mood:scores:{user_id}"   # Redis ZSET, score=epoch_ms
+    _ROLLING_MAX      = 20                         # keep last 20 scores
+    _ROLLING_TTL_SECS = 60 * 60 * 6                # 6h sliding window expiry
+    _WINDOW_SIZE      = 5                          # mean over last N
+    _DEFAULT_THRESHOLD = -0.4                      # escalate when mean < this
+    _ESCALATION_DEDUPE_SECS = 30 * 60              # 30 min per user
     
     # Normalization patterns for Roman Urdu spelling variations
     NORMALIZATION_PATTERNS = {
@@ -1580,6 +1621,317 @@ class MoodTrackerAgent:
         except Exception as e:
             print(f"[MOOD TRACKER] Error generating insights: {e}")
             return {'success': False, 'error': str(e)}
+        finally:
+            if conn:
+                conn.close()
+
+    # ════════════════════════════════════════════════════════════════════
+    # Autonomous hooks (Phase 2.1)
+    # ════════════════════════════════════════════════════════════════════
+
+    def sense(self, event: dict) -> Optional[Dict]:
+        """Cheap pre-filter: skip empty / command / unowned-user messages.
+
+        We do NOT call analyze_message() here — that's the expensive
+        bit and belongs in decide() where its result feeds the policy.
+        """
+        content = (event.get("content") or "").strip()
+        if len(content) < 2 or content.startswith("/"):
+            return None
+        user_id = event.get("user_id")
+        if not user_id:
+            return None
+        return {
+            "content":      content[:1000],
+            "user_id":      user_id,
+            "channel_id":   event.get("channel_id"),
+            "community_id": event.get("community_id"),
+            "message_id":   event.get("message_id"),
+            "scope_type":   _agent_memory.SCOPE_USER,
+            "scope_id":     user_id,
+        }
+
+    def decide(self, observation: Dict):
+        """Run lexicon sentiment, update rolling window, check escalation rule."""
+        user_id = observation["user_id"]
+
+        # Respect the per-user opt-in toggle — if the user has not enabled
+        # mood tracking, we skip silently. This matches the legacy
+        # track_mood_task gating so behaviour stays consistent.
+        try:
+            if not self._user_opted_in(user_id):
+                return ("skip", {"reason": "not_opted_in"}, "opt_out")
+        except Exception:
+            # Don't block the agent if the user_agents lookup fails — be
+            # conservative and treat as opted-in (matches current default).
+            pass
+
+        cfg = get_personal_settings(user_id, _MOOD_AGENT_TYPE, _MOOD_DEFAULTS)
+
+        try:
+            analysis = self.analyze_message(observation["content"]) or {}
+        except Exception as exc:
+            return ("skip", {}, f"analyze_failed_{type(exc).__name__}")
+
+        # Apply language preference: if the user pinned english/roman_urdu
+        # but the heuristic disagrees, we still trust the analysis but
+        # tag the observation for downstream consumers.
+        lang_pref = (cfg.get('language') or 'auto').lower()
+        if lang_pref != 'auto':
+            analysis['user_language_pref'] = lang_pref
+
+        score = float(analysis.get("sentiment_score") or 0.0)
+        primary = analysis.get("primary_mood") or analysis.get("sentiment") or "neutral"
+
+        # Push onto the per-user rolling ZSET. Failure is non-fatal —
+        # we still log the action.
+        recent = self._push_and_recall(user_id, score)
+
+        # Compute mean of the most-recent _WINDOW_SIZE scores.
+        window = recent[-self._WINDOW_SIZE:] if recent else [score]
+        mean = sum(window) / len(window) if window else 0.0
+
+        # Adaptive threshold from agent_state (learn() lowers/raises it),
+        # nudged by the user-facing sensitivity slider. The slider is
+        # 1..10 (default 7); higher sensitivity → earlier escalation
+        # (threshold closer to 0). We scale ±0.15 around the adaptive
+        # baseline so the bandit's tuning still dominates.
+        threshold = self._escalation_threshold(user_id)
+        try:
+            sens = max(1, min(10, int(cfg.get('sensitivity', 7))))
+            # 7 (default) → 0 offset; 10 → +0.075 (more sensitive,
+            # threshold closer to 0); 1 → -0.15 (less sensitive).
+            sens_offset = (sens - 7) * 0.025
+            threshold = round(min(0.0, max(-0.8, threshold + sens_offset)), 3)
+        except (TypeError, ValueError):
+            pass
+
+        # Build the common act payload — every message persists a row
+        # in user_moods; only escalations also publish the bus event.
+        base_payload = {
+            "user_id":       user_id,
+            "channel_id":    observation.get("channel_id"),
+            "community_id":  observation.get("community_id"),
+            "message_id":    observation.get("message_id"),
+            "score":         score,
+            "primary_mood":  primary,
+            "sentiment":     analysis.get("sentiment"),
+            "window_mean":   round(mean, 3),
+            "window_size":   len(window),
+            "threshold":     threshold,
+            "analysis":      analysis,
+        }
+
+        if len(window) < self._WINDOW_SIZE:
+            # Warming the window — persist row, no escalation yet.
+            return ("act", {**base_payload, "escalate": False},
+                    f"warming_window_{len(window)}/{self._WINDOW_SIZE}")
+
+        # alert_negative_trend=false suppresses the escalation publish but
+        # still persists the per-message row, so trends remain queryable
+        # via the dashboard without firing wellness/engagement reactions.
+        alert_enabled = bool(cfg.get('alert_negative_trend', True))
+        if mean < threshold and not self._recently_escalated(user_id) and alert_enabled:
+            return ("act", {**base_payload, "escalate": True},
+                    f"escalation_mean_{mean:.2f}_below_{threshold:.2f}")
+
+        # Window full but stable (or already-escalated within dedupe).
+        # Still persist the per-message mood row unless the user opted out
+        # of per-message tracking — in which case we only persist when the
+        # window completes (mean is the meaningful signal).
+        per_message = bool(cfg.get('track_per_message', True))
+        return ("act", {
+            **base_payload,
+            "escalate": False,
+            "persist_row": per_message or len(window) >= self._WINDOW_SIZE,
+        }, f"stable_mean_{mean:.2f}")
+
+    def act(self, payload: Dict, correlation_id: str) -> Optional[Dict]:
+        """Two responsibilities:
+          1. Always persist the per-message mood row to ``user_moods``.
+          2. If ``escalate``, publish ``mood.escalation`` (deduped) for
+             Wellness / Engagement to consume.
+        """
+        user_id = payload["user_id"]
+        # persist_row defaults to True for backward compatibility with the
+        # warming-window and escalation branches that don't set it.
+        if payload.get("persist_row", True):
+            self._persist_mood_row(payload)
+
+        if not payload.get("escalate"):
+            return {"persisted": payload.get("persist_row", True)}
+
+        # Mark the dedupe so the next message doesn't re-fire.
+        self._mark_escalation(user_id)
+
+        try:
+            _event_bus.publish(_event_bus.TOPIC_MOOD_ESCALATION, {
+                "user_id":      user_id,
+                "channel_id":   payload.get("channel_id"),
+                "community_id": payload.get("community_id"),
+                "message_id":   payload.get("message_id"),
+                "score":        payload.get("score"),
+                "window_mean":  payload.get("window_mean"),
+                "threshold":    payload.get("threshold"),
+                "primary_mood": payload.get("primary_mood"),
+                "correlation_id": correlation_id,
+            })
+        except Exception:
+            pass
+        return {"persisted": True, "escalated": True,
+                "window_mean": payload.get("window_mean")}
+
+    def learn(self, action_id: int, signal: str, *, weight: float = 1.0) -> None:
+        """Per-user adaptive threshold. A 👎/dismiss on a check-in lowers
+        the threshold (require stronger negative signal before next
+        escalation); 👍/engaged keeps the user sensitive.
+        """
+        try:
+            action = _agent_memory.get_action(action_id)
+            if not action or not action.get("user_id"):
+                return super().learn(action_id, signal, weight=weight)
+            user_id = action["user_id"]
+            state = _agent_memory.get_state(self.NAME, _agent_memory.SCOPE_USER, user_id) or {}
+            th = dict(state.get("thresholds") or {})
+            cur = float(th.get("escalation_threshold", self._DEFAULT_THRESHOLD))
+            if signal in ("negative", "dismissed"):
+                # User said the check-in wasn't helpful — be more conservative.
+                cur = max(-0.8, cur - 0.05 * float(weight))
+            elif signal in ("positive", "engaged"):
+                # Check-in helped — keep current sensitivity, but nudge
+                # slightly toward the default if we drifted way down.
+                cur = min(self._DEFAULT_THRESHOLD, cur + 0.02 * float(weight))
+            th["escalation_threshold"] = round(cur, 3)
+            _agent_memory.set_state(self.NAME, _agent_memory.SCOPE_USER, user_id,
+                                    thresholds=th, last_outcome=(
+                                        "positive" if signal in ("positive", "engaged")
+                                        else "negative" if signal in ("negative", "dismissed")
+                                        else "neutral"))
+        except Exception as exc:
+            print(f"[MOOD TRACKER] learn failed: {exc}")
+        super().learn(action_id, signal, weight=weight)
+
+    # ── Internal: opt-in lookup, rolling window, persistence ────────
+
+    def _user_opted_in(self, user_id: int) -> bool:
+        """Mirror of tasks/agent_tasks._is_personal_agent_active. We read
+        ``user_agents`` directly to avoid a circular task import."""
+        conn = None
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT enabled FROM user_agents "
+                    "WHERE user_id=%s AND agent_type='mood' AND enabled=TRUE",
+                    (user_id,),
+                )
+                return cur.fetchone() is not None
+        except Exception:
+            return False
+        finally:
+            if conn:
+                conn.close()
+
+    def _push_and_recall(self, user_id: int, score: float) -> List[float]:
+        """Push the latest score onto the per-user rolling ZSET (key:
+        ``mood:scores:<uid>``, score=epoch_ms) and return the chronological
+        list of the most-recent stored scores."""
+        r = _get_redis()
+        now_ms = int(time.time() * 1000)
+        if r is None:
+            # No Redis → fall back to the single score we just computed.
+            return [score]
+        key = self._ROLLING_KEY.format(user_id=user_id)
+        try:
+            pipe = r.pipeline()
+            # member must be unique per insert — include now_ms as suffix
+            member = f"{now_ms}:{score:.4f}"
+            pipe.zadd(key, {member: now_ms})
+            # Keep the most-recent _ROLLING_MAX entries only.
+            pipe.zremrangebyrank(key, 0, -self._ROLLING_MAX - 1)
+            pipe.expire(key, self._ROLLING_TTL_SECS)
+            pipe.zrange(key, 0, -1, withscores=False)
+            members = pipe.execute()[-1] or []
+        except Exception:
+            return [score]
+        out: List[float] = []
+        for m in members:
+            try:
+                # member looks like "<epoch_ms>:<score>"; tolerate bytes too.
+                s = m.decode("utf-8") if isinstance(m, (bytes, bytearray)) else m
+                out.append(float(s.split(":", 1)[1]))
+            except Exception:
+                continue
+        return out or [score]
+
+    def _escalation_threshold(self, user_id: int) -> float:
+        try:
+            state = _agent_memory.get_state(self.NAME, _agent_memory.SCOPE_USER, user_id)
+            if not state:
+                return self._DEFAULT_THRESHOLD
+            return float((state.get("thresholds") or {})
+                         .get("escalation_threshold", self._DEFAULT_THRESHOLD))
+        except Exception:
+            return self._DEFAULT_THRESHOLD
+
+    def _recently_escalated(self, user_id: int) -> bool:
+        r = _get_redis()
+        if r is None:
+            return False
+        try:
+            return bool(r.get(f"mood:escalated:{user_id}"))
+        except Exception:
+            return False
+
+    def _mark_escalation(self, user_id: int) -> None:
+        r = _get_redis()
+        if r is None:
+            return
+        try:
+            r.setex(f"mood:escalated:{user_id}", self._ESCALATION_DEDUPE_SECS, "1")
+        except Exception:
+            pass
+
+    def _persist_mood_row(self, payload: Dict) -> None:
+        """Write a row into ``user_moods``. Best-effort — never raises.
+
+        As of Phase 6.2 this is the sole writer for messages flowing
+        through the socket and REST endpoints — the legacy
+        ``track_mood_task`` Celery task is still defined but no longer
+        dispatched from those paths. If any new caller starts firing
+        it, the row will simply duplicate (there's no uniqueness on
+        (user, message)) and per-message dashboards will merge them.
+        """
+        user_id    = payload.get("user_id")
+        channel_id = payload.get("channel_id")
+        if not user_id:
+            return
+        mood = payload.get("primary_mood") or payload.get("sentiment") or "neutral"
+        score = float(payload.get("score") or 0.0)
+        analysis = payload.get("analysis") or {}
+        emotions = {
+            "sentiment":       analysis.get("sentiment"),
+            "primary_mood":    analysis.get("primary_mood"),
+            "mood_categories": analysis.get("mood_categories"),
+            "detected_words":  analysis.get("detected_words"),
+            "source":          "autonomous",
+        }
+        conn = None
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO user_moods "
+                    "(user_id, channel_id, mood, sentiment_score, "
+                    " detected_emotions, message_sample, created_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, NOW())",
+                    (user_id, channel_id, mood, score,
+                     json.dumps(emotions, default=str)[:2000],
+                     (payload.get("analysis") or {}).get("__sample__", "")[:500]),
+                )
+            conn.commit()
+        except Exception as exc:
+            print(f"[MOOD TRACKER] _persist_mood_row failed: {exc}")
         finally:
             if conn:
                 conn.close()

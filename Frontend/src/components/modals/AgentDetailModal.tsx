@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  X, CheckCircle, Plus, Settings, Shield, TrendingUp, BookOpen,
+  CheckCircle, Plus, Settings, Shield, TrendingUp, BookOpen,
   Brain, Heart, Focus, Loader2, ChevronDown, Zap, Eye, Info
 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRealtime } from '@/hooks/useRealtime';
 import { useNotifications } from '@/hooks/useNotifications';
 import { aiAgentService, AgentCatalogEntry } from '@/services/aiAgentService';
+import { ResponsiveModal, ResponsiveModalContent } from '@/components/ui/responsive-modal';
 import type { Community } from '@/types';
 
 interface AgentDetailModalProps {
@@ -222,25 +223,9 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({
     }
   }, [installing, meta, selectedCommunityId, agentType, onSuccess, onClose, showSuccess, showError]);
 
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" />
-
-      {/* Modal */}
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className={`relative w-full max-w-[600px] max-h-[85vh] overflow-hidden flex flex-col
-          ${isBasicTheme ? 'rounded-lg' : 'rounded-2xl'}
-          bg-[hsl(var(--theme-bg-elevated))] border border-[hsl(var(--theme-border-default)/0.5)]
-          shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300
-        `}
-      >
+    <ResponsiveModal open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <ResponsiveModalContent size="lg" className="flex flex-col overflow-hidden p-0">
         {/* Header background */}
         <div className="relative h-32 overflow-hidden flex-shrink-0" style={{ background: meta.headerGradient }}>
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
@@ -248,13 +233,6 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({
           <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
             <div className="w-40 h-40">{meta.icon}</div>
           </div>
-          {/* Close button */}
-          <button
-            onClick={onClose}
-            className="absolute top-3 right-3 p-2 rounded-full bg-black/30 hover:bg-black/50 text-white transition-colors z-10"
-          >
-            <X className="w-4 h-4" />
-          </button>
         </div>
 
         {/* Icon chip */}
@@ -482,7 +460,7 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({
             </button>
           )}
         </div>
-      </div>
-    </div>
+      </ResponsiveModalContent>
+    </ResponsiveModal>
   );
 };

@@ -165,10 +165,12 @@ export default function Friends({ onOpenDM }: FriendsProps) {
         {/* User Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-semibold truncate text-[hsl(var(--theme-text-primary))]">
+            <h3 className="font-semibold truncate text-[hsl(var(--theme-text-primary))] min-w-0">
               {friend.display_name}
             </h3>
-            <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded font-medium ${
+            {/* Status is already shown via the colored dot on the avatar —
+                the text pill just crowds the name on narrow screens. */}
+            <span className={`hidden sm:inline-flex flex-shrink-0 items-center gap-1 text-xs px-2 py-0.5 rounded font-medium ${
               friend.status === "online"
                 ? "bg-green-500/20 text-green-400"
                 : friend.status === "idle"
@@ -373,15 +375,17 @@ export default function Friends({ onOpenDM }: FriendsProps) {
         }}
       />
       
-      {/* Header */}
-      <div 
-        className="px-6 py-4 border-b backdrop-blur-md border-[hsl(var(--theme-border-default)/0.5)] relative z-10"
+      {/* Header — pl-16 on mobile clears MainLayout's floating hamburger
+          button (fixed top-4 left-4), which would otherwise sit on top of
+          the heading since this header pins to the very top of the view. */}
+      <div
+        className="pl-16 pr-4 sm:pr-6 md:pl-6 py-4 border-b backdrop-blur-md border-[hsl(var(--theme-border-default)/0.5)] relative z-10"
         style={{ background: 'hsl(var(--theme-bg-secondary) / 0.7)' }}
       >
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <Users className="w-6 h-6 text-[hsl(var(--theme-accent-primary))]" />
-            <h1 className="text-2xl font-bold text-[hsl(var(--theme-text-primary))]">
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <Users className="w-6 h-6 flex-shrink-0 text-[hsl(var(--theme-accent-primary))]" />
+            <h1 className="text-xl sm:text-2xl font-bold truncate text-[hsl(var(--theme-text-primary))]">
               Friends
             </h1>
           </div>
@@ -393,7 +397,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
                 placeholder="Search friends..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 rounded-lg text-sm w-64 border focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] backdrop-blur-sm bg-[hsl(var(--theme-input-bg)/0.8)] border-[hsl(var(--theme-border-default)/0.5)] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]"
+                className="pl-10 pr-4 py-2 rounded-lg text-sm w-32 sm:w-64 border focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] backdrop-blur-sm bg-[hsl(var(--theme-input-bg)/0.8)] border-[hsl(var(--theme-border-default)/0.5)] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]"
               />
             </div>
           )}

@@ -138,7 +138,8 @@ export interface TypingIndicator {
 }
 
 export interface Community {
-  id: number;
+  /** Opaque UUID (communities.public_id) — not the internal DB row id. */
+  id: string;
   name: string;
   icon?: string;
   color?: string;
@@ -171,6 +172,8 @@ export interface Channel {
 
 export interface Friend {
   id: number;
+  /** Opaque UUID (users.public_id) — used for DM URLs instead of the raw id. */
+  public_id?: string;
   username: string;
   display_name: string;
   avatar?: string;
@@ -198,6 +201,8 @@ export interface FriendRequest {
 
 export interface User {
   id: number;
+  /** Opaque UUID (users.public_id) — used for DM URLs instead of the raw id. */
+  public_id?: string;
   username: string;
   email: string;
   display_name?: string;

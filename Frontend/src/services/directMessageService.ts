@@ -154,6 +154,17 @@ class DirectMessageService {
       throw error;
     }
   }
+
+  // Mark a known set of messages as read in ONE round-trip (caller already has the ids)
+  async markMessagesRead(messageIds: number[]): Promise<{ message: string }> {
+    if (!messageIds.length) return { message: 'No messages' };
+    const response = await axios.post<{ message: string }>(
+      `${API_BASE}/messages/read`,
+      { message_ids: messageIds },
+      this.getAuthHeaders()
+    );
+    return response.data;
+  }
 }
 
 export const directMessageService = new DirectMessageService();

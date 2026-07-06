@@ -37,6 +37,7 @@ interface DirectMessagesContextType {
 
   // Socket/Local updates
   addMessage: (message: DirectMessage) => void;
+  deliverUploadedMessage: (message: DirectMessage) => void;
   removeMessage: (messageId: number) => void;
   updateMessage: (messageId: number, content: string) => void;
   markMessageAsRead: (messageId: number) => void;
@@ -70,6 +71,7 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
             user_id: friend.id,
             user: {
               id: friend.id,
+              public_id: friend.public_id,
               username: friend.username,
               display_name: friend.display_name,
               avatar_url: friend.avatar_url,
@@ -183,11 +185,15 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
       // Join DM socket room
       socketService.joinDMConversation(userId);
 
-      // Mark all as read
-      if (msgs.length > 0) {
-        for (const msg of msgs.filter(m => !m.is_read)) {
-          await directMessageService.markAsRead(msg.id);
-        }
+      // Mark all as read in a SINGLE round-trip (was an N-message sequential
+      // await loop — on a remote DB that alone made opening a chat take seconds).
+      // Update local state immediately; the network call is fire-and-forget.
+      const unreadIds = msgs.filter(m => !m.is_read && m.receiver_id === currentUserIdRef.current).map(m => m.id);
+      if (unreadIds.length > 0) {
+        setMessages(prev => prev.map(m => (unreadIds.includes(m.id) ? { ...m, is_read: true } : m)));
+        directMessageService.markMessagesRead(unreadIds).catch(err => {
+          console.error('[DirectMessagesContext] Bulk mark-read failed:', err);
+        });
       }
     } catch (err: any) {
       console.error('[DirectMessagesContext] Error selecting conversation:', err);
@@ -241,39 +247,84 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     []
   );
 
-  // Send message
+  // Send message — OPTIMISTIC.
+  // The message is rendered instantly with a temporary id and the network
+  // persistence runs in the background, so the input clears and the bubble
+  // appears immediately regardless of DB latency. When the server responds we
+  // swap the temp row for the real one and broadcast it to the receiver; if it
+  // fails we roll the optimistic row back and surface the error.
   const sendMessage = useCallback(
     async (receiverId: number, content: string, replyTo?: number) => {
       setError(null);
-      try {
-        const message = await directMessageService.sendDirectMessage(receiverId, content, 'text', replyTo);
-        
-        // Add to local state immediately
-        addMessage(message);
 
-        // Broadcast via socket with full message data
-        socketService.broadcastDirectMessage({
-          id: message.id,
-          sender_id: message.sender_id,
-          receiver_id: message.receiver_id,
-          content: message.content,
-          message_type: message.message_type,
-          created_at: message.created_at,
-          is_read: message.is_read,
-          reply_to: message.reply_to,
-          reply_to_preview: message.reply_to_preview,
-          sender: message.sender,
-          receiver: message.receiver,
-          edited_at: message.edited_at,
+      const tempId = -(Date.now() * 1000 + Math.floor(Math.random() * 1000));
+      const optimistic: DirectMessage = {
+        id: tempId,
+        sender_id: authUser?.id ?? 0,
+        receiver_id: receiverId,
+        content,
+        message_type: 'text',
+        created_at: new Date().toISOString(),
+        is_read: false,
+        reply_to: replyTo ?? null,
+        sender: authUser
+          ? {
+              id: authUser.id,
+              username: authUser.username,
+              display_name: authUser.display_name || authUser.username,
+              avatar_url: authUser.avatar_url,
+            }
+          : undefined,
+      };
+      addMessage(optimistic);
+
+      // Fire-and-forget: do NOT await, so the caller (and the input box) is
+      // released immediately.
+      directMessageService
+        .sendDirectMessage(receiverId, content, 'text', replyTo)
+        .then(message => {
+          setMessages(prev => {
+            const next = prev.map(m => (m.id === tempId ? message : m));
+            messagesRef.current = next;
+            return next;
+          });
+          setConversations(prev =>
+            prev.map(c =>
+              c.user_id === receiverId
+                ? { ...c, last_message: message, last_message_time: message.created_at }
+                : c
+            )
+          );
+          socketService.broadcastDirectMessage({
+            id: message.id,
+            sender_id: message.sender_id,
+            receiver_id: message.receiver_id,
+            content: message.content,
+            message_type: message.message_type,
+            created_at: message.created_at,
+            is_read: message.is_read,
+            reply_to: message.reply_to,
+            reply_to_preview: message.reply_to_preview,
+            sender: message.sender,
+            receiver: message.receiver,
+            edited_at: message.edited_at,
+          });
+        })
+        .catch((err: any) => {
+          setMessages(prev => {
+            const next = prev.filter(m => m.id !== tempId);
+            messagesRef.current = next;
+            return next;
+          });
+          console.error('[DirectMessagesContext] Error sending message:', err);
+          setError(err.response?.data?.message || 'Failed to send message');
         });
-      } catch (err: any) {
-        console.error('[DirectMessagesContext] Error sending message:', err);
-        setError(err.response?.data?.message || "Failed to send message");
-        throw err;
-      }
     },
+    // addMessage is a stable useCallback([]) defined below; referencing it in
+    // the body is fine, but it must NOT go in this deps array or it hits the
+    // temporal dead zone (deps are evaluated during render, before it exists).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [authUser]
   );
 
   // Delete message
@@ -415,9 +466,29 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
       }
     };
     
-    // Register global listener
-    const unsubscribe = socketService.onDirectMessage(handleGlobalDirectMessage);
-    return unsubscribe;
+    // Register global listeners: new messages, plus real-time edit/delete so the
+    // other participant's open chat updates without a reload.
+    const unsubMsg = socketService.onDirectMessage(handleGlobalDirectMessage);
+    const unsubEdit = socketService.onDirectMessageEdited((data: any) => {
+      if (data?.id == null) return;
+      setMessages(prev => {
+        const next = prev.map(m =>
+          m.id === data.id ? { ...m, content: data.content, edited_at: data.edited_at || new Date().toISOString() } : m
+        );
+        messagesRef.current = next;
+        return next;
+      });
+    });
+    const unsubDelete = socketService.onDirectMessageDeleted((data: any) => {
+      if (data?.id == null) return;
+      removeMessage(data.id);
+    });
+    return () => {
+      unsubMsg();
+      unsubEdit();
+      unsubDelete();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addMessage]);
 
   const removeMessage = useCallback((messageId: number) => {
@@ -446,6 +517,30 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     });
   }, []);
 
+  // Deliver a fully-formed message that was created server-side out-of-band
+  // (e.g. a file/image upload, which doesn't go through the optimistic text
+  // sendMessage path). Adds it to the local view immediately AND broadcasts it
+  // so the receiver sees it in real-time — no page reload required.
+  const deliverUploadedMessage = useCallback((message: DirectMessage) => {
+    addMessage(message);
+    socketService.broadcastDirectMessage({
+      id: message.id,
+      sender_id: message.sender_id,
+      receiver_id: message.receiver_id,
+      content: message.content,
+      message_type: message.message_type,
+      created_at: message.created_at,
+      is_read: message.is_read,
+      reply_to: message.reply_to,
+      reply_to_preview: message.reply_to_preview,
+      sender: message.sender,
+      receiver: message.receiver,
+      edited_at: message.edited_at,
+      attachment: message.attachment,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const value: DirectMessagesContextType = {
     conversations,
     currentConversation,
@@ -463,6 +558,7 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     markAsRead,
     markAllAsRead,
     addMessage,
+    deliverUploadedMessage,
     removeMessage,
     updateMessage,
     markMessageAsRead,

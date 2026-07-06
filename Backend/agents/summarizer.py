@@ -4,10 +4,19 @@ Summarizer Agent
 Intelligent chat summarization using hybrid approach:
 - Extractive method for quick summaries
 - Gemini AI for polished, contextual summaries
-Supports both English and Roman Urdu conversations
+Supports both English and Roman Urdu conversations.
+
+Autonomous role (Phase 3.3): subscribes to ``focus.drift`` (emitted by
+the focus agent when channel keywords shift) and produces a concise
+checkpoint summary of the *previous* topic before it gets buried by the
+new one. The summary is broadcast via Socket.IO as a
+``summary_checkpoint`` event — a soft collapsible card the frontend can
+render alongside the channel. Adaptive per-channel minimum-messages
+threshold lives in ``agent_state.thresholds.min_messages``.
 """
 
 import re
+import time as _time
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 import math
@@ -18,6 +27,27 @@ import os
 
 from database import get_db_connection
 from utils.ai.text_processor import TextProcessor
+from agents.base import AutonomousAgent
+from agents import event_bus as _event_bus
+from agents import memory as _agent_memory
+from agents._settings import get_personal_settings
+
+
+_SUMMARIZER_DEFAULTS = {
+    'auto_summarize_enabled': False,
+    'schedule_time': '21:00',
+    'auto_summarize_message_count': 200,
+    'summary_length': 'standard',
+    'include_topics': True,
+    'include_action_items': True,
+}
+
+
+_SUMMARY_LEN_BUDGET = {
+    'brief':    {'max_sentences': 5,  'max_chars': 600},
+    'standard': {'max_sentences': 10, 'max_chars': 1500},
+    'detailed': {'max_sentences': 18, 'max_chars': 3000},
+}
 
 load_dotenv()
 
@@ -58,12 +88,22 @@ except Exception as e:
     print(f"[SUMMARIZER] Gemini configuration error: {e}")
 
 
-class SummarizerAgent:
+class SummarizerAgent(AutonomousAgent):
     """
     Summarize long chat conversations into concise summaries
     Uses extractive summarization with sentence scoring
     """
-    
+
+    # ── Autonomous contract (Phase 3.3) ─────────────────────────────
+    NAME = "summarizer"
+    GOAL = {"checkpoint_topics_before_drift_buries_them": True}
+    SUBSCRIBES = [_event_bus.TOPIC_FOCUS_DRIFT]
+    SCOPE_TYPE = _agent_memory.SCOPE_CHANNEL
+    COOLDOWN_SECONDS = 30 * 60  # at most one auto-summary / channel / 30 min
+
+    _DEFAULT_MIN_MESSAGES = 15  # need at least this many to summarise
+    _SUMMARISE_LAST_N    = 80   # how far back the auto-summary looks
+
     def __init__(self):
         self.text_processor = TextProcessor()
         self.min_messages_for_summary = 20  # Minimum messages to trigger summary
@@ -72,19 +112,40 @@ class SummarizerAgent:
         self.gemini_client = _gemini_client
         self.gemini_model = 'gemini-2.5-flash'
         
-    def summarize_channel(self, channel_id: int, message_count: int = 100, 
+    def summarize_channel(self, channel_id: int, message_count: int = 100,
                          user_id: Optional[int] = None) -> Dict:
         """
         Summarize recent messages in a channel
-        
+
         Args:
             channel_id: Channel ID to summarize
-            message_count: Number of recent messages to analyze
-            user_id: User requesting the summary (for logging)
-            
+            message_count: Number of recent messages to analyze. When the
+                user has saved an ``auto_summarize_message_count`` preference
+                and the caller passed the default (100), the saved
+                preference wins so the slider in the settings UI matters.
+            user_id: User requesting the summary (for logging). Also drives
+                ``summary_length``, ``include_topics``, ``include_action_items``.
+
         Returns:
             Dict with summary and metadata
         """
+        cfg = (get_personal_settings(user_id, 'summarizer', _SUMMARIZER_DEFAULTS)
+               if user_id else dict(_SUMMARIZER_DEFAULTS))
+        # If caller passed the legacy default 100, let the user's stored
+        # preference take over. Explicit override (any other int) wins.
+        if message_count == 100:
+            try:
+                message_count = max(20, min(500,
+                    int(cfg.get('auto_summarize_message_count', 100))))
+            except (TypeError, ValueError):
+                pass
+        # Cap extractive sentence count by the user's chosen verbosity.
+        budget = _SUMMARY_LEN_BUDGET.get(
+            str(cfg.get('summary_length') or 'standard').lower(),
+            _SUMMARY_LEN_BUDGET['standard'],
+        )
+        original_max_sentences = self.max_summary_sentences
+        self.max_summary_sentences = budget['max_sentences']
         conn = None
         try:
             conn = get_db_connection()
@@ -175,20 +236,44 @@ class SummarizerAgent:
                     status='success'
                 )
                 
+                # Honor include_topics / include_action_items toggles.
+                # We always compute the values upstream (cheap) but blank
+                # them out here when the user has opted out, so callers
+                # see a stable response shape.
+                topics_out = (summary_result['key_points']
+                              if cfg.get('include_topics', True) else [])
+                action_items_out: List[str] = []
+                if cfg.get('include_action_items', True):
+                    # Gemini path stores its KEY DECISIONS list under
+                    # `key_points` when present — when both toggles are on
+                    # we still mirror that into a dedicated field so the UI
+                    # doesn't have to guess.
+                    if summary_result.get('method') == 'gemini-ai':
+                        action_items_out = list(summary_result.get('key_points') or [])
+
+                # Truncate the summary text to the verbosity budget. The
+                # extractive cap is already in sentences; this trims the
+                # gemini-polished prose to roughly match.
+                summary_text = summary_result['summary'] or ''
+                if len(summary_text) > budget['max_chars']:
+                    summary_text = summary_text[:budget['max_chars']].rstrip() + '…'
+
                 result = {
                     'success': True,
                     'summary_id': summary_id,
-                    'summary': summary_result['summary'],
-                    'key_points': summary_result['key_points'],
+                    'summary': summary_text,
+                    'key_points': topics_out,
+                    'action_items': action_items_out,
                     'message_count': len(messages),
                     'participants': summary_result['participants'],
                     'method': summary_result.get('method', 'extractive'),
+                    'summary_length': str(cfg.get('summary_length') or 'standard').lower(),
                     'time_range': {
                         'start': messages[0]['created_at'].isoformat(),
                         'end': messages[-1]['created_at'].isoformat()
                     }
                 }
-                
+
                 print(f"[SUMMARIZER] Returning success result: {result.keys()}")
                 return result
                 
@@ -207,9 +292,180 @@ class SummarizerAgent:
                 'error': str(e)
             }
         finally:
+            # Restore the instance-level cap so a per-call override doesn't
+            # leak into subsequent calls from other users.
+            self.max_summary_sentences = original_max_sentences
             if conn:
                 conn.close()
-    
+
+    def summarize_dm(self, peer_user_id: int, requester_user_id: int,
+                     message_count: int = 100) -> Dict:
+        """
+        Summarize a 1:1 direct-message thread between ``requester_user_id``
+        and ``peer_user_id``. Mirrors :meth:`summarize_channel` but reads
+        from the ``direct_messages`` table and **does not persist** the
+        result — DM summaries are ephemeral by design and returned only to
+        the requester.
+
+        Args:
+            peer_user_id: the other participant in the DM thread.
+            requester_user_id: the user asking for the summary; drives
+                personal settings (``summary_length``,
+                ``auto_summarize_message_count``, ``include_topics``,
+                ``include_action_items``).
+            message_count: cap on messages to analyse (legacy default 100
+                is overridden by the requester's saved preference, same
+                rule as ``summarize_channel``).
+
+        Returns:
+            Dict with the same shape as ``summarize_channel`` minus
+            ``summary_id`` (no row is written) plus ``peer_user_id`` and
+            ``requester_user_id`` for caller bookkeeping.
+        """
+        cfg = (get_personal_settings(requester_user_id, 'summarizer',
+                                     _SUMMARIZER_DEFAULTS)
+               if requester_user_id else dict(_SUMMARIZER_DEFAULTS))
+        if message_count == 100:
+            try:
+                message_count = max(20, min(500,
+                    int(cfg.get('auto_summarize_message_count', 100))))
+            except (TypeError, ValueError):
+                pass
+        budget = _SUMMARY_LEN_BUDGET.get(
+            str(cfg.get('summary_length') or 'standard').lower(),
+            _SUMMARY_LEN_BUDGET['standard'],
+        )
+        original_max_sentences = self.max_summary_sentences
+        self.max_summary_sentences = budget['max_sentences']
+
+        conn = None
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                # Pull both directions of the thread. The unique-pair index
+                # ``idx_dm_pair`` covers (sender, receiver, created_at) so
+                # the OR-of-pairs is index-friendly.
+                cur.execute("""
+                    SELECT
+                        dm.id, dm.content, dm.sender_id, dm.created_at,
+                        u.username, u.display_name
+                    FROM direct_messages dm
+                    JOIN users u ON dm.sender_id = u.id
+                    WHERE dm.message_type = 'text'
+                      AND LENGTH(dm.content) > 3
+                      AND (
+                            (dm.sender_id = %s AND dm.receiver_id = %s)
+                         OR (dm.sender_id = %s AND dm.receiver_id = %s)
+                          )
+                    ORDER BY dm.created_at DESC
+                    LIMIT %s
+                """, (requester_user_id, peer_user_id,
+                      peer_user_id, requester_user_id,
+                      message_count))
+
+                messages = cur.fetchall()
+                print(f"[SUMMARIZER] Fetched {len(messages)} DM messages "
+                      f"between {requester_user_id}↔{peer_user_id}")
+
+                if len(messages) < self.min_messages_for_summary:
+                    return {
+                        'success': False,
+                        'error': (f'Not enough messages to summarize. '
+                                  f'Found {len(messages)}, need at least '
+                                  f'{self.min_messages_for_summary}.'),
+                        'message_count': len(messages),
+                        'peer_user_id': peer_user_id,
+                        'requester_user_id': requester_user_id,
+                    }
+
+                # Reverse to chronological order.
+                messages = list(reversed(messages))
+
+                summary_result = self._generate_summary(messages)
+
+                if self.gemini_available:
+                    try:
+                        gemini_summary = self._generate_gemini_summary(
+                            messages, summary_result)
+                        if gemini_summary:
+                            summary_result['summary'] = gemini_summary
+                            summary_result['method'] = 'gemini-ai'
+                            key_points = self._extract_key_decisions(
+                                gemini_summary)
+                            if key_points:
+                                summary_result['key_points'] = key_points
+                        else:
+                            summary_result['method'] = 'extractive'
+                    except Exception as e:
+                        print(f"[SUMMARIZER] DM Gemini polish failed: {e}")
+                        summary_result['method'] = 'extractive'
+                else:
+                    summary_result['method'] = 'extractive'
+
+                # Log to ai_agent_logs for stats — same as channel path but
+                # without a channel_id.
+                self._log_activity(
+                    channel_id=None,
+                    user_id=requester_user_id,
+                    input_data=(f"DM summary requester={requester_user_id} "
+                                f"peer={peer_user_id} "
+                                f"messages={len(messages)}"),
+                    output_data=summary_result['summary'][:500],
+                    status='success',
+                )
+
+                topics_out = (summary_result['key_points']
+                              if cfg.get('include_topics', True) else [])
+                action_items_out: List[str] = []
+                if cfg.get('include_action_items', True):
+                    if summary_result.get('method') == 'gemini-ai':
+                        action_items_out = list(
+                            summary_result.get('key_points') or [])
+
+                summary_text = summary_result['summary'] or ''
+                if len(summary_text) > budget['max_chars']:
+                    summary_text = (summary_text[:budget['max_chars']]
+                                    .rstrip() + '…')
+
+                return {
+                    'success': True,
+                    'summary': summary_text,
+                    'key_points': topics_out,
+                    'action_items': action_items_out,
+                    'message_count': len(messages),
+                    'participants': summary_result['participants'],
+                    'method': summary_result.get('method', 'extractive'),
+                    'summary_length': str(
+                        cfg.get('summary_length') or 'standard').lower(),
+                    'peer_user_id': peer_user_id,
+                    'requester_user_id': requester_user_id,
+                    'time_range': {
+                        'start': messages[0]['created_at'].isoformat(),
+                        'end': messages[-1]['created_at'].isoformat(),
+                    },
+                }
+        except Exception as e:
+            print(f"[SUMMARIZER] summarize_dm error: {e}")
+            self._log_activity(
+                channel_id=None,
+                user_id=requester_user_id,
+                input_data=(f"DM summary attempt requester="
+                            f"{requester_user_id} peer={peer_user_id}"),
+                output_data=None,
+                status='failed',
+                error_message=str(e),
+            )
+            return {
+                'success': False,
+                'error': str(e),
+                'peer_user_id': peer_user_id,
+                'requester_user_id': requester_user_id,
+            }
+        finally:
+            self.max_summary_sentences = original_max_sentences
+            if conn:
+                conn.close()
+
     def _generate_summary(self, messages: List[Dict]) -> Dict:
         """
         Generate summary using improved extractive method with deduplication
@@ -798,3 +1054,156 @@ Now create the summary in this discussion style:"""
         finally:
             if conn:
                 conn.close()
+
+    # ────────────────────────────────────────────────────────────────────
+    # Autonomous hooks (Phase 3.3) — Focus→Summarizer chain
+    # ────────────────────────────────────────────────────────────────────
+
+    def sense(self, event: dict) -> Optional[Dict]:
+        """Accept ``focus.drift`` events only; count recent messages
+        cheaply to decide whether there's enough material to summarise.
+        """
+        channel_id = event.get("channel_id")
+        if not channel_id:
+            return None
+        # G1a per-channel override (CoverageMatrix). Falls through to
+        # community-level kill-switch via base.py helper.
+        if not self._is_enabled_for_channel(
+            event.get("community_id"), channel_id
+        ):
+            return None
+        # Count quickly — single COUNT(*) is cheap.
+        conn = None
+        msg_count = 0
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS c FROM messages "
+                    "WHERE channel_id=%s AND message_type='text' "
+                    "  AND created_at >= (NOW() - INTERVAL 6 HOUR)",
+                    (channel_id,),
+                )
+                row = cur.fetchone()
+                msg_count = int((row or {}).get("c") or 0)
+        except Exception:
+            msg_count = 0
+        finally:
+            if conn:
+                conn.close()
+        return {
+            "channel_id":   channel_id,
+            "community_id": event.get("community_id"),
+            "user_id":      event.get("user_id"),
+            "old_topics":   event.get("old_topics") or [],
+            "new_topics":   event.get("new_topics") or [],
+            "jaccard":      event.get("jaccard"),
+            "msg_count":    msg_count,
+            # Propagate the upstream correlation_id so the collaboration
+            # graph (focus → summarizer edge) can self-join agent_actions
+            # on it. Without this the base class mints a fresh UUID.
+            "correlation_id": event.get("correlation_id"),
+            "scope_type":   _agent_memory.SCOPE_CHANNEL,
+            "scope_id":     channel_id,
+        }
+
+    def decide(self, observation: Dict):
+        """Skip if too few messages to summarise; act otherwise.
+
+        The base-class 30-min cooldown is the real rate limiter — this
+        function just decides whether the conversation has accumulated
+        enough material for a summary to be worth reading.
+        """
+        msg_count = observation.get("msg_count", 0)
+        threshold = self._min_messages(observation["channel_id"])
+        if msg_count < threshold:
+            return ("defer", observation,
+                    f"msg_count_{msg_count}_below_{threshold}")
+        return ("act", observation,
+                f"checkpoint_msgs_{msg_count}_topics_{len(observation.get('old_topics') or [])}")
+
+    def act(self, payload: Dict, correlation_id: str) -> Optional[Dict]:
+        """Generate a summary of the previous topic and broadcast it as
+        a ``summary_checkpoint`` socket event.
+        """
+        channel_id = payload["channel_id"]
+        try:
+            result = self.summarize_channel(
+                channel_id=channel_id,
+                message_count=self._SUMMARISE_LAST_N,
+                user_id=None,
+            )
+        except Exception as exc:
+            print(f"[SUMMARIZER] auto summarize_channel failed: {exc}")
+            return {"summarised": False}
+        if not result or not result.get("success"):
+            return {"summarised": False, "reason": (result or {}).get("error")}
+
+        summary_text = (result.get("summary") or "").strip()
+        if not summary_text:
+            return {"summarised": False, "reason": "empty_summary"}
+
+        try:
+            from app import socketio  # lazy: avoid circular import
+            socketio.emit("summary_checkpoint", {
+                "channel_id":     channel_id,
+                "community_id":   payload.get("community_id"),
+                "summary":        summary_text[:2000],
+                "old_topics":     payload.get("old_topics"),
+                "new_topics":     payload.get("new_topics"),
+                "msg_count":      payload.get("msg_count"),
+                "method":         result.get("method"),
+                "correlation_id": correlation_id,
+            }, room=f"channel_{channel_id}", namespace="/")
+        except Exception as exc:
+            print(f"[SUMMARIZER] checkpoint emit failed: {exc}")
+            return {"summarised": True, "emitted": False}
+        return {"summarised": True, "emitted": True,
+                "preview": summary_text[:160]}
+
+    def learn(self, action_id: int, signal: str, *, weight: float = 1.0) -> None:
+        """Adapt the per-channel minimum-message threshold.
+
+        - ``positive`` / ``engaged`` → summary was useful even at this
+          message count → lower the threshold a bit so we checkpoint
+          earlier next time.
+        - ``negative`` / ``dismissed`` → premature/noisy → raise threshold
+          so we wait for more material.
+        """
+        try:
+            action = _agent_memory.get_action(action_id)
+            if not action or not action.get("channel_id"):
+                return super().learn(action_id, signal, weight=weight)
+            channel_id = action["channel_id"]
+            state = _agent_memory.get_state(
+                self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id) or {}
+            th = dict(state.get("thresholds") or {})
+            cur = float(th.get("min_messages", self._DEFAULT_MIN_MESSAGES))
+            if signal in ("positive", "engaged"):
+                cur = max(5.0, cur - 1.0 * float(weight))
+            elif signal in ("negative", "dismissed"):
+                cur = min(80.0, cur + 2.0 * float(weight))
+            th["min_messages"] = int(round(cur))
+            outcome = ("positive" if signal in ("positive", "engaged")
+                       else "negative" if signal in ("negative", "dismissed")
+                       else "neutral")
+            _agent_memory.set_state(
+                self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id,
+                thresholds=th, last_outcome=outcome,
+            )
+        except Exception as exc:
+            print(f"[SUMMARIZER] learn failed: {exc}")
+        super().learn(action_id, signal, weight=weight)
+
+    def _min_messages(self, channel_id: Optional[int]) -> int:
+        if not channel_id:
+            return self._DEFAULT_MIN_MESSAGES
+        try:
+            state = _agent_memory.get_state(
+                self.NAME, _agent_memory.SCOPE_CHANNEL, channel_id)
+            if not state:
+                return self._DEFAULT_MIN_MESSAGES
+            return int((state.get("thresholds") or {})
+                       .get("min_messages", self._DEFAULT_MIN_MESSAGES))
+        except Exception:
+            return self._DEFAULT_MIN_MESSAGES

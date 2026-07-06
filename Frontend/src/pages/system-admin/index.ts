@@ -7,6 +7,8 @@ export { default as SysUserManagement } from './UserManagement';
 export { default as SysCommunityHealth } from './CommunityHealth';
 export { default as SysMoodTrends } from './MoodTrends';
 export { default as SysEngagementAnalytics } from './EngagementAnalytics';
+export { default as SysAgentMetrics } from './AgentMetrics';
+export { default as SysAgentCollaboration } from './SysAgentCollaboration';
 export { default as SysReports } from './Reports';
 export { default as SysCommunityManagement } from './CommunityManagement';
 export { default as SysPlatformSettings } from './PlatformSettings';

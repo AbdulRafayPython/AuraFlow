@@ -173,7 +173,7 @@ DROP TABLE IF EXISTS `ai_agents`;
 CREATE TABLE `ai_agents` (
   `id` int NOT NULL AUTO_INCREMENT,
   `name` varchar(100) NOT NULL,
-  `type` enum('mood','summarizer','translator','moderator','assistant','engagement','knowledge','wellness','context','auto_message') DEFAULT NULL,
+  `type` enum('mood','summarizer','translator','moderator','assistant','engagement','knowledge','wellness','context','auto_message','focus','support') DEFAULT NULL,
   `description` text,
   `is_active` tinyint(1) DEFAULT '1',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
@@ -332,6 +332,7 @@ CREATE TABLE `channels` (
 DROP TABLE IF EXISTS `communities`;
 CREATE TABLE `communities` (
   `id` int NOT NULL AUTO_INCREMENT,
+  `public_id` char(36) NOT NULL COMMENT 'Opaque external identifier used in URLs/API instead of the sequential int id',
   `name` varchar(100) NOT NULL,
   `description` text,
   `icon` char(2) DEFAULT 'AF',
@@ -343,6 +344,7 @@ CREATE TABLE `communities` (
   `member_count` int NOT NULL DEFAULT '0' COMMENT 'Denormalized count maintained by application on join/leave',
   `intelligence_profile` json DEFAULT NULL COMMENT 'Subset of {safe,recaps,multilingual}. NULL = use heuristic.',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_community_public_id` (`public_id`),
   KEY `created_by` (`created_by`),
   KEY `idx_community_name` (`name`),
   CONSTRAINT `communities_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
@@ -398,7 +400,7 @@ CREATE TABLE `community_channel_agents` (
     FOREIGN KEY (`agent_type`) REFERENCES `agent_registry` (`agent_type`),
   CONSTRAINT `fk_cca_updated_by`
     FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------
 -- community_announcements
@@ -604,7 +606,9 @@ CREATE TABLE `knowledge_base` (
   PRIMARY KEY (`id`),
   KEY `idx_channel` (`related_channel`),
   KEY `idx_created` (`created_at`),
-  FULLTEXT KEY `idx_search` (`title`,`content`),
+  -- TiDB only supports single-column FULLTEXT indexes; MySQL accepts this too.
+  -- (This index is currently unused — the knowledge agents match rows in Python.)
+  FULLTEXT KEY `idx_search` (`content`),
   CONSTRAINT `knowledge_base_ibfk_1` FOREIGN KEY (`related_channel`) REFERENCES `channels` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -911,6 +915,7 @@ CREATE TABLE `user_summary_schedules` (
 DROP TABLE IF EXISTS `users`;
 CREATE TABLE `users` (
   `id` int NOT NULL AUTO_INCREMENT,
+  `public_id` char(36) NOT NULL COMMENT 'Opaque external identifier used in URLs/API instead of the sequential int id',
   `email` varchar(255) DEFAULT NULL,
   `display_name` varchar(255) DEFAULT NULL,
   `username` varchar(255) NOT NULL,
@@ -936,6 +941,7 @@ CREATE TABLE `users` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`),
   UNIQUE KEY `email` (`email`),
+  UNIQUE KEY `idx_user_public_id` (`public_id`),
   KEY `idx_user_email` (`email`),
   KEY `idx_username` (`username`),
   KEY `idx_email_verification_token` (`email_verification_token`),

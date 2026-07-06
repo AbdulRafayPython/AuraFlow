@@ -1,22 +1,24 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+// F5 — Explore by Outcome.
+// Two outcome lanes ("For my community" / "For me") replace the static agent
+// grid that was demolished in F1. Outcome cards explain the problem each
+// autonomous agent solves with a miniature simulation, control owner, and
+// visibility scope. Community discovery cards advertise intelligence-profile
+// badges derived locally — no new backend field. Per
+// docs/AUTONOMOUS_AGENT_FRONTEND_REDESIGN.md §9 / §16/F5.
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Search, Users, Compass, Gamepad2, Music, Film, FlaskConical, GraduationCap,
-  Sparkles, TrendingUp, Loader2, Plus, ChevronRight, Home, Verified,
-  ArrowLeft, Hash, MessageSquare, Bot, Brain, Shield, Heart, BookOpen,
-  Focus, Activity, Zap, Eye, Settings, ChevronDown, CheckCircle, Power, User,
-  Languages, Mail, Smile
+  TrendingUp, Loader2, Plus, Home, Verified, Hash,
+  Shield, HandHeart, BookOpen, Crosshair, FileText, Languages,
+  Sparkles, Heart, Smile, MessageSquare,
 } from 'lucide-react';
 import { channelService } from '@/services/channelService';
-import { getAvatarUrl } from '@/lib/utils';
-import { AgentDetailModal } from '@/components/modals/AgentDetailModal';
-import { AgentSettingsModal } from '@/components/modals/AgentSettingsModal';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRealtime } from '@/hooks/useRealtime';
-import { useAIAgents } from '@/contexts/AIAgentContext';
 import type { Community } from '@/types';
-import type { AgentCatalogEntry } from '@/services/aiAgentService';
 import { API_SERVER } from '@/config/api';
+import VisibilityChip, { AgentVisibility } from '@/components/ai-agents/VisibilityChip';
+import { accentFor, accentSoftFor, shortCode, agentLabel, AgentName } from '@/components/ai-agents/AgentAccent';
 
 interface DiscoverCommunitiesProps {
   onClose?: () => void;
@@ -34,161 +36,388 @@ const CATEGORIES = [
 
 const SIDEBAR_ITEMS = [
   { id: 'servers', label: 'Servers', icon: Hash, active: false },
-  { id: 'agents', label: 'AI Agents', icon: Bot, active: false },
 ];
 
-/**
- * Visual skin per agent — purely presentational (gradients, icons, badge labels,
- * footer metric chips). Names / descriptions / category come from the DB.
- * Keys must match `agent_type` returned by /api/agents/catalog.
- */
-type AgentSkin = {
-  Icon: typeof Bot;
-  /** Hover border + button gradient palette (Tailwind tokens) */
-  accent: string;
-  /** Banner gradient (CSS) */
-  banner: string;
-  /** Avatar tile gradient (Tailwind classes) */
-  avatar: string;
-  /** Functional badge (e.g., "Safety", "AI") */
-  badge: { label: string; tone: string };
-  /** Metric chips at card footer */
-  metrics: { Icon: typeof Bot; label: string; accent?: string }[];
-};
+// --- F5 outcome-lane data ------------------------------------------------
+//
+// Outcome cards never call the backend. Each one names the agent that
+// powers it (drives the accent + short code), describes the problem in
+// plain user language, gives one to three mock chat lines, and pins
+// control + visibility.
+//
+// Keep the simulations short and concrete. They are read at a glance.
 
-const AGENT_SKINS: Record<string, AgentSkin> = {
-  moderation: {
-    Icon: Shield, accent: 'red',
-    banner: 'linear-gradient(135deg, #7f1d1d 0%, #ef4444 60%, #f87171 100%)',
-    avatar: 'from-red-500 to-red-600',
-    badge: { label: 'Safety', tone: 'red' },
-    metrics: [
-      { Icon: Shield, label: 'Auto-filter', accent: 'text-red-400' },
-      { Icon: Activity, label: 'Every message' },
-    ],
-  },
-  engagement: {
-    Icon: TrendingUp, accent: 'emerald',
-    banner: 'linear-gradient(135deg, #064e3b 0%, #10b981 60%, #34d399 100%)',
-    avatar: 'from-emerald-500 to-emerald-600',
-    badge: { label: 'Growth', tone: 'emerald' },
-    metrics: [
-      { Icon: TrendingUp, label: 'Analytics', accent: 'text-emerald-400' },
-      { Icon: Users, label: 'Every 30 min' },
-    ],
-  },
-  knowledge_builder: {
-    Icon: BookOpen, accent: 'indigo',
-    banner: 'linear-gradient(135deg, #312e81 0%, #6366f1 60%, #818cf8 100%)',
-    avatar: 'from-indigo-500 to-indigo-600',
-    badge: { label: 'Learn', tone: 'indigo' },
-    metrics: [
-      { Icon: BookOpen, label: 'Q&A', accent: 'text-indigo-400' },
-      { Icon: Search, label: 'Every 2 hrs' },
-    ],
-  },
-  focus: {
-    Icon: Focus, accent: 'orange',
-    banner: 'linear-gradient(135deg, #7c2d12 0%, #f97316 60%, #fb923c 100%)',
-    avatar: 'from-orange-500 to-orange-600',
-    badge: { label: 'Productivity', tone: 'orange' },
-    metrics: [
-      { Icon: Focus, label: 'Topic drift', accent: 'text-orange-400' },
-      { Icon: Activity, label: 'Every 50 msgs' },
-    ],
-  },
-  summarizer: {
-    Icon: Brain, accent: 'blue',
-    banner: 'linear-gradient(135deg, #1e3a5f 0%, #2563eb 60%, #3b82f6 100%)',
-    avatar: 'from-blue-500 to-blue-600',
-    badge: { label: 'AI', tone: 'blue' },
-    metrics: [
-      { Icon: CheckCircle, label: '/summarize', accent: 'text-emerald-400' },
-      { Icon: Activity, label: 'On-demand' },
-    ],
-  },
-  mood_tracker: {
-    Icon: Heart, accent: 'pink',
-    banner: 'linear-gradient(135deg, #831843 0%, #ec4899 60%, #f472b6 100%)',
-    avatar: 'from-pink-500 to-pink-600',
-    badge: { label: 'Sentiment', tone: 'pink' },
-    metrics: [
-      { Icon: CheckCircle, label: 'Auto-track', accent: 'text-emerald-400' },
-      { Icon: Activity, label: 'Every message' },
-    ],
-  },
-  wellness: {
-    Icon: Heart, accent: 'purple',
-    banner: 'linear-gradient(135deg, #4c1d95 0%, #8b5cf6 60%, #a78bfa 100%)',
-    avatar: 'from-purple-500 to-purple-600',
-    badge: { label: 'Wellbeing', tone: 'purple' },
-    metrics: [
-      { Icon: Heart, label: 'Wellness', accent: 'text-purple-400' },
-      { Icon: Activity, label: 'Hourly check' },
-    ],
-  },
-  assistant: {
-    Icon: Sparkles, accent: 'violet',
-    banner: 'linear-gradient(135deg, #4c1d95 0%, #7c3aed 60%, #c4b5fd 100%)',
-    avatar: 'from-violet-500 to-violet-600',
-    badge: { label: 'Q&A', tone: 'violet' },
-    metrics: [
-      { Icon: Sparkles, label: 'Gemini', accent: 'text-violet-400' },
-      { Icon: MessageSquare, label: '/ask' },
-    ],
-  },
-  translator: {
-    Icon: Languages, accent: 'cyan',
-    banner: 'linear-gradient(135deg, #155e75 0%, #06b6d4 60%, #67e8f9 100%)',
-    avatar: 'from-cyan-500 to-cyan-600',
-    badge: { label: '14+ languages', tone: 'cyan' },
-    metrics: [
-      { Icon: Languages, label: 'Multilingual', accent: 'text-cyan-400' },
-      { Icon: Zap, label: 'Instant' },
-    ],
-  },
-  support: {
-    Icon: GraduationCap, accent: 'emerald',
-    banner: 'linear-gradient(135deg, #064e3b 0%, #10b981 60%, #6ee7b7 100%)',
-    avatar: 'from-emerald-500 to-emerald-600',
-    badge: { label: 'Q&A', tone: 'emerald' },
-    metrics: [
-      { Icon: BookOpen, label: 'KB-driven', accent: 'text-emerald-400' },
-      { Icon: MessageSquare, label: '/support' },
-    ],
-  },
-  auto_message: {
-    Icon: Mail, accent: 'amber',
-    banner: 'linear-gradient(135deg, #78350f 0%, #f59e0b 60%, #fcd34d 100%)',
-    avatar: 'from-amber-500 to-amber-600',
-    badge: { label: 'Welcome', tone: 'amber' },
-    metrics: [
-      { Icon: Smile, label: 'Friendly', accent: 'text-amber-400' },
-      { Icon: Activity, label: 'Per-join' },
-    ],
-  },
-};
+type SimLine =
+  | { kind: 'user';  who: string; text: string }
+  | { kind: 'agent'; agent: AgentName; text: string };
 
-const DEFAULT_SKIN: AgentSkin = {
-  Icon: Bot, accent: 'slate',
-  banner: 'linear-gradient(135deg, #0f172a 0%, #475569 60%, #94a3b8 100%)',
-  avatar: 'from-slate-500 to-slate-600',
-  badge: { label: 'Agent', tone: 'slate' },
-  metrics: [
-    { Icon: Bot, label: 'AI', accent: 'text-slate-400' },
-    { Icon: Activity, label: 'Background' },
-  ],
-};
+interface OutcomeCard {
+  id: string;
+  /** Who acts on this outcome. */
+  scope: 'community' | 'personal';
+  /** Drives accent + short code in the sim strip. */
+  agent: AgentName;
+  /** Lane heading icon. */
+  Icon: typeof Shield;
+  /** The promise. Imperative, 2–4 words. */
+  title: string;
+  /** One sentence describing the problem this solves. */
+  problem: string;
+  /** Where users will see the effect. */
+  surface: string;
+  /** Two-line miniature simulation. */
+  sim: SimLine[];
+  /** Owner of the control. */
+  controller: 'Admin' | 'You';
+  /** Visibility scope of the action this outcome produces. */
+  visibility: AgentVisibility;
+}
+
+const COMMUNITY_OUTCOMES: OutcomeCard[] = [
+  {
+    id: 'protect',
+    scope: 'community',
+    agent: 'moderation',
+    Icon: Shield,
+    title: 'Protect discussions',
+    problem: 'Heated threads escalate before a human moderator notices.',
+    surface: 'Inline composer hint + admin Safety tab',
+    sim: [
+      { kind: 'user',  who: 'alex',       text: 'this is honestly the dumbest take I\'ve ever read' },
+      { kind: 'agent', agent: 'moderation', text: 'Softened "dumbest take" — reason: personal attack. Author can override.' },
+    ],
+    controller: 'Admin',
+    visibility: 'admins-only',
+  },
+  {
+    id: 'welcome',
+    scope: 'community',
+    agent: 'auto_message',
+    Icon: HandHeart,
+    title: 'Help newcomers settle in',
+    problem: 'New joiners drop off before they post their first message.',
+    surface: '#welcome channel + DM nudge',
+    sim: [
+      { kind: 'agent', agent: 'auto_message', text: 'Hi @priya — start in #intro, pinned post explains how recaps work.' },
+    ],
+    controller: 'Admin',
+    visibility: 'private-dm',
+  },
+  {
+    id: 'answer',
+    scope: 'community',
+    agent: 'support',
+    Icon: BookOpen,
+    title: 'Answer repeated questions',
+    problem: 'The same setup questions get asked every week.',
+    surface: 'Inline support chip beneath the question',
+    sim: [
+      { kind: 'user',  who: 'mira',    text: 'how do I export my notes?' },
+      { kind: 'agent', agent: 'support', text: 'Likely answer from pinned FAQ — Settings → Export. Helpful?' },
+    ],
+    controller: 'Admin',
+    visibility: 'public-in-channel',
+  },
+  {
+    id: 'focus',
+    scope: 'community',
+    agent: 'focus',
+    Icon: Crosshair,
+    title: 'Keep channels focused',
+    problem: 'Side-quests bury the original question in long threads.',
+    surface: 'Focus drift card inline + Focus rail tab',
+    sim: [
+      { kind: 'agent', agent: 'focus', text: 'Thread drifted from "deployment errors" → "weekend plans". Spin up a side thread?' },
+    ],
+    controller: 'Admin',
+    visibility: 'public-in-channel',
+  },
+  {
+    id: 'recap',
+    scope: 'community',
+    agent: 'summarizer',
+    Icon: FileText,
+    title: 'Catch people up quickly',
+    problem: 'Returning members scroll hundreds of messages to catch up.',
+    surface: 'Summary checkpoints + Recap rail tab',
+    sim: [
+      { kind: 'agent', agent: 'summarizer', text: 'Since you were last here: 3 decisions, 2 open questions, 1 vote closing today.' },
+    ],
+    controller: 'Admin',
+    visibility: 'public-in-channel',
+  },
+  {
+    id: 'multilingual',
+    scope: 'community',
+    agent: 'translator',
+    Icon: Languages,
+    title: 'Support multilingual communities',
+    problem: 'Members miss replies posted in a language they don\'t read.',
+    surface: 'Per-viewer translation footer on each message',
+    sim: [
+      { kind: 'user',  who: 'lucia',      text: '¿alguien probó la nueva versión?' },
+      { kind: 'agent', agent: 'translator', text: 'Translation for you: "Has anyone tried the new version?"' },
+    ],
+    controller: 'Admin',
+    visibility: 'you-only',
+  },
+];
+
+const PERSONAL_OUTCOMES: OutcomeCard[] = [
+  {
+    id: 'assistant',
+    scope: 'personal',
+    agent: 'assistant',
+    Icon: Sparkles,
+    title: 'My Assistant',
+    problem: 'You need help drafting, recalling, or planning without leaving chat.',
+    surface: 'Assistant panel + composer slash commands',
+    sim: [
+      { kind: 'user',  who: 'you',         text: '/assistant draft a status update for the kickoff' },
+      { kind: 'agent', agent: 'assistant', text: 'Draft ready. Tone: concise. Tap to edit before sending.' },
+    ],
+    controller: 'You',
+    visibility: 'you-only',
+  },
+  {
+    id: 'personal-summaries',
+    scope: 'personal',
+    agent: 'summarizer',
+    Icon: FileText,
+    title: 'Personal summaries',
+    problem: 'You want one recap of everything that happened while you were away.',
+    surface: 'Daily digest in your DMs',
+    sim: [
+      { kind: 'agent', agent: 'summarizer', text: 'Overnight: 4 channels active, 2 mentions for you, 1 thread you started got 6 replies.' },
+    ],
+    controller: 'You',
+    visibility: 'private-dm',
+  },
+  {
+    id: 'mood',
+    scope: 'personal',
+    agent: 'mood_tracker',
+    Icon: Smile,
+    title: 'Mood tracking',
+    problem: 'You want a private read on how the week is going without journaling.',
+    surface: 'Personal Automations · Mood module',
+    sim: [
+      { kind: 'agent', agent: 'mood_tracker', text: 'This week reads steadier than last. No one else sees this.' },
+    ],
+    controller: 'You',
+    visibility: 'you-only',
+  },
+  {
+    id: 'wellness',
+    scope: 'personal',
+    agent: 'wellness',
+    Icon: Heart,
+    title: 'Wellness support',
+    problem: 'You\'d like a gentle nudge when the day looks rough — never in public.',
+    surface: 'DM only — never in channel',
+    sim: [
+      { kind: 'agent', agent: 'wellness', text: 'Three late nights in a row — want a 10-minute wind-down playlist?' },
+    ],
+    controller: 'You',
+    visibility: 'private-dm',
+  },
+  {
+    id: 'translator',
+    scope: 'personal',
+    agent: 'translator',
+    Icon: MessageSquare,
+    title: 'Translator',
+    problem: 'You want messages in your preferred language without asking the author.',
+    surface: 'Per-viewer footer beneath each message',
+    sim: [
+      { kind: 'agent', agent: 'translator', text: 'Showing English under each non-English message. Only you see this.' },
+    ],
+    controller: 'You',
+    visibility: 'you-only',
+  },
+];
+
+// Intelligence-profile badges shown on community discovery cards.
+// Backed by `communities.intelligence_profile` (G1c): a JSON array admins can
+// override, falling back to a heuristic over installed-and-enabled community
+// agents (moderation→safe, summarizer→recaps, translator→multilingual).
+// Admin override UI lives elsewhere — this surface is read-only.
+const INTEL_BADGES = [
+  { id: 'safe',         label: 'Safe Space',    agent: 'moderation' as AgentName, Icon: Shield },
+  { id: 'recaps',       label: 'Daily Recaps',  agent: 'summarizer' as AgentName, Icon: FileText },
+  { id: 'multilingual', label: 'Multilingual',  agent: 'translator' as AgentName, Icon: Languages },
+];
+
+function badgesFromProfile(profile?: string[]): typeof INTEL_BADGES {
+  if (!profile || profile.length === 0) return [];
+  const byId = new Map(INTEL_BADGES.map(b => [b.id, b]));
+  return profile
+    .map(id => byId.get(id))
+    .filter((b): b is (typeof INTEL_BADGES)[number] => !!b);
+}
+
+// --- F5 outcome card -----------------------------------------------------
+
+function OutcomeCardView({ card }: { card: OutcomeCard }) {
+  const accent = accentFor(card.agent);
+  const { Icon } = card;
+  return (
+    <article
+      className="
+        group relative flex flex-col rounded-md overflow-hidden
+        border border-[hsl(var(--theme-border-default))]
+        bg-[hsl(var(--theme-bg-elevated,var(--theme-bg-secondary)))]
+        hover:border-[hsl(var(--theme-border-default))]
+        transition-colors
+      "
+    >
+      {/* 2px left accent rail — one accent per surface, never panel fill. */}
+      <span
+        aria-hidden
+        className="absolute left-0 top-0 bottom-0 w-[2px]"
+        style={{ background: accent }}
+      />
+
+      {/* Header: icon + title + control owner */}
+      <header className="flex items-start gap-3 px-4 pt-4 pb-2">
+        <span
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-[hsl(var(--theme-border-default))]"
+          style={{ color: accent }}
+          aria-hidden
+        >
+          <Icon className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h4 className="text-[13px] font-semibold leading-5 text-[hsl(var(--theme-text-primary))]">
+            {card.title}
+          </h4>
+          <p className="text-[11px] uppercase tracking-wide text-[hsl(var(--theme-text-muted))] mt-0.5">
+            {card.controller} controls · {agentLabel(card.agent)}
+          </p>
+        </div>
+      </header>
+
+      {/* Problem statement */}
+      <p className="px-4 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+        {card.problem}
+      </p>
+
+      {/* Simulation strip — 1 to 3 lines */}
+      <div className="mt-3 mx-4 rounded border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-primary))]">
+        <div className="px-3 py-2 border-b border-[hsl(var(--theme-border-default))]">
+          <span className="text-[10px] uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+            What it looks like
+          </span>
+        </div>
+        <ul className="px-3 py-2 space-y-1.5">
+          {card.sim.map((line, i) =>
+            line.kind === 'user' ? (
+              <li
+                key={i}
+                className="flex gap-2 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]"
+              >
+                <span className="text-[hsl(var(--theme-text-muted))] font-medium">@{line.who}</span>
+                <span className="min-w-0 flex-1 truncate">{line.text}</span>
+              </li>
+            ) : (
+              <li
+                key={i}
+                className="flex items-start gap-2 text-[12px] leading-5"
+              >
+                <span
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium flex-shrink-0"
+                  style={{
+                    color: accentFor(line.agent),
+                    background: accentSoftFor(line.agent, 0.10),
+                  }}
+                  title={`${agentLabel(line.agent)} (${shortCode(line.agent)})`}
+                >
+                  {agentLabel(line.agent)}
+                </span>
+                <span className="min-w-0 flex-1 text-[hsl(var(--theme-text-primary))]">{line.text}</span>
+              </li>
+            ),
+          )}
+        </ul>
+      </div>
+
+      {/* Footer: surface + visibility */}
+      <footer className="mt-3 px-4 pb-4 flex items-center justify-between gap-2">
+        <span className="text-[11px] text-[hsl(var(--theme-text-muted))] truncate">
+          {card.surface}
+        </span>
+        <VisibilityChip visibility={card.visibility} />
+      </footer>
+    </article>
+  );
+}
+
+function OutcomeLane({
+  title,
+  subtitle,
+  cards,
+  Icon,
+}: {
+  title: string;
+  subtitle: string;
+  cards: OutcomeCard[];
+  Icon: typeof Compass;
+}) {
+  return (
+    <section className="mb-10">
+      <div className="mb-4 flex items-end justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-semibold text-[hsl(var(--theme-text-primary))]">
+            <Icon className="h-5 w-5 text-[hsl(var(--theme-text-secondary))]" />
+            {title}
+          </h2>
+          <p className="mt-1 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+            {subtitle}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {cards.map(card => (
+          <OutcomeCardView key={card.id} card={card} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function IntelBadgeRow({ profile }: { profile?: string[] }) {
+  const badges = badgesFromProfile(profile);
+  if (badges.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mb-2">
+      {badges.map(b => {
+        const accent = accentFor(b.agent);
+        return (
+          <span
+            key={b.id}
+            title={b.label}
+            className="
+              inline-flex items-center gap-1 rounded border
+              border-[hsl(var(--theme-border-default))]
+              bg-[hsl(var(--theme-bg-primary)/0.6)]
+              px-1.5 py-0.5 text-[10px] font-medium
+            "
+            style={{ color: accent }}
+          >
+            <b.Icon className="h-3 w-3" aria-hidden />
+            {b.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function DiscoverCommunities({ onClose, onJoinCommunity }: DiscoverCommunitiesProps) {
-  const navigate = useNavigate();
   const { isDarkMode } = useTheme();
   const { currentCommunity } = useRealtime();
-  const { agentStatus, getAgentCatalog } = useAIAgents();
-  const [catalog, setCatalog] = useState<AgentCatalogEntry[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState<'servers' | 'agents'>('servers');
-  const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
+  const [activeSection, setActiveSection] = useState<'servers'>('servers');
   const [communities, setCommunities] = useState<Community[]>([]);
   const [featuredCommunities, setFeaturedCommunities] = useState<Community[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -199,10 +428,6 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
   const [offset, setOffset] = useState(0);
   const [joiningId, setJoiningId] = useState<number | null>(null);
   const [isScrolled, setIsScrolled] = useState(false);
-  const [selectedAgentType, setSelectedAgentType] = useState<string | null>(null);
-  const [agentDetailOpen, setAgentDetailOpen] = useState(false);
-  const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
-  const [settingsAgentType, setSettingsAgentType] = useState<string | null>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -244,28 +469,6 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
     fetchCommunities('', true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Load agent catalog from DB whenever we switch to the Agents tab
-  useEffect(() => {
-    if (activeSection !== 'agents' || catalog.length > 0) return;
-    let cancelled = false;
-    setCatalogLoading(true);
-    getAgentCatalog(currentCommunity?.id)
-      .then((res) => { if (!cancelled) setCatalog(res); })
-      .catch((err) => { console.error('[Discover] catalog load failed', err); })
-      .finally(() => { if (!cancelled) setCatalogLoading(false); });
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSection, currentCommunity?.id]);
-
-  const communityAgents = useMemo(
-    () => catalog.filter((a) => a.category === 'community'),
-    [catalog]
-  );
-  const personalAgents = useMemo(
-    () => catalog.filter((a) => a.category === 'personal'),
-    [catalog]
-  );
 
   // Handle search with debounce
   const handleSearch = (value: string) => {
@@ -313,16 +516,6 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
     }
   };
 
-  const handleAgentCardClick = (agentType: string) => {
-    setSelectedAgentType(agentType);
-    setAgentDetailOpen(true);
-  };
-
-  const handleAgentConfigure = (agentType: string) => {
-    setSettingsAgentType(agentType);
-    setAgentSettingsOpen(true);
-  };
-
   const getCommunityLogoUrl = (community: Community) => {
     if (!community.logo_url) return null;
     return `${API_SERVER}${community.logo_url}`;
@@ -343,65 +536,6 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
     return count.toString();
   };
 
-  /**
-   * Single agent card. Visual skin is local (AGENT_SKINS), but display_name,
-   * description, category and order all come from the DB row.
-   */
-  const renderAgentCard = (agent: AgentCatalogEntry) => {
-    const skin = AGENT_SKINS[agent.agent_type] ?? DEFAULT_SKIN;
-    const { Icon } = skin;
-    const accent = skin.accent;
-    const isPersonal = agent.category === 'personal';
-    const categoryBadge = isPersonal
-      ? { label: 'Personal', tone: 'violet' }
-      : { label: 'Community', tone: 'blue' };
-
-    return (
-      <div
-        key={agent.agent_type}
-        onClick={() => handleAgentCardClick(agent.agent_type)}
-        className={`group relative rounded-xl overflow-hidden border border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-${accent}-500/40 transition-all duration-300 hover:shadow-lg cursor-pointer`}
-      >
-        <div className="relative h-28 overflow-hidden" style={{ background: skin.banner }}>
-          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-          <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
-            <Icon className="w-32 h-32" />
-          </div>
-        </div>
-        <div className={`absolute left-4 top-20 w-14 h-14 rounded-xl overflow-hidden ring-4 ring-[hsl(var(--theme-bg-secondary))] shadow-lg bg-gradient-to-br ${skin.avatar} flex items-center justify-center`}>
-          <Icon className="w-7 h-7 text-white" />
-        </div>
-        <div className="pt-8 pb-4 px-4">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <h3 className="font-bold text-sm text-[hsl(var(--theme-text-primary))]">{agent.display_name}</h3>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium bg-${skin.badge.tone}-500/10 text-${skin.badge.tone}-400 border border-${skin.badge.tone}-500/20`}>
-              {skin.badge.label}
-            </span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium bg-${categoryBadge.tone}-500/10 text-${categoryBadge.tone}-400 border border-${categoryBadge.tone}-500/20`}>
-              {categoryBadge.label}
-            </span>
-          </div>
-          <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
-            {agent.description}
-          </p>
-          <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
-            {skin.metrics.map((m, idx) => (
-              <span key={idx} className="flex items-center gap-1">
-                <m.Icon className={`w-3 h-3 ${m.accent ?? ''}`} />
-                {m.label}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
-          <button className={`px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-${accent}-500 to-${accent}-600 hover:shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2`}>
-            <Eye className="w-4 h-4" /> View Details
-          </button>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="h-full flex" style={{ background: 'var(--theme-bg-gradient)' }}>
       {/* Left Sidebar - Hidden on mobile */}
@@ -419,7 +553,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
           {SIDEBAR_ITEMS.map(item => (
             <button
               key={item.id}
-              onClick={() => setActiveSection(item.id as 'servers' | 'agents')}
+              onClick={() => setActiveSection(item.id as 'servers')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeSection === item.id
                   ? 'bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))]'
                   : 'text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]'
@@ -434,217 +568,6 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'hsl(var(--theme-bg-primary))' }}>
-        {activeSection === 'agents' ? (
-          /* AI Agents Section — full page matching Servers layout */
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Sticky Navigation Bar */}
-            <div className={`sticky top-0 z-30 transition-all duration-300 ${isScrolled
-                ? 'bg-[hsl(var(--theme-bg-primary))] shadow-lg border-b border-[hsl(var(--theme-border-default)/0.3)]'
-                : !isDarkMode
-                  ? 'bg-[hsl(var(--theme-bg-primary)/0.85)] backdrop-blur-sm shadow-sm'
-                  : 'bg-transparent'
-              }`}>
-              <div className={`h-12 flex items-center justify-center border-b transition-colors duration-300 ${isScrolled
-                  ? 'border-[hsl(var(--theme-border-default)/0.3)]'
-                  : !isDarkMode
-                    ? 'border-[hsl(var(--theme-border-default)/0.2)]'
-                    : 'border-white/5'
-                }`}>
-                <div className="flex items-center gap-2">
-                  <Bot className={`w-5 h-5 transition-colors duration-300 ${isScrolled
-                      ? 'text-[hsl(var(--theme-text-secondary))]'
-                      : !isDarkMode
-                        ? 'text-[hsl(var(--theme-text-primary))]'
-                        : 'text-white/80'
-                    }`} />
-                  <span className={`text-sm font-semibold ${isScrolled
-                      ? 'text-[hsl(var(--theme-text-primary))]'
-                      : !isDarkMode
-                        ? 'text-[hsl(var(--theme-text-primary))]'
-                        : 'text-white'
-                    }`}>AI Agents</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Scrollable Content */}
-            <div
-              className="flex-1 overflow-y-auto"
-              style={{ background: 'hsl(var(--theme-bg-primary))' }}
-              onScroll={(e) => {
-                const scrollTop = (e.target as HTMLDivElement).scrollTop;
-                setIsScrolled(scrollTop > 10);
-              }}
-            >
-              {/* Hero Section */}
-              <div className="relative">
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    background: 'linear-gradient(140deg, #1a1a2e 0%, #16213e 20%, #0f3460 45%, #533483 70%, #7b2d8e 85%, #e94560 100%)',
-                  }}
-                />
-                <div className="absolute inset-0 overflow-hidden">
-                  <div className="absolute right-0 top-0 w-[500px] h-[500px] bg-purple-500/10 rounded-full blur-[100px]" />
-                  <div className="absolute -left-20 bottom-0 w-[400px] h-[400px] bg-blue-600/15 rounded-full blur-[80px]" />
-                  {/* Subtle grid pattern */}
-                  <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
-                </div>
-
-                <div className="relative z-10 px-4 sm:px-8 pt-6 sm:pt-8 pb-8 sm:pb-12">
-                  <h1
-                    className="text-2xl sm:text-4xl lg:text-[48px] font-extrabold text-white mb-3 leading-[1.1] tracking-tight"
-                    style={{
-                      fontFamily: "'Ginto', 'Helvetica Neue', Helvetica, Arial, sans-serif",
-                      fontStyle: 'italic',
-                      fontWeight: 900,
-                      letterSpacing: '-0.5px',
-                    }}
-                  >
-                    BUILT-IN INTELLIGENCE<br />FOR YOUR COMMUNITY
-                  </h1>
-                  <p className="text-white/70 text-[15px] max-w-lg">
-                    {catalog.length > 0 ? catalog.length : 'Multiple'} specialized agents that work behind the scenes moderating, summarizing, and keeping your community healthy.
-                  </p>
-                </div>
-              </div>
-
-              {/* Content Below Hero */}
-              <div style={{ background: 'hsl(var(--theme-bg-primary))' }}>
-                <div className="p-6">
-
-                  {/* Overview Stats — counts come from /api/agents/catalog */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-10">
-                    {[
-                      { label: 'Community Agents', value: catalogLoading && catalog.length === 0 ? '—' : String(communityAgents.length), icon: Users, accent: 'text-blue-400' },
-                      { label: 'Personal Agents', value: catalogLoading && catalog.length === 0 ? '—' : String(personalAgents.length), icon: User, accent: 'text-violet-400' },
-                      { label: 'Always On', value: '24/7', icon: Zap, accent: 'text-amber-400' },
-                      { label: 'Zero Config', value: 'Ready', icon: CheckCircle, accent: 'text-emerald-400' },
-                    ].map((stat, i) => (
-                      <div key={i} className="p-4 rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.5)] border-[hsl(var(--theme-border-default)/0.5)]">
-                        <stat.icon className={`w-5 h-5 mb-2 ${stat.accent}`} />
-                        <p className="text-xl font-bold text-[hsl(var(--theme-text-primary))]">{stat.value}</p>
-                        <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">{stat.label}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* ═══════════════════════════════════════════════════
-                      COMMUNITY AGENTS — Admin-installed, server-wide
-                      Driven by /api/agents/catalog → agent_registry table.
-                      ═══════════════════════════════════════════════════ */}
-                  <div className="mb-10">
-                    <div className="flex items-center gap-3 mb-1">
-                      <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
-                        <Users className="w-5 h-5 text-blue-400" />
-                        Community Agents
-                      </h2>
-                      <span className="text-[10px] px-2.5 py-0.5 rounded-full font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider">Admin</span>
-                    </div>
-                    <p className="text-xs text-[hsl(var(--theme-text-muted))] mb-5 ml-7">
-                      Installed by community admins and run server-wide across all channels.
-                    </p>
-
-                    {catalogLoading && communityAgents.length === 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {[0, 1, 2, 3].map((i) => (
-                          <div key={i} className="h-44 rounded-xl border border-[hsl(var(--theme-border-default)/0.4)] bg-[hsl(var(--theme-bg-secondary)/0.3)] animate-pulse" />
-                        ))}
-                      </div>
-                    ) : communityAgents.length === 0 ? (
-                      <div className="p-6 rounded-xl border border-[hsl(var(--theme-border-default)/0.4)] bg-[hsl(var(--theme-bg-secondary)/0.3)] text-center text-sm text-[hsl(var(--theme-text-muted))]">
-                        No community agents are currently registered.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
-                        {communityAgents.map(renderAgentCard)}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ═══════════════════════════════════════════════════
-                      PERSONAL AGENTS — User-activated, per-individual
-                      Driven by /api/agents/catalog → agent_registry table.
-                      ═══════════════════════════════════════════════════ */}
-                  <div className="mb-10">
-                    <div className="flex items-center gap-3 mb-1">
-                      <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
-                        <User className="w-5 h-5 text-violet-400" />
-                        Personal Agents
-                      </h2>
-                      <span className="text-[10px] px-2.5 py-0.5 rounded-full font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/20 uppercase tracking-wider">User</span>
-                    </div>
-                    <p className="text-xs text-[hsl(var(--theme-text-muted))] mb-5 ml-7">
-                      Activated by individual users. Each person controls their own personal agents.
-                    </p>
-
-                    {catalogLoading && personalAgents.length === 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {[0, 1, 2, 3, 4, 5].map((i) => (
-                          <div key={i} className="h-44 rounded-xl border border-[hsl(var(--theme-border-default)/0.4)] bg-[hsl(var(--theme-bg-secondary)/0.3)] animate-pulse" />
-                        ))}
-                      </div>
-                    ) : personalAgents.length === 0 ? (
-                      <div className="p-6 rounded-xl border border-[hsl(var(--theme-border-default)/0.4)] bg-[hsl(var(--theme-bg-secondary)/0.3)] text-center text-sm text-[hsl(var(--theme-text-muted))]">
-                        No personal agents are currently registered.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {personalAgents.map(renderAgentCard)}
-                      </div>
-                    )}
-                  </div>
-
-
-                  {/* How It Works Section */}
-                  <div className="mb-10">
-                    <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] mb-5 flex items-center gap-2">
-                      <Settings className="w-5 h-5 text-[hsl(var(--theme-text-muted))]" />
-                      How It Works
-                    </h2>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div className="p-5 rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.4)]">
-                        <div className="w-8 h-8 rounded-lg bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))] flex items-center justify-center font-bold text-sm mb-3">1</div>
-                        <h3 className="font-semibold text-sm text-[hsl(var(--theme-text-primary))] mb-1">Choose Your Agents</h3>
-                        <p className="text-xs text-[hsl(var(--theme-text-muted))] leading-relaxed">
-                          Community agents are installed by admins server-wide. Personal agents are activated by each user individually.
-                        </p>
-                      </div>
-                      <div className="p-5 rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.4)]">
-                        <div className="w-8 h-8 rounded-lg bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))] flex items-center justify-center font-bold text-sm mb-3">2</div>
-                        <h3 className="font-semibold text-sm text-[hsl(var(--theme-text-primary))] mb-1">Enable & Configure</h3>
-                        <p className="text-xs text-[hsl(var(--theme-text-muted))] leading-relaxed">
-                          Toggle agents on or off, adjust sensitivity thresholds, and set notification preferences.
-                        </p>
-                      </div>
-                      <div className="p-5 rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.4)]">
-                        <div className="w-8 h-8 rounded-lg bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))] flex items-center justify-center font-bold text-sm mb-3">3</div>
-                        <h3 className="font-semibold text-sm text-[hsl(var(--theme-text-primary))] mb-1">Sit Back & Monitor</h3>
-                        <p className="text-xs text-[hsl(var(--theme-text-muted))] leading-relaxed">
-                          Agents run automatically. Check dashboards for insights, summaries, and moderation logs anytime.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* CTA - Select Community */}
-                  {!currentCommunity && (
-                    <div className="mb-8 p-6 rounded-2xl border bg-[hsl(var(--theme-bg-secondary)/0.4)] border-[hsl(var(--theme-border-default)/0.5)] text-center">
-                      <Bot className="w-10 h-10 mx-auto mb-3 text-[hsl(var(--theme-accent-primary))]" />
-                      <h3 className="font-bold text-[hsl(var(--theme-text-primary))] mb-1">Ready to get started?</h3>
-                      <p className="text-sm text-[hsl(var(--theme-text-secondary))] mb-4 max-w-md mx-auto">
-                        Select a community from the sidebar to activate and configure agents for your channels.
-                      </p>
-                    </div>
-                  )}
-
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <>
             {/* Sticky Navigation Bar */}
             <div
               className={`sticky top-0 z-30 transition-all duration-300 ${isScrolled
@@ -783,6 +706,24 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                   </div>
                 ) : (
                   <div className="p-6">
+                    {/* Explore AI by Outcome (F5) — only on Home, no search */}
+                    {selectedCategory === 'home' && !searchTerm && (
+                      <>
+                        <OutcomeLane
+                          title="For my community"
+                          subtitle="What autonomous intelligence can do once a community admin turns it on."
+                          cards={COMMUNITY_OUTCOMES}
+                          Icon={Compass}
+                        />
+                        <OutcomeLane
+                          title="For me"
+                          subtitle="Private automations no one else in your communities can see."
+                          cards={PERSONAL_OUTCOMES}
+                          Icon={Sparkles}
+                        />
+                      </>
+                    )}
+
                     {/* Featured Communities */}
                     {selectedCategory === 'home' && !searchTerm && featuredCommunities.length > 0 && (
                       <div className="mb-10">
@@ -852,6 +793,9 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                                     </h3>
                                   </div>
 
+                                  {/* F5 — intelligence-profile badges */}
+                                  <IntelBadgeRow profile={community.intelligence_profile} />
+
                                   <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
                                     {community.description || 'A great community to join!'}
                                   </p>
@@ -897,7 +841,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                         <div className="flex flex-col items-center justify-center py-16">
                           <Compass className="w-16 h-16 text-[hsl(var(--theme-text-muted))] mb-4" />
                           <p className="text-lg font-medium text-[hsl(var(--theme-text-secondary))]">
-                            {searchTerm ? 'No communities found' : 'No communities available yet'}
+                            {searchTerm ? 'No communities match that search.' : 'No communities exist on AuraFlow yet.'}
                           </p>
                           <p className="text-sm text-[hsl(var(--theme-text-muted))] mt-1">
                             {searchTerm ? 'Try a different search term' : 'Be the first to create one!'}
@@ -959,6 +903,9 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                                     )}
                                   </div>
 
+                                  {/* F5 — intelligence-profile badges */}
+                                  <IntelBadgeRow profile={community.intelligence_profile} />
+
                                   <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
                                     {community.description || 'A community on AuraFlow'}
                                   </p>
@@ -1010,36 +957,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                 )}
               </div>
             </div>
-          </>
-        )}
       </div>
-
-      {/* Agent Detail Modal */}
-      {selectedAgentType && (
-        <AgentDetailModal
-          open={agentDetailOpen}
-          onClose={() => {
-            setAgentDetailOpen(false);
-            setTimeout(() => setSelectedAgentType(null), 300);
-          }}
-          agentType={selectedAgentType}
-          mode="discover"
-          onSuccess={() => { }}
-        />
-      )}
-
-      {/* Agent Settings Modal */}
-      {settingsAgentType && (
-        <AgentSettingsModal
-          open={agentSettingsOpen}
-          onClose={() => {
-            setAgentSettingsOpen(false);
-            setTimeout(() => setSettingsAgentType(null), 300);
-          }}
-          agentType={settingsAgentType}
-          onSuccess={() => { }}
-        />
-      )}
     </div>
   );
 }

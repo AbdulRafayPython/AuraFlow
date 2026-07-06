@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useFriends } from "../../contexts/FriendsContext";
 import { useAuth } from "../../contexts/AuthContext";
-import { getAvatarUrl, formatCallPreview } from "@/lib/utils";
+import { getAvatarUrl, formatMessagePreview } from "@/lib/utils";
 import { 
   Users, Plus, Home, ChevronRight, LogOut, Moon, Sun, Settings, 
   User, Bell, Shield, Palette, HelpCircle, MessageSquare, ChevronDown, 
@@ -36,6 +36,9 @@ interface FriendsSidebarProps {
   selectedCommunity?: string;
   isMembersModalOpen?: boolean;
   isCommunityManagementModalOpen?: boolean;
+  /** Hide the 72px icon rail — used in the mobile drawer, where the bottom
+   *  nav already covers Home/Friends/Settings and drawer width is scarce. */
+  hideIconRail?: boolean;
 }
 
 const statusColors = {
@@ -52,7 +55,7 @@ const statusGlow = {
   offline: "",
 };
 
-export default function FriendsSidebar({ onNavigate, currentView, selectedCommunity, isMembersModalOpen, isCommunityManagementModalOpen }: FriendsSidebarProps) {
+export default function FriendsSidebar({ onNavigate, currentView, selectedCommunity, isMembersModalOpen, isCommunityManagementModalOpen, hideIconRail = false }: FriendsSidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const isDiscoverPage = location.pathname === '/discover';
@@ -198,9 +201,9 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
 
   const handleFriendClick = (friendId: number) => {
     const friend = friends.find(f => f.id === friendId);
-    if (friend) {
+    if (friend?.public_id) {
       selectFriend(friend.id);
-      navigate(`/dm/${friend.id}`);
+      navigate(`/dm/${friend.public_id}`);
     }
   };
 
@@ -261,8 +264,8 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
 
   return (
     <>
-    <div 
-      className={`flex-shrink-0 h-full flex transition-all duration-300 relative ${showLogoutDialog || isMembersModalOpen || isCommunityManagementModalOpen || showFriendProfileModal ? 'pointer-events-none' : ''}`}
+    <div
+      className={`${hideIconRail ? 'w-full' : 'flex-shrink-0'} h-full flex transition-all duration-300 relative ${showLogoutDialog || isMembersModalOpen || isCommunityManagementModalOpen || showFriendProfileModal ? 'pointer-events-none' : ''}`}
       style={{ 
         overflow: 'visible',
         background: 'var(--theme-sidebar-gradient)'
@@ -283,7 +286,9 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
           opacity: 0.6
         }}
       />
-      {/* Icon Sidebar - Always visible */}
+      {/* Icon Sidebar — hidden in the mobile drawer (hideIconRail), where the
+          bottom nav already covers Home/Friends/Settings and width is scarce. */}
+      {!hideIconRail && (
       <div className="flex flex-col items-center py-3 gap-2 flex-shrink-0 w-[72px] border-r border-[hsl(var(--theme-border-default)/0.3)] relative" style={{ overflow: 'visible' }}>
         {/* Toggle Button */}
         <div className="relative group">
@@ -600,11 +605,12 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
           </div>
         </div>
       </div>
+      )}
 
       {/* Detail Panel */}
-      <div 
-        className={`flex flex-col h-full border-l border-[hsl(var(--theme-border-default)/0.3)] backdrop-blur-sm relative transition-all duration-300 ease-in-out ${
-          isCollapsed ? 'w-0 opacity-0 overflow-hidden border-l-0' : 'w-72 opacity-100'
+      <div
+        className={`flex flex-col h-full backdrop-blur-sm relative transition-all duration-300 ease-in-out ${hideIconRail ? '' : 'border-l border-[hsl(var(--theme-border-default)/0.3)]'} ${
+          isCollapsed ? 'w-0 opacity-0 overflow-hidden border-l-0' : hideIconRail ? 'w-full opacity-100' : 'w-72 opacity-100'
         }`}
         style={{ background: isCollapsed ? 'transparent' : 'hsl(var(--theme-bg-secondary) / 0.3)' }}
       >
@@ -672,7 +678,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                             onClick={() => {
                               selectFriend(conv.user_id);
                               markDMRead(conv.user_id);
-                              navigate(`/dm/${conv.user_id}`);
+                              if (conv.user.public_id) navigate(`/dm/${conv.user.public_id}`);
                             }}
                             className={`w-full text-left px-3 py-2.5 rounded-xl text-sm flex items-center gap-3 transition-all duration-200 group ${
                               isActive
@@ -706,9 +712,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                               {conv.last_message && (
                                 <div className={`text-xs truncate ${dmUnread > 0 ? 'font-semibold text-[hsl(var(--theme-text-secondary))]' : 'text-[hsl(var(--theme-text-muted))]'}`}>
                                   {conv.last_message.sender_id === currentUser?.id ? 'You: ' : ''}
-                                  {conv.last_message.message_type === 'call'
-                                    ? formatCallPreview(conv.last_message.content)
-                                    : conv.last_message.content}
+                                  {formatMessagePreview(conv.last_message)}
                                 </div>
                               )}
                             </div>
@@ -795,16 +799,19 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
 
             {/* Communities Section */}
             <div className="px-3 py-3">
-              <button 
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => toggleSection('communities')}
-                className="w-full flex items-center justify-between mb-2 px-2 py-1 rounded-lg hover:bg-[hsl(var(--theme-bg-hover))] transition-colors"
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection('communities'); } }}
+                className="w-full flex items-center justify-between mb-2 px-2 py-1 rounded-lg hover:bg-[hsl(var(--theme-bg-hover))] transition-colors cursor-pointer"
               >
                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-[hsl(var(--theme-text-muted))]">
                   Communities ({filteredCommunities.length})
                 </h3>
                 <div className="flex items-center gap-1">
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); navigate('/discover'); }} 
+                  <button
+                    onClick={(e) => { e.stopPropagation(); navigate('/discover'); }}
                     className="p-1 rounded-lg transition-colors hover:bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))]"
                     title="Discover Communities"
                   >
@@ -812,7 +819,7 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
                   </button>
                   <ChevronDown className={`w-4 h-4 text-[hsl(var(--theme-text-muted))] transition-transform duration-200 ${expandedSections.communities ? '' : '-rotate-90'}`} />
                 </div>
-              </button>
+              </div>
 
               {expandedSections.communities && (
                 <div className="space-y-1">
@@ -892,7 +899,8 @@ export default function FriendsSidebar({ onNavigate, currentView, selectedCommun
         friend={selectedFriendForModal}
         onMessage={(friendId) => {
           selectFriend(friendId);
-          navigate(`/dm/${friendId}`);
+          const friend = friends.find(f => f.id === friendId);
+          if (friend?.public_id) navigate(`/dm/${friend.public_id}`);
           setShowFriendProfileModal(false);
         }}
       />

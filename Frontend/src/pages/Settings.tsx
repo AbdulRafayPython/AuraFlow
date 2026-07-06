@@ -1141,7 +1141,7 @@ export default function Settings() {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 md:p-10 bg-[hsl(var(--theme-bg-primary)/0.45)] backdrop-blur-md animate-in fade-in duration-150"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 md:p-10"
       role="dialog"
       aria-modal="true"
       aria-labelledby="settings-title"
@@ -1149,8 +1149,19 @@ export default function Settings() {
         if (e.target === e.currentTarget) navigate(-1);
       }}
     >
+      {/* Static blurred backdrop — painted once on its own GPU layer so the
+          open animation never re-rasterizes the blur over the live page. */}
       <div
-        className="relative flex h-full w-full max-w-[1180px] max-h-[92vh] overflow-hidden rounded-xl border border-[hsl(var(--theme-border-default)/0.6)] bg-[hsl(var(--theme-bg-primary))] text-[hsl(var(--theme-text-primary))] shadow-2xl shadow-black/40 animate-in zoom-in-95 fade-in duration-200"
+        aria-hidden
+        className="absolute inset-0 backdrop-blur-sm transform-gpu pointer-events-none"
+      />
+      {/* Dark tint — only the opacity fades, which the compositor handles cheaply. */}
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-[hsl(var(--theme-bg-primary)/0.45)] pointer-events-none animate-in fade-in duration-150"
+      />
+      <div
+        className="relative flex h-full w-full max-w-[1180px] max-h-[92vh] overflow-hidden rounded-xl border border-[hsl(var(--theme-border-default)/0.6)] bg-[hsl(var(--theme-bg-primary))] text-[hsl(var(--theme-text-primary))] shadow-2xl shadow-black/40 transform-gpu will-change-transform animate-in zoom-in-95 fade-in duration-200"
         onClick={(e) => e.stopPropagation()}
       >
 

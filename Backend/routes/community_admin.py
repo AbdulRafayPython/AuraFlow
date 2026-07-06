@@ -16,8 +16,11 @@ from datetime import datetime, timedelta
 from functools import wraps
 import logging
 # FIX 1/6: Cached user-id and role lookups
-from utils import get_user_id
-from services.redis_client import get_member_role, set_member_role, invalidate_member_role
+from utils import get_user_id, resolve_public_community_id
+from services.redis_client import (
+    get_member_role, set_member_role, invalidate_member_role,
+    get_community_public_id, set_community_public_id,
+)
 
 log = logging.getLogger(__name__)
 
@@ -95,8 +98,8 @@ def get_owned_communities():
             # FIX 2: Replace correlated subqueries with derived-table JOINs so the
             # count is computed once per community, not once per row.
             cur.execute("""
-                SELECT 
-                    c.id, c.name, c.icon, c.color, c.logo_url, c.description,
+                SELECT
+                    c.id, c.public_id, c.name, c.icon, c.color, c.logo_url, c.description,
                     cm.role,
                     COALESCE(mc.cnt, 0) as member_count,
                     COALESCE(cc.cnt, 0) as channel_count
@@ -113,11 +116,11 @@ def get_owned_communities():
                 WHERE cm.user_id = %s AND cm.role IN ('owner', 'admin')
                 ORDER BY c.name
             """, (user_id,))
-            
+
             communities = cur.fetchall()
-            
+
             result = [{
-                'id': c['id'],
+                'id': c['public_id'],
                 'name': c['name'],
                 'icon': c['icon'],
                 'color': c['color'],
@@ -147,8 +150,9 @@ def get_owned_communities():
 # COMMUNITY OVERVIEW
 # =====================================
 
-@community_admin_bp.route('/community/<int:community_id>/overview', methods=['GET'])
+@community_admin_bp.route('/community/<uuid:public_id>/overview', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def get_community_overview(community_id):
     """Get overview stats for a specific community."""
@@ -222,15 +226,18 @@ def get_community_overview(community_id):
             
             # Moderation stats - flagged messages today from ai_agent_logs
             # The moderation agent stores action in output_text JSON: {"action": "warn/delete/block", ...}
+            # Scope by community_id (uses idx_agent_logs_community_created) alongside the channel
+            # filter — explicit scoping prevents counts leaking when channels move between communities.
             cur.execute(f"""
                 SELECT COUNT(*) as count FROM ai_agent_logs l
                 JOIN ai_agents a ON l.agent_id = a.id
                 WHERE a.type = 'moderator'
+                AND l.community_id = %s
                 AND l.channel_id IN ({channel_placeholders})
                 AND l.created_at >= %s
                 AND l.output_text NOT LIKE '%%"action": "allow"%%'
                 AND l.output_text NOT LIKE '%%"action":"allow"%%'
-            """, channels + [today_start])
+            """, [community_id] + channels + [today_start])
             flagged_today = cur.fetchone()['count']
             
             # Blocked users
@@ -239,18 +246,19 @@ def get_community_overview(community_id):
             """, (community_id,))
             blocked_users = cur.fetchone()['count']
             
-            # High severity violations from ai_agent_logs
+            # High severity violations from ai_agent_logs (same community scoping as flagged_today)
             cur.execute(f"""
                 SELECT COUNT(*) as count FROM ai_agent_logs l
                 JOIN ai_agents a ON l.agent_id = a.id
                 WHERE a.type = 'moderator'
+                AND l.community_id = %s
                 AND l.channel_id IN ({channel_placeholders})
                 AND l.created_at >= %s
-                AND (l.output_text LIKE '%%"severity": "high"%%' 
+                AND (l.output_text LIKE '%%"severity": "high"%%'
                      OR l.output_text LIKE '%%"severity":"high"%%'
                      OR l.output_text LIKE '%%"severity": "critical"%%'
                      OR l.output_text LIKE '%%"severity":"critical"%%')
-            """, channels + [week_ago])
+            """, [community_id] + channels + [week_ago])
             high_severity = cur.fetchone()['count']
             
             # Calculate message trend
@@ -351,8 +359,9 @@ def get_community_overview(community_id):
 # RECENT ALERTS
 # =====================================
 
-@community_admin_bp.route('/community/<int:community_id>/alerts', methods=['GET'])
+@community_admin_bp.route('/community/<uuid:public_id>/alerts', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def get_community_alerts(community_id):
     """Get recent moderation alerts for a community."""
@@ -423,8 +432,9 @@ def get_community_alerts(community_id):
 # MEMBERS MANAGEMENT
 # =====================================
 
-@community_admin_bp.route('/community/<int:community_id>/members', methods=['GET'])
+@community_admin_bp.route('/community/<uuid:public_id>/members', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def get_community_members(community_id):
     """Get members of a specific community."""
@@ -444,13 +454,13 @@ def get_community_members(community_id):
             channel_placeholders = ','.join(['%s'] * len(channels)) if channels else "''"
             
             query = f"""
-                SELECT 
+                SELECT
                     u.id, u.username, u.display_name, u.email, u.avatar_url,
                     u.status, u.last_seen,
-                    cm.role, cm.joined_at,
-                    (SELECT COUNT(*) FROM messages WHERE sender_id = u.id 
+                    cm.role, cm.joined_at, cm.is_muted,
+                    (SELECT COUNT(*) FROM messages WHERE sender_id = u.id
                      {f'AND channel_id IN ({channel_placeholders})' if channels else 'AND 1=0'}) as message_count,
-                    (SELECT COUNT(*) FROM ai_agent_logs WHERE user_id = u.id 
+                    (SELECT COUNT(*) FROM ai_agent_logs WHERE user_id = u.id
                      AND agent_name = 'moderation'
                      {f'AND channel_id IN ({channel_placeholders})' if channels else 'AND 1=0'}
                      AND JSON_UNQUOTE(JSON_EXTRACT(output_data, '$.action')) != 'allow') as violation_count
@@ -515,6 +525,7 @@ def get_community_members(community_id):
                 'role': m['role'],
                 'joined_at': m['joined_at'].isoformat() if m['joined_at'] else None,
                 'last_seen': m['last_seen'].isoformat() if m['last_seen'] else None,
+                'is_muted': bool(m['is_muted']),
                 'stats': {
                     'message_count': m['message_count'],
                     'violation_count': m['violation_count']
@@ -542,8 +553,9 @@ def get_community_members(community_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/members/<int:user_id>', methods=['GET'])
+@community_admin_bp.route('/community/<uuid:public_id>/members/<int:user_id>', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def get_member_details(community_id, user_id):
     """Get detailed information about a specific member."""
@@ -558,13 +570,13 @@ def get_member_details(community_id, user_id):
             
             # Get user details
             query = f"""
-                SELECT 
+                SELECT
                     u.id, u.username, u.display_name, u.email, u.avatar_url,
                     u.status, u.last_seen, u.created_at as user_created_at,
-                    cm.role, cm.joined_at,
-                    (SELECT COUNT(*) FROM messages WHERE sender_id = u.id 
+                    cm.role, cm.joined_at, cm.is_muted,
+                    (SELECT COUNT(*) FROM messages WHERE sender_id = u.id
                      {f'AND channel_id IN ({channel_placeholders})' if channels else 'AND 1=0'}) as message_count,
-                    (SELECT COUNT(*) FROM ai_agent_logs WHERE user_id = u.id 
+                    (SELECT COUNT(*) FROM ai_agent_logs WHERE user_id = u.id
                      AND agent_name = 'moderation'
                      {f'AND channel_id IN ({channel_placeholders})' if channels else 'AND 1=0'}
                      AND JSON_UNQUOTE(JSON_EXTRACT(output_data, '$.action')) != 'allow') as violation_count
@@ -621,6 +633,7 @@ def get_member_details(community_id, user_id):
                 'joined_at': member['joined_at'].isoformat() if member['joined_at'] else None,
                 'last_seen': member['last_seen'].isoformat() if member['last_seen'] else None,
                 'account_created': member['user_created_at'].isoformat() if member['user_created_at'] else None,
+                'is_muted': bool(member['is_muted']),
                 'stats': {
                     'message_count': member['message_count'],
                     'violation_count': member['violation_count']
@@ -652,8 +665,9 @@ def get_member_details(community_id, user_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/members/<int:user_id>/role', methods=['PUT'])
+@community_admin_bp.route('/community/<uuid:public_id>/members/<int:user_id>/role', methods=['PUT'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def update_member_role(community_id, user_id):
     """Update a member's role in the community."""
@@ -712,19 +726,22 @@ def update_member_role(community_id, user_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/members/<int:user_id>', methods=['DELETE'])
+@community_admin_bp.route('/community/<uuid:public_id>/members/<int:user_id>', methods=['DELETE'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def remove_member(community_id, user_id):
     """Remove a member from the community."""
     conn = None
     try:
         conn = get_db_connection()
+        removed_username = None
         with conn.cursor() as cur:
             # Check if target user exists
             cur.execute("""
-                SELECT role FROM community_members 
-                WHERE community_id = %s AND user_id = %s
+                SELECT cm.role, u.username FROM community_members cm
+                JOIN users u ON u.id = cm.user_id
+                WHERE cm.community_id = %s AND cm.user_id = %s
             """, (community_id, user_id))
             
             member = cur.fetchone()
@@ -733,7 +750,9 @@ def remove_member(community_id, user_id):
             
             if member['role'] == 'owner':
                 return jsonify({'error': 'Cannot remove owner'}), 403
-            
+
+            removed_username = member.get('username')
+
             # Remove from community_members
             cur.execute("""
                 DELETE FROM community_members 
@@ -777,11 +796,310 @@ def remove_member(community_id, user_id):
         except Exception as notif_err:
             log.warning(f"[ADMIN] Removal notification failed: {notif_err}")
 
+        # System event label in chat feed
+        try:
+            from routes.channels import _post_system_message
+            label = removed_username or f"User {user_id}"
+            _post_system_message(community_id, f"{label} was removed from the community")
+        except Exception as _sm_err:
+            log.warning(f"[ADMIN] system msg (remove) failed: {_sm_err}")
+
         return jsonify({'success': True, 'message': 'Member removed'}), 200
-        
+
     except Exception as e:
         log.error(f"[ADMIN] Error removing member: {e}")
         return jsonify({'error': 'Failed to remove member'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# WARN / MUTE / UNMUTE (Community Scoped)
+# =====================================
+# Mirrors the system-admin warn endpoint in routes/admin.py:2813, but scoped to
+# one community and gated by require_community_owner. Logs to admin_audit_logs
+# (via log_admin_action) for cross-admin auditing; warn also lands in the legacy
+# admin_actions table whose enum supports 'warn'. Mute/unmute are NOT in that
+# enum, so they log to admin_audit_logs only — adding enum values would be a
+# schema change (out of scope per OWL-PLAN ground rules).
+# Socket delivery to the target user is handled by create_notification, which
+# already emits to room user_<id> on the default namespace.
+
+
+def _get_community_name(community_id):
+    """Look up the community name for notification copy. Returns '' on miss."""
+    try:
+        with get_db_connection() as nconn:
+            with nconn.cursor() as ncur:
+                ncur.execute("SELECT name FROM communities WHERE id = %s", (community_id,))
+                row = ncur.fetchone()
+                return row['name'] if row else ''
+    except Exception:
+        return ''
+
+
+def _get_community_public_id(community_id):
+    """Resolve internal int id -> external public_id for building client-facing links."""
+    cached = get_community_public_id(community_id)
+    if cached is not None:
+        return cached
+    try:
+        with get_db_connection() as nconn:
+            with nconn.cursor() as ncur:
+                ncur.execute("SELECT public_id FROM communities WHERE id = %s", (community_id,))
+                row = ncur.fetchone()
+                if not row:
+                    return None
+                set_community_public_id(community_id, row['public_id'])
+                return row['public_id']
+    except Exception:
+        return None
+
+
+@community_admin_bp.route('/community/<uuid:public_id>/members/<int:user_id>/warn', methods=['POST'])
+@jwt_required()
+@resolve_public_community_id
+@require_community_owner
+def warn_member(community_id, user_id):
+    """Send a warning to a community member. Logged in admin_actions + admin_audit_logs.
+    Body: { reason: string }
+    """
+    conn = None
+    try:
+        data = request.get_json() or {}
+        reason = (data.get('reason') or '').strip()
+        if not reason:
+            return jsonify({'error': 'Reason is required'}), 400
+        if len(reason) > 1000:
+            return jsonify({'error': 'Reason is too long (max 1000 chars)'}), 400
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Confirm target is a member of THIS community (security boundary —
+            # the decorator only proves the caller is an admin of community_id).
+            cur.execute("""
+                SELECT cm.role, u.username
+                FROM community_members cm
+                INNER JOIN users u ON u.id = cm.user_id
+                WHERE cm.community_id = %s AND cm.user_id = %s
+            """, (community_id, user_id))
+            member = cur.fetchone()
+            if not member:
+                return jsonify({'error': 'Member not found'}), 404
+            if member['role'] == 'owner':
+                return jsonify({'error': 'Cannot warn the community owner'}), 403
+
+            # Legacy table — community_id isn't stored here (table predates
+            # community scoping); admin_audit_logs below carries the scope.
+            cur.execute("""
+                INSERT INTO admin_actions (admin_id, target_user_id, action_type, reason)
+                VALUES (%s, %s, 'warn', %s)
+            """, (request.admin_user_id, user_id, reason))
+
+        conn.commit()
+
+        log_admin_action(
+            actor_user_id=request.admin_user_id,
+            actor_role=actor_role_from_request(request),
+            action='community.member_warn',
+            target_type='user',
+            target_id=user_id,
+            community_id=community_id,
+            metadata={'reason': reason, 'target_username': member['username']},
+        )
+
+        # Notify the warned user (DB row + socket emit handled inside).
+        try:
+            community_name = _get_community_name(community_id) or 'your community'
+            create_notification(
+                user_id=user_id,
+                type='community_warning',
+                title=f'Warning from {community_name}',
+                body=reason,
+                link=f'/community/{_get_community_public_id(community_id)}',
+                related_id=community_id,
+            )
+        except Exception as notif_err:
+            log.warning(f"[ADMIN] Warn notification failed: {notif_err}")
+
+        log.info(f"[ADMIN] Warning issued in community {community_id} to user #{user_id} by {request.admin_username}: {reason}")
+        return jsonify({
+            'success': True,
+            'message': f"Warning sent to {member['username']}"
+        }), 200
+
+    except Exception as e:
+        log.error(f"[ADMIN] Error warning member: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to send warning'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@community_admin_bp.route('/community/<uuid:public_id>/members/<int:user_id>/mute', methods=['POST'])
+@jwt_required()
+@resolve_public_community_id
+@require_community_owner
+def mute_member(community_id, user_id):
+    """Mute a community member (community_members.is_muted=1).
+    Body: { reason: string, duration_minutes?: int }
+    NOTE: duration_minutes is accepted and recorded in the audit log for forward
+    compatibility, but the current schema has no muted_until column — mutes are
+    effectively indefinite until /unmute is called. A timed-mute background job
+    would need a schema change (out of scope per OWL-PLAN).
+    """
+    conn = None
+    try:
+        data = request.get_json() or {}
+        reason = (data.get('reason') or '').strip()
+        if not reason:
+            return jsonify({'error': 'Reason is required'}), 400
+        if len(reason) > 1000:
+            return jsonify({'error': 'Reason is too long (max 1000 chars)'}), 400
+
+        duration_minutes = data.get('duration_minutes')
+        if duration_minutes is not None:
+            try:
+                duration_minutes = int(duration_minutes)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'duration_minutes must be an integer'}), 400
+            if duration_minutes < 1 or duration_minutes > 60 * 24 * 30:  # max 30 days
+                return jsonify({'error': 'duration_minutes must be between 1 and 43200'}), 400
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT cm.role, cm.is_muted, u.username
+                FROM community_members cm
+                INNER JOIN users u ON u.id = cm.user_id
+                WHERE cm.community_id = %s AND cm.user_id = %s
+            """, (community_id, user_id))
+            member = cur.fetchone()
+            if not member:
+                return jsonify({'error': 'Member not found'}), 404
+            if member['role'] == 'owner':
+                return jsonify({'error': 'Cannot mute the community owner'}), 403
+            if member['is_muted']:
+                return jsonify({'error': 'Member is already muted'}), 400
+
+            cur.execute("""
+                UPDATE community_members
+                SET is_muted = 1
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id))
+
+        conn.commit()
+
+        log_admin_action(
+            actor_user_id=request.admin_user_id,
+            actor_role=actor_role_from_request(request),
+            action='community.member_mute',
+            target_type='user',
+            target_id=user_id,
+            community_id=community_id,
+            metadata={
+                'reason': reason,
+                'duration_minutes': duration_minutes,
+                'target_username': member['username'],
+            },
+        )
+
+        try:
+            community_name = _get_community_name(community_id) or 'your community'
+            create_notification(
+                user_id=user_id,
+                type='community_mute',
+                title=f'Muted in {community_name}',
+                body=reason,
+                link=f'/community/{_get_community_public_id(community_id)}',
+                related_id=community_id,
+            )
+        except Exception as notif_err:
+            log.warning(f"[ADMIN] Mute notification failed: {notif_err}")
+
+        log.info(f"[ADMIN] Muted user #{user_id} in community {community_id} by {request.admin_username}")
+        return jsonify({
+            'success': True,
+            'message': f"{member['username']} has been muted",
+        }), 200
+
+    except Exception as e:
+        log.error(f"[ADMIN] Error muting member: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to mute member'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@community_admin_bp.route('/community/<uuid:public_id>/members/<int:user_id>/unmute', methods=['POST'])
+@jwt_required()
+@resolve_public_community_id
+@require_community_owner
+def unmute_member(community_id, user_id):
+    """Lift a mute on a community member (community_members.is_muted=0)."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT cm.is_muted, u.username
+                FROM community_members cm
+                INNER JOIN users u ON u.id = cm.user_id
+                WHERE cm.community_id = %s AND cm.user_id = %s
+            """, (community_id, user_id))
+            member = cur.fetchone()
+            if not member:
+                return jsonify({'error': 'Member not found'}), 404
+            if not member['is_muted']:
+                return jsonify({'error': 'Member is not muted'}), 400
+
+            cur.execute("""
+                UPDATE community_members
+                SET is_muted = 0
+                WHERE community_id = %s AND user_id = %s
+            """, (community_id, user_id))
+
+        conn.commit()
+
+        log_admin_action(
+            actor_user_id=request.admin_user_id,
+            actor_role=actor_role_from_request(request),
+            action='community.member_unmute',
+            target_type='user',
+            target_id=user_id,
+            community_id=community_id,
+            metadata={'target_username': member['username']},
+        )
+
+        try:
+            community_name = _get_community_name(community_id) or 'your community'
+            create_notification(
+                user_id=user_id,
+                type='community_unmute',
+                title=f'Unmuted in {community_name}',
+                body='Your mute has been lifted. You can post again.',
+                link=f'/community/{_get_community_public_id(community_id)}',
+                related_id=community_id,
+            )
+        except Exception as notif_err:
+            log.warning(f"[ADMIN] Unmute notification failed: {notif_err}")
+
+        log.info(f"[ADMIN] Unmuted user #{user_id} in community {community_id} by {request.admin_username}")
+        return jsonify({
+            'success': True,
+            'message': f"{member['username']} has been unmuted",
+        }), 200
+
+    except Exception as e:
+        log.error(f"[ADMIN] Error unmuting member: {e}")
+        if conn:
+            conn.rollback()
+        return jsonify({'error': 'Failed to unmute member'}), 500
     finally:
         if conn:
             conn.close()
@@ -792,8 +1110,9 @@ def remove_member(community_id, user_id):
 # =====================================
 
 # NEW — v2: POST /api/admin/community/<id>/moderation/scan
-@community_admin_bp.route('/community/<int:community_id>/moderation/scan', methods=['POST'])  # NEW — v2
+@community_admin_bp.route('/community/<uuid:public_id>/moderation/scan', methods=['POST'])  # NEW — v2
 @jwt_required()  # NEW — v2
+@resolve_public_community_id
 @require_community_owner  # NEW — v2
 def trigger_retroactive_scan(community_id):  # NEW — v2
     """
@@ -849,8 +1168,9 @@ def trigger_retroactive_scan(community_id):  # NEW — v2
 
 
 # NEW — v2: GET /api/admin/community/<id>/moderation/scan/status
-@community_admin_bp.route('/community/<int:community_id>/moderation/scan/status', methods=['GET'])  # NEW — v2
+@community_admin_bp.route('/community/<uuid:public_id>/moderation/scan/status', methods=['GET'])  # NEW — v2
 @jwt_required()  # NEW — v2
+@resolve_public_community_id
 @require_community_owner  # NEW — v2
 def get_scan_status(community_id):  # NEW — v2
     """
@@ -896,8 +1216,9 @@ def get_scan_status(community_id):  # NEW — v2
     }), 200  # NEW — v2
 
 
-@community_admin_bp.route('/community/<int:community_id>/moderation/flagged', methods=['GET'])
+@community_admin_bp.route('/community/<uuid:public_id>/moderation/flagged', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def get_flagged_messages(community_id):
     """Get flagged messages for a specific community from ai_agent_logs."""
@@ -1066,8 +1387,196 @@ def get_flagged_messages(community_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/moderation/blocked', methods=['GET'])
+# Phase 2.1: thread-context view for a flagged log row.
+# Given an ai_agent_logs row id, return its surrounding messages (±N) from the
+# same channel so the admin can see the flagged content in conversation context
+# without leaving the dashboard. Window is small + bounded — pure window query,
+# no schema changes, scoped to channels of the requesting admin's community.
+@community_admin_bp.route('/community/<uuid:public_id>/moderation/flagged/<int:log_id>/context', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
+@require_community_owner
+def get_flagged_context(community_id, log_id):
+    """Return the flagged message plus ±N surrounding messages from the same channel.
+
+    Query param: `window` (int, default 5, max 20) — messages on each side.
+    Cross-community safety: the log row must belong to a channel inside the
+    requesting community, else 404 (never leak even existence across tenants).
+    """
+    conn = None
+    try:
+        window = min(max(request.args.get('window', 5, type=int), 1), 20)
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # 1) Resolve the log row and its channel/message anchor. We also pull
+            #    the moderator agent's output so the panel can show severity /
+            #    reasons / action alongside the flagged text without a second call.
+            cur.execute("""
+                SELECT
+                    l.id AS log_id,
+                    l.channel_id,
+                    l.message_id,
+                    l.user_id,
+                    l.input_text,
+                    l.output_text,
+                    l.confidence_score,
+                    l.created_at AS log_created_at,
+                    ch.community_id,
+                    ch.name AS channel_name
+                FROM ai_agent_logs l
+                JOIN ai_agents a ON l.agent_id = a.id
+                JOIN channels ch ON l.channel_id = ch.id
+                WHERE l.id = %s AND a.type = 'moderator'
+            """, (log_id,))
+            log_row = cur.fetchone()
+
+            if not log_row or log_row['community_id'] != community_id:
+                return jsonify({'error': 'Flagged log not found in this community'}), 404
+
+            channel_id = log_row['channel_id']
+            anchor_message_id = log_row['message_id']
+            anchor_created_at = log_row['log_created_at']
+
+            # 2) Pick the anchor we'll window around.
+            #    Prefer the original message row (message_id present + still in
+            #    the table). If the message was deleted, fall back to the log
+            #    timestamp so we still return *something* useful — an empty
+            #    panel would just confuse the admin.
+            anchor_row = None
+            if anchor_message_id:
+                cur.execute("""
+                    SELECT id, created_at FROM messages
+                    WHERE id = %s AND channel_id = %s
+                """, (anchor_message_id, channel_id))
+                anchor_row = cur.fetchone()
+
+            if anchor_row:
+                # Window by id around the anchor message id. Using id (auto-inc)
+                # is monotonic per channel and avoids ties on identical created_at.
+                cur.execute("""
+                    SELECT
+                        m.id, m.channel_id, m.sender_id, m.content, m.message_type,
+                        m.reply_to, m.created_at, m.edited_at,
+                        m.moderation_flagged, m.moderation_score,
+                        u.username, u.display_name, u.avatar_url
+                    FROM messages m
+                    LEFT JOIN users u ON m.sender_id = u.id
+                    WHERE m.channel_id = %s
+                      AND m.id IN (
+                          SELECT id FROM (
+                              (SELECT id FROM messages
+                                  WHERE channel_id = %s AND id <= %s
+                                  ORDER BY id DESC LIMIT %s)
+                              UNION
+                              (SELECT id FROM messages
+                                  WHERE channel_id = %s AND id > %s
+                                  ORDER BY id ASC LIMIT %s)
+                          ) AS w
+                      )
+                    ORDER BY m.id ASC
+                """, (
+                    channel_id,
+                    channel_id, anchor_row['id'], window + 1,  # +1 to include the anchor itself
+                    channel_id, anchor_row['id'], window,
+                ))
+            else:
+                # Anchor message gone — window by created_at against the log row.
+                cur.execute("""
+                    SELECT
+                        m.id, m.channel_id, m.sender_id, m.content, m.message_type,
+                        m.reply_to, m.created_at, m.edited_at,
+                        m.moderation_flagged, m.moderation_score,
+                        u.username, u.display_name, u.avatar_url
+                    FROM messages m
+                    LEFT JOIN users u ON m.sender_id = u.id
+                    WHERE m.channel_id = %s
+                      AND m.id IN (
+                          SELECT id FROM (
+                              (SELECT id FROM messages
+                                  WHERE channel_id = %s AND created_at <= %s
+                                  ORDER BY created_at DESC, id DESC LIMIT %s)
+                              UNION
+                              (SELECT id FROM messages
+                                  WHERE channel_id = %s AND created_at > %s
+                                  ORDER BY created_at ASC, id ASC LIMIT %s)
+                          ) AS w
+                      )
+                    ORDER BY m.created_at ASC, m.id ASC
+                """, (
+                    channel_id,
+                    channel_id, anchor_created_at, window,
+                    channel_id, anchor_created_at, window,
+                ))
+            window_rows = cur.fetchall()
+
+            messages_payload = [{
+                'id': r['id'],
+                'channel_id': r['channel_id'],
+                'sender': {
+                    'id': r['sender_id'],
+                    'username': r['username'],
+                    'display_name': r['display_name'],
+                    'avatar_url': r['avatar_url'],
+                } if r['sender_id'] else None,
+                'content': r['content'],
+                'message_type': r['message_type'],
+                'reply_to': r['reply_to'],
+                'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+                'edited_at': r['edited_at'].isoformat() if r['edited_at'] else None,
+                'moderation_flagged': bool(r['moderation_flagged']),
+                'moderation_score': r['moderation_score'],
+                # Marker the UI uses to highlight the flagged row inside the window.
+                'is_flagged_anchor': bool(anchor_row and r['id'] == anchor_row['id']),
+            } for r in window_rows]
+
+            # Parse moderator output_text once so the frontend doesn't need to.
+            import json
+            try:
+                output_data = json.loads(log_row['output_text']) if log_row['output_text'] else {}
+            except Exception:
+                output_data = {}
+
+            reasons = output_data.get('reasons', []) or []
+
+            return jsonify({
+                'success': True,
+                'log': {
+                    'id': log_row['log_id'],
+                    'channel': {
+                        'id': channel_id,
+                        'name': log_row['channel_name'],
+                    },
+                    'user_id': log_row['user_id'],
+                    'message_id': anchor_message_id,
+                    'message_deleted': anchor_message_id is not None and anchor_row is None,
+                    'flagged_text': log_row['input_text'],
+                    'confidence': log_row['confidence_score'],
+                    'action': output_data.get('action', 'flagged'),
+                    'severity': output_data.get('severity', 'medium'),
+                    'reasons': reasons,
+                    'flag_type': reasons[0] if reasons else 'unknown',
+                    'created_at': anchor_created_at.isoformat() if anchor_created_at else None,
+                },
+                'context': {
+                    'window': window,
+                    'messages': messages_payload,
+                },
+            }), 200
+
+    except Exception as e:
+        log.error(f"[ADMIN] Error getting flagged context for log {log_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Failed to fetch flagged context'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@community_admin_bp.route('/community/<uuid:public_id>/moderation/blocked', methods=['GET'])
+@jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def get_blocked_users(community_id):
     """Get blocked users for a specific community."""
@@ -1138,8 +1647,9 @@ def get_blocked_users(community_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/moderation/unblock/<int:user_id>', methods=['DELETE'])
+@community_admin_bp.route('/community/<uuid:public_id>/moderation/unblock/<int:user_id>', methods=['DELETE'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def unblock_user(community_id, user_id):
     """Unblock a user from a community."""
@@ -1183,8 +1693,9 @@ def unblock_user(community_id, user_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/moderation/block', methods=['POST'])
+@community_admin_bp.route('/community/<uuid:public_id>/moderation/block', methods=['POST'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def block_user(community_id):
     """Block a user from a community."""
@@ -1198,11 +1709,13 @@ def block_user(community_id):
             return jsonify({'error': 'user_id is required'}), 400
         
         conn = get_db_connection()
+        banned_username = None
         with conn.cursor() as cur:
             # Check if user is a member
             cur.execute("""
-                SELECT role FROM community_members 
-                WHERE community_id = %s AND user_id = %s
+                SELECT cm.role, u.username FROM community_members cm
+                JOIN users u ON u.id = cm.user_id
+                WHERE cm.community_id = %s AND cm.user_id = %s
             """, (community_id, user_id))
             
             member = cur.fetchone()
@@ -1211,6 +1724,8 @@ def block_user(community_id):
             
             if member['role'] == 'owner':
                 return jsonify({'error': 'Cannot block owner'}), 403
+
+            banned_username = member.get('username')
             
             # Check if already blocked
             cur.execute("""
@@ -1262,6 +1777,14 @@ def block_user(community_id):
             metadata={'reason': reason},
         )
 
+        # System event label in chat feed
+        try:
+            from routes.channels import _post_system_message
+            label = banned_username or f"User {user_id}"
+            _post_system_message(community_id, f"{label} was banned from the community")
+        except Exception as _sm_err:
+            log.warning(f"[ADMIN] system msg (ban) failed: {_sm_err}")
+
         return jsonify({'success': True, 'message': 'User blocked'}), 200
         
     except Exception as e:
@@ -1276,8 +1799,9 @@ def block_user(community_id):
 # ANALYTICS (Community Scoped)
 # =====================================
 
-@community_admin_bp.route('/community/<int:community_id>/analytics/engagement', methods=['GET'])
+@community_admin_bp.route('/community/<uuid:public_id>/analytics/engagement', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def get_engagement_analytics(community_id):
     """Get engagement analytics for a community."""
@@ -1376,8 +1900,9 @@ def get_engagement_analytics(community_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/analytics/mood', methods=['GET'])
+@community_admin_bp.route('/community/<uuid:public_id>/analytics/mood', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def get_mood_trends(community_id):
     """
@@ -1599,8 +2124,9 @@ def get_mood_trends(community_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/analytics/health', methods=['GET'])
+@community_admin_bp.route('/community/<uuid:public_id>/analytics/health', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner  
 def get_community_health(community_id):
     """
@@ -1900,8 +2426,9 @@ def get_community_health(community_id):
 # PER-COMMUNITY AGENT SETTINGS (§3.4)
 # =====================================
 
-@community_admin_bp.route('/community/<int:community_id>/agents', methods=['GET'])
+@community_admin_bp.route('/community/<uuid:public_id>/agents', methods=['GET'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def list_community_agents(community_id):
     """
@@ -1975,8 +2502,9 @@ def list_community_agents(community_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/agents/<agent_type>', methods=['PUT'])
+@community_admin_bp.route('/community/<uuid:public_id>/agents/<agent_type>', methods=['PUT'])
 @jwt_required()
+@resolve_public_community_id
 @require_community_owner
 def update_community_agent(community_id, agent_type):
     """
@@ -2041,10 +2569,12 @@ def update_community_agent(community_id, agent_type):
 # §3.6 Announcements (stretch)
 # ------------------------------------------------------------
 
-@community_admin_bp.route('/community/<int:community_id>/announcements', methods=['GET'])
+@community_admin_bp.route('/community/<uuid:public_id>/announcements', methods=['GET'])
+@jwt_required()
+@resolve_public_community_id
+@require_community_owner
 def list_announcements(community_id):
     """List active announcements for a community."""
-    require_community_owner(community_id)
     conn = None
     try:
         conn = get_db_connection()
@@ -2071,10 +2601,12 @@ def list_announcements(community_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/announcements', methods=['POST'])
+@community_admin_bp.route('/community/<uuid:public_id>/announcements', methods=['POST'])
+@jwt_required()
+@resolve_public_community_id
+@require_community_owner
 def create_announcement(community_id):
     """Create a new announcement."""
-    require_community_owner(community_id)
     data = request.get_json()
     title = data.get('title', '').strip()
     body = data.get('body', '').strip()
@@ -2118,10 +2650,12 @@ def create_announcement(community_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/announcements/<int:announcement_id>', methods=['PUT'])
+@community_admin_bp.route('/community/<uuid:public_id>/announcements/<int:announcement_id>', methods=['PUT'])
+@jwt_required()
+@resolve_public_community_id
+@require_community_owner
 def update_announcement(community_id, announcement_id):
     """Update an announcement."""
-    require_community_owner(community_id)
     data = request.get_json()
     title = data.get('title', '').strip()
     body = data.get('body', '').strip()
@@ -2182,10 +2716,12 @@ def update_announcement(community_id, announcement_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/announcements/<int:announcement_id>', methods=['DELETE'])
+@community_admin_bp.route('/community/<uuid:public_id>/announcements/<int:announcement_id>', methods=['DELETE'])
+@jwt_required()
+@resolve_public_community_id
+@require_community_owner
 def delete_announcement(community_id, announcement_id):
     """Delete (deactivate) an announcement."""
-    require_community_owner(community_id)
     conn = None
     try:
         conn = get_db_connection()
@@ -2219,23 +2755,34 @@ def delete_announcement(community_id, announcement_id):
 # §3.6 Block Appeals (stretch)
 # ------------------------------------------------------------
 
-@community_admin_bp.route('/community/<int:community_id>/appeals', methods=['GET'])
+@community_admin_bp.route('/community/<uuid:public_id>/appeals', methods=['GET'])
+@jwt_required()
+@resolve_public_community_id
+@require_community_owner
 def list_appeals(community_id):
     """List block appeals for a community."""
-    require_community_owner(community_id)
     status = request.args.get('status', 'pending')
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cur:
+            # NOTE: `block_appeals.block_id` once referenced a `community_blocks`
+            # table that no longer exists. Real blocks live in `blocked_users`,
+            # keyed by (community_id, user_id). Join there instead so we can
+            # still surface the block reason. LEFT JOIN because an appeal may
+            # outlive its block (e.g. user already unblocked) and we still
+            # want to show the appeal history.
             cur.execute(
                 """
-                SELECT a.id, a.message, a.status, a.admin_note, a.created_at,
-                       a.reviewed_at, u.username as user_name,
-                       b.reason as block_reason
+                SELECT a.id, a.user_id, a.message, a.status, a.admin_note,
+                       a.created_at, a.reviewed_at,
+                       u.username AS user_name,
+                       b.reason AS block_reason
                 FROM block_appeals a
                 JOIN users u ON a.user_id = u.id
-                JOIN community_blocks b ON a.block_id = b.id
+                LEFT JOIN blocked_users b
+                       ON b.user_id = a.user_id
+                      AND b.community_id = a.community_id
                 WHERE a.community_id = %s AND a.status = %s
                 ORDER BY a.created_at DESC
                 """,
@@ -2251,10 +2798,12 @@ def list_appeals(community_id):
             conn.close()
 
 
-@community_admin_bp.route('/community/<int:community_id>/appeals/<int:appeal_id>', methods=['PUT'])
+@community_admin_bp.route('/community/<uuid:public_id>/appeals/<int:appeal_id>', methods=['PUT'])
+@jwt_required()
+@resolve_public_community_id
+@require_community_owner
 def resolve_appeal(community_id, appeal_id):
     """Resolve a block appeal (approve or reject)."""
-    require_community_owner(community_id)
     data = request.get_json()
     action = data.get('action')  # 'approve' or 'reject'
     admin_note = data.get('note', '').strip()
@@ -2278,19 +2827,20 @@ def resolve_appeal(community_id, appeal_id):
                 (new_status, request.admin_user_id, admin_note, appeal_id, community_id)
             )
 
-            # If approved, also unblock the user
+            # If approved, also unblock the user. The real block lives in
+            # `blocked_users` keyed by (user_id, community_id) — `block_appeals.block_id`
+            # used to reference the dropped `community_blocks` table, so resolve the
+            # user via the appeal row itself.
             if action == 'approve':
                 cur.execute(
-                    """
-                    SELECT block_id FROM block_appeals WHERE id = %s
-                    """,
-                    (appeal_id,)
+                    "SELECT user_id FROM block_appeals WHERE id = %s AND community_id = %s",
+                    (appeal_id, community_id)
                 )
-                block_row = cur.fetchone()
-                if block_row:
+                appeal_row = cur.fetchone()
+                if appeal_row:
                     cur.execute(
-                        "DELETE FROM community_blocks WHERE id = %s",
-                        (block_row['block_id'],)
+                        "DELETE FROM blocked_users WHERE user_id = %s AND community_id = %s",
+                        (appeal_row['user_id'], community_id)
                     )
 
         conn.commit()
@@ -2315,12 +2865,19 @@ def resolve_appeal(community_id, appeal_id):
 
 
 # User-facing: submit an appeal when blocked
-@community_admin_bp.route('/community/<int:community_id>/appeal', methods=['POST'])
+@community_admin_bp.route('/community/<uuid:public_id>/appeal', methods=['POST'])
+@jwt_required()
+@resolve_public_community_id
 def submit_appeal(community_id):
     """Submit an appeal for a user's block in this community."""
-    # Any logged-in user in the community can appeal their block
-    user_id = get_jwt_identity()
-    data = request.get_json()
+    # Any logged-in user in the community can appeal their block.
+    # `get_jwt_identity()` returns the username in this codebase — convert
+    # to user_id via the cached helper. Real blocks live in `blocked_users`
+    # (the old `community_blocks` table was dropped); `block_appeals.block_id`
+    # is NOT NULL but its FK is gone, so we fill it with the blocked_users
+    # row id as an opaque reference for forward-compat.
+    username = get_jwt_identity()
+    data = request.get_json() or {}
     message = data.get('message', '').strip()
 
     if not message:
@@ -2330,11 +2887,15 @@ def submit_appeal(community_id):
     try:
         conn = get_db_connection()
         with conn.cursor() as cur:
-            # Find the active block
+            user_id = get_user_id(username, cur)
+            if not user_id:
+                return jsonify({'error': 'User not found'}), 404
+
+            # Find the active block in blocked_users (community-scoped)
             cur.execute(
                 """
-                SELECT id FROM community_blocks
-                WHERE community_id = %s AND user_id = %s AND is_active = 1
+                SELECT id FROM blocked_users
+                WHERE community_id = %s AND user_id = %s
                 """,
                 (community_id, user_id)
             )
@@ -2342,13 +2903,13 @@ def submit_appeal(community_id):
             if not block:
                 return jsonify({'error': 'No active block found'}), 404
 
-            # Check no pending appeal already
+            # Check no pending appeal already for this user+community
             cur.execute(
                 """
                 SELECT id FROM block_appeals
-                WHERE block_id = %s AND status = 'pending'
+                WHERE community_id = %s AND user_id = %s AND status = 'pending'
                 """,
-                (block['id'],)
+                (community_id, user_id)
             )
             if cur.fetchone():
                 return jsonify({'error': 'Appeal already pending'}), 409
@@ -2360,8 +2921,9 @@ def submit_appeal(community_id):
                 """,
                 (community_id, block['id'], user_id, message)
             )
+            appeal_id = cur.lastrowid
         conn.commit()
-        return jsonify({'success': True, 'appeal_id': cur.lastrowid}), 201
+        return jsonify({'success': True, 'appeal_id': appeal_id}), 201
     except Exception as e:
         log.error(f"[APPEAL] Error submitting appeal: {e}")
         return jsonify({'error': 'Failed to submit appeal'}), 500

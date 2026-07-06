@@ -1,4 +1,15 @@
 # NOTE: Do NOT monkey_patch here. Production uses wsgi.py which patches before importing this module.
+import sys
+
+# Windows' console defaults stdout/stderr to the cp1252 codepage, which can't
+# encode the emoji used throughout this codebase's print()/log statements —
+# any of them crashes the request with UnicodeEncodeError. Force UTF-8 so
+# logging never takes down a route as a side effect.
+if sys.platform == 'win32':
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, 'reconfigure'):
+            _stream.reconfigure(encoding='utf-8', errors='replace')
+
 import os
 from flask import Flask
 from flask_jwt_extended import JWTManager
@@ -22,7 +33,7 @@ from routes.channels import (
     create_channel, join_channel, leave_channel,
     create_community, delete_channel,
     # NEW: Member management routes
-    search_users, get_community_members, add_community_member,
+    search_users, get_user_by_public_id, get_community_members, add_community_member,
     # NEW: Channel and community management
     update_channel, delete_community, leave_community,
     # NEW: Community discovery and joining
@@ -36,7 +47,8 @@ from routes.messages import (
     get_channel_messages, send_message,
     get_direct_messages, send_direct_message,
     get_dm_conversations,
-    mark_as_read, delete_message, edit_message
+    mark_as_read, delete_message, edit_message,
+    edit_direct_message, delete_direct_message
 )
 from routes.friends import (
     send_friend_request, get_pending_requests, get_sent_requests,
@@ -184,31 +196,32 @@ app.route("/api/users/settings/notifications", methods=["PATCH"])(update_notific
 # ======================================================================
 app.route("/api/channels/communities", methods=["GET"])(get_communities)
 app.route("/api/channels/communities/discover", methods=["GET"])(discover_communities)
-app.route("/api/channels/communities/<int:community_id>/join", methods=["POST"])(join_community)
-app.route("/api/channels/communities/<int:community_id>/channels", methods=["GET"])(get_community_channels)
-app.route("/api/channels/communities/<int:community_id>/channels", methods=["POST"])(create_channel)
+app.route("/api/channels/communities/<uuid:public_id>/join", methods=["POST"])(join_community)
+app.route("/api/channels/communities/<uuid:public_id>/channels", methods=["GET"])(get_community_channels)
+app.route("/api/channels/communities/<uuid:public_id>/channels", methods=["POST"])(create_channel)
 app.route("/api/channels/communities", methods=["POST"])(create_community)
 app.route("/api/channels/<int:channel_id>/join", methods=["POST"])(join_channel)
 app.route("/api/channels/<int:channel_id>/leave", methods=["POST"])(leave_channel)
 app.route("/api/channels/<int:channel_id>", methods=["DELETE"])(delete_channel)
 app.route("/api/channels/<int:channel_id>", methods=["PUT"])(update_channel)
-app.route("/api/channels/communities/<int:community_id>", methods=["DELETE"])(delete_community)
-app.route("/api/channels/communities/<int:community_id>/leave", methods=["POST"])(leave_community)
+app.route("/api/channels/communities/<uuid:public_id>", methods=["DELETE"])(delete_community)
+app.route("/api/channels/communities/<uuid:public_id>/leave", methods=["POST"])(leave_community)
 
 # ======================================================================
 # COMMUNITY SETTINGS & IMAGE ROUTES (NEW)
 # ======================================================================
-app.route("/api/channels/communities/<int:community_id>", methods=["GET"])(get_community)
-app.route("/api/channels/communities/<int:community_id>", methods=["PUT"])(update_community)
-app.route("/api/channels/communities/<int:community_id>/logo", methods=["POST"])(upload_community_logo)
-app.route("/api/channels/communities/<int:community_id>/logo", methods=["DELETE"])(remove_community_logo)
-app.route("/api/channels/communities/<int:community_id>/banner", methods=["POST"])(upload_community_banner)
-app.route("/api/channels/communities/<int:community_id>/banner", methods=["DELETE"])(remove_community_banner)
+app.route("/api/channels/communities/<uuid:public_id>", methods=["GET"])(get_community)
+app.route("/api/channels/communities/<uuid:public_id>", methods=["PUT"])(update_community)
+app.route("/api/channels/communities/<uuid:public_id>/logo", methods=["POST"])(upload_community_logo)
+app.route("/api/channels/communities/<uuid:public_id>/logo", methods=["DELETE"])(remove_community_logo)
+app.route("/api/channels/communities/<uuid:public_id>/banner", methods=["POST"])(upload_community_banner)
+app.route("/api/channels/communities/<uuid:public_id>/banner", methods=["DELETE"])(remove_community_banner)
 
 # ======================================================================
 # COMMUNITY MEMBER ROUTES (NEW)
 # ======================================================================
 app.route("/api/channels/users/search", methods=["GET"])(search_users)
+app.route("/api/channels/users/by-public-id/<uuid:public_id>", methods=["GET"])(get_user_by_public_id)
 app.route("/api/channels/community/members", methods=["GET"])(get_community_members)
 app.route("/api/channels/community/add-member", methods=["POST"])(add_community_member)
 
@@ -220,6 +233,8 @@ app.route("/api/messages/send", methods=["POST"])(send_message)
 app.route("/api/messages/direct/conversations", methods=["GET"])(get_dm_conversations)
 app.route("/api/messages/direct/<int:user_id>", methods=["GET"])(get_direct_messages)
 app.route("/api/messages/direct/send", methods=["POST"])(send_direct_message)
+app.route("/api/messages/direct/<int:message_id>", methods=["PUT"])(edit_direct_message)
+app.route("/api/messages/direct/<int:message_id>", methods=["DELETE"])(delete_direct_message)
 app.route("/api/messages/read", methods=["POST"])(mark_as_read)
 app.route("/api/messages/<int:message_id>", methods=["DELETE"])(delete_message)
 app.route("/api/messages/<int:message_id>", methods=["PUT"])(edit_message)

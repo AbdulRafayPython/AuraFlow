@@ -90,6 +90,61 @@ export interface FlaggedMessage {
   created_at: string;
 }
 
+// Platform-wide notification feed item. Returned by GET /system/notifications.
+export interface SystemNotification {
+  id: string;
+  type: 'moderation' | 'community' | 'user';
+  severity: 'critical' | 'high' | 'info';
+  title: string;
+  message: string;
+  link: string;
+  created_at: string | null;
+}
+
+// Phase 2.1 — thread-context view for a single flagged log row.
+// Returned by GET /community/<id>/moderation/flagged/<log_id>/context.
+export interface FlaggedContextMessage {
+  id: number;
+  channel_id: number;
+  sender: {
+    id: number;
+    username: string;
+    display_name: string;
+    avatar_url: string | null;
+  } | null;
+  content: string;
+  message_type: string;
+  reply_to: number | null;
+  created_at: string | null;
+  edited_at: string | null;
+  moderation_flagged: boolean;
+  moderation_score: number;
+  /** True for the flagged message itself — UI highlights this row. */
+  is_flagged_anchor: boolean;
+}
+
+export interface FlaggedContext {
+  log: {
+    id: number;
+    channel: { id: number; name: string };
+    user_id: number;
+    message_id: number | null;
+    /** True when the offending message has been deleted from `messages`. */
+    message_deleted: boolean;
+    flagged_text: string;
+    confidence: number;
+    action: string;
+    severity: string;
+    reasons: string[];
+    flag_type: string;
+    created_at: string | null;
+  };
+  context: {
+    window: number;
+    messages: FlaggedContextMessage[];
+  };
+}
+
 export interface BlockedUser {
   id: number;
   user: {
@@ -115,6 +170,9 @@ export interface CommunityMember {
   joined_at: string;
   created_at?: string;
   last_seen: string | null;
+  /** True when `community_members.is_muted` is set. Server returns this on the
+   * community-scoped members + member-details endpoints (added in Phase 1.5). */
+  is_muted?: boolean;
   stats: {
     message_count: number;
     violation_count: number;
@@ -221,7 +279,7 @@ class AdminService {
   // COMMUNITY AGENT SETTINGS
   // =====================
 
-  async listCommunityAgents(communityId: number): Promise<any[]> {
+  async listCommunityAgents(communityId: string): Promise<any[]> {
     try {
       const response: any = await api.get(`/api/admin/community/${communityId}/agents`);
       return response.agents || [];
@@ -231,7 +289,7 @@ class AdminService {
   }
 
   async updateCommunityAgent(
-    communityId: number,
+    communityId: string,
     agentType: string,
     payload: { enabled?: boolean; settings?: Record<string, any> }
   ): Promise<any> {
@@ -244,13 +302,69 @@ class AdminService {
   }
 
   // =====================
+  // AGENT GOALS (Phase 5.2) — per-agent tunables, clamps, kill-switch
+  // Backed by /api/agents/<name>/state on the autonomous-agent path.
+  // =====================
+
+  /** One-shot catalog of every tunable agent + its specs. Used to
+   *  render the Agent Goals page in a single request on mount. */
+  async getAgentStateCatalog(): Promise<{ agents: string[]; tunables: Record<string, Record<string, any>> }> {
+    try {
+      const response: any = await api.get('/api/agents/state/catalog');
+      return { agents: response.agents || [], tunables: response.tunables || {} };
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch agent catalog');
+    }
+  }
+
+  /** Current learned values + admin clamp window + kill-switch state
+   *  for one agent in one community. */
+  async getAgentState(agentName: string, communityId: string): Promise<{
+    agent: string;
+    community_id: number;
+    enabled: boolean;
+    current: Record<string, any>;
+    defaults: Record<string, any>;
+    clamps: Record<string, { min?: number; max?: number }>;
+    specs: Record<string, any>;
+    last_acted_at: string | null;
+    last_outcome: string | null;
+  }> {
+    try {
+      const response: any = await api.get(
+        `/api/agents/${agentName}/state?community_id=${communityId}`,
+      );
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch agent state');
+    }
+  }
+
+  /** Persist any combination of thresholds / clamps / enabled for one
+   *  agent in one community. Unsupplied fields keep their existing
+   *  values on the server side. */
+  async putAgentState(agentName: string, payload: {
+    community_id: number;
+    enabled?: boolean;
+    thresholds?: Record<string, any>;
+    clamps?: Record<string, { min?: number; max?: number }>;
+  }): Promise<any> {
+    try {
+      const response: any = await api.put(`/api/agents/${agentName}/state`, payload);
+      return response;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to save agent state');
+    }
+  }
+
+  // =====================
   // OVERVIEW (Community Scoped)
   // =====================
   
   /**
    * Get overview stats for a specific community
    */
-  async getOverviewStats(communityId: number): Promise<CommunityOverviewStats> {
+  async getOverviewStats(communityId: string): Promise<CommunityOverviewStats> {
     try {
       const response: any = await api.get(`/api/admin/community/${communityId}/overview`);
       return response.stats;
@@ -262,7 +376,7 @@ class AdminService {
   /**
    * Get recent moderation alerts for a community
    */
-  async getRecentAlerts(communityId: number, limit: number = 10): Promise<ModerationAlert[]> {
+  async getRecentAlerts(communityId: string, limit: number = 10): Promise<ModerationAlert[]> {
     try {
       const response: any = await api.get(`/api/admin/community/${communityId}/alerts?limit=${limit}`);
       return response.alerts || [];
@@ -305,7 +419,7 @@ class AdminService {
   /**
    * Get flagged messages for a community
    */
-  async getFlaggedMessages(communityId: number, params: {
+  async getFlaggedMessages(communityId: string, params: {
     status?: string;
     severity?: string;
     flag_type?: string;
@@ -333,7 +447,7 @@ class AdminService {
   /**
    * Resolve a moderation flag
    */
-  async resolveModerationFlag(communityId: number, logId: number, action: 'approve' | 'warn' | 'delete' | 'ban' | 'mute', note?: string): Promise<void> {
+  async resolveModerationFlag(communityId: string, logId: number, action: 'approve' | 'warn' | 'delete' | 'ban' | 'mute', note?: string): Promise<void> {
     try {
       await api.post(`/api/admin/community/${communityId}/moderation/resolve/${logId}`, { action, note });
     } catch (error: any) {
@@ -342,9 +456,28 @@ class AdminService {
   }
 
   /**
+   * Phase 2.1 — Fetch the flagged message + ±window surrounding messages
+   * from the same channel, so the admin can review the violation in context.
+   * `window` is messages on each side (default 5, clamped to 20 server-side).
+   */
+  async getFlaggedContext(communityId: string, logId: number, window = 5): Promise<FlaggedContext> {
+    try {
+      const response: any = await api.get(
+        `/api/admin/community/${communityId}/moderation/flagged/${logId}/context?window=${window}`
+      );
+      return {
+        log: response.log,
+        context: response.context,
+      };
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch flagged context');
+    }
+  }
+
+  /**
    * Get blocked users for a community
    */
-  async getBlockedUsers(communityId: number, params: {
+  async getBlockedUsers(communityId: string, params: {
     limit?: number;
     offset?: number;
   } = {}): Promise<{ users: BlockedUser[]; pagination: PaginationInfo }> {
@@ -366,7 +499,7 @@ class AdminService {
   /**
    * Unblock a user from a community
    */
-  async unblockUser(communityId: number, userId: number): Promise<void> {
+  async unblockUser(communityId: string, userId: number): Promise<void> {
     try {
       await api.del(`/api/admin/community/${communityId}/moderation/unblock/${userId}`);
     } catch (error: any) {
@@ -377,7 +510,7 @@ class AdminService {
   /**
    * Block a user from a community
    */
-  async blockUser(communityId: number, userId: number, reason: string): Promise<void> {
+  async blockUser(communityId: string, userId: number, reason: string): Promise<void> {
     try {
       await api.post(`/api/admin/community/${communityId}/moderation/block`, { user_id: userId, reason });
     } catch (error: any) {
@@ -386,18 +519,18 @@ class AdminService {
   }
 
   // NEW — v2
-  async triggerModerationScan(communityId: number, options: { channel_id?: number; hours_back?: number } = {}): Promise<{ task_id: string }> { // NEW — v2
+  async triggerModerationScan(communityId: string, options: { channel_id?: number; hours_back?: number } = {}): Promise<{ task_id: string }> { // NEW — v2
     try { // NEW — v2
-      const res = await api.post(`/api/admin/community/${communityId}/moderation/scan`, options); // NEW — v2
+      const res: any = await api.post(`/api/admin/community/${communityId}/moderation/scan`, options); // NEW — v2
       return res.data; // NEW — v2
     } catch (error: any) { // NEW — v2
       throw new Error(error.data?.error || 'Failed to start scan'); // NEW — v2
     } // NEW — v2
   } // NEW — v2
 
-  async getModerationScanStatus(communityId: number, channelId: number): Promise<{ status: string; scanned: number; total: number; flagged: number; percent: number }> { // NEW — v2
+  async getModerationScanStatus(communityId: string, channelId: number): Promise<{ status: string; scanned: number; total: number; flagged: number; percent: number }> { // NEW — v2
     try { // NEW — v2
-      const res = await api.get(`/api/admin/community/${communityId}/moderation/scan/status`, { params: { channel_id: channelId } }); // NEW — v2
+      const res: any = await api.get(`/api/admin/community/${communityId}/moderation/scan/status?channel_id=${channelId}`); // NEW — v2
       return res.data; // NEW — v2
     } catch (error: any) { // NEW — v2
       throw new Error(error.data?.error || 'Failed to get scan status'); // NEW — v2
@@ -411,7 +544,7 @@ class AdminService {
   /**
    * Get members of a community
    */
-  async getMembers(communityId: number, params: {
+  async getMembers(communityId: string, params: {
     status?: string;
     role?: string;
     search?: string;
@@ -439,7 +572,7 @@ class AdminService {
   /**
    * Get member details
    */
-  async getMemberDetails(communityId: number, userId: number): Promise<any> {
+  async getMemberDetails(communityId: string, userId: number): Promise<any> {
     try {
       const response: any = await api.get(`/api/admin/community/${communityId}/members/${userId}`);
       return response;
@@ -451,7 +584,7 @@ class AdminService {
   /**
    * Update member role
    */
-  async updateMemberRole(communityId: number, userId: number, role: 'member' | 'admin'): Promise<void> {
+  async updateMemberRole(communityId: string, userId: number, role: 'member' | 'admin'): Promise<void> {
     try {
       await api.put(`/api/admin/community/${communityId}/members/${userId}/role`, { role });
     } catch (error: any) {
@@ -462,11 +595,65 @@ class AdminService {
   /**
    * Remove member from community
    */
-  async removeMember(communityId: number, userId: number): Promise<void> {
+  async removeMember(communityId: string, userId: number): Promise<void> {
     try {
       await api.del(`/api/admin/community/${communityId}/members/${userId}`);
     } catch (error: any) {
       throw new Error(error.data?.error || 'Failed to remove member');
+    }
+  }
+
+  /**
+   * Send a community-scoped warning to a member.
+   * Writes to admin_actions + admin_audit_logs and pushes a `notification`
+   * socket event to the target user (handled server-side via create_notification).
+   */
+  async warnMember(communityId: string, userId: number, reason: string): Promise<void> {
+    try {
+      await api.post(
+        `/api/admin/community/${communityId}/members/${userId}/warn`,
+        { reason },
+      );
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to send warning');
+    }
+  }
+
+  /**
+   * Mute a member in the community (community_members.is_muted = 1).
+   * The mute is indefinite at the database level — `duration_minutes` is stored
+   * in audit metadata only; there is no expiry job. Surface that clearly in the UI.
+   */
+  async muteMember(
+    communityId: string,
+    userId: number,
+    reason: string,
+    durationMinutes?: number,
+  ): Promise<void> {
+    try {
+      const payload: { reason: string; duration_minutes?: number } = { reason };
+      if (typeof durationMinutes === 'number') payload.duration_minutes = durationMinutes;
+      await api.post(
+        `/api/admin/community/${communityId}/members/${userId}/mute`,
+        payload,
+      );
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to mute member');
+    }
+  }
+
+  /**
+   * Lift a mute on a community member. Returns 400 if the member is not
+   * currently muted (server-side guard against silent no-ops).
+   */
+  async unmuteMember(communityId: string, userId: number): Promise<void> {
+    try {
+      await api.post(
+        `/api/admin/community/${communityId}/members/${userId}/unmute`,
+        {},
+      );
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to unmute member');
     }
   }
 
@@ -477,7 +664,7 @@ class AdminService {
   /**
    * Get community health metrics
    */
-  async getCommunityHealth(communityId: number, days: number = 7): Promise<{
+  async getCommunityHealth(communityId: string, days: number = 7): Promise<{
     health_score: number;
     activity_trend: 'up' | 'down' | 'stable';
     metrics: {
@@ -497,7 +684,7 @@ class AdminService {
   /**
    * Get mood trends for a community
    */
-  async getMoodTrends(communityId: number, days: number = 7): Promise<{
+  async getMoodTrends(communityId: string, days: number = 7): Promise<{
     daily_trends: MoodTrend[];
     sentiment_distribution: Record<string, number>;
     sentiment_percentages?: Record<string, number>;
@@ -529,7 +716,7 @@ class AdminService {
   /**
    * Get engagement analytics for a community
    */
-  async getEngagementAnalytics(communityId: number, days: number = 7): Promise<{
+  async getEngagementAnalytics(communityId: string, days: number = 7): Promise<{
     daily_engagement: DailyEngagement[];
     hourly_distribution: HourlyActivity[];
     top_channels: ChannelStats[];
@@ -553,7 +740,7 @@ class AdminService {
   /**
    * Get daily report for a community
    */
-  async getDailyReport(communityId: number, date?: string): Promise<any> {
+  async getDailyReport(communityId: string, date?: string): Promise<any> {
     try {
       let url = `/api/admin/community/${communityId}/reports/daily`;
       if (date) url += `?date=${date}`;
@@ -568,7 +755,7 @@ class AdminService {
   /**
    * Get weekly report for a community
    */
-  async getWeeklyReport(communityId: number): Promise<any> {
+  async getWeeklyReport(communityId: string): Promise<any> {
     try {
       const response: any = await api.get(`/api/admin/community/${communityId}/reports/weekly`);
       return response.report;
@@ -584,7 +771,7 @@ class AdminService {
   /**
    * Get community settings
    */
-  async getCommunitySettings(communityId: number): Promise<any> {
+  async getCommunitySettings(communityId: string): Promise<any> {
     try {
       const response: any = await api.get(`/api/admin/community/${communityId}/settings`);
       return response;
@@ -596,7 +783,7 @@ class AdminService {
   /**
    * Update community settings
    */
-  async updateCommunitySettings(communityId: number, settings: {
+  async updateCommunitySettings(communityId: string, settings: {
     name?: string;
     description?: string;
     icon?: string;
@@ -833,7 +1020,7 @@ class AdminService {
     }
   }
 
-  async getSystemCommunityDetails(communityId: number): Promise<any> {
+  async getSystemCommunityDetails(communityId: string): Promise<any> {
     try {
       const response: any = await api.get(`/api/admin/system/communities/${communityId}`);
       return response.community;
@@ -842,7 +1029,7 @@ class AdminService {
     }
   }
 
-  async getSystemCommunityActivity(communityId: number): Promise<{ heatmap: number[][]; trends: any }> {
+  async getSystemCommunityActivity(communityId: string): Promise<{ heatmap: number[][]; trends: any }> {
     try {
       const response: any = await api.get(`/api/admin/system/communities/${communityId}/activity`);
       return { heatmap: response.heatmap, trends: response.trends };
@@ -851,7 +1038,7 @@ class AdminService {
     }
   }
 
-  async updateSystemCommunity(communityId: number, data: { name: string; description: string }): Promise<void> {
+  async updateSystemCommunity(communityId: string, data: { name: string; description: string }): Promise<void> {
     try {
       await api.put(`/api/admin/system/communities/${communityId}`, data);
     } catch (error: any) {
@@ -859,7 +1046,7 @@ class AdminService {
     }
   }
 
-  async deleteSystemCommunity(communityId: number): Promise<void> {
+  async deleteSystemCommunity(communityId: string): Promise<void> {
     try {
       await api.del(`/api/admin/system/communities/${communityId}`);
     } catch (error: any) {
@@ -867,7 +1054,7 @@ class AdminService {
     }
   }
 
-  async getSystemCommunityMembers(communityId: number, params: {
+  async getSystemCommunityMembers(communityId: string, params: {
     search?: string;
     role?: string;
     limit?: number;
@@ -889,7 +1076,7 @@ class AdminService {
     }
   }
 
-  async updateCommunityMemberRole(communityId: number, userId: number, role: 'admin' | 'member'): Promise<void> {
+  async updateCommunityMemberRole(communityId: string, userId: number, role: 'admin' | 'member'): Promise<void> {
     try {
       await api.put(`/api/admin/system/communities/${communityId}/members/${userId}/role`, { role });
     } catch (error: any) {
@@ -897,7 +1084,7 @@ class AdminService {
     }
   }
 
-  async removeCommunityMember(communityId: number, userId: number): Promise<void> {
+  async removeCommunityMember(communityId: string, userId: number): Promise<void> {
     try {
       await api.del(`/api/admin/system/communities/${communityId}/members/${userId}`);
     } catch (error: any) {
@@ -935,6 +1122,23 @@ class AdminService {
   }
 
   // ==================
+  // SYSTEM NOTIFICATIONS
+  // ==================
+
+  /**
+   * Platform-wide notification feed for the system admin (moderation flags,
+   * new communities, new members). Newest first.
+   */
+  async getSystemNotifications(limit = 15): Promise<SystemNotification[]> {
+    try {
+      const res: any = await api.get(`/api/admin/system/notifications?limit=${limit}`);
+      return res.notifications || [];
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to fetch notifications');
+    }
+  }
+
+  // ==================
   // PLATFORM SETTINGS
   // ==================
 
@@ -960,37 +1164,37 @@ class AdminService {
   // ANNOUNCEMENTS
   // ==================
 
-  async listAnnouncements(communityId: number): Promise<any[]> {
+  async listAnnouncements(communityId: string): Promise<any[]> {
     try {
-      const res = await api.get(`/api/community-admin/community/${communityId}/announcements`);
+      const res: any = await api.get(`/api/admin/community/${communityId}/announcements`);
       return res.announcements || [];
     } catch (error: any) {
       throw new Error(error.data?.error || 'Failed to fetch announcements');
     }
   }
 
-  async createAnnouncement(communityId: number, payload: {
+  async createAnnouncement(communityId: string, payload: {
     title: string; body: string; is_pinned?: boolean; expires_at?: string | null;
   }): Promise<number> {
     try {
-      const res = await api.post(`/api/community-admin/community/${communityId}/announcements`, payload);
+      const res: any = await api.post(`/api/admin/community/${communityId}/announcements`, payload);
       return res.id;
     } catch (error: any) {
       throw new Error(error.data?.error || 'Failed to create announcement');
     }
   }
 
-  async updateAnnouncement(communityId: number, announcementId: number, payload: any): Promise<void> {
+  async updateAnnouncement(communityId: string, announcementId: number, payload: any): Promise<void> {
     try {
-      await api.put(`/api/community-admin/community/${communityId}/announcements/${announcementId}`, payload);
+      await api.put(`/api/admin/community/${communityId}/announcements/${announcementId}`, payload);
     } catch (error: any) {
       throw new Error(error.data?.error || 'Failed to update announcement');
     }
   }
 
-  async deleteAnnouncement(communityId: number, announcementId: number): Promise<void> {
+  async deleteAnnouncement(communityId: string, announcementId: number): Promise<void> {
     try {
-      await api.delete(`/api/community-admin/community/${communityId}/announcements/${announcementId}`);
+      await api.del(`/api/admin/community/${communityId}/announcements/${announcementId}`);
     } catch (error: any) {
       throw new Error(error.data?.error || 'Failed to delete announcement');
     }
@@ -1000,18 +1204,18 @@ class AdminService {
   // BLOCK APPEALS
   // ==================
 
-  async listAppeals(communityId: number, status: string = 'pending'): Promise<any[]> {
+  async listAppeals(communityId: string, status: string = 'pending'): Promise<any[]> {
     try {
-      const res = await api.get(`/api/community-admin/community/${communityId}/appeals?status=${status}`);
+      const res: any = await api.get(`/api/admin/community/${communityId}/appeals?status=${status}`);
       return res.appeals || [];
     } catch (error: any) {
       throw new Error(error.data?.error || 'Failed to fetch appeals');
     }
   }
 
-  async resolveAppeal(communityId: number, appealId: number, action: 'approve' | 'reject', note?: string): Promise<void> {
+  async resolveAppeal(communityId: string, appealId: number, action: 'approve' | 'reject', note?: string): Promise<void> {
     try {
-      await api.put(`/api/community-admin/community/${communityId}/appeals/${appealId}`, { action, note });
+      await api.put(`/api/admin/community/${communityId}/appeals/${appealId}`, { action, note });
     } catch (error: any) {
       throw new Error(error.data?.error || 'Failed to resolve appeal');
     }

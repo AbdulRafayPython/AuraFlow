@@ -3,9 +3,13 @@ from flask import jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
 from werkzeug.utils import secure_filename
-from utils import get_user_id
+from utils import get_user_id, resolve_public_community_id, get_community_id_from_public_id
 # FIX 2/9: member_count updates and channel membership cache invalidation
-from services.redis_client import invalidate_channel_membership, invalidate_member_role, get_redis
+from services.redis_client import (
+    invalidate_channel_membership, invalidate_member_role, get_redis,
+    set_community_id_by_public_id, set_community_public_id, get_community_public_id,
+    get_community_id_by_public_id,
+)
 import os
 import uuid
 import json as _json
@@ -46,6 +50,88 @@ def _cache_delete(*keys):
     except Exception:
         pass
 
+
+# ── Intelligence-profile heuristic (G1c) ─────────────────────────────────
+# Maps installed-and-enabled community agents → a small badge subset shown on
+# discover/featured cards. NULL `communities.intelligence_profile` falls back
+# to this; a non-NULL JSON array is an admin override and wins.
+_INTEL_AGENT_MAP = {
+    'moderation': 'safe',
+    'summarizer': 'recaps',
+    'translator': 'multilingual',
+}
+_INTEL_BADGE_ORDER = ['safe', 'recaps', 'multilingual']
+
+
+def _compute_intel_profile(installed_rows):
+    """installed_rows: iterable of (agent_type, enabled) from community_agents.
+
+    Returns the sorted subset of {safe, recaps, multilingual} for which the
+    mapped agent is installed AND enabled in the community.
+    """
+    present = set()
+    for agent_type, enabled in installed_rows:
+        if not enabled:
+            continue
+        badge = _INTEL_AGENT_MAP.get(agent_type)
+        if badge:
+            present.add(badge)
+    return [b for b in _INTEL_BADGE_ORDER if b in present]
+
+
+def _parse_intel_profile_column(raw):
+    """Coerce a stored JSON value into a clean badge list, or None on miss.
+
+    MySQL JSON columns come back as either a str (needs json.loads) or already
+    a Python list, depending on driver config. Returns None if absent so the
+    caller knows to fall back to the heuristic.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, (list, tuple)):
+        seq = raw
+    elif isinstance(raw, str):
+        try:
+            seq = _json.loads(raw)
+        except Exception:
+            return None
+    else:
+        return None
+    if not isinstance(seq, list):
+        return None
+    allowed = set(_INTEL_BADGE_ORDER)
+    return [b for b in _INTEL_BADGE_ORDER if b in seq and b in allowed]
+
+
+def _intel_profiles_for_communities(cur, community_ids):
+    """Bulk-compute heuristic profiles for a list of community_ids.
+
+    One query into community_agents, grouped server-side. Returns
+    {community_id: [badges]}. Communities with no enabled mapped agent map to
+    an empty list (so caller can distinguish "no badges" from "not looked up").
+    """
+    result = {cid: [] for cid in community_ids}
+    if not community_ids:
+        return result
+    placeholders = ','.join(['%s'] * len(community_ids))
+    cur.execute(
+        f"""
+        SELECT community_id, agent_type, enabled
+        FROM community_agents
+        WHERE community_id IN ({placeholders}) AND enabled = 1
+        """,
+        tuple(community_ids),
+    )
+    rows_by_cid = {}
+    for row in cur.fetchall():
+        rows_by_cid.setdefault(row['community_id'], []).append(
+            (row['agent_type'], row['enabled'])
+        )
+    for cid, rows in rows_by_cid.items():
+        result[cid] = _compute_intel_profile(rows)
+    return result
+
+
 # Configuration for uploads
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads', 'communities')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
@@ -59,6 +145,78 @@ print(f"[INFO] Upload folder: {UPLOAD_FOLDER}")
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+# ── System event messages ─────────────────────────────────────────────────
+def _post_system_message(community_id, content):
+    """Insert a message_type='system' row into the community's general channel
+    and broadcast it via Socket.IO so all connected members see it live.
+
+    Falls back to the first channel if no channel named 'general' exists.
+    Fully best-effort — any exception is swallowed so the calling route
+    always succeeds.
+    """
+    try:
+        from datetime import datetime as _dt
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                # Find general (or first) channel for this community
+                cur.execute(
+                    """
+                    SELECT id FROM channels
+                    WHERE community_id = %s
+                    ORDER BY FIELD(name,'general','main','chat',name), id
+                    LIMIT 1
+                    """,
+                    (community_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return
+                channel_id = row['id']
+
+                cur.execute(
+                    """
+                    INSERT INTO messages (channel_id, sender_id, content, message_type)
+                    VALUES (%s, NULL, %s, 'system')
+                    """,
+                    (channel_id, content),
+                )
+                msg_id = cur.lastrowid
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Invalidate the channel messages Redis cache so next page-load sees this message
+        try:
+            from services.redis_client import invalidate_channel_messages_cache
+            invalidate_channel_messages_cache(channel_id)
+        except Exception:
+            pass
+
+        # Broadcast to the channel room
+        from app import socketio as _sio
+        _sio.emit(
+            'message_received',
+            {
+                'id': msg_id,
+                'channel_id': channel_id,
+                'sender_id': None,
+                'content': content,
+                'message_type': 'system',
+                'reply_to': None,
+                'created_at': _dt.now().isoformat(),
+                'author': 'System',
+                'avatar': None,
+                'is_blocked': False,
+                'moderation': None,
+            },
+            room=f"channel_{channel_id}",
+            namespace='/',
+        )
+    except Exception as _sys_err:
+        print(f"[SYSTEM MSG] skipped: {_sys_err}")
 
 
 def _maybe_post_welcome(community_id, community_name, username, user_id,
@@ -152,9 +310,10 @@ def get_communities():
                 return jsonify(_cached), 200
 
             cur.execute("""
-                SELECT 
-                    c.id, c.name, c.description, c.icon, c.color, 
+                SELECT
+                    c.id, c.public_id, c.name, c.description, c.icon, c.color,
                     c.logo_url, c.banner_url, cm.role, c.created_at,
+                    c.intelligence_profile,
                     COALESCE(mc.member_count, 0) as member_count,
                     COALESCE(cc.channel_count, 0) as channel_count
                 FROM communities c
@@ -173,19 +332,29 @@ def get_communities():
             """, (user_id, user_id))
             communities = cur.fetchall()
 
-        result = [{
-            'id': c['id'],
-            'name': c['name'],
-            'description': c['description'],
-            'icon': c['icon'],
-            'color': c['color'],
-            'logo_url': c['logo_url'],
-            'banner_url': c['banner_url'],
-            'role': c['role'],
-            'created_at': c['created_at'].isoformat() if c['created_at'] else None,
-            'member_count': c['member_count'],
-            'channel_count': c['channel_count']
-        } for c in communities]
+            # Intelligence-profile resolution: admin override wins; otherwise
+            # derive from installed+enabled community_agents (G1c).
+            community_ids = [c['id'] for c in communities]
+            heuristic_profiles = _intel_profiles_for_communities(cur, community_ids)
+
+        result = []
+        for c in communities:
+            stored = _parse_intel_profile_column(c.get('intelligence_profile'))
+            profile = stored if stored is not None else heuristic_profiles.get(c['id'], [])
+            result.append({
+                'id': c['public_id'],
+                'name': c['name'],
+                'description': c['description'],
+                'icon': c['icon'],
+                'color': c['color'],
+                'logo_url': c['logo_url'],
+                'banner_url': c['banner_url'],
+                'role': c['role'],
+                'created_at': c['created_at'].isoformat() if c['created_at'] else None,
+                'member_count': c['member_count'],
+                'channel_count': c['channel_count'],
+                'intelligence_profile': profile,
+            })
 
         _cache_set(_ck, result, ttl=30)
         return jsonify(result), 200
@@ -202,6 +371,7 @@ def get_communities():
 # GET CHANNELS IN A COMMUNITY
 # =====================================
 @jwt_required()
+@resolve_public_community_id
 def get_community_channels(community_id):
     conn = None
     try:
@@ -258,6 +428,7 @@ def get_community_channels(community_id):
 # CREATE NEW CHANNEL
 # =====================================
 @jwt_required()
+@resolve_public_community_id
 def create_channel(community_id):
     conn = None
     try:
@@ -445,7 +616,7 @@ def get_friends():
                 return jsonify(_cached), 200
 
             cur.execute("""
-                SELECT DISTINCT u.id, u.username, u.display_name, u.avatar_url,
+                SELECT DISTINCT u.id, u.public_id, u.username, u.display_name, u.avatar_url,
                        u.status, u.custom_status, u.last_seen
                 FROM friends f
                 JOIN users u ON u.id = (CASE WHEN f.user_id = %s THEN f.friend_id ELSE f.user_id END)
@@ -458,6 +629,7 @@ def get_friends():
             username = f['username']
             return {
                 'id': f['id'],
+                'public_id': f['public_id'],
                 'username': username,
                 'display_name': f['display_name'] or username,
                 'avatar_url': f['avatar_url'] or 
@@ -508,10 +680,11 @@ def create_community():
                 return jsonify({'error': 'User not found'}), 404
 
             # 1. Create community
+            new_public_id = str(uuid.uuid4())
             cur.execute("""
-                INSERT INTO communities (name, description, icon, color, created_by)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (name, description, icon, color, user_id))
+                INSERT INTO communities (public_id, name, description, icon, color, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (new_public_id, name, description, icon, color, user_id))
             community_id = cur.lastrowid
             print(f"[INFO] Created community {community_id}: {name}")
 
@@ -539,10 +712,12 @@ def create_community():
 
         conn.commit()
         _cache_delete(f"communities:{user_id}")
+        set_community_id_by_public_id(new_public_id, community_id)
+        set_community_public_id(community_id, new_public_id)
         print(f"[SUCCESS] Community creation complete for {name}")
 
         return jsonify({
-            'id': community_id,
+            'id': new_public_id,
             'name': name,
             'description': description,
             'icon': icon,
@@ -609,6 +784,7 @@ def delete_channel(channel_id):
 # UPDATE COMMUNITY (Name, Description, etc.)
 # =====================================
 @jwt_required()
+@resolve_public_community_id
 def update_community(community_id):
     conn = None
     try:
@@ -647,7 +823,26 @@ def update_community(community_id):
             if 'color' in data:
                 updates.append("color = %s")
                 values.append(data['color'])
-            
+            if 'intelligence_profile' in data:
+                profile = data['intelligence_profile']
+                if profile is None:
+                    updates.append("intelligence_profile = NULL")
+                elif isinstance(profile, list):
+                    allowed = {'safe', 'recaps', 'multilingual'}
+                    if not all(isinstance(b, str) and b in allowed for b in profile):
+                        return jsonify({
+                            'error': 'intelligence_profile must be a subset of '
+                                     '[safe, recaps, multilingual]'
+                        }), 400
+                    # Canonicalise: dedupe + display order.
+                    deduped = [b for b in _INTEL_BADGE_ORDER if b in set(profile)]
+                    updates.append("intelligence_profile = %s")
+                    values.append(_json.dumps(deduped))
+                else:
+                    return jsonify({
+                        'error': 'intelligence_profile must be array or null'
+                    }), 400
+
             if not updates:
                 return jsonify({'error': 'No fields to update'}), 400
             
@@ -659,24 +854,31 @@ def update_community(community_id):
             
             # Fetch updated community
             cur.execute("""
-                SELECT c.id, c.name, c.description, c.icon, c.color, 
-                       c.logo_url, c.banner_url, c.created_at
+                SELECT c.id, c.public_id, c.name, c.description, c.icon, c.color,
+                       c.logo_url, c.banner_url, c.created_at,
+                       c.intelligence_profile
                 FROM communities c
                 WHERE c.id = %s
             """, (community_id,))
             community = cur.fetchone()
-        
+            # Resolve heuristic fallback so the client gets the effective set.
+            heuristic_profiles = _intel_profiles_for_communities(cur, [community_id])
+
         conn.commit()
-        
+
+        stored = _parse_intel_profile_column(community.get('intelligence_profile'))
+        effective_profile = stored if stored is not None else heuristic_profiles.get(community_id, [])
+
         return jsonify({
-            'id': community['id'],
+            'id': community['public_id'],
             'name': community['name'],
             'description': community['description'],
             'icon': community['icon'],
             'color': community['color'],
             'logo_url': community['logo_url'],
             'banner_url': community['banner_url'],
-            'created_at': community['created_at'].isoformat() if community['created_at'] else None
+            'created_at': community['created_at'].isoformat() if community['created_at'] else None,
+            'intelligence_profile': effective_profile,
         }), 200
         
     except Exception as e:
@@ -695,6 +897,7 @@ def update_community(community_id):
 # GET SINGLE COMMUNITY DETAILS
 # =====================================
 @jwt_required()
+@resolve_public_community_id
 def get_community(community_id):
     conn = None
     try:
@@ -765,6 +968,7 @@ def get_community(community_id):
 # UPLOAD COMMUNITY LOGO
 # =====================================
 @jwt_required()
+@resolve_public_community_id
 def upload_community_logo(community_id):
     conn = None
     try:
@@ -870,6 +1074,7 @@ def upload_community_logo(community_id):
 # UPLOAD COMMUNITY BANNER
 # =====================================
 @jwt_required()
+@resolve_public_community_id
 def upload_community_banner(community_id):
     conn = None
     try:
@@ -975,6 +1180,7 @@ def upload_community_banner(community_id):
 # REMOVE COMMUNITY LOGO
 # =====================================
 @jwt_required()
+@resolve_public_community_id
 def remove_community_logo(community_id):
     conn = None
     try:
@@ -1038,6 +1244,7 @@ def remove_community_logo(community_id):
 # REMOVE COMMUNITY BANNER
 # =====================================
 @jwt_required()
+@resolve_public_community_id
 def remove_community_banner(community_id):
     conn = None
     try:
@@ -1171,6 +1378,44 @@ def search_users():
 
 
 # =====================================
+# GET USER BY PUBLIC_ID — resolves an opaque DM-URL id (e.g. /dm/<uuid>)
+# to the profile MainLayout needs. DM history can outlive a friendship
+# (the friends list alone isn't a reliable source), so this looks the user
+# up directly rather than requiring them to still be a current friend.
+# =====================================
+@jwt_required()
+def get_user_by_public_id(public_id):
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, username, display_name, avatar_url, status
+                FROM users
+                WHERE public_id = %s
+            """, (str(public_id),))
+            u = cur.fetchone()
+
+        if not u:
+            return jsonify({'error': 'User not found'}), 404
+
+        return jsonify({
+            'id': u['id'],
+            'username': u['username'],
+            'display_name': u['display_name'] or u['username'],
+            'avatar_url': u['avatar_url'] or f"https://api.dicebear.com/7.x/avataaars/svg?seed={u['username']}",
+            'status': u['status'] or 'offline',
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] get_user_by_public_id: {e}")
+        return jsonify({'error': 'Lookup failed'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
 # 🆕 GET COMMUNITY MEMBERS
 # =====================================
 @jwt_required()
@@ -1186,8 +1431,9 @@ def get_community_members():
     """
     conn = None
     try:
-        community_id = request.args.get('communityId', type=int)
-        
+        public_id = request.args.get('communityId')
+        community_id = get_community_id_from_public_id(public_id) if public_id else None
+
         # Validate community ID
         if not community_id:
             return jsonify({'error': 'Community ID is required'}), 400
@@ -1278,13 +1524,17 @@ def add_community_member():
     try:
         username = get_jwt_identity()
         data = request.get_json() or {}
-        
-        community_id = data.get('communityId')
+
+        public_id = data.get('communityId')
         user_id_to_add = data.get('userId')
 
         # Validate input
-        if not community_id or not user_id_to_add:
+        if not public_id or not user_id_to_add:
             return jsonify({'error': 'Both community ID and user ID are required'}), 400
+
+        community_id = get_community_id_from_public_id(public_id)
+        if not community_id:
+            return jsonify({'error': 'Community not found'}), 404
 
         conn = get_db_connection()
         
@@ -1302,6 +1552,9 @@ def add_community_member():
             membership = cur.fetchone()
             
             if not membership or membership['role'] not in ['admin', 'owner']:
+                role = membership['role'] if membership else 'not-a-member'
+                print(f"[ADD-MEMBER] 403 permission: user {username} (id={current_user_id}) "
+                      f"role='{role}' in community {community_id} — only owner/admin can add members")
                 return jsonify({'error': "You don't have permission to add members"}), 403
 
             # Check if user to add exists
@@ -1356,6 +1609,22 @@ def add_community_member():
 
         conn.commit()
         print(f"[SUCCESS] User {target_user['username']} added to community {community_id} and {channels_added} channels")
+
+        # System event label in chat feed
+        _post_system_message(community_id, f"{target_user['username']} was added to the community")
+
+        # Publish on the autonomous-agent event bus — best-effort.
+        try:
+            from agents import event_bus as _agent_bus
+            _agent_bus.publish(_agent_bus.TOPIC_USER_JOINED, {
+                'user_id':        user_id_to_add,
+                'username':       target_user.get('username'),
+                'community_id':   community_id,
+                'first_channel_id': channels[0]['id'] if channels else None,
+                'added_by_admin': True,
+            })
+        except Exception as _bus_err:
+            print(f"[event_bus] user.joined_community publish skipped: {_bus_err}")
         
         return jsonify({
             'message': 'Member added successfully',
@@ -1487,6 +1756,7 @@ def update_channel(channel_id):
 # DELETE COMMUNITY
 # =====================================
 @jwt_required()
+@resolve_public_community_id
 def delete_community(community_id):
     """
     Delete a community and all its channels/messages.
@@ -1516,6 +1786,12 @@ def delete_community(community_id):
             if not member or member['role'] != 'owner':
                 return jsonify({'error': 'Only the owner can delete the community'}), 403
 
+            # Capture public_id before the row is gone — needed for the client-facing
+            # socket broadcast below (clients now key communities by public_id, not int).
+            cur.execute("SELECT public_id FROM communities WHERE id = %s", (community_id,))
+            _row = cur.fetchone()
+            community_public_id = _row['public_id'] if _row else None
+
             # Get all channels in community
             cur.execute("SELECT id FROM channels WHERE community_id = %s", (community_id,))
             channels = cur.fetchall()
@@ -1544,6 +1820,7 @@ def delete_community(community_id):
             from datetime import datetime
             socketio.emit('community_deleted', {
                 'community_id': community_id,
+                'community_public_id': community_public_id,
                 'deleted_by': username,
                 'timestamp': datetime.now().isoformat()
             }, namespace='/')
@@ -1567,6 +1844,7 @@ def delete_community(community_id):
 # LEAVE COMMUNITY
 # =====================================
 @jwt_required()
+@resolve_public_community_id
 def leave_community(community_id):
     """
     Leave a community (remove yourself from it).
@@ -1625,12 +1903,16 @@ def leave_community(community_id):
         _cache_delete(f"communities:{user_id}")
         print(f"[SUCCESS] User {user_id} ({username}) left community {community_id}")
 
+        # System event label in chat feed
+        _post_system_message(community_id, f"{username} left the community")
+
         # Broadcast leave event via socket to notify remaining members
         from app import socketio
         if socketio:
             from datetime import datetime
             socketio.emit('community_left', {
                 'community_id': community_id,
+                'community_public_id': get_community_public_id(community_id),
                 'user_id': user_id,
                 'username': username,
                 'timestamp': datetime.now().isoformat()
@@ -1697,9 +1979,10 @@ def discover_communities():
             
             # Get communities NOT joined by user with member count
             query = f"""
-                SELECT 
-                    c.id, c.name, c.description, c.icon, c.color, 
+                SELECT
+                    c.id, c.public_id, c.name, c.description, c.icon, c.color,
                     c.logo_url, c.banner_url, c.created_at,
+                    ANY_VALUE(c.intelligence_profile) as intelligence_profile,
                     COUNT(DISTINCT cm.user_id) as member_count,
                     ANY_VALUE(u.username) as creator_username,
                     ANY_VALUE(u.display_name) as creator_name,
@@ -1717,27 +2000,36 @@ def discover_communities():
                 ORDER BY member_count DESC, c.created_at DESC
                 LIMIT %s OFFSET %s
             """
-            
+
             params = [user_id, user_id] + search_params + [limit, offset]
             cur.execute(query, params)
             communities = cur.fetchall()
 
-        result = [{
-            'id': c['id'],
-            'name': c['name'],
-            'description': c['description'],
-            'icon': c['icon'],
-            'color': c['color'],
-            'logo_url': c['logo_url'],
-            'banner_url': c['banner_url'],
-            'member_count': c['member_count'],
-            'created_at': c['created_at'].isoformat() if c['created_at'] else None,
-            'creator': {
-                'username': c['creator_username'],
-                'display_name': c['creator_name'],
-                'avatar_url': c['creator_avatar']
-            } if c['creator_username'] else None
-        } for c in communities]
+            # Heuristic fallback for any community where the override is NULL.
+            community_ids = [c['id'] for c in communities]
+            heuristic_profiles = _intel_profiles_for_communities(cur, community_ids)
+
+        result = []
+        for c in communities:
+            stored = _parse_intel_profile_column(c.get('intelligence_profile'))
+            profile = stored if stored is not None else heuristic_profiles.get(c['id'], [])
+            result.append({
+                'id': c['public_id'],
+                'name': c['name'],
+                'description': c['description'],
+                'icon': c['icon'],
+                'color': c['color'],
+                'logo_url': c['logo_url'],
+                'banner_url': c['banner_url'],
+                'member_count': c['member_count'],
+                'created_at': c['created_at'].isoformat() if c['created_at'] else None,
+                'intelligence_profile': profile,
+                'creator': {
+                    'username': c['creator_username'],
+                    'display_name': c['creator_name'],
+                    'avatar_url': c['creator_avatar'],
+                } if c['creator_username'] else None,
+            })
 
         return jsonify(result), 200
 
@@ -1755,6 +2047,7 @@ def discover_communities():
 # JOIN COMMUNITY
 # =====================================
 @jwt_required()
+@resolve_public_community_id
 def join_community(community_id):
     """
     Join a community and add user to all public channels in the community.
@@ -1838,20 +2131,21 @@ def join_community(community_id):
         _cache_delete(f"communities:{user_id}")
         print(f"[SUCCESS] User {user_id} joined community {community_id}")
 
-        # ── Auto-Welcome (best effort): if AutoMessage agent is installed
-        # for this community AND welcome_enabled, post a welcome message in
-        # the default (first) channel as the AI bot. Errors are swallowed so
-        # join always succeeds.
+        # System event label in chat feed
+        _post_system_message(community_id, f"{username} joined the community")
+
+        # Publish on the autonomous-agent event bus — the auto_message agent
+        # handles welcome posting via the orchestrator (best-effort).
         try:
-            _maybe_post_welcome(
-                community_id=community_id,
-                community_name=community['name'],
-                username=username,
-                user_id=user_id,
-                first_channel_id=(channels[0]['id'] if channels else None),
-            )
-        except Exception as _welcome_exc:
-            print(f"[AUTO_MESSAGE] welcome skipped: {_welcome_exc}")
+            from agents import event_bus as _agent_bus
+            _agent_bus.publish(_agent_bus.TOPIC_USER_JOINED, {
+                'user_id':      user_id,
+                'username':     username,
+                'community_id': community_id,
+                'first_channel_id': channels[0]['id'] if channels else None,
+            })
+        except Exception as _bus_err:
+            print(f"[event_bus] user.joined_community publish skipped: {_bus_err}")
 
         return jsonify({
             'message': f'Successfully joined {community["name"]}',

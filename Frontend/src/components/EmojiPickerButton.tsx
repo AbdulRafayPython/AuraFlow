@@ -52,10 +52,10 @@ export default function EmojiPickerButton({
       </button>
 
       {showPicker && (
-        <div 
+        <div
           className={`absolute z-50 ${
             pickerPosition === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
-          } right-0 rounded-xl shadow-2xl border border-[hsl(var(--theme-border-default))] overflow-hidden`}
+          } right-0 max-sm:right-2 max-sm:left-2 max-sm:max-w-[calc(100vw-1rem)] rounded-xl shadow-2xl border border-[hsl(var(--theme-border-default))] overflow-hidden`}
           style={{
             animation: 'fadeIn 0.15s ease-in-out',
             backgroundColor: `hsl(var(--theme-bg-secondary))`,

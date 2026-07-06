@@ -10,6 +10,8 @@ interface NotificationSettings {
   notify_friend_requests: boolean;
   notify_friend_online: boolean;
   notification_sounds: boolean;
+  // Floating "Agent activity" panel — off by default for new accounts
+  show_agent_activity: boolean;
   // Email notification toggles
   email_alerts_enabled: boolean;
   email_dms_and_calls: boolean;
@@ -29,7 +31,7 @@ interface User {
   avatar_url?: string;
   role?: string;
   statusMessage?: string;
-  is_first_login: boolean;
+  is_first_login?: boolean;
   notification_settings?: NotificationSettings;
 }
 
@@ -55,32 +57,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
-      setIsLoading(true);
-      authService.getMe()
-        .then((data: any) => {
-          setUser(data);
-          setIsAuthenticated(true);
-          
-          // Connect socket after restoring session
-          connectSocket();
-        })
-        .catch(() => {
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    let cancelled = false;
+
+    const restoreCachedUser = (): boolean => {
+      try {
+        const raw = localStorage.getItem('auraflow_user');
+        if (raw) {
+          setUser(JSON.parse(raw));
+          return true;
+        }
+      } catch { /* ignore */ }
+      return false;
+    };
+
+    // Validate the session on load, but be RESILIENT to a slow/unavailable
+    // backend. Only a genuine auth rejection (401/403, after the interceptor has
+    // already tried a token refresh) should log the user out. A timeout, network
+    // error, or 5xx from an overloaded DB must NOT wipe the session — otherwise a
+    // brief backend hiccup kicks every logged-in tab out at once.
+    const attempt = async (retriesLeft: number): Promise<void> => {
+      try {
+        const data: any = await authService.getMe();
+        if (cancelled) return;
+        setUser(data);
+        try { localStorage.setItem('auraflow_user', JSON.stringify(data)); } catch { /* ignore */ }
+        setIsAuthenticated(true);
+        connectSocket();
+      } catch (err: any) {
+        if (cancelled) return;
+        const status = err?.status;
+        if (status === 401 || status === 403) {
+          // Real auth failure (refresh already attempted) → log out for real.
           localStorage.removeItem('token');
           localStorage.removeItem('refresh_token');
+          localStorage.removeItem('auraflow_user');
           localStorage.removeItem('cached_communities');
           setIsAuthenticated(false);
           setUser(null);
-          
-          // Disconnect socket on auth failure
           disconnectSocket();
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
-    } else {
-      setIsLoading(false);
-    }
+          return;
+        }
+        // Transient/backend error — retry a couple times, then keep the session
+        // alive from cache instead of logging out.
+        if (retriesLeft > 0) {
+          await new Promise(r => setTimeout(r, 1500));
+          if (!cancelled) return attempt(retriesLeft - 1);
+          return;
+        }
+        restoreCachedUser();
+        setIsAuthenticated(true);
+        connectSocket();
+      }
+    };
+
+    attempt(2).finally(() => {
+      if (!cancelled) setIsLoading(false);
+    });
+
+    return () => { cancelled = true; };
   }, []);
 
   // ── Session expiry listener (fired by appService when refresh fails) ──
@@ -158,9 +198,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const data = await authService.login({ username: identifier, password });
     if (data.token && data.user) {
       localStorage.setItem('token', data.token);
+      // Cache the user so a later reload can restore the session even if the
+      // backend is briefly slow/unavailable (see the resilient load effect).
+      try { localStorage.setItem('auraflow_user', JSON.stringify(data.user)); } catch { /* ignore */ }
       setUser(data.user);
       setIsAuthenticated(true);
-      
+
       // Connect socket after successful login
       connectSocket();
     } else {

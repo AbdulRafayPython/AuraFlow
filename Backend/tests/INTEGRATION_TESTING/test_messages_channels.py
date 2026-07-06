@@ -89,19 +89,16 @@ class TestSendMessage:
     def test_send_message_returns_201(self, client, app):
         """TC-IT-18: Valid message send returns 201 with message object."""
         headers = _jwt_headers(app)
-        channel_row = {"id": 1, "community_id": 1}
-        community_member = {"role": "member", "violation_count": 0}
-        saved_msg = {
-            "id": 42, "content": "Hello world", "sender_id": 1,
-            "username": "testuser", "display_name": "Test User", "avatar_url": None,
-            "created_at": __import__('datetime').datetime(2024, 1, 1, 10, 0, 0),
-            "message_type": "text", "channel_id": 1,
-            "reply_to": None,
+        # Combined channel+blocked+community-member+sender-profile lookup
+        # (collapsed from 4 round trips into 1 — see routes/messages.py send_message).
+        combo_row = {
+            "community_id": 1, "role": "member", "violation_count": 0,
+            "blocked_id": None,
+            "sender_display_name": "Test User", "sender_avatar_url": None,
         }
         conn, cur = _mock_conn()
         cur.lastrowid = 42
-        # channel lookup, blocked_users (None=ok), community_members, post-insert fetch
-        cur.fetchone.side_effect = [channel_row, None, community_member, saved_msg]
+        cur.fetchone.side_effect = [combo_row]
 
         with patch("routes.messages.get_db_connection", return_value=conn), \
              patch("routes.messages.get_channel_membership", return_value=True), \
@@ -141,10 +138,13 @@ class TestSendMessage:
     def test_send_message_blocked_content_returns_403(self, client, app):
         """TC-IT-20: Extreme content blocked by ModerationAgent returns 200 with moderation block info."""
         headers = _jwt_headers(app)
-        channel_row = {"id": 1, "community_id": 1}
-        community_member = {"role": "member", "violation_count": 1}
+        combo_row = {
+            "community_id": 1, "role": "member", "violation_count": 1,
+            "blocked_id": None,
+            "sender_display_name": "Test User", "sender_avatar_url": None,
+        }
         conn, _ = _mock_conn()
-        _.fetchone.side_effect = [channel_row, None, community_member]
+        _.fetchone.side_effect = [combo_row]
 
         with patch("routes.messages.get_db_connection", return_value=conn), \
              patch("routes.messages.get_channel_membership", return_value=True), \

@@ -38,7 +38,8 @@ export default function CommunitySettingsModal({
   const [isLoading, setIsLoading] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'agents'>('general');
+  // AI Agents is the primary, default tab; appearance/general lives behind it.
+  const [activeTab, setActiveTab] = useState<'general' | 'agents'>('agents');
   
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
@@ -58,6 +59,11 @@ export default function CommunitySettingsModal({
       setBannerFile(null);
     }
   }, [community]);
+
+  // Always land on the AI Helpers tab each time the modal opens.
+  useEffect(() => {
+    if (isOpen) setActiveTab('agents');
+  }, [isOpen]);
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -336,23 +342,27 @@ export default function CommunitySettingsModal({
 
         {/* Content */}
         <div className="pt-16 px-6 pb-6 max-h-[60vh] overflow-y-auto">
-          <h2 className="text-xl font-bold mb-4 text-[hsl(var(--theme-text-primary))]">
-            Community Settings
-          </h2>
+          {/* Title block — name beside the role, with a plain-English subtitle */}
+          <div className="mb-5">
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] truncate">
+                {name || community.name}
+              </h2>
+              {isOwnerOrAdmin && (
+                <span className="shrink-0 rounded-full border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] px-2 py-0.5 text-[11px] font-medium capitalize text-[hsl(var(--theme-text-secondary))]">
+                  {community.role}
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-sm text-[hsl(var(--theme-text-muted))]">
+              {isOwnerOrAdmin
+                ? 'Manage your AI helpers, then fine-tune how this community looks.'
+                : 'See what the AI helpers do here and how this community is set up.'}
+            </p>
+          </div>
 
-          {/* Tab Navigation */}
+          {/* Tab Navigation — AI Agents leads, appearance follows */}
           <div className="flex gap-1 mb-6 p-1 rounded-xl bg-[hsl(var(--theme-bg-tertiary)/0.5)]">
-            <button
-              onClick={() => setActiveTab('general')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${
-                activeTab === 'general'
-                  ? 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-primary))] shadow-sm'
-                  : 'text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-secondary))]'
-              }`}
-            >
-              <SettingsIcon className="w-4 h-4" />
-              General
-            </button>
             <button
               onClick={() => setActiveTab('agents')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${
@@ -362,12 +372,23 @@ export default function CommunitySettingsModal({
               }`}
             >
               <Bot className="w-4 h-4" />
-              AI Agents
+              AI Helpers
+            </button>
+            <button
+              onClick={() => setActiveTab('general')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${
+                activeTab === 'general'
+                  ? 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-primary))] shadow-sm'
+                  : 'text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-secondary))]'
+              }`}
+            >
+              <SettingsIcon className="w-4 h-4" />
+              Appearance
             </button>
           </div>
 
           {activeTab === 'agents' ? (
-            <CommunityAgentsTab communityId={community.id} isAdmin={isOwnerOrAdmin} />
+            <CommunityAgentsTab communityId={community.id} isAdmin={isOwnerOrAdmin} communityName={community.name} />
           ) : (
           <>
 
