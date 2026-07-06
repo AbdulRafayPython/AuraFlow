@@ -78,7 +78,7 @@ export interface TranslationHistoryItem {
 type CanonicalTab = 'activity' | 'recap' | 'knowledge' | 'focus' | 'translations' | 'safety';
 
 const TAB_DEFS: { key: CanonicalTab; label: string; Icon: typeof ActivityIcon; adminOnly?: boolean }[] = [
-  { key: 'activity',     label: 'Activity',     Icon: ActivityIcon },
+  { key: 'activity',     label: 'Activity',     Icon: ActivityIcon, adminOnly: true },
   { key: 'recap',        label: 'Recap',        Icon: FileText },
   { key: 'knowledge',    label: 'Knowledge',    Icon: Brain },
   { key: 'focus',        label: 'Focus',        Icon: Target },
@@ -86,10 +86,23 @@ const TAB_DEFS: { key: CanonicalTab; label: string; Icon: typeof ActivityIcon; a
   { key: 'safety',       label: 'Safety',       Icon: Shield, adminOnly: true },
 ];
 
+// Activity + Safety are observability surfaces — the Activity feed reads like
+// a system decision log (act/skip/defer, reasons, scopes), which overwhelms a
+// casual member. Both are reserved for community admins/owners; members never
+// land on them, so a non-admin default resolves to the first useful tab.
+const ADMIN_ONLY_TABS = new Set<CanonicalTab>(['activity', 'safety']);
+const NON_ADMIN_DEFAULT_TAB: CanonicalTab = 'recap';
+
 function canonicalize(tab: AgentResultTab | undefined): CanonicalTab {
   if (tab === 'summary') return 'recap';
   if (tab === 'mood') return 'activity'; // mood tab removed; show full feed
   return (tab ?? 'activity') as CanonicalTab;
+}
+
+function resolveTab(tab: AgentResultTab | undefined, isAdmin: boolean): CanonicalTab {
+  const canonical = canonicalize(tab);
+  if (!isAdmin && ADMIN_ONLY_TABS.has(canonical)) return NON_ADMIN_DEFAULT_TAB;
+  return canonical;
 }
 
 export default function AgentResultPanel({
@@ -102,11 +115,11 @@ export default function AgentResultPanel({
   isAdmin = false,
   translations = [],
 }: AgentResultPanelProps) {
-  const [tab, setTab] = useState<CanonicalTab>(canonicalize(initialTab));
+  const [tab, setTab] = useState<CanonicalTab>(resolveTab(initialTab, isAdmin));
 
   useEffect(() => {
-    if (open) setTab(canonicalize(initialTab));
-  }, [open, initialTab]);
+    if (open) setTab(resolveTab(initialTab, isAdmin));
+  }, [open, initialTab, isAdmin]);
 
   if (!open) return null;
 
