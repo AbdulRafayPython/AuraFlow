@@ -42,6 +42,9 @@ import { friendService } from "@/services/friendService";
 import { useUnreadCounts } from "@/hooks/useUnreadCounts";
 import { aiAgentService } from "@/services/aiAgentService";
 import type { Message } from "@/types";
+import { useAutoTranslate } from "@/hooks/useAutoTranslate";
+import InlineTranslation from "@/components/chat/InlineTranslation";
+import LanguageMenu from "@/components/chat/LanguageMenu";
 import type { SearchResult } from "@/services/searchService";
 
 /**
@@ -156,6 +159,56 @@ export default function Dashboard() {
   const [agentPanelOpen, setAgentPanelOpen] = useState(false);
   const [agentPanelTab, setAgentPanelTab] = useState<AgentResultTab>('knowledge');
   const [translationHistory, setTranslationHistory] = useState<TranslationHistoryItem[]>([]);
+
+  // Autonomous per-viewer inline translation. `translateLang` is the viewer's
+  // target language ('off' disables it); defaults to the browser language so
+  // foreign messages translate automatically. Persisted to localStorage.
+  const [translateLang, setTranslateLang] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('auraflow_translate_lang');
+      if (saved) return saved;
+    } catch {
+      /* localStorage unavailable — fall through to browser language */
+    }
+    return (typeof navigator !== 'undefined' && navigator.language?.split('-')[0]) || 'en';
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('auraflow_translate_lang', translateLang);
+    } catch {
+      /* ignore persistence failures */
+    }
+  }, [translateLang]);
+
+  // Mirror completed auto-translations into the Channel Intelligence
+  // Translations tab so that surface stays consistent (deduped per message).
+  const handleAutoTranslated = useCallback(
+    (info: { messageId: number; original: string; translated: string; targetLang: string }) => {
+      setTranslationHistory((prev) => {
+        if (prev.some((t) => t.message_id === info.messageId && t.target_language === info.targetLang)) {
+          return prev;
+        }
+        return [
+          {
+            message_id: info.messageId,
+            original: info.original,
+            translated: info.translated,
+            target_language: info.targetLang,
+            at: new Date().toISOString(),
+          },
+          ...prev,
+        ].slice(0, 50);
+      });
+    },
+    [],
+  );
+
+  const autoTranslate = useAutoTranslate(
+    messages,
+    translateLang,
+    translateLang !== 'off',
+    handleAutoTranslated,
+  );
 
   // Ephemeral KB state (private /kb results)
   const [isGeneratingKB, setIsGeneratingKB] = useState(false);
@@ -1111,6 +1164,11 @@ export default function Dashboard() {
             <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--theme-bg-tertiary))] border border-[hsl(var(--theme-border-default))]">⌘K</kbd>
           </button>
 
+          {/* Auto-translate language (per-viewer inline translation) */}
+          {currentChannel && (
+            <LanguageMenu value={translateLang} onChange={setTranslateLang} />
+          )}
+
           {/* Summary History */}
           {currentChannel && (
             <button
@@ -1457,6 +1515,16 @@ export default function Dashboard() {
                           })()}
                         </div>
                         
+                        {/* Autonomous inline translation (per-viewer) */}
+                        {translateLang !== 'off' && msg.content && (
+                          <InlineTranslation
+                            state={autoTranslate.get(msg.id)}
+                            targetLang={translateLang}
+                            collapsed={autoTranslate.isCollapsed(msg.id)}
+                            onToggle={() => autoTranslate.toggleCollapsed(msg.id)}
+                          />
+                        )}
+
                         {/* Moderation Warning Banner — visible to all */}
                         {msg.moderation && msg.moderation.action !== 'allow' && (
                           <ModerationWarningBanner
