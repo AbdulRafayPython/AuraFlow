@@ -50,6 +50,20 @@ except Exception:  # pragma: no cover
     _GTransTranslator = None
     _GTRANS_AVAILABLE = False
 
+# HTTP client for the transliteration bridge (see _transliterate_roman_urdu).
+try:
+    import requests as _requests
+except Exception:  # pragma: no cover
+    _requests = None
+
+# Google Input Tools transliteration endpoint. Roman Urdu — Urdu written in
+# Latin script ("main bohat udaas hun") — is NOT translatable by Google
+# Translate directly: source='auto' mis-detects it as a Latin language and
+# hallucinates ("I have a lot of clouds"), while source='ur' expects Nastaliq
+# script and returns the Latin input unchanged. So we transliterate Roman Urdu
+# to Urdu script here first, then translate the script (which works perfectly).
+_GOOGLE_TRANSLIT_URL = "https://inputtools.google.com/request"
+
 
 # Languages we expose in the UI dropdown. Code -> human label.
 SUPPORTED_LANGUAGES: Dict[str, str] = {
@@ -99,6 +113,9 @@ class TranslatorAgent(AutonomousAgent):
         self.cache_ttl_seconds = 60 * 60 * 24  # 1 day in-memory cache
         self._cache: Dict[Tuple[str, str, str], Tuple[float, Dict]] = {}
         self._cache_lock = threading.Lock()
+        # Roman-Urdu → Urdu-script transliterations. Target-independent and
+        # network-backed, so cached separately from translation results.
+        self._translit_cache: Dict[str, str] = {}
 
     # ------------------------------------------------------------------ utils
     def _normalize_target(self, target: str) -> str:
@@ -114,6 +131,50 @@ class TranslatorAgent(AutonomousAgent):
         if not text:
             return False
         return bool(_ROMAN_URDU_HINTS.search(text))
+
+    def _transliterate_roman_urdu(self, text: str) -> Optional[str]:
+        """Convert Roman Urdu (Latin script) to Urdu (Nastaliq) via Google
+        Input Tools. Returns the Urdu-script string, or ``None`` on any failure
+        so callers fall back to the original text. Successful results are cached
+        because each call is a network round-trip and is independent of the
+        translation target.
+        """
+        text = (text or '').strip()
+        if not text or _requests is None:
+            return None
+        with self._cache_lock:
+            hit = self._translit_cache.get(text)
+        if hit:
+            return hit
+
+        script = None
+        try:
+            resp = _requests.get(
+                _GOOGLE_TRANSLIT_URL,
+                params={
+                    'text': text, 'itc': 'ur-t-i0-und', 'num': '1',
+                    'cp': '0', 'cs': '1', 'ie': 'utf-8', 'oe': 'utf-8',
+                },
+                timeout=6,
+            )
+            data = resp.json()
+            # Shape: ["SUCCESS", [[word, [cand1, cand2, ...], ...], ...]]
+            if data and data[0] == 'SUCCESS' and data[1]:
+                parts = []
+                for token in data[1]:
+                    cands = token[1] if len(token) > 1 else None
+                    parts.append(cands[0] if cands else token[0])
+                script = ' '.join(p for p in parts if p).strip() or None
+        except Exception as exc:
+            print(f"[TRANSLATOR] transliteration failed: {exc}")
+            script = None
+
+        if script:
+            with self._cache_lock:
+                if len(self._translit_cache) > 2000:
+                    self._translit_cache.clear()
+                self._translit_cache[text] = script
+        return script
 
     def _cache_get(self, key: Tuple[str, str, str]) -> Optional[Dict]:
         with self._cache_lock:
@@ -222,14 +283,31 @@ class TranslatorAgent(AutonomousAgent):
             if cached is not None:
                 return {**cached, 'cached': True}
 
+        # Roman-Urdu bridge: Google Translate can't handle Urdu in Latin script,
+        # so transliterate it to Nastaliq first and translate the script with an
+        # explicit 'ur' source. Skip when the target itself is Urdu (nothing to
+        # translate) or when the source was pinned to something other than
+        # auto/ur (caller knows better).
+        text_for_engine = text
+        engine_source = source
+        if (
+            target.split('-')[0] != 'ur'
+            and source in ('auto', 'ur')
+            and self._is_likely_roman_urdu(text)
+        ):
+            script = self._transliterate_roman_urdu(text)
+            if script and script.strip() != text.strip():
+                text_for_engine = script
+                engine_source = 'ur'
+
         # Engine 1: deep-translator
         if _DEEP_AVAILABLE:
             try:
-                translated = _DeepGoogle(source=source, target=target).translate(text)
-                if translated and translated.strip() and translated.strip() != text.strip():
+                translated = _DeepGoogle(source=engine_source, target=target).translate(text_for_engine)
+                if translated and translated.strip() and translated.strip() != text_for_engine.strip():
                     result = {
                         'translated_text': translated,
-                        'source_language': source,
+                        'source_language': engine_source,
                         'target_language': target,
                         'provider': 'deep_translator',
                         'cached': False,
@@ -245,9 +323,9 @@ class TranslatorAgent(AutonomousAgent):
         if _GTRANS_AVAILABLE:
             try:
                 t = _GTransTranslator()
-                out = t.translate(text, dest=target, src=source)
+                out = t.translate(text_for_engine, dest=target, src=engine_source)
                 translated = getattr(out, 'text', None)
-                detected_src = getattr(out, 'src', source)
+                detected_src = getattr(out, 'src', engine_source)
                 if translated:
                     result = {
                         'translated_text': translated,

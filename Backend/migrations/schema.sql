@@ -1,7 +1,6 @@
 -- =============================================================
 -- AuroFlow - Canonical Database Schema
 -- Generated from live database on 2026-05-14
--- Apply with: mysql -u <user> -p <dbname> < schema.sql
 -- =============================================================
 
 SET FOREIGN_KEY_CHECKS = 0;

@@ -41,6 +41,21 @@ from agents import event_bus as _bus
 from conftest import make_fixed_dt  # noqa: F401
 
 
+class _FakeRedis:
+    """Minimal Redis stand-in supporting the SET NX EX claim semantics
+    used by WellnessAgent._claim_checkin. One instance shared across two
+    agents models two orchestrator loops sharing the same Redis."""
+
+    def __init__(self) -> None:
+        self.store: dict = {}
+
+    def set(self, key, value, nx=False, ex=None):
+        if nx and key in self.store:
+            return None
+        self.store[key] = value
+        return True
+
+
 # ───────────────────────────────────────────────────────────────────
 #  TestSense
 # ───────────────────────────────────────────────────────────────────
@@ -192,6 +207,52 @@ class TestWellnessAct:
                 "corr-mod-1",
             )
         assert socketio_emits.call_args.args[1]["trigger"] == "mod_violation"
+
+
+# ───────────────────────────────────────────────────────────────────
+#  TestDedupe (cross-process idempotency claim)
+# ───────────────────────────────────────────────────────────────────
+
+class TestWellnessDedupe:
+    """A single escalation fanned out to N orchestrator loops must yield
+    exactly one wellness_checkin — the atomic Redis claim collapses the
+    duplicate emits that caused the '3-4 stacked toasts' bug."""
+
+    def test_act_dedupes_duplicate_dispatch_across_loops(
+            self, chain_store, socketio_emits):
+        fake = _FakeRedis()
+        payload = {
+            "user_id": 42, "channel_id": 100, "community_id": 7,
+            "trigger": "mood_escalation", "template_idx": 0,
+            "primary_mood": "sad", "window_mean": -0.7,
+        }
+        # `patch` here overrides the autouse `_no_redis_claims` stub for the
+        # duration of the block, so the claim actually engages.
+        with patch("agents.wellness._get_redis", return_value=fake), \
+             patch.object(WellnessAgent, "_format_checkin", return_value="Hey."), \
+             patch.object(WellnessAgent, "_log_wellness_check", return_value=None):
+            # Two separate instances = two orchestrator loops (distinct
+            # worker processes) reacting to the SAME escalation event.
+            first = WellnessAgent().act(dict(payload), "corr-dupe")
+            second = WellnessAgent().act(dict(payload), "corr-dupe")
+
+        assert first["emitted"] is True
+        assert second == {"emitted": False, "deduped": True, "template_idx": 0}
+        assert socketio_emits.call_count == 1, \
+            "duplicate fan-out must collapse to a single toast"
+
+    def test_act_fails_open_without_redis(self, chain_store, socketio_emits):
+        """No Redis (single-process dev) → claim fail-opens, emit proceeds."""
+        with patch("agents.wellness._get_redis", return_value=None), \
+             patch.object(WellnessAgent, "_format_checkin", return_value="Hey."), \
+             patch.object(WellnessAgent, "_log_wellness_check", return_value=None):
+            result = WellnessAgent().act(
+                {"user_id": 42, "channel_id": 100, "community_id": 7,
+                 "trigger": "mood_escalation", "template_idx": 0},
+                "corr-open",
+            )
+        assert result["emitted"] is True
+        assert socketio_emits.call_count == 1
 
 
 # ───────────────────────────────────────────────────────────────────

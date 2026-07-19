@@ -24,6 +24,23 @@ from agents.base import AutonomousAgent
 from agents import event_bus as _event_bus
 from agents import memory as _agent_memory
 from agents._settings import get_personal_settings
+from services.redis_client import get_redis as _get_redis
+
+
+# Per-user check-in cooldown AND cross-process dedupe TTL. The base-class
+# cooldown (base.py _cooldown_active) reads last_acted_at then acts, so it
+# only blocks re-fires *within one orchestrator process*: two orchestrator
+# loops — a stray second Celery worker, or a second app.py, both common
+# after restarts on Windows — each receive the same mood.escalation /
+# mod.violation pub/sub message, each read "no recent act", both pass the
+# cooldown, and both emit a wellness_checkin. The one browser in the user's
+# room then renders N stacked toasts for a single trigger. An atomic Redis
+# SET NX (see _claim_checkin) collapses that fan-out to a single emit across
+# every process. TTL is derived from the cooldown so the "claim window ==
+# cooldown window" invariant holds by construction. Mirrors
+# engagement._NUDGE_DEDUPE_TTL / auto_message._claim_welcome.
+_COOLDOWN_SECONDS = 60 * 60
+_CHECKIN_DEDUPE_TTL = _COOLDOWN_SECONDS
 
 
 _WELLNESS_DEFAULTS = {
@@ -75,8 +92,9 @@ class WellnessAgent(AutonomousAgent):
     SCOPE_TYPE = _agent_memory.SCOPE_USER
     # Per-user cooldown: at most one check-in per hour even if the
     # escalation refires (mood_tracker has its own 30-min dedupe, but
-    # this is a second belt-and-braces guard).
-    COOLDOWN_SECONDS = 60 * 60
+    # this is a second belt-and-braces guard). The atomic cross-process
+    # analog is _claim_checkin — see _CHECKIN_DEDUPE_TTL above.
+    COOLDOWN_SECONDS = _COOLDOWN_SECONDS
 
     _DEFAULT_QUIET_HOURS = (24, 0)   # disabled: (24, 0) → condition never fires
 
@@ -584,6 +602,18 @@ class WellnessAgent(AutonomousAgent):
         template_idx = payload.get("template_idx") or 0
         trigger = payload.get("trigger") or "mood_escalation"
 
+        # Idempotency guard — collapse duplicate dispatch from multiple
+        # orchestrator loops (stray second Celery worker / second app.py,
+        # both common after restarts on Windows) to a single check-in.
+        # Each loop receives the SAME mood.escalation / mod.violation
+        # pub/sub message and runs this agent independently; the base-class
+        # cooldown reads last_acted_at then acts, so N loops all see "no
+        # recent act" and all emit, stacking N toasts on the user. Claim
+        # BEFORE the optional Gemini polish so losers also skip that call.
+        if not self._claim_checkin(user_id):
+            return {"emitted": False, "deduped": True,
+                    "template_idx": template_idx}
+
         # Build the message text. Optional Gemini polish if available;
         # fall back to the template verbatim.
         text = self._format_checkin(template_idx, payload)
@@ -665,6 +695,26 @@ class WellnessAgent(AutonomousAgent):
         super().learn(action_id, signal, weight=weight)
 
     # ── Internal helpers for the autonomous loop ────────────────────
+
+    def _claim_checkin(self, user_id: int) -> bool:
+        """Atomically claim the right to send one check-in to this user per
+        cooldown window.
+
+        Returns True if this caller won the claim (should emit), False if a
+        concurrent orchestrator already claimed it. Fail-open: if Redis is
+        unavailable we return True — the duplicate only happens *with* Redis +
+        multiple loops anyway, and a single-process setup must still check in.
+        Mirrors engagement._claim_nudge / auto_message._claim_welcome.
+        """
+        try:
+            r = _get_redis()
+            if r is None:
+                return True
+            key = f"wellness:checkin:{user_id}"
+            # SET NX EX — only the first caller across all processes succeeds.
+            return bool(r.set(key, "1", nx=True, ex=_CHECKIN_DEDUPE_TTL))
+        except Exception:
+            return True
 
     def _user_opted_in(self, user_id: int) -> bool:
         """Check the ``user_agents`` table for the per-user wellness toggle.
