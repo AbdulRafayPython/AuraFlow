@@ -11,9 +11,11 @@ import { useAIAgents } from '@/contexts/AIAgentContext';
 import { aiAgentService, AgentLog } from '@/services/aiAgentService';
 import AgentActivity from '@/components/ai-agents/AgentActivity';
 import AgentSettingsForm from '@/components/ai-agents/AgentSettingsForm';
+import ChannelCoverage from '@/components/ai-agents/ChannelCoverage';
+import SummarySchedules from '@/components/ai-agents/SummarySchedules';
 import { agentNameForRoute, hasActivityPanel } from '@/lib/agentActivity';
 
-type SectionName = 'capabilities' | 'settings' | 'activity' | 'logs' | 'testing';
+type SectionName = 'capabilities' | 'settings' | 'activity' | 'channels' | 'schedules' | 'logs' | 'testing';
 
 // Agent capabilities data
 const AGENT_CAPABILITIES: Record<string, { features: string[]; automations: string[]; metrics: string[] }> = {
@@ -352,7 +354,11 @@ export default function AgentDetails() {
             { id: 'capabilities', label: 'Capabilities', icon: <CheckCircle className="w-4 h-4" /> },
             { id: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" /> },
             ...(agentId && hasActivityPanel(agentId)
-              ? [{ id: 'activity', label: 'What it did', icon: <Activity className="w-4 h-4" /> }]
+              ? [{ id: 'activity', label: 'What it did', icon: <Activity className="w-4 h-4" /> },
+                 { id: 'channels', label: 'Channels', icon: <Hash className="w-4 h-4" /> }]
+              : []),
+            ...(agentId === 'summarizer'
+              ? [{ id: 'schedules', label: 'Daily summaries', icon: <Clock className="w-4 h-4" /> }]
               : []),
             { id: 'logs', label: 'Logs', icon: <FileText className="w-4 h-4" /> },
             { id: 'testing', label: 'Testing', icon: <TestTube2 className="w-4 h-4" /> }
@@ -450,6 +456,26 @@ export default function AgentDetails() {
               <div className="p-6">
                 <h2 className="mb-5 text-lg font-semibold text-[hsl(var(--theme-text-primary))]">What it did lately</h2>
                 <AgentActivity agentName={agentNameForRoute(agentId)} />
+              </div>
+            </section>
+          )}
+
+          {/* Where it acts */}
+          {expandedSections.has('channels') && agentId && hasActivityPanel(agentId) && (
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default))] shadow-sm">
+              <div className="p-6">
+                <h2 className="mb-5 text-lg font-semibold text-[hsl(var(--theme-text-primary))]">Where it acts</h2>
+                <ChannelCoverage agentType={agentNameForRoute(agentId)} />
+              </div>
+            </section>
+          )}
+
+          {/* Daily summaries */}
+          {expandedSections.has('schedules') && agentId === 'summarizer' && (
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default))] shadow-sm">
+              <div className="p-6">
+                <h2 className="mb-5 text-lg font-semibold text-[hsl(var(--theme-text-primary))]">Daily summaries</h2>
+                <SummarySchedules />
               </div>
             </section>
           )}

@@ -15,6 +15,7 @@ import StatusChip from '@/components/agent-builder/StatusChip';
 import CreateAgentDialog from '@/components/agent-builder/CreateAgentDialog';
 import AgentLogo from '@/components/ai-agents/AgentLogo';
 import BuiltInAgentList from '@/components/ai-agents/BuiltInAgentList';
+import AgentMetricsTiles from '@/components/ai-agents/AgentMetricsTiles';
 import { PageHeader } from '@/components/app/PageHeader';
 import { Section } from '@/components/app/Section';
 import { EmptyState, ErrorState } from '@/components/app/EmptyState';
@@ -122,6 +123,7 @@ const AgentHub: React.FC = () => {
               </div>
               <StatusChip status="active" />
             </div>
+            <AgentMetricsTiles communityId={catalogCommunityId} />
             <BuiltInAgentList communityId={catalogCommunityId} communityName={communityName(catalogCommunityId ?? null)} />
           </Section>
 

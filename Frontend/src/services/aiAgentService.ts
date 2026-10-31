@@ -841,7 +841,7 @@ class AIAgentService {
     }
   }
 
-  async uninstallCommunityAgent(communityId: number, agentType: string): Promise<any> {
+  async uninstallCommunityAgent(communityId: string | number, agentType: string): Promise<any> {
     try {
       const response = await api.del(`/api/agents/uninstall/community/${communityId}/${agentType}`);
       return response;
@@ -868,7 +868,7 @@ class AIAgentService {
    * Returns the override map; cells absent from the map inherit the
    * community-wide enabled flag from getCommunityAgentStatus.
    */
-  async getChannelCoverage(communityId: number): Promise<ChannelCoverage> {
+  async getChannelCoverage(communityId: string | number): Promise<ChannelCoverage> {
     try {
       const response = await api.get(`/api/agents/coverage/${communityId}`) as { coverage?: ChannelCoverage };
       const raw = response?.coverage ?? {};
@@ -887,7 +887,7 @@ class AIAgentService {
   }
 
   async configureChannelAgent(
-    communityId: number,
+    communityId: string | number,
     channelId: number,
     agentType: string,
     enabled: boolean,
@@ -907,7 +907,7 @@ class AIAgentService {
     }
   }
 
-  async getCommunityAgentStatus(communityId: number): Promise<InstalledAgent[]> {
+  async getCommunityAgentStatus(communityId: string | number): Promise<InstalledAgent[]> {
     try {
       const response: any = await api.get(`/api/agents/status/community/${communityId}`);
       return response.agents || [];
@@ -1021,7 +1021,7 @@ class AIAgentService {
   // Autonomy / goal-attainment / feedback metrics. Backs the
   // Community Intelligence Hub outcome tiles + intelligence state pill (F4)
   // and shares the response shape with the platform-wide AgentMetrics page.
-  async getAgentMetrics(params: { days?: number; community_id?: number } = {}): Promise<MetricsResponse> {
+  async getAgentMetrics(params: { days?: number; community_id?: string | number } = {}): Promise<MetricsResponse> {
     try {
       const searchParams = new URLSearchParams();
       if (params.days !== undefined) searchParams.set('days', String(params.days));
@@ -1048,7 +1048,7 @@ class AIAgentService {
     }
   }
 
-  async createSummarySchedule(data: { channel_id: number; community_id: number; schedule_time: string; timezone?: string }): Promise<any> {
+  async createSummarySchedule(data: { channel_id: number; community_id: string | number; schedule_time: string; timezone?: string }): Promise<any> {
     try {
       return await api.post('/api/agents/summary-schedules', data);
     } catch (error: any) {

@@ -6,6 +6,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useRealtime } from '@/hooks/useRealtime';
 import { aiAgentService, type AgentCatalogEntry } from '@/services/aiAgentService';
 import { ErrorState } from '@/components/app/EmptyState';
+import { ConfirmDialog } from '@/components/modals/ConfirmDialog';
 import {
   changedValues, problems, valuesFrom,
   type SettingField, type SettingValue, type SettingValues,
@@ -39,6 +40,7 @@ const AgentSettingsForm: React.FC<Props> = ({ routeId }) => {
   const [values, setValues] = useState<SettingValues>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   const catalogName = CATALOG_NAMES[routeId] ?? routeId;
 
@@ -91,6 +93,22 @@ const AgentSettingsForm: React.FC<Props> = ({ routeId }) => {
       toast({ title: 'Could not turn it on', description: e instanceof Error ? e.message : undefined, variant: 'destructive' });
     } finally {
       setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!entry) return;
+    setBusy(true);
+    try {
+      if (isCommunity && communityId) await aiAgentService.uninstallCommunityAgent(communityId, entry.agent_type);
+      else await aiAgentService.deactivatePersonalAgent(entry.agent_type);
+      await load();
+      toast({ title: isCommunity ? `${entry.display_name} removed from ${communityName ?? 'the community'}` : `${entry.display_name} turned off` });
+    } catch (e) {
+      toast({ title: 'Could not remove it', description: e instanceof Error ? e.message : undefined, variant: 'destructive' });
+    } finally {
+      setBusy(false);
+      setRemoving(false);
     }
   };
 
@@ -189,7 +207,25 @@ const AgentSettingsForm: React.FC<Props> = ({ routeId }) => {
         </button>
         <button type="button" className={btnQuiet} disabled={!dirty || busy} onClick={() => setValues(initial)}>Reset</button>
         {dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
+        {turnedOn && entry && (!isCommunity || communityId) && (
+          <button type="button" className={cn(btnQuiet, 'ml-auto text-destructive')} disabled={busy} onClick={() => setRemoving(true)}>
+            {isCommunity ? 'Remove from community' : 'Turn off'}
+          </button>
+        )}
       </div>
+
+      <ConfirmDialog
+        isOpen={removing}
+        title={isCommunity ? `Remove ${entry?.display_name ?? 'this agent'} from ${communityName ?? 'the community'}?` : `Turn off ${entry?.display_name ?? 'this agent'}?`}
+        description={isCommunity
+          ? 'It stops working in every channel of this community. Its settings are kept if you add it again.'
+          : 'It stops working for you. Its settings are kept if you turn it on again.'}
+        confirmText={isCommunity ? 'Remove' : 'Turn off'}
+        isDangerous
+        isLoading={busy}
+        onConfirm={remove}
+        onCancel={() => setRemoving(false)}
+      />
     </div>
   );
 };
