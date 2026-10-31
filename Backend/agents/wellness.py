@@ -1,15 +1,15 @@
 """
-Wellness Agent for AuraFlow
+Wellness Agent for Auraflow
 Promotes healthy communication habits and well-being.
 
-Autonomous role (Phase 3.2): completes the Mood→Wellness empathy chain.
+Autonomous role: completes the Mood→Wellness empathy chain.
 Subscribes to ``mood.escalation`` (published by the mood_tracker after a
 rolling-window of negative sentiment) and reacts with a private, opt-in
 check-in delivered as a ``wellness_checkin`` Socket.IO event to the
 user's personal room. We deliberately do NOT auto-post into the channel
 or auto-DM via the `direct_messages` table — the soft toast/card is the
 least intrusive intervention and matches the existing `support_suggestion`
-pattern from Phase 1.4.
+pattern.
 """
 
 import json
@@ -51,16 +51,49 @@ _WELLNESS_DEFAULTS = {
 }
 
 
-# Soft check-in copy. Kept minimal — Gemini polish is optional and
-# lazily attempted only when GEMINI_API_KEY is configured.
+# LLM (DeepSeek) — used only to reword a check-in template so it doesn't
+# read as canned. The templates below are always the fallback, so a
+# provider outage costs tone, never the check-in itself.
+try:
+    from utils.ai.llm_client import get_llm_client, is_llm_available
+    _LLM_AVAILABLE = is_llm_available()
+    _llm_client = get_llm_client()
+except Exception:
+    _LLM_AVAILABLE = False
+    _llm_client = None
+
+
+# Wellness copy is the highest-stakes text this app generates: it reaches a
+# person the system already believes is having a bad day. The constraints
+# below are the ones that keep it from doing harm.
+_WELLNESS_SYSTEM = (
+    "You reword a short wellness check-in that a chat app sends privately to "
+    "one person.\n"
+    "- Exactly one sentence. Under 160 characters.\n"
+    "- Warm and ordinary, the way a colleague who noticed would put it. Not "
+    "clinical, not chirpy, not a wellness brochure.\n"
+    "- Do not diagnose, do not name an emotion as fact, do not say you have "
+    "been monitoring or analysing them. Never mention their messages were "
+    "scanned.\n"
+    "- No advice they did not ask for, no toxic positivity, no 'everything "
+    "happens for a reason'.\n"
+    "- Do not promise help you cannot give, and never suggest professional "
+    "help. This is a nudge, not an intervention.\n"
+    "- Keep any emoji the original had, at most one.\n"
+    "- Output only the sentence."
+)
+
+
+# Soft check-in copy. Kept minimal — LLM polish is optional and only
+# attempted when DEEPSEEK_API_KEY is configured.
 _CHECKIN_TEMPLATES = [
-    "Hey — your recent messages have a heavy tone. Want to take a short break together? 💚",
+    "Hey, things have felt a bit heavy lately. Want to take a short break together? 💚",
     "Just checking in. It looks like things have been rough lately. I'm here if you need a breather. 🌱",
     "Quick wellness ping: a 2-minute breathing pause might help right now. You've got this.",
     "Noticed you might be feeling down. Step away for water + a stretch? It really helps. ✨",
 ]
 
-# Phase 4: de-escalation copy delivered after a moderation violation,
+# De-escalation copy delivered after a moderation violation,
 # aimed at the offender to coach calmer communication. Same bandit arms
 # are reused — frontend distinguishes by `trigger` field.
 _DEESCALATION_TEMPLATES = [
@@ -77,7 +110,7 @@ class WellnessAgent(AutonomousAgent):
     Suggests breaks, positive communication, and work-life balance
     """
 
-    # ── Autonomous contract (Phase 3.2 + Phase 4) ───────────────────
+    # ── Autonomous contract ───────────────────
     NAME = "wellness"
     GOAL = {
         "respond_to_mood_escalation": True,
@@ -87,7 +120,7 @@ class WellnessAgent(AutonomousAgent):
     }
     SUBSCRIBES = [
         _event_bus.TOPIC_MOOD_ESCALATION,
-        _event_bus.TOPIC_MOD_VIOLATION,  # Phase 4: victim-support chain
+        _event_bus.TOPIC_MOD_VIOLATION,  # victim-support chain
     ]
     SCOPE_TYPE = _agent_memory.SCOPE_USER
     # Per-user cooldown: at most one check-in per hour even if the
@@ -96,7 +129,15 @@ class WellnessAgent(AutonomousAgent):
     # analog is _claim_checkin — see _CHECKIN_DEDUPE_TTL above.
     COOLDOWN_SECONDS = _COOLDOWN_SECONDS
 
-    _DEFAULT_QUIET_HOURS = (24, 0)   # disabled: (24, 0) → condition never fires
+    # Must match tunables.TUNABLES['wellness']['quiet_hours']['default'],
+    # which the tunables catalog docstring calls the single source of truth.
+    # Was temporarily (24, 0) — a sentinel that made the `in_quiet` condition
+    # unsatisfiable, silently disabling quiet hours while decide()'s docstring
+    # and the tunables catalog both still advertised 23:00-06:00. Restored:
+    # a wellness product must not push "are you OK?" prompts at 3am.
+    # The mod_violation path still bypasses this on purpose (de-escalation is
+    # time-sensitive) — see decide().
+    _DEFAULT_QUIET_HOURS = (23, 6)
 
     def __init__(self):
         """Initialize the wellness agent"""
@@ -481,7 +522,7 @@ class WellnessAgent(AutonomousAgent):
                 conn.close()
 
     # ────────────────────────────────────────────────────────────────────
-    # Autonomous hooks (Phase 3.2) — Mood→Wellness empathy chain
+    # Autonomous hooks — Mood→Wellness empathy chain
     # ────────────────────────────────────────────────────────────────────
 
     def sense(self, event: dict) -> Optional[Dict]:
@@ -594,7 +635,7 @@ class WellnessAgent(AutonomousAgent):
         personal room. The frontend renders this as a soft toast/card
         with engage / dismiss buttons that feed back into ``learn()``.
 
-        Phase 4: the ``trigger`` field tells the frontend whether this is
+        The ``trigger`` field tells the frontend whether this is
         a mood-driven empathy check-in or a moderation de-escalation
         nudge — different copy, different visual styling.
         """
@@ -609,12 +650,12 @@ class WellnessAgent(AutonomousAgent):
         # pub/sub message and runs this agent independently; the base-class
         # cooldown reads last_acted_at then acts, so N loops all see "no
         # recent act" and all emit, stacking N toasts on the user. Claim
-        # BEFORE the optional Gemini polish so losers also skip that call.
+        # BEFORE the optional LLM polish so losers also skip that call.
         if not self._claim_checkin(user_id):
             return {"emitted": False, "deduped": True,
                     "template_idx": template_idx}
 
-        # Build the message text. Optional Gemini polish if available;
+        # Build the message text. Optional LLM polish if available;
         # fall back to the template verbatim.
         text = self._format_checkin(template_idx, payload)
 
@@ -758,8 +799,12 @@ class WellnessAgent(AutonomousAgent):
         return random.randrange(n)
 
     def _format_checkin(self, template_idx: int, payload: Dict) -> str:
-        """Pick the template and optionally polish via Gemini. The
-        ``trigger`` field decides which template bank we draw from.
+        """Pick the template and optionally reword it with the LLM.
+
+        The ``trigger`` field decides which template bank we draw from. The
+        rewrite exists because a user who gets the same four sentences on
+        rotation stops reading them; the template is always the fallback, so
+        any failure here degrades to the copy we shipped.
         """
         trigger = payload.get("trigger") or "mood_escalation"
         bank = (_DEESCALATION_TEMPLATES if trigger == "mod_violation"
@@ -767,29 +812,36 @@ class WellnessAgent(AutonomousAgent):
         idx = template_idx if 0 <= template_idx < len(bank) else 0
         base = bank[idx]
 
-        # Best-effort Gemini polish — keep it short. Failure is silent.
+        if not (_LLM_AVAILABLE and _llm_client):
+            return base
+
+        # Best-effort reword. Failure is silent and keeps the template.
         try:
-            from config import GEMINI_API_KEY
-            if not GEMINI_API_KEY:
-                return base
-            from google import genai
-            client = genai.Client(api_key=GEMINI_API_KEY)
             if trigger == "mod_violation":
-                context = ("a user whose message just crossed the moderation "
+                context = ("someone whose message just crossed the moderation "
                            "line and could use a calmer follow-up")
             else:
                 mood = payload.get("primary_mood") or "down"
-                context = f"a friend who seems {mood}"
+                context = f"someone who seems {mood} right now"
             prompt = (
-                f"Rewrite this wellness check-in for {context}. Keep it warm, "
-                "ONE sentence, plain text, no emojis.\n"
-                f"Original: {base}\n\nRewrite:"
+                f"Reword this check-in for {context}. Keep the same intent and "
+                f"roughly the same length.\n\nOriginal: {base}"
             )
-            resp = client.models.generate_content(
-                model="gemini-2.5-flash", contents=prompt,
+            text = _llm_client.complete(
+                prompt,
+                system=_WELLNESS_SYSTEM,
+                max_tokens=80,
+                temperature=0.8,
+                timeout=8.0,
             )
-            text = (getattr(resp, "text", "") or "").strip().split("\n")[0]
-            return text[:240] if text else base
+            if not text:
+                return base
+            text = text.strip().split("\n")[0].strip()
+            # Guard the length contract: a model that ignores the one-sentence
+            # rule must not turn a gentle ping into a paragraph.
+            if not text or len(text) > 240:
+                return base
+            return text
         except Exception:
             return base
 

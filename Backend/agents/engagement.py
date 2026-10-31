@@ -1,8 +1,8 @@
 """
-Engagement Agent for AuraFlow
+Engagement Agent for Auraflow
 Boosts conversation engagement with smart suggestions and ice-breaking activities.
 
-Autonomous role (Phase 3.1): subscribes to ``channel.silent`` (published
+Autonomous role: subscribes to ``channel.silent`` (published
 by ``services.presence._silence_probe_loop`` at 15 / 60 / 240-min
 buckets) and emits a nudge socket event into the silent channel. The
 prompt template is picked via an ε-greedy bandit over the existing
@@ -62,7 +62,7 @@ class EngagementAgent(AutonomousAgent):
     Provides conversation starters, ice-breakers, polls, and activity suggestions
     """
 
-    # ── Autonomous contract (Phase 3.1) ─────────────────────────────
+    # ── Autonomous contract ─────────────────────────────
     NAME = "engagement"
     GOAL = {"revive_silent_channels": True, "low_intrusiveness": True}
     SUBSCRIBES = [_event_bus.TOPIC_CHANNEL_SILENT]
@@ -1232,7 +1232,7 @@ class EngagementAgent(AutonomousAgent):
         }
 
     # ────────────────────────────────────────────────────────────────────
-    # Autonomous hooks (Phase 3.1)
+    # Autonomous hooks
     # ────────────────────────────────────────────────────────────────────
 
     def _claim_nudge(self, channel_id: int) -> bool:
@@ -1263,7 +1263,7 @@ class EngagementAgent(AutonomousAgent):
         bucket = int(event.get("bucket") or 0)
         if not channel_id or bucket < self._MIN_BUCKET_MINUTES:
             return None
-        # G1a per-channel override / Phase 5.2 community kill-switch.
+        # G1a per-channel override / community kill-switch.
         # Channel helper falls through to community level when no override
         # row exists.
         if not self._is_enabled_for_channel(
@@ -1295,7 +1295,6 @@ class EngagementAgent(AutonomousAgent):
         # at our last nudge, the channel woke up in between → fresh episode,
         # reset the counter; if it's the same or higher, the channel never woke
         # → this nudge would be another unanswered one.
-        #
         # Runs BEFORE _claim_nudge so a given-up channel doesn't needlessly
         # consume (and churn) its Redis claim key every probe cycle.
         silent_minutes = int(event.get("silent_minutes") or bucket)

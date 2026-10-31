@@ -1,5 +1,5 @@
 """
-AuraFlow AI Agents Package
+Auraflow AI Agents Package
 ===========================
 Intelligent agents for enhanced communication experience.
 Agents are imported from their individual modules (e.g. agents.mood_tracker)

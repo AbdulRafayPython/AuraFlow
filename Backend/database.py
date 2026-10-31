@@ -1,5 +1,4 @@
 import os
-import ssl as _ssl_module
 import pymysql
 from pymysql.cursors import DictCursor
 from dbutils.pooled_db import PooledDB

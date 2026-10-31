@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  AuraFlow — Start ALL background workers in one go (Windows)
+REM  Auraflow — Start ALL background workers in one go (Windows)
 REM ============================================================
 REM
 REM  One launch starts everything Celery-side:
@@ -17,7 +17,7 @@ REM  worker, so a second worker would double-dispatch every bus event.
 REM
 REM  Prerequisites:
 REM    1. Redis running on REDIS_URL from .env (default localhost:6379)
-REM    2. Backend\.env filled (DB_*, JWT_SECRET_KEY, REDIS_URL, GEMINI_API_KEY)
+REM    2. Backend\.env filled (DB_*, JWT_SECRET_KEY, REDIS_URL, DEEPSEEK_API_KEY)
 REM    3. Dependencies installed in Backend\venv
 REM
 REM  NOTE: This does NOT start the Flask API. Run that separately:
@@ -49,7 +49,7 @@ if errorlevel 1 (
 
 echo.
 echo [CELERY] Launching Beat scheduler in a separate window...
-start "AuraFlow Celery Beat" cmd /k ""%PY%" -m celery -A celery_app beat --loglevel=info"
+start "Auraflow Celery Beat" cmd /k ""%PY%" -m celery -A celery_app beat --loglevel=info"
 
 echo [CELERY] Starting Worker + Orchestrator in this window.
 echo [CELERY] Queues: default, high_priority, periodic  ^|  Pool: threads(4)

@@ -1,3 +1,4 @@
+# REWRITE: ~4k-line module; split by domain (users, communities, moderation, analytics, platform) and share query helpers.
 """
 Admin Dashboard API Routes
 ==========================
@@ -3823,7 +3824,7 @@ def get_system_notifications():
                     'type': 'user',
                     'severity': 'info',
                     'title': 'New member registered',
-                    'message': f"{r['display_name'] or r['username']} joined AuraFlow.",
+                    'message': f"{r['display_name'] or r['username']} joined Auraflow.",
                     'link': '/system-admin/users',
                     'created_at': r['created_at'].isoformat() if r['created_at'] else None,
                 })

@@ -7,8 +7,8 @@ Two responsibilities:
   2. Quick-reply suggestions — suggests 3 short replies the user can tap to
      send. Suggestions are SUGGESTIONS only, never auto-posted.
 
-Light, deterministic, no heavy ML. Optional Gemini polish for welcome
-copy when GEMINI_API_KEY is set.
+Light, deterministic, no heavy ML. Optional DeepSeek polish for welcome
+copy when DEEPSEEK_API_KEY is set.
 """
 
 from __future__ import annotations
@@ -43,13 +43,25 @@ _AUTO_MSG_DEFAULTS = {
 }
 
 try:
-    from google import genai
-    from config import GEMINI_API_KEY
-    _GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
-    _gemini_client = genai.Client(api_key=GEMINI_API_KEY) if _GEMINI_AVAILABLE else None
+    from utils.ai.llm_client import get_llm_client, is_llm_available
+    _LLM_AVAILABLE = is_llm_available()
+    _llm_client = get_llm_client()
 except Exception:
-    _GEMINI_AVAILABLE = False
-    _gemini_client = None
+    _LLM_AVAILABLE = False
+    _llm_client = None
+
+
+_WELCOME_SYSTEM = (
+    "You write the single welcome line a community bot posts when someone "
+    "new joins.\n"
+    "- Exactly one or two sentences, under 200 characters.\n"
+    "- Greet the person by name and name the community once.\n"
+    "- Sound like a real member saying hi, not like marketing copy or a "
+    "form letter. No exclamation-mark spam, no emojis.\n"
+    "- Do not invite them to 'introduce yourself and tell us about your "
+    "journey'. One natural, low-pressure opening is enough.\n"
+    "- Output only the message. No quotes, no preamble."
+)
 
 
 _LEXICON_PATH = Path(__file__).parent.parent / 'lexicons' / 'auto_messages.json'
@@ -83,7 +95,7 @@ _INTENT_PATTERNS = [
 class AutoMessageAgent(AutonomousAgent):
     """Generates welcome posts and quick-reply suggestions.
 
-    Autonomous role (Phase 1.3): subscribes to ``user.joined_community``
+    Autonomous role: subscribes to ``user.joined_community``
     and posts a welcome message picked via a per-community
     multi-armed-bandit over the available welcome templates. Each
     template's reward is the count of positive ``agent_feedback`` rows
@@ -98,9 +110,8 @@ class AutoMessageAgent(AutonomousAgent):
     COOLDOWN_SECONDS = 0   # per-join: bounded naturally by user_joined cadence
 
     def __init__(self):
-        self.gemini_available = _GEMINI_AVAILABLE
-        self.gemini_client = _gemini_client
-        self.gemini_model = 'gemini-2.5-flash'
+        self.llm = _llm_client
+        self.llm_available = _LLM_AVAILABLE and _llm_client is not None
 
     # ---------------------------------------------------------------- welcome
     def generate_welcome(
@@ -118,31 +129,35 @@ class AutoMessageAgent(AutonomousAgent):
         username = (username or 'friend').strip()
 
         # Honor use_gemini_polish for this community — when off we skip the
-        # Gemini call entirely and use a template directly.
+        # LLM call entirely and use a template directly.
         cfg = (get_community_settings(community_id, 'auto_message', _AUTO_MSG_DEFAULTS)
                if community_id else dict(_AUTO_MSG_DEFAULTS))
         use_polish = bool(cfg.get('use_gemini_polish', True))
 
-        # Try Gemini first for a polished line
+        # Try the LLM first for a line that doesn't read like a template.
         text: Optional[str] = None
-        if use_polish and self.gemini_available and self.gemini_client:
+        if use_polish and self.llm_available and self.llm:
             try:
                 prompt = (
-                    "Write ONE warm, short welcome message (max 2 sentences) "
-                    "for a new community member. Plain text, no emojis. "
-                    f"Community: {community_name}. "
-                    f"New member: {username}. "
-                    + (f"Community is about: {community_description}. "
+                    f"Community name: {community_name}\n"
+                    f"New member's name: {username}\n"
+                    + (f"What the community is about: {community_description}\n"
                        if community_description else "")
+                    + "\nWrite their welcome message."
                 )
-                resp = self.gemini_client.models.generate_content(
-                    model=self.gemini_model, contents=prompt,
+                t = self.llm.complete(
+                    prompt,
+                    system=_WELCOME_SYSTEM,
+                    max_tokens=90,
+                    # Warmer than the analysis agents: identical welcome copy
+                    # for every joiner is exactly what this is meant to avoid.
+                    temperature=0.9,
+                    timeout=10.0,
                 )
-                t = (getattr(resp, 'text', '') or '').strip()
                 if t:
-                    text = t.split('\n')[0].strip()[:300]
+                    text = t.strip().split('\n')[0].strip()[:300]
             except Exception as exc:
-                print(f"[AUTO_MESSAGE] Gemini welcome failed: {exc}")
+                print(f"[AUTO_MESSAGE] LLM welcome failed: {exc}")
 
         if not text:
             templates = (_LEX.get('welcome_templates')
@@ -255,7 +270,7 @@ class AutoMessageAgent(AutonomousAgent):
                     'community_id': community_id,
                     'message_type': 'ai',
                     'is_ai_generated': True,
-                    'username': 'AuraFlow Bot',
+                    'username': 'Auraflow Bot',
                     'created_at': datetime.utcnow().isoformat() + 'Z',
                 }
                 socketio.emit('message_received', payload,
@@ -269,7 +284,7 @@ class AutoMessageAgent(AutonomousAgent):
             return {'posted': False, 'error': str(exc)}
 
     # ────────────────────────────────────────────────────────────────────
-    # Autonomous hooks (Phase 1.3)
+    # Autonomous hooks
     # ────────────────────────────────────────────────────────────────────
 
     def _claim_welcome(self, community_id: int, user_id: int) -> bool:
@@ -295,10 +310,13 @@ class AutoMessageAgent(AutonomousAgent):
         user_id      = event.get("user_id")
         if not community_id or not user_id:
             return None
-        # Community-level kill-switch: welcome_enabled=false → skip the
-        # autonomous welcome (admins keep on-demand posts available
-        # through the agent route).
+        # Community-level kill-switches: the agent being disabled for the
+        # community, or welcome_enabled=false → skip the autonomous welcome
+        # (admins keep on-demand posts available through the agent route).
         try:
+            from services.community_agent_config import is_agent_enabled
+            if not is_agent_enabled(int(community_id), 'auto_message'):
+                return None
             cfg = get_community_settings(int(community_id), 'auto_message',
                                          _AUTO_MSG_DEFAULTS)
             if not cfg.get('welcome_enabled', True):
@@ -327,10 +345,7 @@ class AutoMessageAgent(AutonomousAgent):
 
     def decide(self, observation: Dict):
         # We always want to welcome — picking the *template* is the
-        # learning signal, not whether to act. The legacy
-        # _maybe_post_welcome() in routes/channels.py already checks
-        # whether the agent is installed / welcome_enabled; that gating
-        # still applies before this event ever fires.
+        # learning signal, not whether to act.
         if not observation.get("first_channel_id"):
             return ("skip", observation, "no_default_channel")
         # Pick template index via bandit; carry it forward so act() uses
@@ -378,7 +393,7 @@ class AutoMessageAgent(AutonomousAgent):
         try:
             from routes.sockets import _post_ai_bot_message
             _post_ai_bot_message(first_channel_id, user_id, text,
-                                 author="AuraFlow Bot")
+                                 author="Auraflow Bot")
         except Exception as exc:
             print(f"[AUTO_MESSAGE] welcome post failed: {exc}")
             return {"posted": False, "template_idx": template_idx}

@@ -68,76 +68,8 @@ class TextProcessor:
         
         return cleaned
     
-    def extract_sentences(self, text: str) -> List[str]:
-        """
-        Split text into sentences
-        
-        Args:
-            text: Input text
-            
-        Returns:
-            List of sentences
-        """
-        if not text:
-            return []
-        
-        # Simple sentence splitting (can be enhanced with NLTK)
-        sentences = re.split(r'[.!?]+', text)
-        sentences = [s.strip() for s in sentences if s.strip()]
-        
-        return sentences
     
-    def normalize_roman_urdu(self, text: str) -> str:
-        """
-        Normalize Roman Urdu text variations
-        
-        Args:
-            text: Roman Urdu text
-            
-        Returns:
-            Normalized text
-        """
-        if not text:
-            return ""
-        
-        # Common Roman Urdu normalizations
-        normalizations = {
-            # Normalize repeated characters
-            r'(.)\1{2,}': r'\1\1',  # aaa... -> aa
-            # Common variations
-            r'\bacha+\b': 'acha',
-            r'\bbura+\b': 'bura',
-            r'\bkha+sh\b': 'khush',
-            r'\bkhus+hi+\b': 'khushi',
-            r'\bghu+s+a+\b': 'ghussa',
-            r'\bparesh+an+\b': 'pareshan',
-            r'\bmaz+a+\b': 'maza',
-            r'\bbeh+tar+\b': 'behtar',
-        }
-        
-        normalized = text.lower()
-        for pattern, replacement in normalizations.items():
-            normalized = re.sub(pattern, replacement, normalized)
-        
-        return normalized
     
-    def remove_stopwords(self, text: str, language: str = 'en') -> str:
-        """
-        Remove common stopwords
-        
-        Args:
-            text: Input text
-            language: Language code ('en', 'ur')
-            
-        Returns:
-            Text without stopwords
-        """
-        stopwords = self._load_stopwords()
-        
-        words = text.lower().split()
-        filtered = [w for w in words if w not in stopwords]
-        
-        return ' '.join(filtered)
     
     @classmethod
     def _load_stopwords(cls) -> Set[str]:
@@ -239,20 +171,3 @@ class TextProcessor:
         # Return top N keywords
         return [word for word, _ in sorted_words[:top_n]]
     
-    def truncate_text(self, text: str, max_length: int = 200, 
-                      suffix: str = "...") -> str:
-        """
-        Truncate text to max length
-        
-        Args:
-            text: Input text
-            max_length: Maximum length
-            suffix: Suffix to add when truncated
-            
-        Returns:
-            Truncated text
-        """
-        if not text or len(text) <= max_length:
-            return text
-        
-        return text[:max_length - len(suffix)].strip() + suffix

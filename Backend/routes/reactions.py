@@ -1,6 +1,5 @@
 # ============================================================================
 # routes/reactions.py - Optimized Message Reactions API
-#
 # Changes from original:
 #   1.  All reads go through reaction_cache (in-memory, thread-safe, TTL).
 #   2.  Toggle writes through reaction_cache.toggle_reaction() which does

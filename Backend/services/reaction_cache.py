@@ -1,14 +1,11 @@
 # ============================================================================
 # services/reaction_cache.py — In-process reaction cache
-#
 # Provides a thread-safe, TTL-based cache for reaction aggregations so that
 # the hot path (read reactions for N messages) never touches MySQL unless
 # the cache is cold or stale.
-#
 # Architecture:
 #   Write path:  toggle_reaction() → DB write → invalidate cache → rebuild
 #   Read path:   get_reactions()   → cache hit (fast) / cache miss → DB
-#
 # This eliminates the N+1 problem (1 API call per message on page load)
 # and the double-hit problem (toggle + re-fetch).
 # ============================================================================
@@ -257,14 +254,3 @@ def _group_rows(rows: list) -> list:
         })
     return list(grouped.values())
 
-
-# ── Periodic cache cleanup (evict stale entries) ───────────────────────
-def cleanup_cache():
-    """Remove expired entries. Call from a background thread."""
-    now = time.time()
-    with _lock:
-        stale = [k for k, v in _cache.items() if (now - v["ts"]) > CACHE_TTL * 2]
-        for k in stale:
-            del _cache[k]
-    if stale:
-        log.debug(f"[REACTION_CACHE] Evicted {len(stale)} stale entries")

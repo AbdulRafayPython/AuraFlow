@@ -1,6 +1,6 @@
 """
-Smart Moderation Agent for AuraFlow
-Hybrid Gemini AI + keyword-based content moderation with Roman Urdu support
+Smart Moderation Agent for Auraflow
+Hybrid LLM + keyword-based content moderation with Roman Urdu support
 """
 
 import json
@@ -68,101 +68,106 @@ def _load_lexicon():
     return _lexicon_cache
 
 
-# ── Gemini AI integration (following summarizer.py pattern) ──
-_gemini_client = None
-_GEMINI_MODERATION_AVAILABLE = False
+# ── LLM integration (DeepSeek) ──
+_llm_client = None
+_LLM_MODERATION_AVAILABLE = False
 
 try:
-    from google import genai
-    from google.genai import errors as genai_errors
-    from config import GEMINI_API_KEY
-    _GEMINI_MODERATION_AVAILABLE = bool(GEMINI_API_KEY)
-    if _GEMINI_MODERATION_AVAILABLE:
-        _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-        print("[MODERATION] OK Gemini AI client initialized for moderation")
+    from utils.ai.llm_client import get_llm_client, is_llm_available
+    _LLM_MODERATION_AVAILABLE = is_llm_available()
+    _llm_client = get_llm_client()
+    if _LLM_MODERATION_AVAILABLE:
+        print("[MODERATION] OK DeepSeek client initialized for moderation")
     else:
-        print("[MODERATION] WARN No GEMINI_API_KEY - using keyword-only mode")
-except ImportError:
-    print("[MODERATION] WARN google-genai not installed - using keyword-only mode")
+        print("[MODERATION] WARN No DEEPSEEK_API_KEY - using keyword-only mode")
 except Exception as e:
-    print(f"[MODERATION] WARN Gemini init error: {e} - using keyword-only mode")
+    print(f"[MODERATION] WARN LLM init error: {e} - using keyword-only mode")
 
 
-# ── Gemini result cache (TTL-based) ──
-_gemini_cache: Dict[str, Tuple[dict, float]] = {}
+# ── LLM result cache (TTL-based) ──
+_llm_cache: Dict[str, Tuple[dict, float]] = {}
 _CACHE_TTL = 300   # 5 minutes
 _CACHE_MAX = 100
 
 def _cache_get(text: str) -> Optional[dict]:
-    """Get cached Gemini result if still valid"""
+    """Get cached verdict if still valid"""
     key = hashlib.sha256(text.encode('utf-8')).hexdigest()
-    if key in _gemini_cache:
-        result, ts = _gemini_cache[key]
+    if key in _llm_cache:
+        result, ts = _llm_cache[key]
         if time.time() - ts < _CACHE_TTL:
             return result
-        del _gemini_cache[key]
+        del _llm_cache[key]
     return None
 
 def _cache_set(text: str, result: dict):
-    """Cache a Gemini result with TTL"""
-    global _gemini_cache
-    if len(_gemini_cache) >= _CACHE_MAX:
+    """Cache a verdict with TTL"""
+    global _llm_cache
+    if len(_llm_cache) >= _CACHE_MAX:
         # Evict oldest entry
-        oldest_key = min(_gemini_cache, key=lambda k: _gemini_cache[k][1])
-        del _gemini_cache[oldest_key]
+        oldest_key = min(_llm_cache, key=lambda k: _llm_cache[k][1])
+        del _llm_cache[oldest_key]
     key = hashlib.sha256(text.encode('utf-8')).hexdigest()
-    _gemini_cache[key] = (result, time.time())
+    _llm_cache[key] = (result, time.time())
 
 
-# ── Gemini moderation prompt (SINGLE message, kept for backward compat) ──
-_GEMINI_MODERATION_PROMPT = """You are a content moderation AI for a community chat platform called AuraFlow.
-Analyze the following message and determine if it violates community guidelines.
+# ── Moderation system prompt, shared by the single and batch reviewers ──
+# The failure mode this guards against is over-flagging, not under-flagging:
+# a false positive puts a warning banner on an innocent member's message and
+# is what makes people stop trusting the agent. The instant-block list in
+# this module already catches the extreme cases before broadcast, so the
+# model's job here is judgement on the ambiguous middle.
+_MODERATION_SYSTEM = """You review messages in Auraflow, a casual community chat app, and decide which ones genuinely violate community guidelines.
 
-IMPORTANT CONTEXT:
-- This is a casual chat platform. Users use slang, sarcasm, and informal language.
-- Common positive/neutral uses of words should NOT be flagged:
-  - "I killed it" (did well), "that's sick" (cool), "you're a beast" (impressive)
-  - "I'm dead" (laughing), "fire" (awesome), "savage" (bold/impressive)
-  - "slaying it", "crushed it", "destroyed the competition", "you're insane" (compliment)
-  - "no cap", "bruh", "damn that's cool", "holy crap", "what the heck"
-- Code snippets, programming terms (kill -9, exec, abort, crash, dump) are NOT violations.
-- Focus on INTENT and CONTEXT, not just individual keywords.
-- Support multiple languages including Roman Urdu (transliterated Urdu in English script) and Hinglish.
-- Only flag content with genuinely harmful intent: actual abuse directed at a person, real threats, actual hate speech, real harassment.
-- Mild swearing in casual conversation without targeting anyone should be "none" or "low" severity at most.
+How people talk here:
+- Slang, sarcasm, banter and mild swearing are normal and are not violations.
+- Violent-sounding idioms used as praise are not violations: "I killed it", "that's sick", "you're a beast", "I'm dead", "fire", "savage", "slaying it", "crushed it", "destroyed the competition", "you're insane", "no cap", "bruh".
+- Programming terms are not violations: kill -9, exec, abort, crash, dump, hang, terminate, fatal, deadlock.
+- Messages mix English, Roman Urdu (Urdu typed in Latin script) and Hinglish. Judge the meaning, not the script.
 
-MESSAGE: "{message_text}"
+Flag a message only when there is real harm in it:
+- abuse aimed at a specific person, not swearing in general
+- credible threats of violence
+- hate speech targeting a protected group
+- sustained harassment
+- spam, scams, or someone posting another person's private information
 
-Respond ONLY with valid JSON (no markdown fences, no explanation outside JSON):
-{{"toxic": boolean, "category": "none" | "profanity" | "hate_speech" | "harassment" | "spam" | "threats" | "sexual_content", "confidence": float_0_to_1, "severity": "none" | "low" | "medium" | "high" | "critical", "explanation": "brief reason"}}"""
+Do not flag:
+- swearing that is not aimed at anyone
+- self-deprecation or dark humour between friends
+- criticism of an idea, a tool, or the work, as opposed to the person
+- a single rude word in an otherwise ordinary exchange
+
+Judgement rules:
+- Intent and context decide, never the presence of a word.
+- "just kidding", "mazak hai", "jk" is evidence of banter, but it does not excuse content that would be harmful regardless.
+- If you are genuinely unsure, report a low confidence rather than inventing certainty. Low-confidence verdicts are filtered out by the caller, which is the correct outcome for a borderline message.
+- confidence is your actual certainty that this is a real violation, not the severity of the category."""
+
+# ── Single-message prompt (kept for backward compat) ──
+_LLM_MODERATION_PROMPT = """MESSAGE: "{message_text}"
+
+Return a JSON object:
+{{"toxic": boolean, "category": "none" | "profanity" | "hate_speech" | "harassment" | "spam" | "threats" | "sexual_content", "confidence": float between 0 and 1, "severity": "none" | "low" | "medium" | "high" | "critical", "explanation": "one short sentence"}}"""
 
 
-# ── Gemini BATCH moderation prompt ──
-_GEMINI_BATCH_PROMPT = """You are a content moderation AI for a community chat platform called AuraFlow.
-Analyze the following batch of chat messages IN CONTEXT and determine which ones violate community guidelines.
-
-IMPORTANT RULES:
-- This is a casual chat platform. Users use slang, sarcasm, and informal language.
-- Common positive/neutral expressions should NOT be flagged:
-  "I killed it" (did well), "that's sick" (cool), "you're a beast" (impressive),
-  "I'm dead" (laughing), "fire" (awesome), "no cap", "bruh", etc.
-- Code snippets and programming terms (kill -9, exec, abort, crash) are NOT violations.
-- Focus on INTENT and CONTEXT across the conversation. A message that looks threatening alone might be a joke in context.
-- Support multiple languages: English, Roman Urdu (transliterated Urdu in English script), Hinglish, etc.
-- Only flag content with GENUINELY harmful intent: real abuse directed at a person, real threats, actual hate speech, actual harassment, spam, or sharing personal info.
-- Mild swearing without targeting anyone is NOT a violation.
-- If someone says "mazak hai" / "just kidding" / "jk" — consider context but still flag if the content is genuinely harmful.
+# ── BATCH prompt — the primary path ──
+# Batching is what makes contextual moderation affordable: one call covers
+# ten messages, and the model can see that message [4] is a reply to the
+# joke in message [2] rather than an unprovoked attack.
+_LLM_BATCH_PROMPT = """Below are consecutive messages from one channel, in order. Review them together so you can see the conversation, not just isolated lines.
 
 MESSAGES:
 {messages_block}
 
-Respond with a JSON array containing ONLY the messages that violate guidelines.
-Clean messages should be OMITTED entirely.
-Each entry must have: msg_index (the number from the list), action ("warn"|"flag"|"block"), severity ("low"|"medium"|"high"|"critical"), category ("profanity"|"hate_speech"|"harassment"|"spam"|"threats"|"sexual_content"), confidence (0.0-1.0), explanation (brief reason).
+Return a JSON object with one key, "violations", whose value is an array containing ONLY the messages that genuinely violate the guidelines. Omit clean messages entirely. If every message is clean, return {{"violations": []}}.
 
-If ALL messages are clean, return an empty array: []
-
-Respond ONLY with valid JSON array (no markdown fences, no text outside JSON):"""
+Each entry must have:
+  msg_index: the number in brackets from the list above
+  action: "warn" | "flag" | "block"
+  severity: "low" | "medium" | "high" | "critical"
+  category: "profanity" | "hate_speech" | "harassment" | "spam" | "threats" | "sexual_content"
+  confidence: float between 0 and 1
+  explanation: one short sentence naming what makes it a violation"""
 
 
 # ── Instant-block list: only the most extreme content gets blocked before broadcast ──
@@ -184,23 +189,23 @@ _INSTANT_BLOCK_WORDS = {
 
 class ModerationAgent(AutonomousAgent):
     """
-    Batch Gemini AI moderation with conversation context.
+    Batch LLM moderation with conversation context.
 
     Architecture:
       1. instant_check() — tiny instant-block list for extreme content (<1ms)
       2. Messages broadcast immediately after instant check
       3. Messages pushed to Redis buffer per channel
-      4. When buffer reaches BATCH_SIZE or BATCH_TIMEOUT, Celery fires batch_gemini_review()
-      5. Gemini reviews the batch with full conversation context
+      4. When buffer reaches BATCH_SIZE or BATCH_TIMEOUT, Celery fires batch_llm_review()
+      5. The model reviews the batch with full conversation context
       6. Retroactive socket events sent for any flagged messages
 
-    Autonomous role (Phase 2.2): subscribes to ``msg.created`` and runs
+    Autonomous role: subscribes to ``msg.created`` and runs
     the cheap ``instant_check`` + lexicon scan inside ``sense``. The
     existing pre-broadcast moderation in ``routes/sockets.py`` still
     handles the live block path; this hook complements it by emitting
     a ``mod.violation`` event whenever a violation is detected, which
     Wellness (victim support) and other downstream agents can subscribe
-    to in Phase 4. Per-community adaptive sensitivity lives in
+    to. Per-community adaptive sensitivity lives in
     ``agent_state.thresholds.severity_threshold``.
     """
 
@@ -209,7 +214,7 @@ class ModerationAgent(AutonomousAgent):
     BUFFER_KEY_PREFIX = 'mod:buffer:'       # Redis key prefix for message buffers
     BUFFER_TS_PREFIX = 'mod:buffer_ts:'     # Redis key prefix for buffer timestamps
 
-    # ── Autonomous contract (Phase 2.2) ─────────────────────────────
+    # ── Autonomous contract ─────────────────────────────
     NAME = "moderation"
     GOAL = {"surface_violations_to_downstream_agents": True,
             "per_community_adaptive_threshold": True}
@@ -228,17 +233,16 @@ class ModerationAgent(AutonomousAgent):
     def __init__(self):
         """Initialize the moderation agent"""
         self.lexicon = _load_lexicon()
-        self.gemini_available = _GEMINI_MODERATION_AVAILABLE
-        self.gemini_client = _gemini_client
-        self.gemini_model = 'gemini-2.5-flash'
+        self.llm = _llm_client
+        self.llm_available = _LLM_MODERATION_AVAILABLE and _llm_client is not None
 
     # ── Phase 1: Instant check (pre-broadcast) ──────────────────────────
 
-    def instant_check(self, text: str, user_id=None, channel_id=None) -> Dict[str, any]:  # NEW — v2: added user_id, channel_id optional kwargs
+    def instant_check(self, text: str, user_id=None, channel_id=None) -> Dict[str, any]:  # added user_id, channel_id optional kwargs
         """
         Ultra-fast pre-broadcast check (<1ms). Only blocks extreme content.
         Returns {'block': True/False, 'reason': str}.
-        Everything else is allowed through and reviewed by Gemini in batch.
+        Everything else is allowed through and reviewed by the LLM in batch.
         user_id / channel_id are optional — if provided, spam_check and scam_check also run.
         """
         text_lower = text.lower().strip()
@@ -267,13 +271,13 @@ class ModerationAgent(AutonomousAgent):
                     'personal_info_types': personal_info['types'],
                     'reason': 'Personal information detected'}
 
-        # NEW — v2: spam check (skipped gracefully when user_id or channel_id is None)
+        # spam check (skipped gracefully when user_id or channel_id is None)
         if user_id is not None and channel_id is not None:
             spam = self.spam_check(user_id, channel_id, text)
             if spam.get('block') or spam.get('warn'):
                 return spam
 
-        # NEW — v2: scam check (pure regex, always runs)
+        # scam check (pure regex, always runs)
         scam = self.scam_check(text)
         if scam.get('flag'):
             return scam
@@ -334,27 +338,6 @@ class ModerationAgent(AutonomousAgent):
                 continue
         return messages
 
-    def should_flush(self, channel_id: int) -> bool:
-        """Check if buffer should be flushed (size >= BATCH_SIZE or timeout)."""
-        from services.redis_client import get_redis
-        r = get_redis()
-        if r is None:
-            return False
-        
-        buffer_key = f'{self.BUFFER_KEY_PREFIX}{channel_id}'
-        ts_key = f'{self.BUFFER_TS_PREFIX}{channel_id}'
-        
-        buf_len = r.llen(buffer_key)
-        if buf_len >= self.BATCH_SIZE:
-            return True
-        
-        ts_raw = r.get(ts_key)
-        if ts_raw and buf_len > 0:
-            first_ts = float(ts_raw)
-            if (time.time() - first_ts) >= self.BATCH_TIMEOUT:
-                return True
-        
-        return False
 
     def get_stale_channels(self) -> list:
         """
@@ -387,77 +370,81 @@ class ModerationAgent(AutonomousAgent):
                 break
         return stale
 
-    # ── Phase 3: Batch Gemini review ─────────────────────────────────────
+    # ── Phase 3: Batch LLM review ─────────────────────────────────────
 
-    def batch_gemini_review(self, messages: list) -> list:
+    def batch_llm_review(self, messages: list) -> list:
         """
-        Send a batch of messages to Gemini for contextual moderation.
-        
+        Send a batch of messages to the LLM for contextual moderation.
+
         Args:
             messages: list of dicts with {msg_id, user_id, username, content}
-        
+
         Returns:
             list of violation dicts: [{msg_index, msg_id, user_id, action, severity,
                                        category, confidence, explanation}, ...]
             Empty list if all messages are clean.
+            None if the call failed, which the caller must not treat as clean.
         """
         if not messages:
             return []
         
-        if not self.gemini_available or not self.gemini_client:
-            print("[MODERATION] Gemini unavailable for batch review")
+        if not self.llm_available or not self.llm:
+            print("[MODERATION] LLM unavailable for batch review")
             return []
-        
+
         # Build the messages block for the prompt
         lines = []
         for i, msg in enumerate(messages):
             username = msg.get('username', 'Unknown')
             content = msg.get('content', '')[:500]  # Truncate long messages
             lines.append(f"[{i}] {username}: {content}")
-        
+
         messages_block = '\n'.join(lines)
-        prompt = _GEMINI_BATCH_PROMPT.replace('{messages_block}', messages_block)
-        
+        prompt = _LLM_BATCH_PROMPT.replace('{messages_block}', messages_block)
+
         try:
-            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
             start = time.time()
-            
-            def _call():
-                return self.gemini_client.models.generate_content(
-                    model=self.gemini_model,
-                    contents=prompt,
-                    config={
-                        "response_mime_type": "application/json",
-                        "temperature": 0.1,
-                    }
-                )
-            
-            # Batch gets more time than single message (15s)
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(_call)
-                response = future.result(timeout=15.0)
-            
+
+            # Batch gets more time than a single message. The timeout is
+            # enforced inside the client (socket-level), so no thread pool
+            # is needed to bound it any more.
+            data = self.llm.complete_json(
+                prompt,
+                system=_MODERATION_SYSTEM,
+                temperature=0.1,   # moderation must be reproducible
+                max_tokens=900,
+                timeout=15.0,
+            )
+
             elapsed_ms = int((time.time() - start) * 1000)
-            
-            if not response or not response.text:
-                print(f"[MODERATION] Gemini batch returned empty response")
+
+            if data is None:
+                # Distinguish "call failed" from "nothing to flag": the
+                # caller retries on None and would otherwise mark a whole
+                # batch clean after a network blip.
+                print("[MODERATION] LLM batch returned nothing")
+                return None
+
+            # JSON mode always returns an object, so the array arrives under
+            # a key. Accept the documented one, then any array value.
+            if isinstance(data, dict):
+                verdicts = data.get('violations')
+                if verdicts is None:
+                    verdicts = next((v for v in data.values()
+                                     if isinstance(v, list)), None)
+            else:
+                verdicts = data
+
+            if verdicts is None:
+                print(f"[MODERATION] LLM batch had no array: {str(data)[:200]}")
                 return []
-            
-            raw = response.text.strip()
-            # Strip markdown fences if present
-            if raw.startswith("```"):
-                raw = re.sub(r'^```(?:json)?\s*', '', raw)
-                raw = re.sub(r'\s*```$', '', raw)
-            
-            verdicts = json.loads(raw)
-            
             if not isinstance(verdicts, list):
-                print(f"[MODERATION] Gemini batch returned non-array: {raw[:200]}")
+                print(f"[MODERATION] LLM batch returned non-array: {str(data)[:200]}")
                 return []
-            
+
             # Confidence cutoff from platform settings (low/med/high → 0.85/0.70/0.55).
             # Verdicts below the cutoff are dropped — admin chose a less aggressive
-            # sensitivity, so weak Gemini signals shouldn't surface as flags.
+            # sensitivity, so weak signals shouldn't surface as flags.
             cutoff = moderation_confidence_cutoff()
 
             # Enrich verdicts with msg_id and user_id from original messages
@@ -493,110 +480,18 @@ class ModerationAgent(AutonomousAgent):
             
             flagged_count = len(enriched)
             total_count = len(messages)
-            print(f"[MODERATION] Gemini batch review ({elapsed_ms}ms): "
+            print(f"[MODERATION] LLM batch review ({elapsed_ms}ms): "
                   f"{flagged_count}/{total_count} messages flagged")
-            
+
             return enriched
-            
-        except FuturesTimeout:
-            print(f"[MODERATION] Gemini batch timed out (>15s)")
-            return None  # None = failure (distinct from [] = all clean)
-        except json.JSONDecodeError as e:
-            print(f"[MODERATION] Gemini batch JSON parse error: {e}")
-            return None
+
         except Exception as e:
-            print(f"[MODERATION] Gemini batch error: {e}")
+            print(f"[MODERATION] LLM batch error: {e}")
             return None
 
-    # ── Legacy single-message Gemini review (backward compat) ────────────
 
-    def _analyze_with_gemini(self, text: str) -> Optional[dict]:
-        """Call Gemini API for single-message analysis with caching and 2s timeout"""
-        if not self.gemini_available or not self.gemini_client:
-            return None
+    # ── Legacy single-message review (backward compat) ───────────────────
 
-        cached = _cache_get(text)
-        if cached is not None:
-            return cached
-
-        try:
-            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
-            start = time.time()
-            prompt = _GEMINI_MODERATION_PROMPT.replace("{message_text}", text[:500])
-
-            def _call():
-                return self.gemini_client.models.generate_content(
-                    model=self.gemini_model,
-                    contents=prompt,
-                    config={
-                        "response_mime_type": "application/json",
-                        "temperature": 0.1,
-                    }
-                )
-
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(_call)
-                response = future.result(timeout=2.0)
-
-            elapsed_ms = int((time.time() - start) * 1000)
-
-            if response and response.text:
-                raw = response.text.strip()
-                if raw.startswith("```"):
-                    raw = re.sub(r'^```(?:json)?\s*', '', raw)
-                    raw = re.sub(r'\s*```$', '', raw)
-                result = json.loads(raw)
-                if 'toxic' in result and 'confidence' in result:
-                    _cache_set(text, result)
-                    return result
-            return None
-        except Exception:
-            return None
-
-    def gemini_review(self, text: str, message_id: int, user_id: int,
-                      channel_id: int, keyword_scores: dict,
-                      keyword_reasons: list) -> Optional[Dict]:
-        """
-        Single-message Gemini review. Kept for backward compatibility.
-        New code should use batch_gemini_review() instead.
-        """
-        gemini_result = self._analyze_with_gemini(text)
-        
-        if not gemini_result or gemini_result.get('confidence', 0) <= 0.5:
-            return None
-        
-        if not gemini_result.get('toxic', False):
-            return None
-        
-        gemini_severity = gemini_result.get('severity', 'low')
-        gemini_category = gemini_result.get('category', 'none')
-        gemini_conf = gemini_result.get('confidence', 0.5)
-        
-        reasons = list(keyword_reasons) if keyword_reasons else []
-        if gemini_category != 'none' and gemini_category not in reasons:
-            reasons.insert(0, gemini_category)
-        
-        if gemini_severity == 'critical' or gemini_conf >= 0.9:
-            action = 'block'
-            severity = 'critical' if gemini_severity == 'critical' else 'high'
-        elif gemini_severity == 'high' or gemini_conf >= 0.75:
-            action = 'flag'
-            severity = 'high'
-        elif gemini_severity == 'medium' or gemini_conf >= 0.6:
-            action = 'flag'
-            severity = 'medium'
-        else:
-            action = 'warn'
-            severity = 'low'
-        
-        return {
-            'action': action,
-            'severity': severity,
-            'reasons': reasons,
-            'explanation': gemini_result.get('explanation', ''),
-            'moderation_source': 'gemini',
-            'confidence': round(gemini_conf, 2)
-        }
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -650,32 +545,6 @@ class ModerationAgent(AutonomousAgent):
             'types': detected_types
         }
     
-    def _get_user_violation_count(self, user_id: int, hours: int = 24) -> int:
-        """Get user's violation count in recent hours"""
-        conn = None
-        try:
-            conn = get_db_connection()
-            with conn.cursor() as cur:
-                time_threshold = datetime.now() - timedelta(hours=hours)
-                
-                cur.execute("""
-                    SELECT COUNT(*) as count
-                    FROM ai_agent_logs
-                    WHERE user_id = %s 
-                    AND action_type = 'moderation'
-                    AND created_at >= %s
-                    AND (output_text LIKE %s OR output_text LIKE %s)
-                """, (user_id, time_threshold, '%block%', '%flag%'))
-                
-                result = cur.fetchone()
-                return result['count'] if result else 0
-                
-        except Exception as e:
-            print(f"[MODERATION] Error fetching violation count: {e}")
-            return 0
-        finally:
-            if conn:
-                conn.close()
     
     def _log_moderation_action(self, user_id: int, channel_id: int,
                               message: str, action: str, severity: str,
@@ -757,155 +626,120 @@ class ModerationAgent(AutonomousAgent):
             user_id, channel_id, message, action, severity, reasons, confidence, message_id
         )
     
-    def get_user_moderation_history(self, user_id: int, 
-                                    limit: int = 10) -> List[Dict]:
-        """Get user's moderation history"""
-        conn = None
-        try:
-            conn = get_db_connection()
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT 
-                        id, channel_id, input_text,
-                        output_text, confidence_score,
-                        created_at
-                    FROM ai_agent_logs
-                    WHERE user_id = %s AND action_type = 'moderation'
-                    ORDER BY created_at DESC
-                    LIMIT %s
-                """, (user_id, limit))
-                
-                logs = cur.fetchall()
-                
-                return [{
-                    'id': log['id'],
-                    'channel_id': log['channel_id'],
-                    'message': log['input_text'],
-                    'action': json.loads(log['output_text']) if log['output_text'] else {},
-                    'confidence': round(log['confidence_score'], 2) if log['confidence_score'] else 0,
-                    'created_at': log['created_at'].isoformat() if log['created_at'] else None
-                } for log in logs]
-                
-        except Exception as e:
-            print(f"[MODERATION] Error fetching history: {e}")
-            return []
-        finally:
-            if conn:
-                conn.close()
 
-    # ── NEW — v2: Spam detection ──────────────────────────────────────────
+    # ── Spam detection ──────────────────────────────────────────
 
-    def spam_check(self, user_id, channel_id, content) -> dict:  # NEW — v2
+    def spam_check(self, user_id, channel_id, content) -> dict:
         """
-        NEW — v2: Redis-based spam detection using flood and duplicate checks.
+        Redis-based spam detection using flood and duplicate checks.
         Returns {'block': bool, 'warn': bool, 'reason': str, 'category': 'spam'}
         Never raises — returns safe default on any Redis failure.
         """
         try:
-            import uuid  # NEW — v2
-            from services.redis_client import get_redis  # NEW — v2
-            r = get_redis()  # NEW — v2
-            if r is None:  # NEW — v2
-                return {'block': False, 'warn': False, 'reason': '', 'category': 'spam'}  # NEW — v2
+            import uuid
+            from services.redis_client import get_redis
+            r = get_redis()
+            if r is None:
+                return {'block': False, 'warn': False, 'reason': '', 'category': 'spam'}
 
-            spam_cfg = self.lexicon.get('spam_patterns', {})  # NEW — v2
-            max_per_10s = spam_cfg.get('max_messages_per_10s', 5)  # NEW — v2
-            max_dups = spam_cfg.get('max_duplicates_per_minute', 2)  # NEW — v2
+            spam_cfg = self.lexicon.get('spam_patterns', {})
+            max_per_10s = spam_cfg.get('max_messages_per_10s', 5)
+            max_dups = spam_cfg.get('max_duplicates_per_minute', 2)
 
-            # Flood detection: sorted set with 10-second sliding window  # NEW — v2
-            flood_key = f'mod:flood:{channel_id}:{user_id}'  # NEW — v2
-            now = time.time()  # NEW — v2
-            window_start = now - 10  # NEW — v2
-            msg_uuid = str(uuid.uuid4())  # NEW — v2
+            # Flood detection: sorted set with 10-second sliding window
+            flood_key = f'mod:flood:{channel_id}:{user_id}'
+            now = time.time()
+            window_start = now - 10
+            msg_uuid = str(uuid.uuid4())
 
-            pipe = r.pipeline()  # NEW — v2
-            pipe.zremrangebyscore(flood_key, '-inf', window_start)  # NEW — v2
-            pipe.zadd(flood_key, {msg_uuid: now})  # NEW — v2
-            pipe.zcard(flood_key)  # NEW — v2
-            pipe.expire(flood_key, 15)  # NEW — v2
-            results = pipe.execute()  # NEW — v2
-            msg_count = results[2]  # NEW — v2
+            pipe = r.pipeline()
+            pipe.zremrangebyscore(flood_key, '-inf', window_start)
+            pipe.zadd(flood_key, {msg_uuid: now})
+            pipe.zcard(flood_key)
+            pipe.expire(flood_key, 15)
+            results = pipe.execute()
+            msg_count = results[2]
 
-            if msg_count > max_per_10s:  # NEW — v2
-                return {'block': True, 'warn': False, 'reason': 'spam_flood', 'category': 'spam'}  # NEW — v2
+            if msg_count > max_per_10s:
+                return {'block': True, 'warn': False, 'reason': 'spam_flood', 'category': 'spam'}
 
-            # Duplicate detection: counter with 60-second TTL  # NEW — v2
-            content_hash = hashlib.sha256(content.lower().strip().encode('utf-8')).hexdigest()  # NEW — v2
-            dup_key = f'mod:dup:{channel_id}:{content_hash}'  # NEW — v2
-            count = r.incr(dup_key)  # NEW — v2
-            if count == 1:  # NEW — v2
-                r.expire(dup_key, 60)  # NEW — v2
+            # Duplicate detection: counter with 60-second TTL
+            content_hash = hashlib.sha256(content.lower().strip().encode('utf-8')).hexdigest()
+            dup_key = f'mod:dup:{channel_id}:{content_hash}'
+            count = r.incr(dup_key)
+            if count == 1:
+                r.expire(dup_key, 60)
 
-            if count > max_dups:  # NEW — v2
-                return {'block': False, 'warn': True, 'reason': 'duplicate_spam', 'category': 'spam'}  # NEW — v2
+            if count > max_dups:
+                return {'block': False, 'warn': True, 'reason': 'duplicate_spam', 'category': 'spam'}
 
-            return {'block': False, 'warn': False, 'reason': '', 'category': 'spam'}  # NEW — v2
+            return {'block': False, 'warn': False, 'reason': '', 'category': 'spam'}
 
-        except Exception as e:  # NEW — v2
-            print(f"[MODERATION] spam_check error (non-fatal): {e}")  # NEW — v2
-            return {'block': False, 'warn': False, 'reason': '', 'category': 'spam'}  # NEW — v2
+        except Exception as e:
+            print(f"[MODERATION] spam_check error (non-fatal): {e}")
+            return {'block': False, 'warn': False, 'reason': '', 'category': 'spam'}
 
-    # ── NEW — v2: Scam detection ──────────────────────────────────────────
+    # ── Scam detection ──────────────────────────────────────────
 
-    def scam_check(self, content) -> dict:  # NEW — v2
+    def scam_check(self, content) -> dict:
         """
-        NEW — v2: Pure regex scam detection against scam_patterns from the lexicon.
-        No Redis, no DB, no Gemini. < 1ms.
+        Pure regex scam detection against scam_patterns from the lexicon.
+        No Redis, no DB, no LLM. < 1ms.
         Returns {'block': False, 'flag': bool, 'reason': str, 'category': 'scam', 'confidence': float}
         """
-        scam_patterns = self.lexicon.get('scam_patterns', {})  # NEW — v2
-        content_lower = content.lower().strip()  # NEW — v2
+        scam_patterns = self.lexicon.get('scam_patterns', {})
+        content_lower = content.lower().strip()
 
-        for pattern_category, patterns in scam_patterns.items():  # NEW — v2
-            if not isinstance(patterns, list):  # NEW — v2
-                continue  # NEW — v2
-            for pattern in patterns:  # NEW — v2
-                try:  # NEW — v2
-                    if re.search(pattern, content_lower, re.IGNORECASE):  # NEW — v2
-                        return {  # NEW — v2
-                            'block': False, 'flag': True,  # NEW — v2
-                            'reason': pattern_category,  # NEW — v2
-                            'category': 'scam',  # NEW — v2
-                            'confidence': 0.85  # NEW — v2
-                        }  # NEW — v2
-                except re.error:  # NEW — v2
-                    continue  # skip invalid regex  # NEW — v2
+        for pattern_category, patterns in scam_patterns.items():
+            if not isinstance(patterns, list):
+                continue
+            for pattern in patterns:
+                try:
+                    if re.search(pattern, content_lower, re.IGNORECASE):
+                        return {
+                            'block': False, 'flag': True,
+                            'reason': pattern_category,
+                            'category': 'scam',
+                            'confidence': 0.85
+                        }
+                except re.error:
+                    continue  # skip invalid regex
 
-        return {'block': False, 'flag': False, 'reason': '', 'category': 'scam', 'confidence': 0.0}  # NEW — v2
+        return {'block': False, 'flag': False, 'reason': '', 'category': 'scam', 'confidence': 0.0}
 
-    # ── NEW — v2: Historical / retroactive scan ───────────────────────────
+    # ── Historical / retroactive scan ───────────────────────────
 
-    def retroactive_scan(self, channel_id: int, community_id: int,  # NEW — v2
-                         hours_back: int = 48, batch_size: int = 10,  # NEW — v2
-                         progress_callback=None) -> dict:  # NEW — v2
+    def retroactive_scan(self, channel_id: int, community_id: int,
+                         hours_back: int = 48, batch_size: int = 10,
+                         progress_callback=None) -> dict:
         """
-        NEW — v2: Scan historical messages not yet reviewed by the moderation agent.
-        Paginates through the DB, sends batches to Gemini, applies 3-strike logic,
+        Scan historical messages not yet reviewed by the moderation agent.
+        Paginates through the DB, sends batches to the LLM, applies 3-strike logic,
         and emits moderation_retroactive socket events for each violation.
         Skips messages already in ai_agent_logs (action_type='moderation').
         Calls progress_callback(scanned, total, flagged) after every batch.
         Returns: {'scanned': int, 'flagged': int, 'errors': int}
         """
-        import os  # NEW — v2
-        from flask_socketio import SocketIO as FlaskSocketIO  # NEW — v2
+        import os
+        from flask_socketio import SocketIO as FlaskSocketIO
 
-        REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')  # NEW — v2
-        sio = FlaskSocketIO(message_queue=REDIS_URL)  # NEW — v2
-        room = f"channel_{channel_id}"  # NEW — v2
+        REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+        sio = FlaskSocketIO(message_queue=REDIS_URL)
+        room = f"channel_{channel_id}"
 
-        MAX_MESSAGES = 500  # NEW — v2
-        scanned = 0  # NEW — v2
-        flagged = 0  # NEW — v2
-        errors = 0  # NEW — v2
-        offset = 0  # NEW — v2
-        consecutive_gemini_failures = 0  # NEW — v2
+        MAX_MESSAGES = 500
+        scanned = 0
+        flagged = 0
+        errors = 0
+        offset = 0
+        consecutive_llm_failures = 0
 
         # ── Get total unreviewed message count ────────────────────────────
-        total = 0  # NEW — v2
-        conn = None  # NEW — v2
-        try:  # NEW — v2
-            conn = get_db_connection()  # NEW — v2
-            with conn.cursor() as cur:  # NEW — v2
+        total = 0
+        conn = None
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
                 cur.execute("""
                     SELECT COUNT(*) AS cnt
                     FROM messages m
@@ -919,26 +753,26 @@ class ModerationAgent(AutonomousAgent):
                             AND action_type = 'moderation'
                             AND channel_id = %s
                       )
-                """, (channel_id, hours_back, channel_id))  # NEW — v2
-                row = cur.fetchone()  # NEW — v2
-                total = min(int(row['cnt']) if row else 0, MAX_MESSAGES)  # NEW — v2
-        except Exception as e:  # NEW — v2
-            print(f"[RETRO_SCAN] Error getting message count for channel {channel_id}: {e}")  # NEW — v2
-            return {'scanned': 0, 'flagged': 0, 'errors': 1}  # NEW — v2
-        finally:  # NEW — v2
-            if conn:  # NEW — v2
-                conn.close()  # NEW — v2
+                """, (channel_id, hours_back, channel_id))
+                row = cur.fetchone()
+                total = min(int(row['cnt']) if row else 0, MAX_MESSAGES)
+        except Exception as e:
+            print(f"[RETRO_SCAN] Error getting message count for channel {channel_id}: {e}")
+            return {'scanned': 0, 'flagged': 0, 'errors': 1}
+        finally:
+            if conn:
+                conn.close()
 
-        if total == 0:  # NEW — v2
-            return {'scanned': 0, 'flagged': 0, 'errors': 0}  # NEW — v2
+        if total == 0:
+            return {'scanned': 0, 'flagged': 0, 'errors': 0}
 
         # ── Paginated scan loop ───────────────────────────────────────────
-        while scanned < MAX_MESSAGES:  # NEW — v2
-            conn = None  # NEW — v2
-            rows = []  # NEW — v2
-            try:  # NEW — v2
-                conn = get_db_connection()  # NEW — v2
-                with conn.cursor() as cur:  # NEW — v2
+        while scanned < MAX_MESSAGES:
+            conn = None
+            rows = []
+            try:
+                conn = get_db_connection()
+                with conn.cursor() as cur:
                     cur.execute("""
                         SELECT m.id, m.sender_id, m.content, m.created_at, u.username
                         FROM   messages m
@@ -955,116 +789,116 @@ class ModerationAgent(AutonomousAgent):
                           )
                         ORDER  BY m.created_at ASC
                         LIMIT  %s OFFSET %s
-                    """, (channel_id, hours_back, channel_id, batch_size, offset))  # NEW — v2
-                    rows = cur.fetchall()  # NEW — v2
-            except Exception as e:  # NEW — v2
-                print(f"[RETRO_SCAN] DB query error at offset {offset}: {e}")  # NEW — v2
-                errors += 1  # NEW — v2
-                break  # NEW — v2
-            finally:  # NEW — v2
-                if conn:  # NEW — v2
-                    conn.close()  # NEW — v2
+                    """, (channel_id, hours_back, channel_id, batch_size, offset))
+                    rows = cur.fetchall()
+            except Exception as e:
+                print(f"[RETRO_SCAN] DB query error at offset {offset}: {e}")
+                errors += 1
+                break
+            finally:
+                if conn:
+                    conn.close()
 
-            if not rows:  # NEW — v2
-                break  # no more messages  # NEW — v2
+            if not rows:
+                break  # no more messages
 
-            batch = [  # NEW — v2
+            batch = [
                 {
-                    'msg_id': row['id'],  # NEW — v2
-                    'user_id': row['sender_id'],  # NEW — v2
-                    'username': row.get('username', 'Unknown'),  # NEW — v2
-                    'content': row['content'],  # NEW — v2
-                    'timestamp': row['created_at'].isoformat() if row.get('created_at') else None  # NEW — v2
+                    'msg_id': row['id'],
+                    'user_id': row['sender_id'],
+                    'username': row.get('username', 'Unknown'),
+                    'content': row['content'],
+                    'timestamp': row['created_at'].isoformat() if row.get('created_at') else None
                 }
-                for row in rows  # NEW — v2
-            ]  # NEW — v2
+                for row in rows
+            ]
 
-            verdicts = self.batch_gemini_review(batch)  # NEW — v2
+            verdicts = self.batch_llm_review(batch)
 
-            if verdicts is None:  # Gemini failure  # NEW — v2
-                consecutive_gemini_failures += 1  # NEW — v2
-                errors += 1  # NEW — v2
-                if consecutive_gemini_failures >= 3:  # NEW — v2
-                    print("[RETRO_SCAN] 3 consecutive Gemini failures — aborting scan")  # NEW — v2
-                    break  # NEW — v2
-                offset += batch_size  # NEW — v2
-                scanned += len(batch)  # NEW — v2
-                if progress_callback:  # NEW — v2
-                    try:  # NEW — v2
-                        progress_callback(scanned, total, flagged)  # NEW — v2
-                    except Exception:  # NEW — v2
-                        pass  # NEW — v2
-                continue  # NEW — v2
+            if verdicts is None:  # LLM failure
+                consecutive_llm_failures += 1
+                errors += 1
+                if consecutive_llm_failures >= 3:
+                    print("[RETRO_SCAN] 3 consecutive LLM failures — aborting scan")
+                    break
+                offset += batch_size
+                scanned += len(batch)
+                if progress_callback:
+                    try:
+                        progress_callback(scanned, total, flagged)
+                    except Exception:
+                        pass
+                continue
 
-            consecutive_gemini_failures = 0  # reset on success  # NEW — v2
+            consecutive_llm_failures = 0  # reset on success
 
             # ── Process each violation ────────────────────────────────────
-            for v in verdicts:  # NEW — v2
-                msg_id = v['msg_id']  # NEW — v2
-                user_id = v['user_id']  # NEW — v2
-                username = v.get('username', 'Unknown')  # NEW — v2
-                action = v['action']  # NEW — v2
-                severity = v['severity']  # NEW — v2
-                reasons = [v.get('category', 'unknown')]  # NEW — v2
-                explanation = v.get('explanation', '')  # NEW — v2
-                confidence = float(v.get('confidence', 0.5))  # NEW — v2
+            for v in verdicts:
+                msg_id = v['msg_id']
+                user_id = v['user_id']
+                username = v.get('username', 'Unknown')
+                action = v['action']
+                severity = v['severity']
+                reasons = [v.get('category', 'unknown')]
+                explanation = v.get('explanation', '')
+                confidence = float(v.get('confidence', 0.5))
 
-                violation_count = 0  # NEW — v2
-                is_already_blocked = False  # NEW — v2
-                is_owner = False  # NEW — v2
-                conn = None  # NEW — v2
-                try:  # NEW — v2
-                    conn = get_db_connection()  # NEW — v2
-                    with conn.cursor() as cur:  # NEW — v2
-                        # Guard: already blocked/removed?  # NEW — v2
+                violation_count = 0
+                is_already_blocked = False
+                is_owner = False
+                conn = None
+                try:
+                    conn = get_db_connection()
+                    with conn.cursor() as cur:
+                        # Guard: already blocked/removed?
                         cur.execute(
                             "SELECT id FROM blocked_users WHERE community_id = %s AND user_id = %s LIMIT 1",
-                            (community_id, user_id))  # NEW — v2
-                        is_already_blocked = cur.fetchone() is not None  # NEW — v2
+                            (community_id, user_id))
+                        is_already_blocked = cur.fetchone() is not None
 
-                        # Guard: community owner?  # NEW — v2
+                        # Guard: community owner?
                         cur.execute(
                             "SELECT created_by FROM communities WHERE id = %s LIMIT 1",
-                            (community_id,))  # NEW — v2
-                        owner_row = cur.fetchone()  # NEW — v2
-                        is_owner = bool(owner_row and owner_row.get('created_by') == user_id)  # NEW — v2
+                            (community_id,))
+                        owner_row = cur.fetchone()
+                        is_owner = bool(owner_row and owner_row.get('created_by') == user_id)
 
                         cur.execute(
                             "SELECT violation_count FROM community_members "
                             "WHERE community_id = %s AND user_id = %s FOR UPDATE",
-                            (community_id, user_id))  # NEW — v2
-                        member_row = cur.fetchone()  # NEW — v2
-                        if member_row:  # NEW — v2
-                            violation_count = (member_row.get('violation_count') or 0) + 1  # NEW — v2
+                            (community_id, user_id))
+                        member_row = cur.fetchone()
+                        if member_row:
+                            violation_count = (member_row.get('violation_count') or 0) + 1
                             cur.execute(
                                 "UPDATE community_members SET violation_count = %s "
                                 "WHERE community_id = %s AND user_id = %s",
-                                (violation_count, community_id, user_id))  # NEW — v2
+                                (violation_count, community_id, user_id))
 
-                        # Mark message flagged  # NEW — v2
+                        # Mark message flagged
                         cur.execute(
                             "UPDATE messages SET moderation_flagged = 1, moderation_score = %s WHERE id = %s",
-                            (confidence, msg_id))  # NEW — v2
+                            (confidence, msg_id))
 
                         cur.execute("""
                             UPDATE community_agents
                             SET usage_count = usage_count + 1, last_active = NOW()
                             WHERE community_id = %s AND agent_type = 'moderation'
-                        """, (community_id,))  # NEW — v2
-                    conn.commit()  # NEW — v2
-                except Exception as db_err:  # NEW — v2
-                    print(f"[RETRO_SCAN] DB update failed user={user_id} msg={msg_id}: {db_err}")  # NEW — v2
-                finally:  # NEW — v2
-                    if conn:  # NEW — v2
-                        conn.close()  # NEW — v2
+                        """, (community_id,))
+                    conn.commit()
+                except Exception as db_err:
+                    print(f"[RETRO_SCAN] DB update failed user={user_id} msg={msg_id}: {db_err}")
+                finally:
+                    if conn:
+                        conn.close()
 
-                # Already removed — log only, skip re-emit  # NEW — v2
-                if is_already_blocked:  # NEW — v2
-                    self.log_moderation_action(  # NEW — v2
-                        user_id, channel_id, v.get('content', '')[:500],  # NEW — v2
-                        action, severity, reasons, confidence, msg_id)  # NEW — v2
-                    flagged += 1  # NEW — v2
-                    continue  # NEW — v2
+                # Already removed — log only, skip re-emit
+                if is_already_blocked:
+                    self.log_moderation_action(
+                        user_id, channel_id, v.get('content', '')[:500],
+                        action, severity, reasons, confidence, msg_id)
+                    flagged += 1
+                    continue
 
                 # Auto-ban threshold: community max_warnings setting takes
                 # precedence over the platform default when the community
@@ -1081,41 +915,41 @@ class ModerationAgent(AutonomousAgent):
                 else:
                     ab_threshold = max(1, int(_platform_auto_ban_threshold() or 3))
 
-                # N-strike escalation (mirrors batch_moderation_task)  # NEW — v2
-                if violation_count >= ab_threshold and not is_owner:  # NEW — v2
-                    final_action = 'remove_user'  # NEW — v2
+                # N-strike escalation (mirrors batch_moderation_task)
+                if violation_count >= ab_threshold and not is_owner:
+                    final_action = 'remove_user'
                     user_message = (f'@{username} has been removed from this community '
-                                    f'by the Moderation Agent for repeated violations.')  # NEW — v2
-                elif violation_count == max(1, ab_threshold - 1):  # NEW — v2
-                    final_action = 'flag'  # NEW — v2
+                                    f'by the Moderation Agent for repeated violations.')
+                elif violation_count == max(1, ab_threshold - 1):
+                    final_action = 'flag'
                     user_message = (f'@{username}, your content has been flagged for repeated violations '
-                                    f'({violation_count}/{ab_threshold}). One more violation will result in removal.')  # NEW — v2
-                elif violation_count >= 1:  # NEW — v2
-                    final_action = 'warn'  # NEW — v2
+                                    f'({violation_count}/{ab_threshold}). One more violation will result in removal.')
+                elif violation_count >= 1:
+                    final_action = 'warn'
                     user_message = (f'@{username}, this message may violate community guidelines '
-                                    f'({", ".join(reasons)}). Please be mindful.')  # NEW — v2
-                else:  # NEW — v2
-                    final_action = action  # NEW — v2
-                    user_message = f'@{username}, this message was flagged by AI review ({", ".join(reasons)}).'  # NEW — v2
+                                    f'({", ".join(reasons)}). Please be mindful.')
+                else:
+                    final_action = action
+                    user_message = f'@{username}, this message was flagged by AI review ({", ".join(reasons)}).'
 
-                # Emit retroactive socket events  # NEW — v2
-                try:  # NEW — v2
-                    if final_action == 'remove_user':  # NEW — v2
-                        community_data = None  # NEW — v2
-                        try:  # NEW — v2
-                            rm_conn = get_db_connection()  # NEW — v2
-                            with rm_conn.cursor() as rm_cur:  # NEW — v2
-                                rm_cur.execute("SELECT name, logo_url, color, icon, public_id FROM communities WHERE id = %s", (community_id,))  # NEW — v2
-                                community_data = rm_cur.fetchone()  # NEW — v2
-                                rm_cur.execute("INSERT IGNORE INTO blocked_users (community_id, user_id) VALUES (%s, %s)", (community_id, user_id))  # NEW — v2
-                                rm_cur.execute("DELETE FROM channel_members WHERE user_id = %s AND channel_id IN (SELECT id FROM channels WHERE community_id = %s)", (user_id, community_id))  # NEW — v2
-                                rm_cur.execute("DELETE FROM community_members WHERE community_id = %s AND user_id = %s", (community_id, user_id))  # NEW — v2
-                            rm_conn.commit()  # NEW — v2
-                            rm_conn.close()  # NEW — v2
-                        except Exception as rm_err:  # NEW — v2
-                            print(f"[RETRO_SCAN] Remove user DB error: {rm_err}")  # NEW — v2
+                # Emit retroactive socket events
+                try:
+                    if final_action == 'remove_user':
+                        community_data = None
+                        try:
+                            rm_conn = get_db_connection()
+                            with rm_conn.cursor() as rm_cur:
+                                rm_cur.execute("SELECT name, logo_url, color, icon, public_id FROM communities WHERE id = %s", (community_id,))
+                                community_data = rm_cur.fetchone()
+                                rm_cur.execute("INSERT IGNORE INTO blocked_users (community_id, user_id) VALUES (%s, %s)", (community_id, user_id))
+                                rm_cur.execute("DELETE FROM channel_members WHERE user_id = %s AND channel_id IN (SELECT id FROM channels WHERE community_id = %s)", (user_id, community_id))
+                                rm_cur.execute("DELETE FROM community_members WHERE community_id = %s AND user_id = %s", (community_id, user_id))
+                            rm_conn.commit()
+                            rm_conn.close()
+                        except Exception as rm_err:
+                            print(f"[RETRO_SCAN] Remove user DB error: {rm_err}")
 
-                        sio.emit('moderation_retroactive', {  # NEW — v2
+                        sio.emit('moderation_retroactive', {
                             'message_id': msg_id, 'channel_id': channel_id,
                             'user_id': user_id, 'username': username,
                             'action': 'remove_user', 'severity': 'high',
@@ -1123,18 +957,18 @@ class ModerationAgent(AutonomousAgent):
                             'violation_count': violation_count, 'max_violations': 3,
                             'banner_text': user_message,
                             'timestamp': datetime.utcnow().isoformat()
-                        }, room=room, namespace='/')  # NEW — v2
+                        }, room=room, namespace='/')
 
-                        sio.emit('moderation_user_removed', {  # NEW — v2
+                        sio.emit('moderation_user_removed', {
                             'user_id': user_id, 'username': username,
                             'channel_id': channel_id, 'community_id': community_id,
                             'reason': f'Removed for repeated violations: {", ".join(reasons)} (3 strikes)',
-                            'removed_by': 'AuraFlow Moderation Agent',
+                            'removed_by': 'Auraflow Moderation Agent',
                             'violation_count': violation_count,
                             'timestamp': datetime.utcnow().isoformat()
-                        }, room=room, namespace='/')  # NEW — v2
+                        }, room=room, namespace='/')
 
-                        sio.emit('community:removed', {  # NEW — v2
+                        sio.emit('community:removed', {
                             'community_id': community_id,
                             'community_public_id': community_data['public_id'] if community_data else None,
                             'user_id': user_id,
@@ -1146,10 +980,10 @@ class ModerationAgent(AutonomousAgent):
                                 'community_color': community_data.get('color') if community_data else '#8B5CF6',
                                 'community_icon': community_data.get('icon') if community_data else 'AF'
                             }
-                        }, room=f"user_{user_id}", namespace='/')  # NEW — v2
+                        }, room=f"user_{user_id}", namespace='/')
 
-                    else:  # warn or flag  # NEW — v2
-                        sio.emit('moderation_retroactive', {  # NEW — v2
+                    else:  # warn or flag
+                        sio.emit('moderation_retroactive', {
                             'message_id': msg_id, 'channel_id': channel_id,
                             'user_id': user_id, 'username': username,
                             'action': final_action, 'severity': severity,
@@ -1157,13 +991,13 @@ class ModerationAgent(AutonomousAgent):
                             'violation_count': violation_count, 'max_violations': 3,
                             'banner_text': user_message,
                             'timestamp': datetime.utcnow().isoformat()
-                        }, room=room, namespace='/')  # NEW — v2
+                        }, room=room, namespace='/')
 
-                    sio.emit('moderation_action_logged', {  # NEW — v2
+                    sio.emit('moderation_action_logged', {
                         'community_id': community_id, 'channel_id': channel_id,
                         'action': final_action, 'severity': severity,
                         'timestamp': datetime.utcnow().isoformat()
-                    }, room=f"community_{community_id}", namespace='/')  # NEW — v2
+                    }, room=f"community_{community_id}", namespace='/')
 
                     # §3.5: push admin_alert for high/critical severity to admin rooms.
                     # Respect the community's notify_admins toggle — we still
@@ -1190,31 +1024,31 @@ class ModerationAgent(AutonomousAgent):
                             sio.emit('admin_alert', alert_payload,
                                      room='system_admins', namespace='/')
 
-                except Exception as emit_err:  # NEW — v2
-                    print(f"[RETRO_SCAN] Socket emit failed: {emit_err}")  # NEW — v2
+                except Exception as emit_err:
+                    print(f"[RETRO_SCAN] Socket emit failed: {emit_err}")
 
-                self.log_moderation_action(  # NEW — v2
-                    user_id, channel_id, v.get('content', '')[:500],  # NEW — v2
-                    final_action, severity, reasons, confidence, msg_id)  # NEW — v2
-                flagged += 1  # NEW — v2
+                self.log_moderation_action(
+                    user_id, channel_id, v.get('content', '')[:500],
+                    final_action, severity, reasons, confidence, msg_id)
+                flagged += 1
 
-            scanned += len(batch)  # NEW — v2
-            offset += batch_size  # NEW — v2
+            scanned += len(batch)
+            offset += batch_size
 
-            if progress_callback:  # NEW — v2
-                try:  # NEW — v2
-                    progress_callback(scanned, total, flagged)  # NEW — v2
-                except Exception:  # NEW — v2
-                    pass  # NEW — v2
+            if progress_callback:
+                try:
+                    progress_callback(scanned, total, flagged)
+                except Exception:
+                    pass
 
-            if len(rows) < batch_size:  # last page reached  # NEW — v2
-                break  # NEW — v2
+            if len(rows) < batch_size:  # last page reached
+                break
 
-        print(f"[RETRO_SCAN] channel={channel_id} scanned={scanned} flagged={flagged} errors={errors}")  # NEW — v2
-        return {'scanned': scanned, 'flagged': flagged, 'errors': errors}  # NEW — v2
+        print(f"[RETRO_SCAN] channel={channel_id} scanned={scanned} flagged={flagged} errors={errors}")
+        return {'scanned': scanned, 'flagged': flagged, 'errors': errors}
 
     # ────────────────────────────────────────────────────────────────────
-    # Autonomous hooks (Phase 2.2)
+    # Autonomous hooks
     # ────────────────────────────────────────────────────────────────────
 
     def sense(self, event: dict) -> Optional[Dict]:
@@ -1222,14 +1056,14 @@ class ModerationAgent(AutonomousAgent):
         observation only when something potentially flaggable is found —
         the vast majority of clean messages drop here, so this stays cheap.
 
-        We do NOT call Gemini here; the batched pipeline in
+        We do NOT call the LLM here; the batched pipeline in
         ``routes/sockets.py`` and ``tasks/agent_tasks.py`` still owns
         that side. This hook is purely an event surface.
         """
         content = (event.get("content") or "").strip()
         if not content or content.startswith("/") or len(content) < 3:
             return None
-        # Phase 5.2: community admin kill-switch (Agent Goals panel) +
+        # Community admin kill-switch (Agent Goals panel) +
         # G1a per-channel override (CoverageMatrix). The channel-scoped
         # helper falls through to the community-level check when there is
         # no per-channel row, so this single call covers both gates.
@@ -1329,7 +1163,7 @@ class ModerationAgent(AutonomousAgent):
 
     def act(self, payload: Dict, correlation_id: str) -> Optional[Dict]:
         """Publish ``mod.violation`` on the agent bus so downstream
-        agents (Wellness victim-support in Phase 4) can react. We do NOT
+        agents (Wellness victim-support) can react. We do NOT
         delete or warn from here — that's owned by the existing
         instant-check + batch-review pipeline. Defence in depth: the
         autonomous emit is informational.
@@ -1374,7 +1208,7 @@ class ModerationAgent(AutonomousAgent):
             elif signal in ("negative", "dismissed"):
                 cur = min(0.95, cur + 0.05 * float(weight))
             th["severity_threshold"] = round(cur, 3)
-            # Phase 5.2: respect the admin-configured clamp window so
+            # Respect the admin-configured clamp window so
             # learn() can't drift outside the bounds the community admin
             # set via the Agent Goals panel.
             th = self._apply_clamps(th, community_id=community_id)
@@ -1399,7 +1233,7 @@ class ModerationAgent(AutonomousAgent):
                 return self._DEFAULT_SEVERITY_THRESHOLD
             th = state.get("thresholds") or {}
             raw = float(th.get("severity_threshold", self._DEFAULT_SEVERITY_THRESHOLD))
-            # Phase 5.2: enforce admin clamp window at read-time too, not
+            # Enforce admin clamp window at read-time too, not
             # just at learn-time. An admin tightening the clamp should take
             # effect immediately even if learn() last ran with a wider window.
             clamped = self._apply_clamps({"severity_threshold": raw},

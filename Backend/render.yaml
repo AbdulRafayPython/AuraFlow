@@ -1,14 +1,19 @@
-# AuraFlow Backend — Render.com Blueprint
+# Auraflow Backend — Render.com Blueprint
 # https://render.com/docs/blueprint-spec
 services:
   - type: web
     name: auraflow-backend
     runtime: python
-    region: oregon
-    plan: free
+    rootDir: Backend
+    region: singapore
+    plan: starter
     buildCommand: chmod +x build.sh && ./build.sh
-    startCommand: python wsgi.py
+    startCommand: gunicorn -c gunicorn.conf.py wsgi:app
     envVars:
+      # TiDB Serverless caps the cluster at 25 conns TOTAL across all
+      # services (12 + 8 + 2 = 22, 3 spare). web: gevent greenlets share this pool.
+      - key: DB_MAX_CONNECTIONS
+        value: "12"
       - key: FLASK_ENV
         value: production
       - key: SOCKETIO_ASYNC_MODE
@@ -27,8 +32,12 @@ services:
         value: "true"
       - key: JWT_SECRET_KEY
         generateValue: true
-      - key: GEMINI_API_KEY
+      - key: DEEPSEEK_API_KEY
         sync: false
+      - key: DEEPSEEK_BASE_URL
+        value: https://api.deepseek.com
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
       - key: FRONTEND_URL
         sync: false    # e.g. https://auraflow.vercel.app
       - key: SMTP_SERVER
@@ -49,11 +58,16 @@ services:
   - type: worker
     name: auraflow-celery-worker
     runtime: python
-    region: oregon
-    plan: free
+    rootDir: Backend
+    region: singapore
+    plan: starter
     buildCommand: chmod +x build.sh && ./build.sh
-    startCommand: python -m celery -A celery_app worker --loglevel=info --pool=solo -Q default,high_priority,periodic
+    startCommand: python -m celery -A celery_app worker --loglevel=info --pool=gevent --concurrency=50 -Q default,high_priority,periodic
     envVars:
+      # TiDB Serverless caps the cluster at 25 conns TOTAL across all
+      # services (12 + 8 + 2 = 22, 3 spare). worker: --concurrency=50 greenlets share this pool.
+      - key: DB_MAX_CONNECTIONS
+        value: "8"
       - key: FLASK_ENV
         value: production
       - key: DB_HOST
@@ -73,8 +87,12 @@ services:
           name: auraflow-backend
           type: web
           envVarKey: JWT_SECRET_KEY
-      - key: GEMINI_API_KEY
+      - key: DEEPSEEK_API_KEY
         sync: false
+      - key: DEEPSEEK_BASE_URL
+        value: https://api.deepseek.com
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
       - key: REDIS_URL
         sync: false
       - key: SMTP_SERVER
@@ -89,11 +107,16 @@ services:
   - type: worker
     name: auraflow-celery-beat
     runtime: python
-    region: oregon
-    plan: free
+    rootDir: Backend
+    region: singapore
+    plan: starter
     buildCommand: chmod +x build.sh && ./build.sh
     startCommand: python -m celery -A celery_app beat --loglevel=info
     envVars:
+      # TiDB Serverless caps the cluster at 25 conns TOTAL across all
+      # services (12 + 8 + 2 = 22, 3 spare). beat: only enqueues, barely touches the DB.
+      - key: DB_MAX_CONNECTIONS
+        value: "2"
       - key: FLASK_ENV
         value: production
       - key: DB_HOST
@@ -113,8 +136,12 @@ services:
           name: auraflow-backend
           type: web
           envVarKey: JWT_SECRET_KEY
-      - key: GEMINI_API_KEY
+      - key: DEEPSEEK_API_KEY
         sync: false
+      - key: DEEPSEEK_BASE_URL
+        value: https://api.deepseek.com
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
       - key: REDIS_URL
         sync: false
       - key: SMTP_SERVER

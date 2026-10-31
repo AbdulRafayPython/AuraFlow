@@ -1,5 +1,5 @@
 @echo off
-REM AuraFlow Celery Startup Script for Windows
+REM Auraflow Celery Startup Script for Windows
 REM ============================================
 REM
 REM Prerequisites:

@@ -1,10 +1,14 @@
 """
 AI Assistant Agent
 ==================
-Lightweight Q&A / chatbot. Uses Gemini (gemini-2.5-flash) when an API key
-is available, otherwise falls back to a curated lexicon of canned replies
-(jokes, motivational quotes, generic acknowledgements). All public methods
-return a dictionary; they never raise.
+Lightweight Q&A / chatbot. Uses DeepSeek (``deepseek-chat``) when an API
+key is available, otherwise falls back to a curated lexicon of canned
+replies (jokes, motivational quotes, generic acknowledgements). All public
+methods return a dictionary; they never raise.
+
+The rolling Redis memory is replayed as real multi-turn chat messages
+rather than a flattened "Context: …" blob, which is what lets follow-ups
+like "and the second one?" resolve against the previous answer.
 """
 
 from __future__ import annotations
@@ -34,26 +38,36 @@ _ASSISTANT_DEFAULTS = {
 }
 
 
+# (style hint, output char cap, max_tokens) per reply_style setting.
 _REPLY_STYLE_HINT = {
-    'concise':  ("Reply in 1-2 short sentences. Plain text. No markdown headings.", 600),
-    'friendly': ("Reply in 1-3 short, warm sentences. Plain text. No markdown headings.", 800),
-    'detailed': ("Reply in 3-5 sentences with helpful detail. Plain text. No markdown headings.", 1200),
+    'concise':  ("Answer in one or two short sentences. Nothing else.", 600, 220),
+    'friendly': ("Answer in one to three short, warm sentences, the way a "
+                 "helpful teammate would.", 800, 300),
+    'detailed': ("Answer in three to five sentences with the detail that "
+                 "actually matters. Skip the recap of the question.", 1200, 500),
 }
 
-# -- Optional Gemini ---------------------------------------------------------
+_ASSISTANT_SYSTEM = (
+    "You are Auraflow's in-chat assistant. You answer questions from members "
+    "inside a community channel.\n"
+    "- Answer the question that was asked. Nothing adjacent.\n"
+    "- If you do not know, say so in one sentence and suggest what would "
+    "answer it. Never invent facts, names, numbers, or links.\n"
+    "- If the member writes Roman Urdu, reply in Roman Urdu in the same "
+    "register they used.\n"
+    "- You are talking in a group chat, so keep it short enough to read "
+    "without scrolling."
+)
+
+# -- LLM (DeepSeek) ----------------------------------------------------------
 try:
-    from google import genai
-    from google.genai import errors as genai_errors
-    from config import GEMINI_API_KEY
-    _GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
-    if _GEMINI_AVAILABLE:
-        _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    else:
-        _gemini_client = None
+    from utils.ai.llm_client import get_llm_client, is_llm_available
+    _LLM_AVAILABLE = is_llm_available()
+    _llm_client = get_llm_client()
 except Exception as exc:  # pragma: no cover
-    _GEMINI_AVAILABLE = False
-    _gemini_client = None
-    print(f"[ASSISTANT] Gemini unavailable: {exc}")
+    _LLM_AVAILABLE = False
+    _llm_client = None
+    print(f"[ASSISTANT] LLM unavailable: {exc}")
 
 
 _LEXICON_PATH = Path(__file__).parent.parent / 'lexicons' / 'assistant_fallback.json'
@@ -100,7 +114,7 @@ _MOTIVATION_RE = re.compile(r'\b(motivat|inspir|quote|encourage)\b', re.IGNORECA
 class AssistantAgent(AutonomousAgent):
     """General-purpose Q&A assistant.
 
-    Autonomous role (Phase 1.2): subscribes to ``msg.created`` and only
+    Autonomous role: subscribes to ``msg.created`` and only
     acts on **explicit invocation** — either ``/ask`` prefix or an
     ``@assistant`` mention. Never barges in. Carries a 5-turn rolling
     memory per user in Redis (LIST) so follow-ups remember the prior
@@ -117,9 +131,8 @@ class AssistantAgent(AutonomousAgent):
     _MEMORY_TURNS = 5
 
     def __init__(self):
-        self.gemini_available = _GEMINI_AVAILABLE
-        self.gemini_client = _gemini_client
-        self.gemini_model = 'gemini-2.5-flash'
+        self.llm = _llm_client
+        self.llm_available = _LLM_AVAILABLE and _llm_client is not None
         self.max_input_chars = 1500
         self.max_output_chars = 1200
 
@@ -168,43 +181,39 @@ class AssistantAgent(AutonomousAgent):
             self._log(user_id, channel_id, community_id, question, text, 'lexicon')
             return self._reply(text, source='lexicon', tag='motivation')
 
-        # Resolve reply-style hint + per-style output cap before the
-        # Gemini call, so a 'detailed' user actually gets a longer reply.
+        # Resolve reply-style hint + per-style caps before the LLM call, so a
+        # 'detailed' user actually gets a longer reply and a 'concise' user
+        # isn't billed for tokens that get truncated away anyway.
         style_key = str(cfg.get('reply_style') or 'concise').lower()
-        style_hint, style_cap = _REPLY_STYLE_HINT.get(
+        style_hint, style_cap, style_tokens = _REPLY_STYLE_HINT.get(
             style_key, _REPLY_STYLE_HINT['concise'])
         effective_cap = min(self.max_output_chars, style_cap)
 
-        # Try Gemini for general questions — honor use_gemini toggle.
-        use_gemini = bool(cfg.get('use_gemini', True))
-        if use_gemini and self.gemini_available and self.gemini_client:
+        # Try the LLM for general questions — honor the use_gemini toggle
+        # (legacy settings key; it gates the LLM whichever provider is wired).
+        use_llm = bool(cfg.get('use_gemini', True))
+        if use_llm and self.llm_available and self.llm:
             try:
-                prompt_parts: List[str] = [
-                    "You are AuraFlow's friendly in-chat assistant.",
-                    style_hint,
-                    "If the user writes Roman Urdu, you may reply in the same style.",
-                ]
-                if context:
-                    prompt_parts.append(f"Context: {context[:600]}")
-                prompt_parts.append(f"User: {question_truncated}")
-                prompt = "\n".join(prompt_parts)
+                system = f"{_ASSISTANT_SYSTEM}\n{style_hint}"
+                messages = self._build_messages(context, question_truncated)
 
                 start = time.time()
-                resp = self.gemini_client.models.generate_content(
-                    model=self.gemini_model,
-                    contents=prompt,
+                text = self.llm.chat(
+                    messages=messages,
+                    system=system,
+                    max_tokens=style_tokens,
+                    temperature=0.7,   # a chat assistant should not sound canned
+                    timeout=12.0,      # the /ask route blocks on this
                 )
                 elapsed_ms = int((time.time() - start) * 1000)
-                text = (getattr(resp, 'text', '') or '').strip()
+                text = (text or '').strip()
                 if text:
                     text = text[: effective_cap]
                     self._log(user_id, channel_id, community_id, question, text,
-                              'gemini', elapsed_ms)
-                    return self._reply(text, source='gemini')
-            except genai_errors.ClientError as exc:
-                print(f"[ASSISTANT] Gemini client error: {exc}")
+                              'ai', elapsed_ms)
+                    return self._reply(text, source='ai')
             except Exception as exc:
-                print(f"[ASSISTANT] Gemini failed: {exc}")
+                print(f"[ASSISTANT] LLM failed: {exc}")
 
         # Final fallback
         text = random.choice(_FALLBACK.get('fallback')
@@ -235,6 +244,51 @@ class AssistantAgent(AutonomousAgent):
         return self._reply(text, source='lexicon', tag='motivation')
 
     # ---------------------------------------------------------------- helpers
+    def _build_messages(self, context: Optional[str], question: str) -> List[Dict]:
+        """Turn the rolling Redis memory into OpenAI-style chat turns.
+
+        ``_recall_memory`` returns lines shaped ``"User: …"`` / ``"Assistant: …"``
+        in chronological order. Replaying them as real ``user``/``assistant``
+        turns (instead of pasting them into the prompt as a "Context:" blob)
+        is what makes pronoun follow-ups resolve — the model sees an actual
+        conversation, not a transcript it has to parse.
+
+        Malformed or unprefixed lines are attributed to the user, which is the
+        safe default: worst case the model sees an extra user turn.
+        """
+        messages: List[Dict] = []
+        for line in (context or '').split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith('Assistant:'):
+                content = line[len('Assistant:'):].strip()
+                role = 'assistant'
+            elif line.startswith('User:'):
+                content = line[len('User:'):].strip()
+                role = 'user'
+            else:
+                content, role = line, 'user'
+            if content:
+                messages.append({'role': role, 'content': content[:600]})
+
+        # The API rejects two consecutive turns with the same role, which a
+        # half-written memory can produce (a question stored, its reply lost
+        # to a crash). Merge runs instead of dropping them so no context is
+        # thrown away, and drop a leading assistant turn so the history
+        # starts on a user message.
+        messages.append({'role': 'user', 'content': question})
+        collapsed: List[Dict] = []
+        for msg in messages:
+            if collapsed and collapsed[-1]['role'] == msg['role']:
+                collapsed[-1]['content'] = (
+                    collapsed[-1]['content'] + '\n' + msg['content'])[:1500]
+            else:
+                collapsed.append(dict(msg))
+        while collapsed and collapsed[0]['role'] == 'assistant':
+            collapsed.pop(0)
+        return collapsed or [{'role': 'user', 'content': question}]
+
     def _reply(self, text: str, source: str, tag: Optional[str] = None) -> Dict:
         out = {
             'success': True,
@@ -276,7 +330,7 @@ class AssistantAgent(AutonomousAgent):
             print(f"[ASSISTANT] log failed: {exc}")
 
     # ────────────────────────────────────────────────────────────────────
-    # Autonomous hooks (Phase 1.2)
+    # Autonomous hooks
     # ────────────────────────────────────────────────────────────────────
 
     _TRIGGER_RE = re.compile(

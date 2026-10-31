@@ -25,7 +25,7 @@ def mood_agent():
 @pytest.fixture(scope="module")
 def mod_agent():
     with patch("database.get_db_connection", return_value=MagicMock()), \
-         patch("agents.moderation._GEMINI_MODERATION_AVAILABLE", False):
+         patch("agents.moderation._LLM_MODERATION_AVAILABLE", False):
         from agents.moderation import ModerationAgent
         return ModerationAgent()
 

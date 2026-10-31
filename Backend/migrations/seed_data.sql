@@ -1,33 +1,33 @@
 -- =============================================================
--- AuroFlow - Seed / Demo Data
--- All accounts use password: auroflow123
+-- Auraflow - Seed / Demo Data
+-- All accounts use password: Auraflow123
 -- Apply AFTER schema.sql:
 --   mysql -u <user> -p <dbname> < migrations/seed_data.sql
 -- =============================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
-SET @HASH = '$2b$12$UgAfcHjJ6WXcfPmK4RQxtOmwhyHqVrIbso4OCGsWXRWQz2yDqIEMe';
+SET @HASH = '$2b$12$hC1TZ7pBinhTyBUqqQbiv.Qpm66xHS6aPGgZIHLwlg36Ex3f2qquO';
 
 -- =============================================================
 -- USERS
--- Password for every account: auroflow123
+-- Password for every account: Auraflow123
 -- =============================================================
 INSERT INTO `users`
-  (id, email, display_name, username, password, bio, status, role, account_status, email_verified, is_first_login)
+  (id, public_id, email, display_name, username, password, bio, status, role, account_status, email_verified, is_first_login)
 VALUES
   -- System admin
-  (1, 'admin@auroflow.app',    'AuroFlow Admin',  'sysadmin',    @HASH, 'Platform administrator.',             'offline', 'system_admin', 'active', 1, 0),
+  (1, UUID(), 'admin@Auraflow.app',    'Auraflow Admin',  'sysadmin',    @HASH, 'Platform administrator.',             'offline', 'system_admin', 'active', 1, 0),
   -- Community owners / power users
-  (2, 'sarah@example.com',     'Sarah Dev',       'sarah_dev',   @HASH, 'CS final year. Loves algorithms.',    'online',  'user',         'active', 1, 0),
-  (3, 'ahmed@example.com',     'Ahmed CS',        'ahmed_cs',    @HASH, 'Final year project enthusiast.',      'online',  'user',         'active', 1, 0),
+  (2, UUID(), 'sarah@example.com',     'Sarah Dev',       'sarah_dev',   @HASH, 'CS final year. Loves algorithms.',    'online',  'user',         'active', 1, 0),
+  (3, UUID(), 'ahmed@example.com',     'Ahmed CS',        'ahmed_cs',    @HASH, 'Final year project enthusiast.',      'online',  'user',         'active', 1, 0),
   -- Regular members
-  (4, 'fatima@example.com',    'Fatima Khan',     'fatima_k',    @HASH, 'Machine learning nerd.',              'idle',    'user',         'active', 1, 0),
-  (5, 'omar@example.com',      'Omar M',          'omar_m',      @HASH, 'Frontend wizard. React + TypeScript.','online',  'user',         'active', 1, 0),
-  (6, 'zara@example.com',      'Zara Tech',       'zara_tech',   @HASH, 'Full stack developer in training.',   'offline', 'user',         'active', 1, 0),
-  (7, 'bilal@example.com',     'Bilal R',         'bilal_r',     @HASH, 'Data science and Python.',            'idle',    'user',         'active', 1, 0),
-  (8, 'nadia@example.com',     'Nadia Ali',       'nadia_ali',   @HASH, 'UI/UX designer who codes.',           'online',  'user',         'active', 1, 0),
+  (4, UUID(), 'fatima@example.com',    'Fatima Khan',     'fatima_k',    @HASH, 'Machine learning nerd.',              'idle',    'user',         'active', 1, 0),
+  (5, UUID(), 'omar@example.com',      'Omar M',          'omar_m',      @HASH, 'Frontend wizard. React + TypeScript.','online',  'user',         'active', 1, 0),
+  (6, UUID(), 'zara@example.com',      'Zara Tech',       'zara_tech',   @HASH, 'Full stack developer in training.',   'offline', 'user',         'active', 1, 0),
+  (7, UUID(), 'bilal@example.com',     'Bilal R',         'bilal_r',     @HASH, 'Data science and Python.',            'idle',    'user',         'active', 1, 0),
+  (8, UUID(), 'nadia@example.com',     'Nadia Ali',       'nadia_ali',   @HASH, 'UI/UX designer who codes.',           'online',  'user',         'active', 1, 0),
   -- AI bot user (sends AI-generated messages)
-  (9, 'bot@auroflow.app',      'AuroFlow AI',     'auroflow_ai', @HASH, 'Your intelligent community assistant.','offline', 'user',        'active', 1, 0)
+  (9, UUID(), 'bot@Auraflow.app',      'Auraflow AI',     'Auraflow_ai', @HASH, 'Your intelligent community assistant.','offline', 'user',        'active', 1, 0)
 ON DUPLICATE KEY UPDATE id = id;
 
 -- =============================================================
@@ -41,15 +41,15 @@ ON DUPLICATE KEY UPDATE user_id = user_id;
 -- COMMUNITIES
 -- =============================================================
 INSERT INTO `communities`
-  (id, name, description, icon, color, created_by, member_count)
+  (id, public_id, name, description, icon, color, created_by, member_count)
 VALUES
-  (1, 'CS Department',
+  (1, UUID(), 'CS Department',
       'Official BSCS department community. Assignments, resources, and discussions.',
       'CS', '#8B5CF6', 2, 7),
-  (2, 'FYP Hub',
+  (2, UUID(), 'FYP Hub',
       'Final Year Project collaboration space. Research, meetings, and progress tracking.',
       'FY', '#3B82F6', 3, 5),
-  (3, 'Tech Talks',
+  (3, UUID(), 'Tech Talks',
       'Casual tech discussions, tutorials, and industry news for all students.',
       'TT', '#10B981', 5, 4)
 ON DUPLICATE KEY UPDATE id = id;
@@ -287,7 +287,7 @@ VALUES
   ('registration_enabled',        'true'),
   ('email_verification_required', 'false'),
   ('maintenance_mode',            'false'),
-  ('platform_name',               'AuroFlow'),
+  ('platform_name',               'Auraflow'),
   ('platform_tagline',            'Where Student Communities Thrive')
 ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value);
 
@@ -445,7 +445,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- =============================================================
 -- QUICK REFERENCE
 -- =============================================================
--- Accounts (all password: auroflow123):
+-- Accounts (all password: Auraflow123):
 --   sysadmin      — system admin
 --   sarah_dev     — CS Dept owner, all 5 personal agents
 --   ahmed_cs      — FYP Hub owner

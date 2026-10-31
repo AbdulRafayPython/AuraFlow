@@ -8,7 +8,7 @@ from flask_jwt_extended import (
 from database import get_db_connection
 from services.otp_service import verify_otp
 from services.session_manager import (
-    create_session, rotate_refresh_token, revoke_session,
+    rotate_refresh_token, revoke_session,
     revoke_all_sessions, get_active_sessions, revoke_session_by_id,
     blocklist_access_token, check_refresh_rate_limit
 )
@@ -49,7 +49,7 @@ def signup():
     if not username or not password:
         return jsonify({'error': 'username and password are required'}), 400
 
-    # ── NEW: Input validation ──────────────────────────────────────
+    # ── Input validation ──────────────────────────────────────
     valid, msg = validate_username(username)
     if not valid:
         return jsonify({'error': msg}), 400
@@ -84,7 +84,7 @@ def signup():
             avatar_url = get_avatar_url(username)
             print("[DEBUG] Generated avatar URL during signup:", avatar_url)
 
-            # ── NEW: Generate email-verification token ─────────────
+            # ── Generate email-verification token ─────────────
             verification_token = secrets.token_urlsafe(48)
             verification_expires = datetime.utcnow() + timedelta(hours=24)
             # ── END ────────────────────────────────────────────────
@@ -101,7 +101,7 @@ def signup():
         conn.commit()
         print(f"[INFO] User registered: {username} with avatar: {avatar_url}")
 
-        # ── NEW: Send verification email (non-blocking on failure) ─
+        # ── Send verification email (non-blocking on failure) ─
         try:
             from services.email_service import send_verification_email
             frontend_url = request.headers.get('Origin', 'http://localhost:5173')
@@ -146,11 +146,16 @@ def login():
             if not row:
                 return jsonify({'error': 'Invalid credentials'}), 401
 
+            # Agents are users with is_bot = 1; they can never sign in.
+            from services.bots import is_bot_user
+            if is_bot_user(row['id']):
+                return jsonify({'error': 'Invalid credentials'}), 401
+
             stored_hash = row['password']
             if not bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8')):
                 return jsonify({'error': 'Invalid credentials'}), 401
 
-            # ── NEW: Block login if email is not verified ──────────
+            # ── Block login if email is not verified ──────────
             if not row.get('email_verified', 1):
                 return jsonify({
                     'error': 'Please verify your email before logging in. Check your inbox for a verification link.',

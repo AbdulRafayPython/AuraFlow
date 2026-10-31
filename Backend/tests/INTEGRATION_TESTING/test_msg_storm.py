@@ -461,7 +461,6 @@ class TestStorm_FocusChain:
         drift_corr = focus_acts[0]["correlation_id"]
 
         # Summarizer + KB each log an act *after* the focus drift act.
-        #
         # NOTE: this storm test discovered a real gap — neither
         # summarizer.sense nor knowledge_builder.sense propagates the
         # upstream ``event["correlation_id"]`` into their observation /
@@ -471,7 +470,6 @@ class TestStorm_FocusChain:
         # never form from real data. The §4.4 UAT only mocks edge rows,
         # so it doesn't catch this. Tracked as a follow-up in
         # docs/AUTONOMOUS_AGENTS_PLAN.md — fix in a separate change.
-        #
         # For now we assert the production-observable contract:
         # downstream agents log an act row *after* the focus drift row.
         summarizer_rows = _fetch_storm_actions("summarizer")

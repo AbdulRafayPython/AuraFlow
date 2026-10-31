@@ -7,12 +7,12 @@
 
 SET FOREIGN_KEY_CHECKS = 0;
 
--- Default bcrypt hash for password 'auroflow123' (demo). Change this!
+-- Default bcrypt hash for password 'Auraflow123' (demo). Change this!
 SET @ADMIN_HASH = '$2b$12$UgAfcHjJ6WXcfPmK4RQxtOmwhyHqVrIbso4OCGsWXRWQz2yDqIEMe';
 
 -- Insert system admin user if username 'sysadmin' is not present
 INSERT INTO `users` (email, display_name, username, password, bio, status, role, account_status, email_verified, is_first_login, created_at)
-SELECT 'admin@auroflow.app', 'AuroFlow Admin', 'sysadmin', @ADMIN_HASH, 'Platform administrator (created by migration).', 'offline', 'system_admin', 'active', 1, 0, NOW()
+SELECT 'admin@Auraflow.app', 'Auraflow Admin', 'sysadmin', @ADMIN_HASH, 'Platform administrator (created by migration).', 'offline', 'system_admin', 'active', 1, 0, NOW()
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM `users` WHERE `username` = 'sysadmin');
 

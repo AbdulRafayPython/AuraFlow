@@ -1,3 +1,4 @@
+# REWRITE: ~3k-line module; split by domain and share permission checks with routes/admin.py.
 """
 Community Dashboard API Routes
 ==============================
@@ -1109,111 +1110,111 @@ def unmute_member(community_id, user_id):
 # MODERATION (Community Scoped)
 # =====================================
 
-# NEW — v2: POST /api/admin/community/<id>/moderation/scan
-@community_admin_bp.route('/community/<uuid:public_id>/moderation/scan', methods=['POST'])  # NEW — v2
-@jwt_required()  # NEW — v2
+# POST /api/admin/community/<id>/moderation/scan
+@community_admin_bp.route('/community/<uuid:public_id>/moderation/scan', methods=['POST'])
+@jwt_required()
 @resolve_public_community_id
-@require_community_owner  # NEW — v2
-def trigger_retroactive_scan(community_id):  # NEW — v2
+@require_community_owner
+def trigger_retroactive_scan(community_id):
     """
-    NEW — v2: Queue a retroactive moderation scan for all channels (or a specific channel)
+    Queue a retroactive moderation scan for all channels (or a specific channel)
     in this community. Returns the Celery task_id immediately.
     Body (JSON, all optional):
       channel_id  int   — restrict scan to one channel (omit = all channels)
       hours_back  int   — how far back to scan (default 48)
     """
-    from tasks.agent_tasks import retroactive_scan_task  # NEW — v2
+    from tasks.agent_tasks import retroactive_scan_task
 
-    data = request.get_json(silent=True) or {}  # NEW — v2
-    channel_id = data.get('channel_id')  # None = all channels  # NEW — v2
-    hours_back = int(data.get('hours_back', 48))  # NEW — v2
-    hours_back = max(1, min(hours_back, 168))  # clamp 1h – 7 days  # NEW — v2
+    data = request.get_json(silent=True) or {}
+    channel_id = data.get('channel_id')  # None = all channels
+    hours_back = int(data.get('hours_back', 48))
+    hours_back = max(1, min(hours_back, 168))  # clamp 1h – 7 days
 
-    if channel_id is not None:  # NEW — v2
-        # Verify the channel belongs to this community  # NEW — v2
-        conn = None  # NEW — v2
-        try:  # NEW — v2
-            conn = get_db_connection()  # NEW — v2
-            with conn.cursor() as cur:  # NEW — v2
-                cur.execute(  # NEW — v2
-                    "SELECT id FROM channels WHERE id = %s AND community_id = %s",  # NEW — v2
-                    (channel_id, community_id)  # NEW — v2
-                )  # NEW — v2
-                if not cur.fetchone():  # NEW — v2
-                    return jsonify({'error': 'Channel not found in this community'}), 404  # NEW — v2
-        except Exception as e:  # NEW — v2
-            log.error(f"[ADMIN] scan channel verify error: {e}")  # NEW — v2
-            return jsonify({'error': 'Database error'}), 500  # NEW — v2
-        finally:  # NEW — v2
-            if conn:  # NEW — v2
-                conn.close()  # NEW — v2
+    if channel_id is not None:
+        # Verify the channel belongs to this community
+        conn = None
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM channels WHERE id = %s AND community_id = %s",
+                    (channel_id, community_id)
+                )
+                if not cur.fetchone():
+                    return jsonify({'error': 'Channel not found in this community'}), 404
+        except Exception as e:
+            log.error(f"[ADMIN] scan channel verify error: {e}")
+            return jsonify({'error': 'Database error'}), 500
+        finally:
+            if conn:
+                conn.close()
 
-    task = retroactive_scan_task.apply_async(  # NEW — v2
-        kwargs={  # NEW — v2
-            'channel_id': channel_id,  # NEW — v2
-            'community_id': community_id,  # NEW — v2
-            'hours_back': hours_back,  # NEW — v2
-            'triggered_by': getattr(request, 'admin_user_id', None),  # NEW — v2
-        },  # NEW — v2
-        queue='high_priority',  # NEW — v2
-    )  # NEW — v2
+    task = retroactive_scan_task.apply_async(
+        kwargs={
+            'channel_id': channel_id,
+            'community_id': community_id,
+            'hours_back': hours_back,
+            'triggered_by': getattr(request, 'admin_user_id', None),
+        },
+        queue='high_priority',
+    )
 
-    return jsonify({  # NEW — v2
-        'success': True,  # NEW — v2
-        'task_id': task.id,  # NEW — v2
-        'channel_id': channel_id,  # NEW — v2
-        'community_id': community_id,  # NEW — v2
-        'hours_back': hours_back,  # NEW — v2
-    }), 202  # NEW — v2
+    return jsonify({
+        'success': True,
+        'task_id': task.id,
+        'channel_id': channel_id,
+        'community_id': community_id,
+        'hours_back': hours_back,
+    }), 202
 
 
-# NEW — v2: GET /api/admin/community/<id>/moderation/scan/status
-@community_admin_bp.route('/community/<uuid:public_id>/moderation/scan/status', methods=['GET'])  # NEW — v2
-@jwt_required()  # NEW — v2
+# GET /api/admin/community/<id>/moderation/scan/status
+@community_admin_bp.route('/community/<uuid:public_id>/moderation/scan/status', methods=['GET'])
+@jwt_required()
 @resolve_public_community_id
-@require_community_owner  # NEW — v2
-def get_scan_status(community_id):  # NEW — v2
+@require_community_owner
+def get_scan_status(community_id):
     """
-    NEW — v2: Poll the current retroactive scan progress for a channel.
+    Poll the current retroactive scan progress for a channel.
     Query param: channel_id (required)
     Returns progress stored in Redis key mod:scan:<community_id>:<channel_id>.
     """
-    from services.redis_client import get_redis  # NEW — v2
+    from services.redis_client import get_redis
 
-    channel_id = request.args.get('channel_id', type=int)  # NEW — v2
-    if not channel_id:  # NEW — v2
-        return jsonify({'error': 'channel_id query param required'}), 400  # NEW — v2
+    channel_id = request.args.get('channel_id', type=int)
+    if not channel_id:
+        return jsonify({'error': 'channel_id query param required'}), 400
 
-    r = get_redis()  # NEW — v2
-    if r is None:  # NEW — v2
-        return jsonify({'error': 'Redis unavailable'}), 503  # NEW — v2
+    r = get_redis()
+    if r is None:
+        return jsonify({'error': 'Redis unavailable'}), 503
 
-    scan_key = f'mod:scan:{community_id}:{channel_id}'  # NEW — v2
-    data = r.hgetall(scan_key)  # NEW — v2
+    scan_key = f'mod:scan:{community_id}:{channel_id}'
+    data = r.hgetall(scan_key)
 
-    if not data:  # NEW — v2
-        return jsonify({'status': 'idle', 'community_id': community_id, 'channel_id': channel_id}), 200  # NEW — v2
+    if not data:
+        return jsonify({'status': 'idle', 'community_id': community_id, 'channel_id': channel_id}), 200
 
-    def _d(key):  # NEW — v2
-        val = data.get(key.encode()) or data.get(key)  # bytes or str key  # NEW — v2
-        return val.decode() if isinstance(val, bytes) else (val or '')  # NEW — v2
+    def _d(key):
+        val = data.get(key.encode()) or data.get(key)  # bytes or str key
+        return val.decode() if isinstance(val, bytes) else (val or '')
 
-    scanned = int(_d('scanned') or 0)  # NEW — v2
-    total = int(_d('total') or 0)  # NEW — v2
-    percent = int(scanned / total * 100) if total > 0 else 0  # NEW — v2
+    scanned = int(_d('scanned') or 0)
+    total = int(_d('total') or 0)
+    percent = int(scanned / total * 100) if total > 0 else 0
 
-    return jsonify({  # NEW — v2
-        'status': _d('status') or 'idle',  # NEW — v2
-        'community_id': community_id,  # NEW — v2
-        'channel_id': channel_id,  # NEW — v2
-        'scanned': scanned,  # NEW — v2
-        'total': total,  # NEW — v2
-        'flagged': int(_d('flagged') or 0),  # NEW — v2
-        'percent': percent,  # NEW — v2
-        'started_at': _d('started_at'),  # NEW — v2
-        'finished_at': _d('finished_at'),  # NEW — v2
-        'triggered_by': _d('triggered_by'),  # NEW — v2
-    }), 200  # NEW — v2
+    return jsonify({
+        'status': _d('status') or 'idle',
+        'community_id': community_id,
+        'channel_id': channel_id,
+        'scanned': scanned,
+        'total': total,
+        'flagged': int(_d('flagged') or 0),
+        'percent': percent,
+        'started_at': _d('started_at'),
+        'finished_at': _d('finished_at'),
+        'triggered_by': _d('triggered_by'),
+    }), 200
 
 
 @community_admin_bp.route('/community/<uuid:public_id>/moderation/flagged', methods=['GET'])
@@ -1387,7 +1388,7 @@ def get_flagged_messages(community_id):
             conn.close()
 
 
-# Phase 2.1: thread-context view for a flagged log row.
+# Thread-context view for a flagged log row.
 # Given an ai_agent_logs row id, return its surrounding messages (±N) from the
 # same channel so the admin can see the flagged content in conversation context
 # without leaving the dashboard. Window is small + bounded — pure window query,
@@ -2279,7 +2280,7 @@ def get_community_health(community_id):
             # Combined Engagement Rate (weighted same as Engagement Agent)
             engagement_rate = (
                 frequency_score * 0.30 +      # 30% weight
-                recency_score * 0.30 +        # 30% weight  
+                recency_score * 0.30 +        # 30% weight
                 participation_score * 0.20 +  # 20% weight
                 balance_score * 0.20          # 20% weight
             )

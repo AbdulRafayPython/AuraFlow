@@ -1,5 +1,5 @@
 """
-Logging Utility for AuraFlow Backend
+Logging Utility for Auraflow Backend
 Provides consistent logging across all modules with environment-aware output.
 Security: Debug logs only in development, production logs are sanitized.
 """
@@ -36,26 +36,6 @@ moderation_logger = get_logger('moderation')
 admin_logger = get_logger('admin')
 agents_logger = get_logger('agents')
 socket_logger = get_logger('socket')
-
-
-def log_function_call(logger: logging.Logger):
-    """Decorator to log function calls with timing."""
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            start_time = datetime.now()
-            logger.debug(f"Calling {func.__name__}")
-            try:
-                result = func(*args, **kwargs)
-                elapsed = (datetime.now() - start_time).total_seconds()
-                logger.debug(f"{func.__name__} completed in {elapsed:.3f}s")
-                return result
-            except Exception as e:
-                elapsed = (datetime.now() - start_time).total_seconds()
-                logger.error(f"{func.__name__} failed after {elapsed:.3f}s: {e}")
-                raise
-        return wrapper
-    return decorator
 
 
 def sanitize_log_data(data: dict, sensitive_keys: list = None) -> dict:

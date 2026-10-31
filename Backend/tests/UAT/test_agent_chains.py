@@ -452,7 +452,6 @@ class TestUAT_FocusCheckpointChain:
 # ====================================================================
 #  TC-UAT-AGENT-CHAIN-04 — Phase 5.2 admin clamps + kill-switch
 # ====================================================================
-#
 # These tests cover the Agent Goals admin panel's two safety nets:
 #   (a) clamps — an admin tightens the severity_threshold window to a
 #       narrow band; learn() and sense() must both respect it.
@@ -588,16 +587,13 @@ class TestUAT_AgentGoalsClampsAndKillSwitch:
 
 
 # ====================================================================
-#  TC-UAT-AGENT-CHAIN-04 — Collaboration Graph endpoint (Phase 4.4)
+#  TC-UAT-AGENT-CHAIN-04 — Collaboration Graph endpoint
 # ====================================================================
-#
 # Drives the new GET /api/agents/collaboration-graph endpoint against
 # a canned agent_actions dataset that contains the two collaboration
 # chains exercised by chain-01 and chain-02:
-#
 #     correlation_A:  mood_tracker --(act @ T)--> wellness --(act @ T+1s)
 #     correlation_B:  moderation   --(act @ T)--> wellness --(act @ T+1s)
-#
 # Expectation: the endpoint surfaces both edges (mood_tracker → wellness,
 # moderation → wellness) with count = 1 each, and lists all three agents
 # as nodes. This is the SQL story the panel will visualise — if the join
@@ -642,7 +638,9 @@ class TestUAT_CollaborationGraphEndpoint:
              "total": 2, "last_acted": now},
         ]
         last_signal_rows = [
-            {"agent_name": "wellness", "signal": "engaged"},
+            # Key must be "sig": the route aliases af.`signal` AS sig to
+            # dodge MySQL 8's reserved word, and reads r["sig"].
+            {"agent_name": "wellness", "sig": "engaged"},
         ]
         edge_rows = [
             {"source": "mood_tracker", "target": "wellness",

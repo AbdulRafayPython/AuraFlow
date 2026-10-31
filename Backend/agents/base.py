@@ -1,5 +1,5 @@
 """
-AuraFlow AutonomousAgent — the Sense → Think → Act → Learn ABC
+Auraflow AutonomousAgent — the Sense → Think → Act → Learn ABC
 ==============================================================
 Every agent that wants to be driven by the orchestrator subclasses this
 class. Existing on-demand agents (translator, assistant, summarizer, …)
@@ -8,7 +8,7 @@ additive.
 
 Lifecycle (`handle(event)`):
 
-    sense(event)  -> observation | None       # cheap, no Gemini
+    sense(event)  -> observation | None       # cheap, no LLM
         ↓
     decide(obs)   -> (action, payload, reason)
         ↓
@@ -49,7 +49,7 @@ class AutonomousAgent(ABC):
     @abstractmethod
     def sense(self, event: dict) -> Optional[dict]:
         """Pre-filter an incoming event into a cheap observation, or
-        return None to drop the event. Must NOT call Gemini or any
+        return None to drop the event. Must NOT call the LLM or any
         other paid LLM here — this runs on every event."""
 
     # ── Think ────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ class AutonomousAgent(ABC):
         correlation_id — if a sibling worker already acted on the same
         decision, no-op gracefully."""
 
-    # ── Clamps (Phase 5.2) ───────────────────────────────────────────
+    # ── Clamps ───────────────────────────────────────────
     def _apply_clamps(self, thresholds: dict,
                       community_id: Optional[int] = None) -> dict:
         """Coerce learn()-mutated thresholds back into the admin window.

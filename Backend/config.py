@@ -24,8 +24,21 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 SMTP_EMAIL = os.getenv("SMTP_EMAIL", "")
 SMTP_APP_PASSWORD = os.getenv("SMTP_APP_PASSWORD", "")
 
-# AI API Keys
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# ── AI / LLM ────────────────────────────────────────────────────────────
+# DeepSeek is the production provider for every agent. It is paid, so it
+# has no free-tier daily wall to hit mid-demo, and deepseek-chat is cheap
+# enough at the volumes the agent fleet runs at.
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+# deepseek-chat only. deepseek-reasoner emits a reasoning trace that blows
+# both the socket-path latency budget and the token bill.
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+# Per-call ceilings shared by every agent (see utils/ai/llm_client.py).
+LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "700"))
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
+LLM_HUMANIZE = (os.getenv("LLM_HUMANIZE", "true").strip().lower()
+                in ("1", "true", "yes", "on"))
 
 # Redis Configuration
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
@@ -46,10 +59,11 @@ RATE_LIMIT_AUTH = os.getenv("RATE_LIMIT_AUTH", "5 per minute")
 # Or set env vars VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY, VAPID_CLAIMS_EMAIL
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
-VAPID_CLAIMS_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", SMTP_EMAIL or "mailto:admin@auroflow.app")
+VAPID_CLAIMS_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", SMTP_EMAIL or "mailto:admin@Auraflow.app")
 
 # Log configuration status only in development
 if not IS_PRODUCTION:
     print(f"[CONFIG] Environment: {FLASK_ENV}")
     print(f"[CONFIG] SMTP_EMAIL loaded: {bool(SMTP_EMAIL)}")
-    print(f"[CONFIG] GEMINI_API_KEY loaded: {bool(GEMINI_API_KEY)}")
+    print(f"[CONFIG] DEEPSEEK_API_KEY loaded: {bool(DEEPSEEK_API_KEY)} "
+          f"(model={DEEPSEEK_MODEL})")

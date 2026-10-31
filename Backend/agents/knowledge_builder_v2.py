@@ -9,11 +9,11 @@ Features:
 - Decision Detection: Captures team decisions
 - Auto-tagging: Generates keywords from content
 - Duplicate Prevention: Avoids saving redundant entries
-- Gemini AI: Enhanced extraction with fallback to rule-based
+- DeepSeek: Enhanced extraction with fallback to rule-based
 
-Approach: Hybrid (Gemini AI primary, rule-based fallback)
+Approach: Hybrid (LLM primary, rule-based fallback)
 
-Autonomous role (Phase 3.4): subscribes to ``focus.drift`` — exactly the
+Autonomous role: subscribes to ``focus.drift`` — exactly the
 moments when a topic is being "closed" and is most valuable to
 crystallise into the KB. Avoids subscribing to ``msg.created`` directly,
 which would be far too hot for an LLM-backed extractor. After a
@@ -59,31 +59,45 @@ def _item_quality_score(item: dict) -> int:
     score += min(3, tag_count)
     return max(1, min(10, score))
 
-# ── Gemini AI integration (same pattern as summarizer.py) ────────────────────
+# ── LLM integration (DeepSeek, same pattern as summarizer.py) ────────────────
 try:
-    from google import genai
-    from google.genai import errors as _genai_errors
-    from config import GEMINI_API_KEY
-    _KB_GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
-    if _KB_GEMINI_AVAILABLE:
-        _kb_gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    else:
-        _kb_gemini_client = None
-except ImportError:
-    _KB_GEMINI_AVAILABLE = False
-    _kb_gemini_client = None
-    print("[KB] Gemini not available — rule-based extraction only")
+    from utils.ai.llm_client import get_llm_client, is_llm_available, humanize_text
+    _KB_LLM_AVAILABLE = is_llm_available()
+    _kb_llm_client = get_llm_client()
+    if not _KB_LLM_AVAILABLE:
+        print("[KB] No DEEPSEEK_API_KEY — rule-based extraction only")
 except Exception as _e:
-    _KB_GEMINI_AVAILABLE = False
-    _kb_gemini_client = None
-    print(f"[KB] Gemini init error: {_e}")
+    _KB_LLM_AVAILABLE = False
+    _kb_llm_client = None
+    humanize_text = lambda t: t  # noqa: E731 — identity fallback
+    print(f"[KB] LLM init error: {_e}")
+
+
+_KB_SYSTEM = (
+    "You pull durable, reusable knowledge out of a team's chat history so it "
+    "can be searched later.\n"
+    "What counts as knowledge: an answer someone gave that a future member "
+    "would also need, an explanation of a term or tool the team uses, and a "
+    "choice the team actually settled on.\n"
+    "What does not: greetings, scheduling chatter, one-off status pings, "
+    "opinions nobody responded to, and anything that will be stale next week.\n"
+    "Hard rules:\n"
+    "- Every item must be supported by what is actually in the transcript. "
+    "Never fill a gap with general knowledge, and never invent a term the "
+    "team did not use.\n"
+    "- Write each answer so it stands on its own. A reader who never saw the "
+    "chat must be able to understand it without the surrounding messages.\n"
+    "- Resolve pronouns and 'it' to the actual subject.\n"
+    "- Plain sentences, no markdown, no dashes as punctuation.\n"
+    "- Returning fewer, correct items beats padding the lists."
+)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 class KnowledgeBuilderAgent(AutonomousAgent):
     """Extracts and stores knowledge from chat conversations"""
 
-    # ── Autonomous contract (Phase 3.4) ─────────────────────────────
+    # ── Autonomous contract ─────────────────────────────
     NAME = "knowledge_builder"
     GOAL = {"crystallise_completed_topics_into_kb": True}
     SUBSCRIBES = [_event_bus.TOPIC_FOCUS_DRIFT]
@@ -138,9 +152,8 @@ class KnowledgeBuilderAgent(AutonomousAgent):
         """Initialize the Knowledge Builder Agent"""
         self.min_message_length = 5  # Minimum characters for consideration (lowered for short answers)
         self.similarity_threshold = 0.85  # For duplicate detection
-        self.gemini_available = _KB_GEMINI_AVAILABLE
-        self.gemini_client = _kb_gemini_client
-        self.gemini_model = 'gemini-2.5-flash'
+        self.llm = _kb_llm_client
+        self.llm_available = _KB_LLM_AVAILABLE and _kb_llm_client is not None
         # Stash for the in-flight extract_knowledge() so _save_knowledge_items
         # can honor the community's quality + categorize settings without
         # us threading them through three layers of helpers.
@@ -197,17 +210,17 @@ class KnowledgeBuilderAgent(AutonomousAgent):
             print(f"[Knowledge Builder V2] Preprocessed to {len(clean_messages)} clean messages")
             
             # Step 3: Extract different types of knowledge
-            # Try Gemini first, then fall back to / supplement with rule-based
-            gemini_result = self._extract_with_gemini(clean_messages)
+            # Try the LLM first, then fall back to / supplement with rule-based
+            llm_result = self._extract_with_llm(clean_messages)
 
             faqs = self._detect_faqs(clean_messages)
             definitions = self._detect_definitions(clean_messages)
             decisions = self._detect_decisions(clean_messages)
 
-            if gemini_result:
-                faqs        = self._merge_items(gemini_result['faqs'],       faqs,       channel_id)
-                definitions = self._merge_items(gemini_result['definitions'], definitions, channel_id)
-                decisions   = self._merge_items(gemini_result['decisions'],   decisions,  channel_id)
+            if llm_result:
+                faqs        = self._merge_items(llm_result['faqs'],        faqs,        channel_id)
+                definitions = self._merge_items(llm_result['definitions'], definitions, channel_id)
+                decisions   = self._merge_items(llm_result['decisions'],   decisions,   channel_id)
 
             print(f"[Knowledge Builder V2] Detected: {len(faqs)} FAQs, {len(definitions)} definitions, {len(decisions)} decisions")
             
@@ -243,19 +256,19 @@ class KnowledgeBuilderAgent(AutonomousAgent):
             self._current_kb_cfg = None
 
     # ========================================
-    # GEMINI-ENHANCED EXTRACTION
+    # LLM-ENHANCED EXTRACTION
     # ========================================
 
-    def _extract_with_gemini(self, messages):
+    def _extract_with_llm(self, messages):
         """
-        Use Gemini to extract FAQs, definitions, and decisions from messages.
+        Use the LLM to extract FAQs, definitions, and decisions from messages.
 
         Falls back gracefully — caller always checks return value for None.
 
         Returns:
             dict with keys 'faqs', 'definitions', 'decisions' (lists) or None on failure
         """
-        if not self.gemini_available or not self.gemini_client:
+        if not self.llm_available or not self.llm:
             return None
 
         # Build a compact conversation transcript (max 300 messages to stay within token limits)
@@ -271,9 +284,10 @@ class KnowledgeBuilderAgent(AutonomousAgent):
         if not transcript:
             return None
 
-        prompt = f"""You are an expert knowledge extractor for a team collaboration chat application.
+        prompt = f"""Chat transcript:
+{transcript}
 
-Analyze the following chat transcript and extract ALL useful structured knowledge.
+Extract the reusable knowledge from it.
 
 Return a JSON object with exactly these three keys:
 {{
@@ -288,106 +302,114 @@ Return a JSON object with exactly these three keys:
   ]
 }}
 
-Extraction rules — be thorough, not conservative:
+faqs — a question and the answer it actually received:
+- The question and its answer are often from different people and several messages apart. Follow the thread.
+- A stated fact that answers an obvious question counts. If someone says "it took 2 weeks from wireframe to high fidelity", record Q: "How long did the design take?" A: "About 2 weeks from wireframe to high fidelity".
+- Write the question the way a future member would type it into search, not the way it happened to be phrased in chat.
+- A question nobody answered is not an FAQ. Skip it.
 
-faqs (Q&A pairs):
-- ANY message that contains a question (even casual ones like "How long did this take?") followed by an answer in any nearby message counts as an FAQ.
-- The question and answer can be from DIFFERENT users separated by several messages — look for the logical response.
-- Also extract implicit Q&A: if someone shares a fact that answers a common question, create the Q&A pair yourself (e.g. if someone says "It took 2 weeks from wireframe to high-fidelity", create Q: "How long did the project/design take?" A: "About 2 weeks from wireframe to high-fidelity").
-- Include feedback and review comments as Q&A when useful (e.g. Q: "What is good about the design?" A: "Spacing is perfect, very consistent 8px grid").
+definitions — an explanation of a term, tool, concept, or workflow the team uses:
+- Include the implicit ones: "keep it on the 8px grid" defines a spacing convention worth recording.
+- The definition must be what this team means by the word, taken from the chat, not the textbook definition.
 
-definitions:
-- Any explanation of a term, tool, technology, concept, workflow, or methodology.
-- Implicit definitions count: "consistent 8px grid" defines a design practice; "wireframe to high-fidelity" defines a design workflow stage.
+decisions — something the team settled on:
+- Formal or informal both count, as long as there was agreement.
+- Include what a channel is for, tooling choices, confirmed approaches, and standards the team agreed to hold.
+- One person proposing something with no response is not a decision.
 
-decisions:
-- Any agreement, confirmation, conclusion, or team consensus — formal or informal.
-- Includes: what the chat/channel is for, project choices, confirmed approaches, agreed-upon standards.
-
-General rules:
-- Only extract items actually present or clearly implied in the chat. Do NOT invent unrelated content.
-- tags: 1-4 short lowercase keywords relevant to the item.
-- If nothing qualifies for a category, return an empty list for that key.
-- Return ONLY the JSON object — no markdown, no explanation, no code block.
-
-Chat transcript:
-{transcript}"""
+tags: 1 to 4 short lowercase keywords.
+If a category has nothing genuine in it, return an empty array for that key."""
 
         try:
-            response = self.gemini_client.models.generate_content(
-                model=self.gemini_model,
-                contents=prompt
+            data = self.llm.complete_json(
+                prompt,
+                system=_KB_SYSTEM,
+                temperature=0.2,
+                max_tokens=1600,
+                timeout=45.0,   # background Celery task, latency is not critical
             )
-            raw = response.text.strip()
+            if not isinstance(data, dict):
+                return None
 
-            # Strip markdown code fences if present
-            if raw.startswith('```'):
-                raw = re.sub(r'^```[a-z]*\n?', '', raw)
-                raw = re.sub(r'\n?```$', '', raw)
-                raw = raw.strip()
+            # Normalise into the internal item format used by rule-based
+            # extraction. Every string goes through the humanizer: these rows
+            # are read back verbatim by Support and by the KB browser, so a
+            # stray em dash here shows up in the UI months later.
+            def _clean(value, limit: int = 1000) -> str:
+                return humanize_text(str(value or '').strip())[:limit]
 
-            data = json.loads(raw)
+            def _tags(item) -> str:
+                raw = item.get('tags') or []
+                if isinstance(raw, str):
+                    raw = [raw]
+                return ','.join(str(t).strip().lower() for t in raw[:5] if str(t).strip())
 
-            # Normalise into the internal item format used by rule-based extraction
             result_faqs = []
-            for item in data.get('faqs', []):
-                if item.get('question') and item.get('answer'):
+            for item in (data.get('faqs') or []):
+                if not isinstance(item, dict):
+                    continue
+                question, answer = _clean(item.get('question'), 500), _clean(item.get('answer'))
+                if question and answer:
                     result_faqs.append({
                         'type': 'FAQ',
-                        'question': str(item['question']).strip(),
-                        'answer': str(item['answer']).strip(),
-                        'tags': ','.join(str(t) for t in item.get('tags', [])[:5]),
+                        'question': question,
+                        'answer': answer,
+                        'tags': _tags(item),
                         'timestamp': datetime.now(),
-                        'source': 'gemini',
+                        'source': 'ai',
                     })
 
             result_defs = []
-            for item in data.get('definitions', []):
-                if item.get('term') and item.get('definition'):
+            for item in (data.get('definitions') or []):
+                if not isinstance(item, dict):
+                    continue
+                term, definition = _clean(item.get('term'), 200), _clean(item.get('definition'))
+                if term and definition:
                     result_defs.append({
                         'type': 'DEFINITION',
-                        'question': str(item['term']).strip(),
-                        'answer': str(item['definition']).strip(),
-                        'tags': ','.join(str(t) for t in item.get('tags', [])[:5]),
+                        'question': term,
+                        'answer': definition,
+                        'tags': _tags(item),
                         'timestamp': datetime.now(),
-                        'source': 'gemini',
+                        'source': 'ai',
                     })
 
             result_decs = []
-            for item in data.get('decisions', []):
-                if item.get('statement'):
-                    stmt = str(item['statement']).strip()
-                    summary = str(item.get('summary', stmt[:60])).strip()
+            for item in (data.get('decisions') or []):
+                if not isinstance(item, dict):
+                    continue
+                stmt = _clean(item.get('statement'))
+                if stmt:
+                    summary = _clean(item.get('summary'), 200) or stmt[:60]
                     result_decs.append({
                         'type': 'DECISION',
                         'question': summary,
                         'answer': stmt,
-                        'tags': ','.join(str(t) for t in item.get('tags', [])[:5]),
+                        'tags': _tags(item),
                         'timestamp': datetime.now(),
-                        'source': 'gemini',
+                        'source': 'ai',
                     })
 
-            print(f"[KB Gemini] Extracted: {len(result_faqs)} FAQs, {len(result_defs)} definitions, {len(result_decs)} decisions")
+            print(f"[KB LLM] Extracted: {len(result_faqs)} FAQs, "
+                  f"{len(result_defs)} definitions, {len(result_decs)} decisions")
             return {'faqs': result_faqs, 'definitions': result_defs, 'decisions': result_decs}
 
-        except json.JSONDecodeError as e:
-            print(f"[KB Gemini] JSON parse error: {e} — falling back to rule-based")
-            return None
         except Exception as e:
-            print(f"[KB Gemini] Extraction error: {e} — falling back to rule-based")
+            print(f"[KB LLM] Extraction error: {e} — falling back to rule-based")
             return None
 
-    def _merge_items(self, gemini_items, rule_items, channel_id):
-        """
-        Merge Gemini and rule-based results, removing duplicates.
 
-        Gemini results take priority; rule-based items are added only if
-        they are not already covered by a Gemini result.
+    def _merge_items(self, llm_items, rule_items, channel_id):
         """
-        if not gemini_items:
+        Merge LLM and rule-based results, removing duplicates.
+
+        LLM results take priority; rule-based items are added only if
+        they are not already covered by an LLM result.
+        """
+        if not llm_items:
             return rule_items
 
-        merged = list(gemini_items)
+        merged = list(llm_items)
         for rule_item in rule_items:
             is_dup = any(
                 self._text_similarity(rule_item['question'], g['question']) > self.similarity_threshold
@@ -409,7 +431,7 @@ Chat transcript:
 
         Returns:
             dict with 'success', 'items' (list), 'faqs', 'definitions', 'decisions' counts,
-            'total_items', 'method' ('gemini', 'rule_based', or 'hybrid')
+            'total_items', 'method' ('ai', 'rule_based', or 'hybrid')
         """
         try:
             messages = self._fetch_messages(channel_id, time_period_hours)
@@ -427,19 +449,19 @@ Chat transcript:
 
             clean_messages = self._preprocess_messages(messages)
 
-            # Run Gemini extraction
-            gemini_result = self._extract_with_gemini(clean_messages)
+            # Run LLM extraction
+            llm_result = self._extract_with_llm(clean_messages)
 
             # Run rule-based extraction
             rule_faqs = self._detect_faqs(clean_messages)
             rule_defs = self._detect_definitions(clean_messages)
             rule_decs = self._detect_decisions(clean_messages)
 
-            if gemini_result:
-                all_faqs  = self._merge_items(gemini_result['faqs'],        rule_faqs, channel_id)
-                all_defs  = self._merge_items(gemini_result['definitions'],  rule_defs, channel_id)
-                all_decs  = self._merge_items(gemini_result['decisions'],    rule_decs, channel_id)
-                method = 'gemini' if not (rule_faqs or rule_defs or rule_decs) else 'hybrid'
+            if llm_result:
+                all_faqs  = self._merge_items(llm_result['faqs'],        rule_faqs, channel_id)
+                all_defs  = self._merge_items(llm_result['definitions'], rule_defs, channel_id)
+                all_decs  = self._merge_items(llm_result['decisions'],   rule_decs, channel_id)
+                method = 'ai' if not (rule_faqs or rule_defs or rule_decs) else 'hybrid'
             else:
                 all_faqs, all_defs, all_decs = rule_faqs, rule_defs, rule_decs
                 method = 'rule_based'
@@ -925,12 +947,12 @@ Chat transcript:
             conn.close()
 
     # ────────────────────────────────────────────────────────────────────
-    # Autonomous hooks (Phase 3.4) — Focus→KB chain
+    # Autonomous hooks — Focus→KB chain
     # ────────────────────────────────────────────────────────────────────
 
     def sense(self, event: dict) -> Optional[Dict]:
         """On focus.drift, count recent messages in the channel to decide
-        whether there's enough material to extract. We don't call Gemini
+        whether there's enough material to extract. We don't call the LLM
         here — extract_knowledge runs in act().
         """
         channel_id = event.get("channel_id")

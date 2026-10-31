@@ -87,6 +87,14 @@ class TestMoodTrackerDecide:
         assert decision == "skip"
         assert reason == "opt_out"
 
+    def test_decide_skips_when_the_opt_in_lookup_fails(self, chain_store):
+        """Mood tracking is opt-in: anything but a clear yes means no."""
+        with patch.object(MoodTrackerAgent, "_user_opted_in", side_effect=RuntimeError("db down")), \
+             patch.object(MoodTrackerAgent, "analyze_message") as analyze:
+            decision, _, reason = MoodTrackerAgent().decide(self._obs())
+        assert (decision, reason) == ("skip", "opt_out")
+        assert not analyze.called
+
     def test_decide_acts_with_warming_when_window_short(self, chain_store):
         """Until rolling window has WINDOW_SIZE entries, decide returns
         act with escalate=False so we still persist a mood row."""

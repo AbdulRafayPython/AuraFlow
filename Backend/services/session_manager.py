@@ -1,5 +1,5 @@
 """
-services/session_manager.py - Secure Session Management for AuraFlow
+services/session_manager.py - Secure Session Management for Auraflow
 
 Handles:
   - Refresh token lifecycle (create, rotate, revoke)

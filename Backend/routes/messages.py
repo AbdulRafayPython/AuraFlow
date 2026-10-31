@@ -1,3 +1,4 @@
+# REWRITE: ~2.1k-line module; message insert + broadcast logic is duplicated in routes/sockets.py and tasks/agent_tasks.py.
 # routes/messages.py (Fixed + Enhanced with get_db_connection())
 from flask import jsonify, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -102,6 +103,9 @@ def _notify_mentions(content, sender_id, sender_username, channel_id, community_
                     row = cur.fetchone()
                     if not row or row['id'] == sender_id:
                         continue
+                    from services.bots import is_bot_user
+                    if is_bot_user(row['id']):
+                        continue      # agents are triggered by the router, not notified
                     # Only notify users who are members of the community
                     cur.execute(
                         "SELECT 1 FROM community_members WHERE community_id = %s AND user_id = %s",
@@ -174,7 +178,7 @@ def _notify_reply(reply_to_id, sender_id, sender_username, channel_id, community
 
 
 def _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_type='text',
-                          message_id=None, username=None):
+                          message_id=None, username=None, reply_to=None):
     """
     Fire-and-forget agent dispatch for messages posted via the REST
     endpoint (the Socket.IO path publishes msg.created inline in
@@ -202,6 +206,7 @@ def _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_ty
                 'channel_id':   channel_id,
                 'community_id': community_id,
                 'content':      content,
+                'reply_to':     reply_to,
             })
         except Exception as e:
             log.debug(f"[event_bus] msg.created publish skipped: {e}")
@@ -611,7 +616,7 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
             return {
                 'type': 'help',
                 'success': True,
-                'message': """**AuraFlow AI Commands:**
+                'message': """**Auraflow AI Commands:**
 
 **Personal Agent Commands:**
 • `/summarize [count]` - Summarize recent messages (default: 100)
@@ -693,7 +698,10 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                     n_defs = result.get('definitions', 0)
                     n_decs = result.get('decisions', 0)
                     method = result.get('method', 'rule_based')
-                    method_label = {'gemini': '✨ Gemini AI', 'hybrid': '✨ Gemini + Rules', 'rule_based': '📐 Rule-based', 'none': '—'}.get(method, method)
+                    method_label = {'ai': '✨ AI Agent', 'gemini': '✨ AI Agent',
+                                    'hybrid': '✨ AI Agent + Rules',
+                                    'rule_based': '📐 Rule-based',
+                                    'none': '—'}.get(method, method)
                     period_label = f"Last {time_period}h" if time_period else "All time"
 
                     if total == 0:
@@ -914,6 +922,77 @@ def _avatar_url(username: str, url: str | None) -> str:
     return url or None
 
 
+def _attach_moderation_data(cur, rows):
+    """Populate mod_output / mod_confidence / sender_violation_count on rows.
+
+    Replaces two derived tables that used to be JOINed into the
+    get_channel_messages query. Neither was scoped to the page being
+    returned, so both full-scanned ai_agent_logs on every request — and that
+    table grows with every moderated message plus the 30s buffer flush, so
+    the app's hottest endpoint got slower as usage grew.
+
+    Both are now scoped to the current page:
+      * verdicts  -> WHERE message_id IN (<=100 ids)  (idx_agent_logs_mod_channel_msg)
+      * violations-> WHERE user_id IN (<=100 senders) (idx_agent_logs_user)
+
+    The violation aggregate still uses a JSON predicate, which no index can
+    serve, but it now runs over one community's rows for the senders on this
+    page rather than the entire table. The durable fix is a maintained
+    counter column incremented on the write path.
+
+    Mutates `rows` in place; safe to call with an empty page.
+    """
+    for m in rows:
+        m['mod_output'] = None
+        m['mod_confidence'] = None
+        m['sender_violation_count'] = 0
+
+    if not rows:
+        return
+
+    msg_ids = [m['id'] for m in rows if m.get('id') is not None]
+    if msg_ids:
+        # ORDER BY id DESC + first-wins gives the latest verdict per message,
+        # which is what the old correlated MAX(id) subquery computed per row.
+        ph = ','.join(['%s'] * len(msg_ids))
+        cur.execute(f"""
+            SELECT message_id, output_data, confidence_score
+            FROM ai_agent_logs
+            WHERE agent_name = 'moderation'
+              AND message_id IN ({ph})
+            ORDER BY id DESC
+        """, tuple(msg_ids))
+        latest = {}
+        for r in cur.fetchall():
+            latest.setdefault(r['message_id'], r)
+        for m in rows:
+            v = latest.get(m['id'])
+            if v:
+                m['mod_output'] = v['output_data']
+                m['mod_confidence'] = v['confidence_score']
+
+    # The old vc join matched on ch.community_id; when that was NULL (DM
+    # channels) the join never matched and the count stayed 0. Preserve that.
+    community_id = rows[0].get('_community_id')
+    sender_ids = {m['sender_id'] for m in rows if m.get('sender_id') is not None}
+    if community_id is not None and sender_ids:
+        ph = ','.join(['%s'] * len(sender_ids))
+        cur.execute(f"""
+            SELECT l.user_id, COUNT(*) AS violation_count
+            FROM ai_agent_logs l
+            JOIN channels ch2 ON ch2.id = l.channel_id
+            WHERE l.agent_name = 'moderation'
+              AND l.message_id IS NOT NULL
+              AND ch2.community_id = %s
+              AND l.user_id IN ({ph})
+              AND JSON_UNQUOTE(JSON_EXTRACT(l.output_data, '$.action')) NOT IN ('allow')
+            GROUP BY l.user_id
+        """, (community_id, *sender_ids))
+        counts = {r['user_id']: r['violation_count'] for r in cur.fetchall()}
+        for m in rows:
+            m['sender_violation_count'] = counts.get(m['sender_id'], 0)
+
+
 # =====================================
 # GET CHANNEL MESSAGES
 # =====================================
@@ -962,8 +1041,7 @@ def get_channel_messages(channel_id):
                     a.duration AS att_duration,
                     rm.content AS reply_content, rm.message_type AS reply_message_type,
                     ru.username AS reply_author,
-                    ml.output_data AS mod_output, ml.confidence_score AS mod_confidence,
-                    COALESCE(vc.violation_count, 0) AS sender_violation_count,
+                    ch.community_id AS _community_id,
                     ec.kind AS card_kind, ec.payload AS card_payload
                 FROM messages m
                 LEFT JOIN users u ON m.sender_id = u.id
@@ -973,33 +1051,17 @@ def get_channel_messages(channel_id):
                 LEFT JOIN attachments a ON a.message_id = m.id
                 LEFT JOIN messages rm ON m.reply_to = rm.id
                 LEFT JOIN users ru ON rm.sender_id = ru.id
-                LEFT JOIN (
-                    SELECT l.user_id, ch2.community_id, COUNT(*) AS violation_count
-                    FROM ai_agent_logs l
-                    JOIN channels ch2 ON ch2.id = l.channel_id
-                    WHERE l.agent_name = 'moderation'
-                      AND l.message_id IS NOT NULL
-                      AND JSON_UNQUOTE(JSON_EXTRACT(l.output_data, '$.action')) NOT IN ('allow')
-                    GROUP BY l.user_id, ch2.community_id
-                ) vc ON vc.user_id = m.sender_id AND vc.community_id = ch.community_id
-                LEFT JOIN (
-                    SELECT message_id,
-                           output_data,
-                           confidence_score
-                    FROM ai_agent_logs
-                    WHERE agent_name = 'moderation'
-                      AND message_id IS NOT NULL
-                      AND id = (
-                          SELECT MAX(id) FROM ai_agent_logs l2
-                          WHERE l2.agent_name = 'moderation'
-                            AND l2.message_id = ai_agent_logs.message_id
-                      )
-                ) ml ON ml.message_id = m.id
                 WHERE m.channel_id = %s
                 ORDER BY m.created_at DESC
                 LIMIT %s OFFSET %s
             """, (channel_id, limit, offset))
             rows = cur.fetchall()
+
+            # Moderation data used to be two derived tables JOINed into the
+            # query above, neither scoped to this page — both full-scanned
+            # ai_agent_logs on every request. Now fetched as two indexed
+            # lookups over just this page's ids. See _attach_moderation_data.
+            _attach_moderation_data(cur, rows)
 
         result = [{
             'id': m['id'],
@@ -1297,7 +1359,7 @@ def send_message():
             if user_role == 'owner':
                 log.info(f"[HTTP SEND] Owner {current_user} message — moderation still applied")
 
-            # -- Batch moderation: instant-check only, Gemini reviews in batch later --
+            # -- Batch moderation: instant-check only, LLM reviews in batch later --
             # Honour both platform-wide and per-community settings.
             # Sys-admin disables moderation globally from platform-settings;
             # community admin disables it for their community from admin/agents.
@@ -1412,7 +1474,7 @@ def send_message():
             else:
                 log.warning("[SOCKET-EMIT] socketio extension not found � message_received NOT emitted!")
 
-            # Push to Redis buffer for batch Gemini review
+            # Push to Redis buffer for batch LLM review
             if moderation_installed and content and message_id:
                 try:
                     import time as _time
@@ -1434,7 +1496,8 @@ def send_message():
 
             # Agent auto-execution (fire-and-forget) — publishes msg.created
             _dispatch_agent_tasks(content, user_id, channel_id, community_id, message_type,
-                                  message_id=message_id, username=current_user)
+                                  message_id=message_id, username=current_user,
+                                  reply_to=reply_to)
 
             avatar_url = get_avatar_url(msg['username'], msg['avatar_url'])
             return jsonify({

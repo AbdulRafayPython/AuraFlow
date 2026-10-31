@@ -170,9 +170,14 @@ class TestUAT_CommunityManagement:
 
     def test_uat08_create_channel_requires_auth(self, uat_client):
         """TC-UAT-08: Creating a channel without JWT returns 401."""
-        resp = uat_client.post("/api/channels/communities/1/channels", json={
-            "name": "general", "type": "text",
-        })
+        # Communities are addressed by opaque UUID public_id, not int id.
+        # A non-UUID segment fails the <uuid:...> converter and 404s before
+        # the JWT check ever runs, which is not what this test is asserting.
+        resp = uat_client.post(
+            "/api/channels/communities/"
+            "123e4567-e89b-12d3-a456-426614174000/channels",
+            json={"name": "general", "type": "text"},
+        )
         assert resp.status_code == 401
 
     def test_uat09_join_with_invalid_invite_code(self, uat_client, uat_app):
@@ -203,11 +208,23 @@ class TestUAT_Messaging:
     def test_uat11_toxic_message_blocked_before_save(self, uat_client, uat_app):
         """TC-UAT-11: User sends hateful message; system blocks it."""
         headers = _jwt(uat_app)
-        channel_row = {"id": 1, "community_id": 1, "name": "general", "type": "text"}
+        # send_message collapsed its channel-lookup + blocked-list +
+        # membership checks into ONE query (see the PERF note in
+        # routes/messages.py), so the first fetchone() must carry every column
+        # that combined row selects. The old 3-row sequence predated that and
+        # made the route raise KeyError: 'blocked_id' -> 500.
+        combo_row = {
+            "community_id": 1,
+            "role": "member",
+            "violation_count": 0,
+            "blocked_id": None,          # not blocked
+            "sender_display_name": "UAT User",
+            "sender_avatar_url": None,
+        }
         membership_row = {"user_id": 1, "role": "member", "channel_id": 1, "community_id": 1}
 
         conn, cur = _build_conn()
-        cur.fetchone.side_effect = [channel_row, None, membership_row, None]
+        cur.fetchone.side_effect = [combo_row] + [None] * 10
 
         mock_mod_result = {"block": True, "reason": "Extreme content detected", "action": "block"}
 
@@ -265,7 +282,7 @@ class TestUAT_AIAgents:
     def test_uat16_moderation_blocks_slur(self):
         """TC-UAT-16: Extreme slur blocked instantly without reaching DB."""
         with patch("database.get_db_connection", return_value=MagicMock()), \
-             patch("agents.moderation._GEMINI_MODERATION_AVAILABLE", False):
+             patch("agents.moderation._LLM_MODERATION_AVAILABLE", False):
             from agents.moderation import ModerationAgent
             mod = ModerationAgent()
         result = mod.instant_check("you nigger")
@@ -274,7 +291,7 @@ class TestUAT_AIAgents:
     def test_uat17_moderation_allows_clean_message(self):
         """TC-UAT-17: Clean polite message passes moderation."""
         with patch("database.get_db_connection", return_value=MagicMock()), \
-             patch("agents.moderation._GEMINI_MODERATION_AVAILABLE", False):
+             patch("agents.moderation._LLM_MODERATION_AVAILABLE", False):
             from agents.moderation import ModerationAgent
             mod = ModerationAgent()
         result = mod.instant_check("Good morning everyone! Hope you are all doing well.")

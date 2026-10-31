@@ -1,3 +1,3 @@
 """
-AuraFlow Celery Tasks Package
+Auraflow Celery Tasks Package
 """

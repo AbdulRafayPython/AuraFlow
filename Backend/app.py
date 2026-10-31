@@ -18,7 +18,7 @@ from flask_compress import Compress
 from dotenv import load_dotenv
 from datetime import timedelta
 from flask_socketio import SocketIO
-from flask import request, make_response, send_from_directory
+from flask import request, send_from_directory
 
 # Import all route functions
 from routes.auth import (
@@ -32,13 +32,13 @@ from routes.channels import (
     get_communities, get_community_channels, get_friends,
     create_channel, join_channel, leave_channel,
     create_community, delete_channel,
-    # NEW: Member management routes
+    # Member management routes
     search_users, get_user_by_public_id, get_community_members, add_community_member,
-    # NEW: Channel and community management
+    # Channel and community management
     update_channel, delete_community, leave_community,
-    # NEW: Community discovery and joining
+    # Community discovery and joining
     discover_communities, join_community,
-    # NEW: Community images
+    # Community images
     get_community, update_community,
     upload_community_logo, upload_community_banner,
     remove_community_logo, remove_community_banner
@@ -59,6 +59,9 @@ from routes.reactions import reactions_bp
 from routes.uploads import uploads_bp
 from routes.sockets import register_socket_events
 from routes.agents import agents_bp
+from routes.agent_builder import agent_builder_bp
+from routes.agent_marketplace import agent_marketplace_bp
+from routes.agent_integrations import agent_integrations_bp, public_agent_api_bp
 from routes.admin import admin_bp
 from routes.community_admin import community_admin_bp
 from routes.search import search_bp
@@ -253,6 +256,10 @@ app.register_blueprint(uploads_bp)
 # AI AGENTS ROUTES
 # ======================================================================
 app.register_blueprint(agents_bp)
+app.register_blueprint(agent_builder_bp)
+app.register_blueprint(agent_marketplace_bp)
+app.register_blueprint(agent_integrations_bp)
+app.register_blueprint(public_agent_api_bp)
 
 # ======================================================================
 # ADMIN DASHBOARD ROUTES
@@ -382,7 +389,7 @@ def test_friend_request_emission(user_id):
         "data": test_data
     }, 200
 def health_check():
-    return {"status": "ok", "message": "AuraFlow API is running"}, 200
+    return {"status": "ok", "message": "Auraflow API is running"}, 200
 
 # ======================================================================
 # STATIC FILE SERVING - Avatar uploads
@@ -669,7 +676,7 @@ else:
 # ======================================================================
 if __name__ == "__main__":
     print("=" * 60)
-    print("AuroFlow Backend Server Starting...")
+    print("Auraflow Backend Server Starting...")
     print(f"Server: http://0.0.0.0:5000")
     print(f"WebSocket: ws://0.0.0.0:5000")
     print(f"CORS Enabled for: localhost:8080, localhost:3000")

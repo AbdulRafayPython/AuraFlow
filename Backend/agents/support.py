@@ -8,9 +8,17 @@ Pipeline
 --------
 1. Query → fetch all knowledge_base rows for the community.
 2. Build / reuse a per-community TF-IDF index (cached in process).
-3. Cosine-rank the docs, return the top match if it clears a threshold.
-4. (Optional) Pass the question + best snippet through Gemini for a polished
-   answer. If Gemini is unavailable, return the snippet verbatim.
+3. Cosine-rank the docs, keep the top few that clear a threshold.
+4. (Optional) Hand the question plus those candidates to DeepSeek in ONE
+   call that both picks the right passage and writes the answer. If the LLM
+   is unavailable, fall back to returning the top-cosine snippet verbatim.
+
+Step 4 is why the agent reads the top ``_RERANK_K`` candidates rather than
+just ``argmax``: bag-of-words cosine puts the right passage in the top few
+far more often than it puts it first, and a reranking model recovers that
+gap for the price of the polish call we were already making. The model may
+also answer "not in these passages", which stops the old failure mode of
+confidently reciting the nearest wrong document.
 
 No FAISS / embedding model — TF-IDF is fine for ≤500 docs per community.
 """
@@ -59,24 +67,38 @@ except Exception:
     cosine_similarity = None  # type: ignore
 
 try:
-    from google import genai
-    from config import GEMINI_API_KEY
-    _GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
-    _gemini_client = genai.Client(api_key=GEMINI_API_KEY) if _GEMINI_AVAILABLE else None
+    from utils.ai.llm_client import get_llm_client, is_llm_available
+    _LLM_AVAILABLE = is_llm_available()
+    _llm_client = get_llm_client()
 except Exception:
-    _GEMINI_AVAILABLE = False
-    _gemini_client = None
+    _LLM_AVAILABLE = False
+    _llm_client = None
 
 
 _INDEX_TTL_SECONDS = 5 * 60  # rebuild per-community index every 5 minutes
 _MIN_SCORE = 0.12            # cosine threshold below which we say "no match"
+_RERANK_K = 3                # candidates handed to the reranking LLM call
+
+_SUPPORT_SYSTEM = (
+    "You answer questions using only a community's own knowledge base.\n"
+    "You are given the question and a few numbered passages retrieved from "
+    "that knowledge base. Exactly one of them may be relevant, or none may be.\n"
+    "Rules:\n"
+    "- Answer only from the passages. Never add outside knowledge, and never "
+    "guess at specifics the passages do not state.\n"
+    "- If no passage actually answers the question, set answered to false and "
+    "say plainly that the knowledge base does not cover it.\n"
+    "- Keep the answer to one to three sentences, plain text, no markdown.\n"
+    "- Write it as an answer, not as a summary of a document. Do not say "
+    "'according to the passage' or 'the context states'."
+)
 
 
 def _readable_snippet(content: str) -> str:
     """Knowledge Builder stores each row's ``content`` as a JSON blob
     (``{type, question, answer, tags}``). Return the human-readable answer
     for display; fall back to the raw string if it isn't that JSON shape.
-    Keeps answers clean even when Gemini polish is off or unavailable."""
+    Keeps answers clean even when LLM polish is off or unavailable."""
     content = (content or '').strip()
     if not content:
         return ''
@@ -87,8 +109,8 @@ def _readable_snippet(content: str) -> str:
     if isinstance(obj, dict):
         # Combine question + answer when both exist: for `decision`-type
         # entries the substance often lives in the question field while the
-        # answer is a one-line gloss ("Targets have been set.") — answer
-        # alone starved Gemini into "context is insufficient" replies.
+        # answer is a one-line gloss ("Targets have been set."). Passing the
+        # answer alone starved the model into "context is insufficient".
         q = obj.get('question')
         q = q.strip() if isinstance(q, str) else ''
         for key in ('answer', 'definition', 'summary', 'decision', 'content', 'text'):
@@ -104,12 +126,12 @@ def _readable_snippet(content: str) -> str:
 class SupportAgent(AutonomousAgent):
     """Q&A over a community's knowledge base.
 
-    Autonomous role (Phase 1.4): subscribes to ``msg.created``. Cheap
+    Autonomous role: subscribes to ``msg.created``. Cheap
     classifies if the message is a question; only acts when (a) it is,
     (b) the TF-IDF best match clears a (per-channel adaptive) score
     threshold. Emits a ``support_suggestion`` socket event so the
     frontend can render a collapsed suggestion chip — never posts a
-    full bot message in Phase 1.
+    full bot message.
     """
 
     NAME = "support"
@@ -128,9 +150,8 @@ class SupportAgent(AutonomousAgent):
     )
 
     def __init__(self):
-        self.gemini_available = _GEMINI_AVAILABLE
-        self.gemini_client = _gemini_client
-        self.gemini_model = 'gemini-2.5-flash'
+        self.llm = _llm_client
+        self.llm_available = _LLM_AVAILABLE and _llm_client is not None
         self._indices: Dict[int, Dict] = {}      # community_id -> { ts, vec, mat, docs }
         self._lock = threading.Lock()
 
@@ -161,9 +182,9 @@ class SupportAgent(AutonomousAgent):
         max_docs = int(cfg.get('max_docs', 500) or 500)
 
         try:
-            best = self._best_match(
+            candidates = self._top_matches(
                 question, community_id,
-                min_cosine=min_cosine, max_docs=max_docs,
+                min_cosine=min_cosine, max_docs=max_docs, k=_RERANK_K,
             )
         except Exception as exc:
             print(f"[SUPPORT] retrieval failed: {exc}")
@@ -172,7 +193,7 @@ class SupportAgent(AutonomousAgent):
                 'error': 'retrieval_failed', 'matched': False,
             }
 
-        if not best:
+        if not candidates:
             return {
                 'success': True,
                 'matched': False,
@@ -181,16 +202,37 @@ class SupportAgent(AutonomousAgent):
                 'sources': [],
             }
 
-        snippet = _readable_snippet(best.get('content'))
+        best = candidates[0]
         score = best['score']
 
-        # Optionally polish via Gemini — honor the community setting.
-        polished: Optional[str] = None
-        gemini_polish = polish and bool(cfg.get('use_gemini_polish', True))
-        if gemini_polish and self.gemini_available and self.gemini_client and snippet:
-            polished = self._polish_with_gemini(question, snippet)
+        # One LLM call reranks the candidates and writes the answer. Honor
+        # the community's polish setting; with it off we serve the top-cosine
+        # snippet exactly as before.
+        use_llm = polish and bool(cfg.get('use_gemini_polish', True))
+        answer: Optional[str] = None
+        if use_llm and self.llm_available and self.llm:
+            verdict = self._answer_from_candidates(question, candidates)
+            # verdict is None when the call itself failed — fall through to
+            # the snippet, which is what this agent has always done.
+            if verdict is not None:
+                if not verdict.get('answered'):
+                    # The model read every candidate and none answered the
+                    # question. Saying so beats reciting the nearest doc.
+                    return {
+                        'success': True,
+                        'matched': False,
+                        'answer': "I couldn't find anything in this community's "
+                                  "knowledge base that answers that.",
+                        'sources': [],
+                    }
+                idx = verdict.get('index')
+                if isinstance(idx, int) and 0 <= idx < len(candidates):
+                    best = candidates[idx]
+                    score = best['score']
+                answer = verdict.get('answer') or None
 
-        answer = polished or snippet[:800]
+        if not answer:
+            answer = _readable_snippet(best.get('content'))[:800]
 
         # Log
         try:
@@ -230,44 +272,90 @@ class SupportAgent(AutonomousAgent):
         }
 
     # ------------------------------------------------------------- internals
-    def _polish_with_gemini(self, question: str, snippet: str) -> Optional[str]:
-        # Bound the network call so a stalled Gemini request can't freeze the
-        # synchronous /support handler (the HTTP route blocks on this). On
-        # timeout we return None and the caller falls back to the raw snippet,
-        # which _readable_snippet has already made presentable. Mirrors the
-        # ThreadPoolExecutor timeout pattern in agents/moderation.py.
+    def _answer_from_candidates(
+        self,
+        question: str,
+        candidates: List[Dict],
+    ) -> Optional[Dict]:
+        """Rerank the retrieved passages and write the answer in one call.
+
+        Returns ``{'answered': bool, 'index': int|None, 'answer': str}``, or
+        None when the call failed — the caller then falls back to the raw
+        top-cosine snippet, which is the behaviour this agent had before.
+
+        ``index`` is the passage the answer came from, so the citation chip
+        points at the document the model actually used rather than whatever
+        TF-IDF happened to rank first.
+
+        The request carries its own timeout because the synchronous
+        ``/support`` HTTP route blocks on this; a stalled provider must not
+        hold a Flask worker open.
+        """
         try:
-            from concurrent.futures import ThreadPoolExecutor
+            blocks = []
+            for i, doc in enumerate(candidates):
+                title = (doc.get('title') or 'Untitled').strip()
+                body = _readable_snippet(doc.get('content'))[:1200]
+                blocks.append(f"[{i}] {title}\n{body}")
+            passages = "\n\n".join(blocks)
+
             prompt = (
-                "Answer the user's question using ONLY the context below. "
-                "Reply in 1-3 short sentences. If context is insufficient, say so.\n\n"
-                f"Context:\n{snippet[:1500]}\n\n"
-                f"Question: {question[:400]}\n\nAnswer:"
+                f"Question: {question[:400]}\n\n"
+                f"Passages:\n{passages}\n\n"
+                'Return a JSON object: {"answered": true or false, '
+                '"index": the number of the passage you used or null, '
+                '"answer": your answer as a string}'
             )
+            verdict = self.llm.complete_json(
+                prompt,
+                system=_SUPPORT_SYSTEM,
+                temperature=0.2,
+                max_tokens=350,
+                timeout=10.0,
+            )
+            if not isinstance(verdict, dict):
+                return None
 
-            def _call():
-                return self.gemini_client.models.generate_content(
-                    model=self.gemini_model, contents=prompt,
-                )
+            answered = bool(verdict.get('answered'))
+            raw_answer = str(verdict.get('answer') or '').strip()
+            if answered and not raw_answer:
+                return None
 
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                resp = executor.submit(_call).result(timeout=8.0)
-            text = (getattr(resp, 'text', '') or '').strip()
-            return text[:1000] if text else None
+            index = verdict.get('index')
+            try:
+                index = int(index) if index is not None else None
+            except (TypeError, ValueError):
+                index = None
+
+            # JSON mode skips the humanizer (it would corrupt the payload),
+            # so run it on the extracted prose here.
+            from utils.ai.llm_client import humanize_text
+            return {
+                'answered': answered,
+                'index': index,
+                'answer': humanize_text(raw_answer)[:1000],
+            }
         except Exception as exc:
-            print(f"[SUPPORT] Gemini polish failed/timed out: {exc}")
+            print(f"[SUPPORT] rerank/answer call failed: {exc}")
             return None
 
-    def _best_match(
+    def _top_matches(
         self,
         question: str,
         community_id: int,
         min_cosine: float = _MIN_SCORE,
         max_docs: int = 500,
-    ) -> Optional[Dict]:
+        k: int = _RERANK_K,
+    ) -> List[Dict]:
+        """Return up to ``k`` docs above ``min_cosine``, best first.
+
+        The extra candidates exist for the reranking step in ``ask()``. The
+        threshold still applies to every one of them, so a low-signal query
+        returns an empty list exactly as ``_best_match`` returned None.
+        """
         index = self._get_or_build_index(community_id, max_docs=max_docs)
         if not index or not index.get('docs'):
-            return None
+            return []
 
         vectorizer = index['vectorizer']
         matrix = index['matrix']
@@ -278,18 +366,36 @@ class SupportAgent(AutonomousAgent):
             sims = cosine_similarity(q_vec, matrix)[0]
         except Exception as exc:
             print(f"[SUPPORT] vector match failed: {exc}")
-            return None
+            return []
 
         if len(sims) == 0:
-            return None
+            return []
 
-        best_idx = int(sims.argmax())
-        best_score = float(sims[best_idx])
-        if best_score < float(min_cosine or _MIN_SCORE):
-            return None
+        floor = float(min_cosine or _MIN_SCORE)
+        # argsort ascending, so take the tail and reverse for best-first.
+        order = sims.argsort()[::-1][: max(1, int(k))]
+        out: List[Dict] = []
+        for idx in order:
+            score = float(sims[int(idx)])
+            if score < floor:
+                break  # sorted desc — everything after is worse
+            out.append({**docs[int(idx)], 'score': round(score, 4)})
+        return out
 
-        doc = docs[best_idx]
-        return {**doc, 'score': round(best_score, 4)}
+    def _best_match(
+        self,
+        question: str,
+        community_id: int,
+        min_cosine: float = _MIN_SCORE,
+        max_docs: int = 500,
+    ) -> Optional[Dict]:
+        """Single best doc, or None. Kept for ``decide()``, which must stay
+        cheap: the autonomous path does retrieval only, never an LLM call."""
+        matches = self._top_matches(
+            question, community_id,
+            min_cosine=min_cosine, max_docs=max_docs, k=1,
+        )
+        return matches[0] if matches else None
 
     def _get_or_build_index(
         self,
@@ -392,7 +498,7 @@ class SupportAgent(AutonomousAgent):
                 self._indices.pop(community_id, None)
 
     # ────────────────────────────────────────────────────────────────────
-    # Autonomous hooks (Phase 1.4)
+    # Autonomous hooks
     # ────────────────────────────────────────────────────────────────────
 
     def sense(self, event: dict) -> Optional[Dict]:
@@ -421,7 +527,8 @@ class SupportAgent(AutonomousAgent):
         }
 
     def decide(self, observation: Dict):
-        # No Gemini call here — TF-IDF only; cheap.
+        # No LLM call here — TF-IDF only; this runs on every question-shaped
+        # message in every channel, so it has to stay free.
         if not _SKLEARN_AVAILABLE:
             return ("skip", observation, "sklearn_unavailable")
         try:

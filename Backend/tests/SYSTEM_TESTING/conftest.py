@@ -27,13 +27,39 @@ def db():
         pytest.skip(f"DB not reachable: {e}")
 
 
+def _evict_test_stubs():
+    """Evict hand-made stub modules so the REAL app package can be imported.
+
+    Mirrors the helper in tests/UAT/conftest.py -- see there for the full
+    rationale. Short version: other test modules pre-register bare
+    ``types.ModuleType`` stubs for ``app`` and ``routes.sockets`` at MODULE
+    level, and pytest executes every test module during COLLECTION, so those
+    stubs are present in a full-suite run even when their own tests never
+    execute. Real modules carry ``__spec__``/``__file__``; the stubs do not.
+    Returns {name: module} so the caller can restore them.
+    """
+    evicted = {}
+    for name in list(sys.modules):
+        if name != "app" and not name.startswith("routes."):
+            continue
+        mod = sys.modules[name]
+        if getattr(mod, "__spec__", None) is None and getattr(mod, "__file__", None) is None:
+            evicted[name] = mod
+            del sys.modules[name]
+    return evicted
+
+
 @pytest.fixture(scope="session")
 def live_app():
     """Flask app with real DB (no mocks) for system-level tests."""
-    import app as app_module
-    flask_app = app_module.app
-    flask_app.config["TESTING"] = True
-    return flask_app
+    evicted = _evict_test_stubs()
+    try:
+        import app as app_module
+        flask_app = app_module.app
+        flask_app.config["TESTING"] = True
+        yield flask_app
+    finally:
+        sys.modules.update(evicted)
 
 
 @pytest.fixture(scope="session")

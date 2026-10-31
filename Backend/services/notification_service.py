@@ -251,7 +251,7 @@ def _send_web_push(user_id: int, notification: dict):
                 subs = cur.fetchall()
 
             payload = json.dumps({
-                "title": notification.get("title", "AuroFlow"),
+                "title": notification.get("title", "Auraflow"),
                 "body": notification.get("body", ""),
                 "icon": notification.get("icon_url") or "/AuraflowLogo.png",
                 "data": {

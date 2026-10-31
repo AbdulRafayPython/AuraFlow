@@ -1,5 +1,5 @@
 """
-AuraFlow Autonomous-Agent Memory
+Auraflow Autonomous-Agent Memory
 =================================
 Per-agent persistent state (goals, adaptive thresholds, last-acted) plus
 the action log and feedback collector. Backed by `agent_state`,

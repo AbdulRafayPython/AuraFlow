@@ -1,5 +1,5 @@
 """
-AuraFlow Autonomous-Agent Orchestrator
+Auraflow Autonomous-Agent Orchestrator
 =======================================
 Routes events from the Redis-backed event bus to interested agents based
 on each agent's `SUBSCRIBES` list (see agents/base.py and §3.4 of
@@ -13,8 +13,8 @@ The orchestrator is intentionally lazy:
   unit tests or a dev session without Celery), code paths can still
   call `dispatch(topic, payload)` directly to fan out synchronously.
 
-Phase 0 ships the registry + dispatcher + Celery entry point. No agents
-are wired into SUBSCRIBES yet — that lands in Phase 1+.
+Agents declare the topics they care about in ``SUBSCRIBES``; ``dispatch``
+fans each event out to every matching agent.
 """
 
 from __future__ import annotations
@@ -34,22 +34,24 @@ log = logging.getLogger(__name__)
 # Map of agent-name → fully-qualified class path. Resolved lazily.
 # Keep this list short and curated; only autonomous agents go here.
 _REGISTRY: Dict[str, str] = {
-    # Phase 1 — easy autonomous agents (currently 100% on-demand).
+    # On-demand agents with autonomous hooks.
     "translator":   "agents.translator:TranslatorAgent",
     "assistant":    "agents.assistant:AssistantAgent",
     "auto_message": "agents.auto_message:AutoMessageAgent",
     "support":      "agents.support:SupportAgent",
-    # Phase 2 — perception agents that already run on every message.
+    # Perception agents that run on every message.
     "mood_tracker": "agents.mood_tracker:MoodTrackerAgent",
-    # Phase 3 — collaboration / response agents driven by other events.
+    # Collaboration / response agents driven by other events.
     "wellness":     "agents.wellness:WellnessAgent",
-    # Phase 2 (cont.) — perception agents emitting domain events.
+    # Perception agents emitting domain events.
     "moderation":   "agents.moderation:ModerationAgent",
     "focus":        "agents.focus:FocusAgent",
-    # Phase 3 (cont.) — reactive scheduling via event-driven nudges.
+    # Reactive scheduling via event-driven nudges.
     "engagement":   "agents.engagement:EngagementAgent",
     "summarizer":   "agents.summarizer:SummarizerAgent",
     "knowledge_builder": "agents.knowledge_builder_v2:KnowledgeBuilderAgent",
+    # Routes @mentions / keywords / joins to runtime agents (Aura and user-created).
+    "custom_router": "agents.runtime.router_agent:CustomAgentRouter",
 }
 
 _INSTANCES: Dict[str, AutonomousAgent] = {}

@@ -3,10 +3,10 @@ Summarizer Agent
 ================
 Intelligent chat summarization using hybrid approach:
 - Extractive method for quick summaries
-- Gemini AI for polished, contextual summaries
+- LLM for polished, contextual summaries
 Supports both English and Roman Urdu conversations.
 
-Autonomous role (Phase 3.3): subscribes to ``focus.drift`` (emitted by
+Autonomous role: subscribes to ``focus.drift`` (emitted by
 the focus agent when channel keywords shift) and produces a concise
 checkpoint summary of the *previous* topic before it gets buried by the
 new one. The summary is broadcast via Socket.IO as a
@@ -51,41 +51,73 @@ _SUMMARY_LEN_BUDGET = {
 
 load_dotenv()
 
-# Gemini API integration (using new google-genai SDK)
+# Value written to conversation_summaries.method when the LLM produced the
+# summary. Rows written before the DeepSeek migration carry 'gemini-ai'.
+# Readers must not test for a specific AI value: only 'extractive' means
+# rule-based, everything else is AI-generated.
+AI_METHOD = 'ai'
+
+
+def _truncate_on_boundary(text: str, max_chars: int) -> str:
+    """Trim ``text`` to ``max_chars`` at the last sentence or word break.
+
+    The old code sliced mid-word and appended an ellipsis, which read as a
+    bug in the UI. Prefer a sentence end; fall back to a word boundary.
+    """
+    if len(text) <= max_chars:
+        return text
+    window = text[:max_chars]
+    cut = max(window.rfind('. '), window.rfind('! '), window.rfind('? '))
+    if cut > max_chars * 0.6:
+        return window[:cut + 1].rstrip()
+    cut = window.rfind(' ')
+    if cut > 0:
+        return window[:cut].rstrip() + '…'
+    return window.rstrip() + '…'
+
+
+# LLM integration (DeepSeek). No startup validation ping: it cost a request
+# on every worker boot, and a bad key surfaces on the first real call anyway
+# with the extractive path already in place as the fallback.
 try:
-    from google import genai
-    from google.genai import errors as genai_errors
-    from config import GEMINI_API_KEY
-    GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
-    if GEMINI_AVAILABLE:
-        _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-        # Validate key at startup with a minimal request
-        try:
-            _test = _gemini_client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents='ping'
-            )
-            print("[SUMMARIZER] ✅ Gemini API key validated successfully")
-        except genai_errors.ClientError as ve:
-            # Only disable on auth/permission errors (400, 403), not rate limits (429)
-            if ve.code in (400, 403):
-                GEMINI_AVAILABLE = False
-                _gemini_client = None
-                print(f"[SUMMARIZER] ❌ Gemini API key invalid: {ve}")
-            else:
-                print(f"[SUMMARIZER] ⚠️ Gemini startup check got non-fatal error (will retry at runtime): {ve}")
-        except Exception as ve:
-            print(f"[SUMMARIZER] ⚠️ Gemini startup check failed (will retry at runtime): {ve}")
+    from utils.ai.llm_client import get_llm_client, is_llm_available, humanize_text
+    LLM_AVAILABLE = is_llm_available()
+    _llm_client = get_llm_client()
+    if LLM_AVAILABLE:
+        print("[SUMMARIZER] DeepSeek client ready")
     else:
-        _gemini_client = None
-except ImportError:
-    GEMINI_AVAILABLE = False
-    _gemini_client = None
-    print("[SUMMARIZER] Gemini AI not available - install google-genai package")
+        print("[SUMMARIZER] No DEEPSEEK_API_KEY - extractive summaries only")
 except Exception as e:
-    GEMINI_AVAILABLE = False
-    _gemini_client = None
-    print(f"[SUMMARIZER] Gemini configuration error: {e}")
+    LLM_AVAILABLE = False
+    _llm_client = None
+    humanize_text = lambda t: t  # noqa: E731 — identity fallback
+    print(f"[SUMMARIZER] LLM configuration error: {e}")
+
+
+_SUMMARY_SYSTEM = (
+    "You summarise team chat for someone who was away and wants to catch up "
+    "in under a minute.\n"
+    "- Report only what was actually said. Never infer an outcome that was "
+    "not stated, and never invent a participant, number, or date.\n"
+    "- Write about the discussion, not about the transcript. Do not say 'the "
+    "chat covered' or 'users discussed'; name the people involved.\n"
+    "- Distinguish three things: what was discussed, what was decided, and "
+    "what someone still has to do. A question nobody answered is not a "
+    "decision.\n"
+    "- Plain sentences. No markdown, no bold, no headings, no dashes as "
+    "punctuation.\n"
+    "- The chat may mix English, Roman Urdu and Hinglish. Summarise in "
+    "English regardless."
+)
+
+# Sentence/word budget passed into the prompt per summary_length setting, so
+# verbosity is controlled at generation time instead of by truncating the
+# finished summary mid-word.
+_SUMMARY_PROMPT_BUDGET = {
+    'brief':    ("2 to 3 sentences total", 350),
+    'standard': ("4 to 6 sentences total", 700),
+    'detailed': ("8 to 12 sentences total", 1200),
+}
 
 
 class SummarizerAgent(AutonomousAgent):
@@ -94,7 +126,7 @@ class SummarizerAgent(AutonomousAgent):
     Uses extractive summarization with sentence scoring
     """
 
-    # ── Autonomous contract (Phase 3.3) ─────────────────────────────
+    # ── Autonomous contract ─────────────────────────────
     NAME = "summarizer"
     GOAL = {"checkpoint_topics_before_drift_buries_them": True}
     SUBSCRIBES = [_event_bus.TOPIC_FOCUS_DRIFT]
@@ -108,9 +140,8 @@ class SummarizerAgent(AutonomousAgent):
         self.text_processor = TextProcessor()
         self.min_messages_for_summary = 20  # Minimum messages to trigger summary
         self.max_summary_sentences = 10     # Maximum sentences in extractive summary
-        self.gemini_available = GEMINI_AVAILABLE
-        self.gemini_client = _gemini_client
-        self.gemini_model = 'gemini-2.5-flash'
+        self.llm = _llm_client
+        self.llm_available = LLM_AVAILABLE and _llm_client is not None
         
     def summarize_channel(self, channel_id: int, message_count: int = 100,
                          user_id: Optional[int] = None) -> Dict:
@@ -186,32 +217,33 @@ class SummarizerAgent(AutonomousAgent):
                 summary_result = self._generate_summary(messages)
                 print(f"[SUMMARIZER] Extractive summary generated: {len(summary_result.get('summary', ''))} chars")
                 
-                # Polish with Gemini if available
-                if self.gemini_available:
-                    print(f"[SUMMARIZER] Attempting Gemini enhancement (Gemini available: {self.gemini_available})...")
+                # Upgrade to an LLM summary when one is available. The
+                # extractive result stays as the fallback and as the input
+                # hint, so a provider outage degrades instead of failing.
+                summary_result['method'] = 'extractive'
+                if self.llm_available:
                     try:
-                        gemini_summary = self._generate_gemini_summary(messages, summary_result)
-                        if gemini_summary:
-                            print(f"[SUMMARIZER] Gemini enhancement successful: {len(gemini_summary)} chars")
-                            summary_result['summary'] = gemini_summary
-                            summary_result['method'] = 'gemini-ai'
-                            
-                            # Extract key points from "KEY DECISIONS:" section
-                            key_points = self._extract_key_decisions(gemini_summary)
-                            if key_points:
-                                summary_result['key_points'] = key_points
-                                print(f"[SUMMARIZER] Extracted {len(key_points)} key decisions from Gemini summary")
+                        llm_result = self._generate_llm_summary(
+                            messages,
+                            length=str(cfg.get('summary_length') or 'standard'),
+                        )
+                        if llm_result and llm_result.get('summary'):
+                            summary_result['summary'] = llm_result['summary']
+                            summary_result['method'] = AI_METHOD
+                            if llm_result.get('key_points'):
+                                summary_result['key_points'] = llm_result['key_points']
+                            summary_result['action_items'] = llm_result.get(
+                                'action_items') or []
+                            print(f"[SUMMARIZER] LLM summary: "
+                                  f"{len(llm_result['summary'])} chars, "
+                                  f"{len(summary_result['key_points'])} topics, "
+                                  f"{len(summary_result['action_items'])} actions")
                         else:
-                            print(f"[SUMMARIZER] Gemini returned None, using extractive only")
-                            summary_result['method'] = 'extractive'
+                            print("[SUMMARIZER] LLM returned nothing, using extractive")
                     except Exception as e:
-                        print(f"[SUMMARIZER] Gemini enhancement failed: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        summary_result['method'] = 'extractive'
+                        print(f"[SUMMARIZER] LLM summary failed: {e}")
                 else:
-                    print(f"[SUMMARIZER] Gemini not available (API key missing)")
-                    summary_result['method'] = 'extractive'
+                    print("[SUMMARIZER] LLM not available (no API key)")
                 
                 print(f"[SUMMARIZER] Generated summary with {len(summary_result['key_points'])} key points using {summary_result.get('method', 'extractive')} method")
                 
@@ -220,8 +252,6 @@ class SummarizerAgent(AutonomousAgent):
                     channel_id=channel_id,
                     summary_text=summary_result['summary'],
                     message_count=len(messages),
-                    start_message_id=messages[0]['id'],
-                    end_message_id=messages[-1]['id'],
                     created_by=user_id,
                     participants=summary_result['participants'],
                     method=summary_result.get('method', 'extractive')
@@ -242,21 +272,21 @@ class SummarizerAgent(AutonomousAgent):
                 # see a stable response shape.
                 topics_out = (summary_result['key_points']
                               if cfg.get('include_topics', True) else [])
+                # Action items are now generated as their own list rather
+                # than being aliased to the topic list, so "what was
+                # discussed" and "what someone still has to do" stop being
+                # the same three strings in the UI.
                 action_items_out: List[str] = []
                 if cfg.get('include_action_items', True):
-                    # Gemini path stores its KEY DECISIONS list under
-                    # `key_points` when present — when both toggles are on
-                    # we still mirror that into a dedicated field so the UI
-                    # doesn't have to guess.
-                    if summary_result.get('method') == 'gemini-ai':
-                        action_items_out = list(summary_result.get('key_points') or [])
+                    action_items_out = list(summary_result.get('action_items') or [])
 
-                # Truncate the summary text to the verbosity budget. The
-                # extractive cap is already in sentences; this trims the
-                # gemini-polished prose to roughly match.
+                # Safety net only. The LLM is given the length budget in the
+                # prompt, so this should rarely fire; when it does (extractive
+                # path on a very long channel) we still avoid a mid-word cut.
                 summary_text = summary_result['summary'] or ''
                 if len(summary_text) > budget['max_chars']:
-                    summary_text = summary_text[:budget['max_chars']].rstrip() + '…'
+                    summary_text = _truncate_on_boundary(
+                        summary_text, budget['max_chars'])
 
                 result = {
                     'success': True,
@@ -383,24 +413,23 @@ class SummarizerAgent(AutonomousAgent):
 
                 summary_result = self._generate_summary(messages)
 
-                if self.gemini_available:
+                summary_result['method'] = 'extractive'
+                if self.llm_available:
                     try:
-                        gemini_summary = self._generate_gemini_summary(
-                            messages, summary_result)
-                        if gemini_summary:
-                            summary_result['summary'] = gemini_summary
-                            summary_result['method'] = 'gemini-ai'
-                            key_points = self._extract_key_decisions(
-                                gemini_summary)
-                            if key_points:
-                                summary_result['key_points'] = key_points
-                        else:
-                            summary_result['method'] = 'extractive'
+                        llm_result = self._generate_llm_summary(
+                            messages,
+                            length=str(cfg.get('summary_length') or 'standard'),
+                            is_dm=True,
+                        )
+                        if llm_result and llm_result.get('summary'):
+                            summary_result['summary'] = llm_result['summary']
+                            summary_result['method'] = AI_METHOD
+                            if llm_result.get('key_points'):
+                                summary_result['key_points'] = llm_result['key_points']
+                            summary_result['action_items'] = llm_result.get(
+                                'action_items') or []
                     except Exception as e:
-                        print(f"[SUMMARIZER] DM Gemini polish failed: {e}")
-                        summary_result['method'] = 'extractive'
-                else:
-                    summary_result['method'] = 'extractive'
+                        print(f"[SUMMARIZER] DM LLM summary failed: {e}")
 
                 # Log to ai_agent_logs for stats — same as channel path but
                 # without a channel_id.
@@ -418,14 +447,13 @@ class SummarizerAgent(AutonomousAgent):
                               if cfg.get('include_topics', True) else [])
                 action_items_out: List[str] = []
                 if cfg.get('include_action_items', True):
-                    if summary_result.get('method') == 'gemini-ai':
-                        action_items_out = list(
-                            summary_result.get('key_points') or [])
+                    action_items_out = list(
+                        summary_result.get('action_items') or [])
 
                 summary_text = summary_result['summary'] or ''
                 if len(summary_text) > budget['max_chars']:
-                    summary_text = (summary_text[:budget['max_chars']]
-                                    .rstrip() + '…')
+                    summary_text = _truncate_on_boundary(
+                        summary_text, budget['max_chars'])
 
                 return {
                     'success': True,
@@ -804,119 +832,118 @@ class SummarizerAgent(AutonomousAgent):
         
         return min(1.0, score)
     
-    def _generate_gemini_summary(self, messages: List[Dict], extractive_result: Dict) -> Optional[str]:
+    def _generate_llm_summary(
+        self,
+        messages: List[Dict],
+        *,
+        length: str = 'standard',
+        is_dm: bool = False,
+    ) -> Optional[Dict]:
+        """Generate a structured summary with DeepSeek.
+
+        Returns ``{'summary': str, 'key_points': [str], 'action_items': [str]}``
+        or None on failure, in which case the caller keeps its extractive
+        result.
+
+        This asks for JSON rather than prose with a "KEY DECISIONS:" header
+        that we then scrape back out with a regex. The old approach lost the
+        decision list whenever the model reworded the header, and it could
+        not separate a decision ("we're going with MySQL") from an action
+        item ("Ali is writing the migration"), so the UI showed the same
+        strings in both places. Asking for the three fields directly makes
+        the split explicit and removes the parsing step entirely.
         """
-        Generate polished summary using Gemini AI with clean formatting
-        
-        Args:
-            messages: List of message dictionaries
-            extractive_result: Result from extractive summarization
-            
-        Returns:
-            Polished summary string or None if failed
-        """
+        if not self.llm:
+            return None
         try:
-            # Prepare conversation context
-            conversation_text = []
-            for msg in messages:
+            # Cap the transcript. Very long channels blow the context window
+            # and the token bill; the most recent 400 messages carry the part
+            # a catch-up reader cares about.
+            sample = messages[-400:] if len(messages) > 400 else messages
+            lines = []
+            for msg in sample:
                 author = msg.get('display_name') or msg.get('username', 'User')
-                content = msg.get('content', '')
-                conversation_text.append(f"{author}: {content}")
-            
-            conversation = '\n'.join(conversation_text)
-            
-            # Prepare enhanced prompt for discussion-style summary
-            prompt = """You are a professional conversation summarizer. Analyze this chat conversation and create a natural, flowing discussion summary.
+                content = (msg.get('content') or '').strip()
+                if content:
+                    lines.append(f"{author}: {content[:500]}")
+            conversation = '\n'.join(lines)
+            if not conversation:
+                return None
 
-CONVERSATION:
-""" + conversation + """
+            length_hint, max_tokens = _SUMMARY_PROMPT_BUDGET.get(
+                length.lower(), _SUMMARY_PROMPT_BUDGET['standard'])
 
-IMPORTANT FORMATTING RULES:
-1. Write in a natural discussion format, NOT Q&A format
-2. Summarize topics as they were discussed in the conversation
-3. Use bullet points for main discussion topics
-4. Group important decisions at the end under "KEY DECISIONS:" with dashes
-5. Keep it concise, clear, and conversational
-6. Do NOT add any introduction or conclusion text
-7. Start directly with the content
-8. Add blank lines between sections for readability
+            scope = ("a direct message thread between two people" if is_dm
+                     else "a team channel")
 
-Example format:
-- The team discussed Docker, which is a containerization platform that packages applications with their dependencies. This allows for consistent deployment across different environments.
-
-- Flask was confirmed as the backend framework. It's a lightweight Python web framework that handles HTTP requests and routing efficiently.
-
-- The group covered several technical concepts including MySQL (a relational database), Redis (a cache database), and React (a JavaScript library for building user interfaces).
-
-- Frontend and backend architecture were explained - frontend being the client-side interface users interact with, while backend handles server-side logic and data processing.
-
-KEY DECISIONS:
-- MySQL will be used for the database
-- React will be the frontend framework
-- Deployment will be on Docker containers
-- Flask will be used for backend development
-
-Now create the summary in this discussion style:"""
-
-            # Generate with Gemini (new SDK)
-            response = self.gemini_client.models.generate_content(
-                model=self.gemini_model,
-                contents=prompt
+            prompt = (
+                f"Below is {scope}.\n\n"
+                f"CONVERSATION:\n{conversation}\n\n"
+                "Return a JSON object with exactly these keys:\n"
+                '{\n'
+                '  "summary": "the catch-up narrative, ' + length_hint + '",\n'
+                '  "topics": ["what was discussed, one short line each, at most 6"],\n'
+                '  "decisions": ["choices the group actually settled on, at most 6"],\n'
+                '  "action_items": ["who agreed to do what, phrased as '
+                'Name: task, at most 6"]\n'
+                '}\n\n'
+                "Rules:\n"
+                "- If a list has nothing real in it, return an empty array. Do "
+                "not pad it.\n"
+                "- A decision requires agreement in the chat. An idea someone "
+                "floated is a topic, not a decision.\n"
+                "- An action item requires a person and a task. If nobody was "
+                "assigned anything, return an empty array.\n"
+                "- summary is plain prose, no bullet characters, no markdown."
             )
-            
-            if response and response.text:
-                return response.text.strip()
-            
-            return None
-            
+
+            data = self.llm.complete_json(
+                prompt,
+                system=_SUMMARY_SYSTEM,
+                temperature=0.3,
+                max_tokens=max_tokens,
+                timeout=30.0,   # background task, latency is not critical
+            )
+            if not isinstance(data, dict):
+                return None
+
+            summary = humanize_text(str(data.get('summary') or '').strip())
+            if not summary:
+                return None
+
+            def _clean_list(key: str) -> List[str]:
+                raw = data.get(key)
+                if not isinstance(raw, list):
+                    return []
+                out = []
+                for item in raw[:6]:
+                    text = humanize_text(str(item).strip())
+                    if text:
+                        out.append(text[:300])
+                return out
+
+            topics = _clean_list('topics')
+            decisions = _clean_list('decisions')
+            actions = _clean_list('action_items')
+
+            # `key_points` is what the API and UI already read for "the
+            # headline bullets". Decisions outrank topics there when both
+            # exist, because a reader skimming wants the outcome first.
+            key_points = decisions + [t for t in topics if t not in decisions]
+
+            return {
+                'summary': summary,
+                'key_points': key_points[:8],
+                'action_items': actions,
+            }
         except Exception as e:
-            print(f"[SUMMARIZER] Gemini API error: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[SUMMARIZER] LLM summary error: {e}")
             return None
-    
-    def _extract_key_decisions(self, summary_text: str) -> List[str]:
-        """
-        Extract key decisions/points from summary text that contains "KEY DECISIONS:" section
-        
-        Args:
-            summary_text: Full summary text including KEY DECISIONS section
-            
-        Returns:
-            List of key decision strings
-        """
-        try:
-            # Find the KEY DECISIONS section
-            if 'KEY DECISIONS:' not in summary_text:
-                return []
-            
-            # Split at KEY DECISIONS
-            parts = summary_text.split('KEY DECISIONS:')
-            if len(parts) < 2:
-                return []
-            
-            decisions_section = parts[1].strip()
-            
-            # Extract each line that starts with a dash or bullet
-            key_points = []
-            for line in decisions_section.split('\n'):
-                line = line.strip()
-                # Match lines starting with -, •, or *
-                if line.startswith('-') or line.startswith('•') or line.startswith('*'):
-                    # Remove the leading dash/bullet and clean up
-                    point = line[1:].strip()
-                    if point:  # Only add non-empty points
-                        key_points.append(point)
-            
-            return key_points
-            
-        except Exception as e:
-            print(f"[SUMMARIZER] Error extracting key decisions: {e}")
-            return []
+
+
     
     def _save_summary(self, channel_id: int, summary_text: str, 
-                     message_count: int, start_message_id: int,
-                     end_message_id: int, created_by: Optional[int],
+                     message_count: int, created_by: Optional[int],
                      participants: List[str], method: str = 'extractive') -> int:
         """Save summary to database"""
         conn = None
@@ -970,14 +997,15 @@ Now create the summary in this discussion style:"""
                 else:
                     agent_id = agent_row['id']
                 
-                # Log with agent_id for proper stats tracking
+                # Log with agent_id for proper stats tracking. On failure there
+                # is no output, so the error text is stored in its place.
                 cur.execute("""
-                    INSERT INTO ai_agent_logs 
-                    (agent_id, action_type, channel_id, user_id, 
-                     input_text, output_text)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO ai_agent_logs
+                    (agent_id, action_type, channel_id, user_id,
+                     input_text, output_text, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """, (agent_id, 'summarize_channel', channel_id, user_id,
-                      input_data, output_data))
+                      input_data, output_data or error_message, status))
                 
                 conn.commit()
         except Exception as e:
@@ -1056,7 +1084,7 @@ Now create the summary in this discussion style:"""
                 conn.close()
 
     # ────────────────────────────────────────────────────────────────────
-    # Autonomous hooks (Phase 3.3) — Focus→Summarizer chain
+    # Autonomous hooks — Focus→Summarizer chain
     # ────────────────────────────────────────────────────────────────────
 
     def sense(self, event: dict) -> Optional[Dict]:

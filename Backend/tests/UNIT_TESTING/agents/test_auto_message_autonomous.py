@@ -57,6 +57,19 @@ class TestAutoMessageSense:
         assert obs["community_id"] == 7
         assert obs["scope_type"] == "community"
 
+    def test_sense_drops_event_when_agent_disabled_for_community(self, chain_store):
+        with patch("services.community_agent_config.is_agent_enabled",
+                   return_value=False):
+            assert AutoMessageAgent().sense(_join_event()) is None
+
+    def test_disabled_agent_does_not_claim_welcome(self, chain_store):
+        a = AutoMessageAgent()
+        with patch("services.community_agent_config.is_agent_enabled",
+                   return_value=False), \
+             patch.object(a, "_claim_welcome") as claim:
+            a.sense(_join_event())
+        claim.assert_not_called()
+
 
 class TestAutoMessageDecide:
 

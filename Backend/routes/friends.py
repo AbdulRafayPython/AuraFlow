@@ -50,6 +50,9 @@ def send_friend_request():
             if not receiver_row:
                 return jsonify({'error': 'Target user not found'}), 404
             receiver_id = receiver_row['id']
+            from services.bots import is_bot_user
+            if is_bot_user(receiver_id):
+                return jsonify({'error': 'Target user not found'}), 404      # agents cannot be befriended
 
             if sender_id == receiver_id:
                 return jsonify({'error': 'Cannot send friend request to yourself'}), 400
@@ -310,14 +313,6 @@ def get_pending_requests():
             """, (user_id,))
             requests = cur.fetchall()
 
-        def format_user(user_row):
-            username = user_row['username']
-            return {
-                'username': username,
-                'display_name': user_row['display_name'] or username,
-                'avatar_url': user_row['avatar_url'] or 
-                             f"https://api.dicebear.com/7.x/avataaars/svg?seed={username}"
-            }
 
         result = [
             {
@@ -364,14 +359,6 @@ def get_sent_requests():
             """, (user_id,))
             requests = cur.fetchall()
 
-        def format_user(user_row):
-            username = user_row['username']
-            return {
-                'username': username,
-                'display_name': user_row['display_name'] or username,
-                'avatar_url': user_row['avatar_url'] or 
-                             f"https://api.dicebear.com/7.x/avataaars/svg?seed={username}"
-            }
 
         result = [
             {
@@ -651,7 +638,6 @@ def remove_friend(friend_id):
 # =====================================
 # BLOCK FRIEND
 # =====================================
-from flask import abort
 @jwt_required()
 def block_friend(friend_id):
     conn = None

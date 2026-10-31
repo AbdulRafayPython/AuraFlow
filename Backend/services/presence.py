@@ -98,26 +98,6 @@ def heartbeat(user_id, username):
         _persist_status(user_id, 'online')
 
 
-def set_user_status(user_id, username, status):
-    """Manually set status (for DND etc.)."""
-    with _lock:
-        _user_status[user_id] = status
-    _broadcast_status(user_id, username, status)
-    _persist_status(user_id, status)
-
-
-def get_user_status(user_id):
-    """Get current status for a user."""
-    with _lock:
-        return _user_status.get(user_id, 'offline')
-
-
-def get_bulk_status(user_ids):
-    """Get status for multiple users at once."""
-    with _lock:
-        return {uid: _user_status.get(uid, 'offline') for uid in user_ids}
-
-
 def get_online_friends(user_id):
     """Get list of online friend IDs for a user."""
     conn = None

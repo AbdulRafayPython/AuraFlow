@@ -50,7 +50,14 @@ class TestGetMessages:
              "mod_output": None, "mod_confidence": None, "sender_violation_count": 0}
         ]
         conn, cur = _mock_conn(rows=[membership])
-        cur.fetchall.return_value = msg_rows
+        # get_channel_messages now issues a SECOND query for moderation
+        # verdicts (scoped to this page's message ids) instead of JOINing an
+        # unscoped derived table -- see _attach_moderation_data. A single
+        # fetchall.return_value would hand the message rows back to that
+        # second query too, so model the sequence explicitly.
+        # The violation-count query is skipped here because the mocked rows
+        # carry no _community_id (matching a DM channel).
+        cur.fetchall.side_effect = [msg_rows, [], []]
 
         with patch("routes.messages.get_db_connection", return_value=conn), \
              patch("routes.messages.get_channel_membership", return_value=membership), \

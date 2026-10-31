@@ -1,4 +1,5 @@
-﻿"""
+﻿# REWRITE: ~6k-line module mixing agent REST endpoints, metrics, collaboration graph and raw SQL; split per agent and move SQL into services/.
+"""
 AI Agents API Routes
 ====================
 RESTful endpoints for AI agent functionalities
@@ -542,7 +543,6 @@ def health_check():
 # AUTONOMOUS-AGENT METRICS DASHBOARD
 # =====================================
 # GET /api/agents/metrics?days=7[&community_id=N]
-#
 # Returns the three KPIs from §5.3 of AUTONOMOUS_AGENTS_PLAN.md:
 #   - autonomy_ratio  = act decisions / total decisions  (over agent_actions)
 #                       — measures how often the orchestrator decided to do
@@ -558,7 +558,6 @@ def health_check():
 #                       — counts thumbs-up vs thumbs-down only. engaged /
 #                         ignored / dismissed are returned separately so the
 #                         frontend can render the breakdown.
-#
 # Per-agent breakdown is included so the dashboard can show "which of the
 # 11 agents is doing the most work" without a second round-trip.
 
@@ -764,22 +763,18 @@ def get_agent_metrics():
 
 
 # =====================================================================
-# AUTONOMOUS-AGENT COLLABORATION GRAPH                       (Phase 4.4)
+# AUTONOMOUS-AGENT COLLABORATION GRAPH
 # =====================================================================
 # GET /api/agents/collaboration-graph?hours=24
-#
 # Returns a force-directed view of which autonomous agents triggered
 # which over the last N hours, joined on agent_actions.correlation_id.
 # This is *the* visualisation of the three known chains documented in
 # docs/AUTONOMOUS_AGENTS_PLAN.md §4:
-#
 #   mood_tracker  → wellness          (mood.escalation)
 #   moderation    → wellness          (mod.violation, victim chain)
 #   focus         → summarizer + knowledge_builder  (focus.drift)
-#
 # Edges are directed: any pair (a1.agent, a2.agent) sharing the same
 # correlation_id where a2 is the strictly-later 'act' row.
-#
 # Capped at 50 edges so the graph stays readable and one bad chain can't
 # tank the page. The idx_correlation index on agent_actions keeps the
 # self-join cheap for the typical 24-h window.
@@ -970,7 +965,6 @@ def get_agent_collaboration_graph():
 # POST /api/agents/<name>/feedback
 # Body: { "action_id": <int>, "signal": "positive|negative|dismissed|engaged|ignored",
 #         "weight": <float, optional> }
-#
 # Writes one agent_feedback row keyed on the originating agent_actions
 # row, then asks the autonomous agent (if registered) to learn from it.
 # Both writes are best-effort: a missing/unregistered agent does NOT
@@ -1060,11 +1054,9 @@ def submit_agent_feedback(name):
 # GET /api/agents/<name>/state?community_id=N
 #   →  { agent, community_id, enabled, current, defaults, clamps, specs,
 #         last_acted_at, last_outcome }
-#
 # PUT /api/agents/<name>/state
 #   body: { community_id, enabled?, thresholds?: {...}, clamps?: {...} }
 #   →  { agent, community_id, enabled, current, clamps }
-#
 # Both require community-admin membership for the supplied community_id.
 # Storage uses the existing agent_state table:
 #   - learned values live in thresholds[<key>]
@@ -1353,7 +1345,9 @@ def analyze_message():
         text = data['text']
         
         # Analyze the message
-        result = _get_agent("mood_tracker").analyze_message(text)
+        # Single on-demand analysis for one user — worth the LLM call when
+        # the cheap path is unsure (the agent decides internally).
+        result = _get_agent("mood_tracker").analyze_message(text, allow_llm=True)
         
         return jsonify({
             'success': True,
@@ -1465,7 +1459,30 @@ def get_community_mood():
         
         if not community_id and not channel_id:
             return jsonify({'error': 'community_id or channel_id required'}), 400
-        
+
+        # Only members may see mood analytics derived from a channel or community.
+        username = get_jwt_identity()
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                user_id = get_user_id(username, cur)
+                if user_id is None:
+                    return jsonify({'error': 'User not found'}), 404
+                if channel_id:
+                    cur.execute(
+                        "SELECT 1 FROM channel_members WHERE channel_id = %s AND user_id = %s",
+                        (channel_id, user_id))
+                    if not cur.fetchone():
+                        return jsonify({'error': 'Access denied to this channel'}), 403
+                if community_id:
+                    cur.execute(
+                        "SELECT 1 FROM community_members WHERE community_id = %s AND user_id = %s",
+                        (community_id, user_id))
+                    if not cur.fetchone():
+                        return jsonify({'error': 'Access denied to this community'}), 403
+        finally:
+            conn.close()
+
         result = _get_agent("mood_tracker").get_community_mood(
             community_id=community_id,
             channel_id=channel_id,
@@ -4485,13 +4502,11 @@ def configure_community_agent(community_id, agent_type):
 
 
 # ── Per-channel coverage overrides (G1a) ──────────────────────────────────
-#
 # Two-state overrides on top of community_agents.enabled. Backed by
 # community_channel_agents (see migrations/add_community_channel_agents.sql).
 # Wired into dispatch via AutonomousAgent._is_enabled_for_channel
 # (Backend/agents/base.py). Read/write surface is CoverageMatrix in
 # Frontend/src/components/ai-agents/CommunityAgentsTab.tsx §D.
-#
 # A community-installed agent must exist for the override to be meaningful
 # (the matrix UI only exposes cells whose agent is in community_agents).
 # We still allow writing an override for an uninstalled agent — it sits
@@ -5099,7 +5114,6 @@ def configure_personal_agent(agent_type):
 
 
 # DELETE /api/agents/assistant/memory
-#
 # Clears the per-user rolling assistant memory (Redis LIST at
 # ``assistant:mem:{user_id}``, see Backend/agents/assistant.py).
 # Powers the "Clear conversation memory" control in the My Assistant
@@ -5232,7 +5246,6 @@ def get_agent_logs():
 # ======================================================================
 # AGENT ACTIONS — admin-scoped reads from agent_actions (G1b)
 # ======================================================================
-#
 # `ai_agent_logs` (the /logs route above) is the post-execution log used
 # by slash commands and human-triggered actions. `agent_actions` is the
 # autonomous-decision log written by AutonomousAgent.handle() — each row

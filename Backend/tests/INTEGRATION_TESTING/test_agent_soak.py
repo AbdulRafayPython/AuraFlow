@@ -7,10 +7,10 @@ that the autonomous-agent substrate stays well-behaved:
   1. **No infinite cooldown loops** — `mood_tracker` escalations are
      rate-limited to ≤ 1 per user per `_ESCALATION_DEDUPE_SECS`
      regardless of how many negative messages we throw at it.
-  2. **No Gemini hammering** — every site in ``agents/*`` that calls
-     ``client.models.generate_content`` is monkey-patched with a
+  2. **No LLM hammering** — every site in ``agents/*`` that calls
+     ``LLMClient.chat`` and ``chat_tools`` are monkey-patched with a
      counter. The total call count over the soak window must stay
-     under a per-minute budget (default 30 Gemini calls / minute total
+     under a per-minute budget (default 30 LLM calls / minute total
      across all agents).
   3. **No agent self-loops** — an agent must not generate more
      ``act`` rows than the worst-case "one act per event" upper bound
@@ -98,12 +98,17 @@ def _soak_rate_hz() -> float:
         return 2.0
 
 
-def _gemini_budget_per_minute() -> int:
-    """Upper bound on total Gemini calls across all agents per minute."""
-    try:
-        return int(os.environ.get("GEMINI_BUDGET_PER_MIN", "30"))
-    except Exception:
-        return 30
+def _llm_budget_per_minute() -> int:
+    """Upper bound on total LLM calls across all agents per minute."""
+    for var in ("LLM_BUDGET_PER_MIN",):
+        raw = os.environ.get(var)
+        if raw:
+            try:
+                return int(raw)
+            except ValueError:
+                continue
+    return 30
+
 
 
 # ── Cleanup helper ──────────────────────────────────────────────────
@@ -174,54 +179,47 @@ def _fetch_escalation_counts() -> Dict[int, int]:
         conn.close()
 
 
-# ── Gemini call counter ─────────────────────────────────────────────
-class _GeminiCounter:
-    """Patches every agent's generate_content site and counts calls."""
+# ── LLM call counter ────────────────────────────────────────────────
+class _LLMCounter:
+    """Counts every LLM call any agent makes, and answers them locally.
 
-    GENERATE_SITES = [
-        "agents.assistant",
-        "agents.auto_message",
-        "agents.knowledge_builder_v2",
-        "agents.moderation",
-        "agents.summarizer",
-        "agents.support",
-        "agents.wellness",
-    ]
+    Patches ``LLMClient.chat`` and ``LLMClient.chat_tools`` rather than each
+    module's client object. Every path into the provider funnels through one
+    of those two methods (``complete`` and ``complete_json`` delegate to
+    ``chat``), so the patches catch every call and cannot be bypassed by an
+    agent that picks a different wrapper.
+    """
 
     def __init__(self):
         self.count = 0
         self._lock = threading.Lock()
         self._patches = []
 
-    def _fake_resp(self):
-        # Mimic the shape agents expect: ``resp.text`` or ``resp.parsed``.
-        r = MagicMock()
-        r.text = '{"summary": "canned", "items": []}'
-        r.candidates = []
-        return r
-
     def __enter__(self):
-        for site in self.GENERATE_SITES:
-            try:
-                mod = __import__(site, fromlist=["_gemini_client", "_kb_gemini_client"])
-            except Exception:
-                continue
-            for client_attr in ("_gemini_client", "_kb_gemini_client"):
-                client = getattr(mod, client_attr, None)
-                if client is None or not hasattr(client, "models"):
-                    continue
-                # Wrap the bound method so the counter still works no
-                # matter how the agent calls it.
-                def _make_fake(self_counter=self):
-                    def _fake(*args, **kwargs):
-                        with self_counter._lock:
-                            self_counter.count += 1
-                        return self_counter._fake_resp()
-                    return _fake
-                p = patch.object(client.models, "generate_content",
-                                 side_effect=_make_fake())
-                p.start()
-                self._patches.append(p)
+        from utils.ai import llm_client
+
+        counter = self
+
+        def _fake_chat(self_client, messages, **kwargs):
+            with counter._lock:
+                counter.count += 1
+            # Valid JSON so complete_json() callers parse a result rather
+            # than logging a parse failure on every soak event.
+            if kwargs.get("json_mode"):
+                return '{"violations": [], "faqs": [], "definitions": [], "decisions": []}'
+            return "canned soak reply"
+
+        def _fake_chat_tools(self_client, messages, tools=None, **kwargs):
+            with counter._lock:
+                counter.count += 1
+            return llm_client.LLMToolResponse(
+                text="canned soak reply",
+                message={"role": "assistant", "content": "canned soak reply"})
+
+        for name, fake in (("chat", _fake_chat), ("chat_tools", _fake_chat_tools)):
+            p = patch.object(llm_client.LLMClient, name, fake)
+            p.start()
+            self._patches.append(p)
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -230,6 +228,7 @@ class _GeminiCounter:
                 p.stop()
             except Exception:
                 pass
+
 
 
 # ── Side-effect mocks ────────────────────────────────────────────────
@@ -242,7 +241,7 @@ def _silence_side_effects():
     with patch.object(MoodTrackerAgent, "_user_opted_in", return_value=True), \
          patch.object(MoodTrackerAgent, "_persist_mood_row", return_value=None), \
          patch.object(MoodTrackerAgent, "analyze_message",
-                      side_effect=lambda content: {
+                      side_effect=lambda content, **_kw: {
                           "primary_mood": "sad" if "sad" in content else "neutral",
                           "sentiment_score": -0.7 if "sad" in content else 0.0,
                           "sentiment": "negative" if "sad" in content else "neutral",
@@ -255,14 +254,14 @@ def _silence_side_effects():
 # ────────────────────────────────────────────────────────────────────
 class TestSoak_Bounded:
 
-    def test_soak01_no_loops_no_gemini_hammering(self, _silence_side_effects):
+    def test_soak01_no_loops_no_llm_hammering(self, _silence_side_effects):
         from agents import orchestrator
 
         _cleanup_soak_rows()
 
         soak_seconds = _soak_seconds()
         rate_hz = _soak_rate_hz()
-        budget_per_min = _gemini_budget_per_minute()
+        budget_per_min = _llm_budget_per_minute()
 
         users = [_SOAK_USER_BASE + i for i in range(10)]
         channel = _SOAK_CHANNEL_BASE + 1
@@ -283,17 +282,17 @@ class TestSoak_Bounded:
         ]
 
         # Warm every registered agent BEFORE starting the clock so that
-        # lazy import cost (loading lexicons, VADER probes, Gemini client
+        # lazy import cost (loading lexicons, VADER probes, LLM client
         # bootstrapping) doesn't eat the soak window on short runs.
         for name in list(orchestrator._REGISTRY):
             orchestrator._resolve(name)
 
         print(f"\n[SOAK] running for {soak_seconds}s at {rate_hz} Hz "
-              f"(budget {budget_per_min} Gemini calls/min)…")
+              f"(budget {budget_per_min} LLM calls/min)…")
         start = time.time()
         deadline = start + soak_seconds   # reset after warm-up
         try:
-            with _GeminiCounter() as gem:
+            with _LLMCounter() as llm_counter:
                 while time.time() < deadline:
                     content = random.choice(templates)
                     uid = random.choice(users)
@@ -314,10 +313,10 @@ class TestSoak_Bounded:
                         })
                     time.sleep(interval)
                 elapsed = time.time() - start
-                gemini_calls = gem.count
+                llm_calls = llm_counter.count
         except KeyboardInterrupt:
             elapsed = time.time() - start
-            gemini_calls = -1
+            llm_calls = -1
             print(f"\n[SOAK] interrupted after {elapsed:.1f}s — partial run")
 
         total_actions = _count_actions()
@@ -328,7 +327,7 @@ class TestSoak_Bounded:
               f"({published/elapsed:.1f} ev/s)")
         print(f"[SOAK] agent_actions rows: {total_actions} "
               f"(mood_tracker: {mood_actions})")
-        print(f"[SOAK] Gemini calls observed: {gemini_calls}")
+        print(f"[SOAK] LLM calls observed: {llm_calls}")
         print(f"[SOAK] escalation rows per user: {escalation_per_user}")
 
         # ── Assertions ──────────────────────────────────────────────
@@ -341,17 +340,17 @@ class TestSoak_Bounded:
             assert not over_limit, (
                 f"per-user escalation dedupe broke under load: {over_limit}")
 
-        # 2. Gemini budget: across all agents, total calls / minute
+        # 2. LLM budget: across all agents, total calls / minute
         #    must stay under the budget. The soak's heavy mocking means
-        #    most agents don't reach Gemini at all — the budget here
+        #    most agents don't reach the LLM at all — the budget here
         #    catches future regressions where some agent forgets the
-        #    pre-filter and calls Gemini per-event.
+        #    pre-filter and calls the LLM per-event.
         minutes = max(elapsed / 60.0, 1e-6)
-        observed_rate = gemini_calls / minutes
+        observed_rate = llm_calls / minutes
         assert observed_rate <= budget_per_min, (
-            f"Gemini call rate {observed_rate:.1f}/min exceeds budget "
+            f"LLM call rate {observed_rate:.1f}/min exceeds budget "
             f"{budget_per_min}/min — possible per-event hammering "
-            f"(total {gemini_calls} calls in {elapsed:.1f}s)")
+            f"(total {llm_calls} calls in {elapsed:.1f}s)")
 
         # 3. No agent self-loops: total actions grow at most linearly
         #    with the number of events. Upper bound: each event can

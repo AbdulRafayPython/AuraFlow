@@ -3,7 +3,7 @@
     "Welcome to {community}, {user}! Glad you're here.",
     "Hey {user}, welcome to {community}! Feel free to introduce yourself.",
     "Welcome aboard, {user}! Take a look around {community} and say hi when ready.",
-    "{user} just joined {community} — give them a warm welcome!",
+    "{user} just joined {community}. Give them a warm welcome!",
     "Welcome, {user}! We're excited to have you in {community}."
   ],
   "quick_replies": {

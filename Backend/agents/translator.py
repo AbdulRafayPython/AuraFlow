@@ -4,6 +4,15 @@ Translator Agent
 Lightweight on-demand translator using deep-translator (Google Translate
 free tier) with googletrans as a fallback. No heavy ML models loaded.
 
+Roman Urdu takes a different route. Google Translate cannot read Urdu
+written in Latin script at all: with source='auto' it mis-detects it as
+some Latin language and hallucinates ("main bohat udaas hun" comes back as
+"I have a lot of clouds"), and with source='ur' it expects Nastaliq and
+returns the input untouched. The transliteration bridge below works around
+that mechanically, but it is lossy on informal spelling. So when the LLM is
+configured it handles Roman Urdu directly, which is the one case where a
+paid call buys a translation the free engines simply cannot produce.
+
 Public surface
 --------------
 - detect_language(text)            -> {'language': 'en', 'confidence': 1.0}
@@ -56,6 +65,28 @@ try:
 except Exception:  # pragma: no cover
     _requests = None
 
+# LLM (DeepSeek) — used only for Roman Urdu, where the free engines fail.
+try:
+    from utils.ai.llm_client import get_llm_client, is_llm_available
+    _LLM_AVAILABLE = is_llm_available()
+    _llm_client = get_llm_client()
+except Exception:  # pragma: no cover
+    _LLM_AVAILABLE = False
+    _llm_client = None
+
+_TRANSLATE_SYSTEM = (
+    "You are a translator. You are given one chat message and a target "
+    "language.\n"
+    "- Output only the translation. No quotes, no notes, no alternatives, no "
+    "explanation of what the original said.\n"
+    "- The source may be Roman Urdu, Urdu written in Latin script. Read it as "
+    "Urdu, not as English words that happen to look similar.\n"
+    "- Keep the register. Casual stays casual, rude stays rude. Do not clean "
+    "up or soften what the person said.\n"
+    "- Keep emoji, @mentions, #tags, URLs and code spans exactly as they are.\n"
+    "- If the message is already in the target language, return it unchanged."
+)
+
 # Google Input Tools transliteration endpoint. Roman Urdu — Urdu written in
 # Latin script ("main bohat udaas hun") — is NOT translatable by Google
 # Translate directly: source='auto' mis-detects it as a Latin language and
@@ -96,12 +127,12 @@ _ROMAN_URDU_HINTS = re.compile(
 class TranslatorAgent(AutonomousAgent):
     """Translate chat messages between supported languages.
 
-    Autonomous role (Phase 1.1): subscribes to ``msg.created`` and, when
+    Autonomous role: subscribes to ``msg.created`` and, when
     it detects a non-English message that *might* benefit from auto-
     translation, publishes a ``lang.detected`` event so siblings
     (Assistant, Support) can adapt their language. Translator does NOT
-    auto-post inline translations in Phase 1 — that requires the
-    frontend chip work in Phase 4. For now, ``act`` is detection-only.
+    auto-post inline translations — that requires frontend chip work.
+    For now, ``act`` is detection-only.
     """
 
     NAME = "translator"
@@ -175,6 +206,32 @@ class TranslatorAgent(AutonomousAgent):
                     self._translit_cache.clear()
                 self._translit_cache[text] = script
         return script
+
+    def _translate_with_llm(self, text: str, target: str) -> Optional[str]:
+        """Translate Roman Urdu with the LLM. None on any failure.
+
+        Deliberately not used for other language pairs: Google Translate is
+        free and at least as good on those, and this call costs money.
+        """
+        try:
+            language = SUPPORTED_LANGUAGES.get(target) or target
+            translated = _llm_client.complete(
+                f"Target language: {language}\n\nMessage: {text[:1500]}",
+                system=_TRANSLATE_SYSTEM,
+                temperature=0.2,
+                max_tokens=500,
+                timeout=10.0,
+                # A translation must survive verbatim. The humanizer rewrites
+                # word choice and strips dashes, which would corrupt it.
+                humanize=False,
+            )
+            if not translated:
+                return None
+            translated = translated.strip().strip('"').strip()
+            return translated or None
+        except Exception as exc:
+            print(f"[TRANSLATOR] LLM translation failed: {exc}")
+            return None
 
     def _cache_get(self, key: Tuple[str, str, str]) -> Optional[Dict]:
         with self._cache_lock:
@@ -283,18 +340,38 @@ class TranslatorAgent(AutonomousAgent):
             if cached is not None:
                 return {**cached, 'cached': True}
 
-        # Roman-Urdu bridge: Google Translate can't handle Urdu in Latin script,
-        # so transliterate it to Nastaliq first and translate the script with an
-        # explicit 'ur' source. Skip when the target itself is Urdu (nothing to
-        # translate) or when the source was pinned to something other than
-        # auto/ur (caller knows better).
-        text_for_engine = text
-        engine_source = source
-        if (
+        is_roman_urdu = (
             target.split('-')[0] != 'ur'
             and source in ('auto', 'ur')
             and self._is_likely_roman_urdu(text)
-        ):
+        )
+
+        # Engine 0: the LLM, for Roman Urdu only. It reads Latin-script Urdu
+        # natively, so it skips the lossy transliteration hop entirely and
+        # keeps idiom and tone that round-tripping through Nastaliq loses.
+        if is_roman_urdu and _LLM_AVAILABLE and _llm_client:
+            translated = self._translate_with_llm(text, target)
+            if translated:
+                result = {
+                    'translated_text': translated,
+                    'source_language': 'ur',
+                    'target_language': target,
+                    'provider': 'ai',
+                    'romanized_source': True,
+                    'cached': False,
+                }
+                if cache_enabled:
+                    self._cache_put(cache_key, result)
+                return result
+
+        # Roman-Urdu bridge (fallback when the LLM is off or failed):
+        # transliterate to Nastaliq first and translate the script with an
+        # explicit 'ur' source. Skip when the target itself is Urdu (nothing
+        # to translate) or when the source was pinned to something other than
+        # auto/ur (caller knows better).
+        text_for_engine = text
+        engine_source = source
+        if is_roman_urdu:
             script = self._transliterate_roman_urdu(text)
             if script and script.strip() != text.strip():
                 text_for_engine = script
@@ -415,7 +492,7 @@ class TranslatorAgent(AutonomousAgent):
         return dict(SUPPORTED_LANGUAGES)
 
     # ────────────────────────────────────────────────────────────────────
-    # Autonomous hooks (Phase 1.1)
+    # Autonomous hooks
     # ────────────────────────────────────────────────────────────────────
 
     def sense(self, event: dict) -> Optional[dict]:

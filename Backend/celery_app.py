@@ -1,5 +1,5 @@
 """
-AuraFlow Celery Configuration
+Auraflow Celery Configuration
 ==============================
 Task queue for AI agent auto-execution, periodic checks, and background jobs.
 
@@ -47,7 +47,7 @@ celery_app = Celery(
     'auraflow',
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=['tasks.agent_tasks', 'tasks.email_tasks', 'tasks.orchestrator_tasks']
+    include=['tasks.agent_tasks', 'tasks.agent_runtime_tasks', 'tasks.email_tasks', 'tasks.orchestrator_tasks']
 )
 
 if _ssl_opts:
@@ -72,7 +72,15 @@ celery_app.conf.update(
     # Worker settings
     worker_prefetch_multiplier=1,       # Fair task distribution
     worker_concurrency=2,               # 2 concurrent tasks (student project)
-    worker_max_tasks_per_child=200,     # Restart worker after 200 tasks (prevent memory leaks)
+    # NOTE: worker_max_tasks_per_child only applies to the PREFORK pool.
+    # Production now runs --pool=gevent (see render.yaml), which ignores it,
+    # so this no longer provides the memory-leak protection its name implies
+    # for the lazily-imported spacy/sklearn/nltk models. Kept because it
+    # still applies if anyone runs a prefork worker locally. The real
+    # protection under gevent has to come from a memory ceiling or a
+    # scheduled worker restart — tracked as F11 in
+    # docs/SCALING_TO_1000_USERS.md.
+    worker_max_tasks_per_child=200,
 
     # Time limits
     task_soft_time_limit=120,           # 2 min soft limit
@@ -113,6 +121,21 @@ celery_app.conf.task_default_routing_key = 'default'
 
 # ── Periodic Tasks (Celery Beat) ─────────────────────────────────────
 celery_app.conf.beat_schedule = {
+    'run-due-agent-schedules': {
+        'task': 'tasks.agent_runtime_tasks.run_due_agent_schedules',
+        'schedule': 60.0,                         # Every minute: agents with a cron schedule
+        'options': {'queue': 'periodic'},
+    },
+    'expire-agent-approvals': {
+        'task': 'tasks.agent_runtime_tasks.expire_approvals',
+        'schedule': 300.0,                        # Every 5 minutes: unanswered approvals expire
+        'options': {'queue': 'periodic'},
+    },
+    'deliver-agent-reminders': {
+        'task': 'tasks.agent_runtime_tasks.deliver_reminders',
+        'schedule': 60.0,                         # Every minute: reminders that came due
+        'options': {'queue': 'periodic'},
+    },
     'check-community-engagement': {
         'task': 'tasks.agent_tasks.check_engagement_periodic',
         'schedule': crontab(minute='*/30'),       # Every 30 minutes
@@ -162,11 +185,22 @@ celery_app.conf.beat_schedule = {
 celery_app.conf.task_routes = {
     'tasks.agent_tasks.batch_moderation_task': {'queue': 'high_priority'},
     'tasks.agent_tasks.flush_moderation_buffers': {'queue': 'high_priority'},
-    'tasks.agent_tasks.retroactive_scan_task': {'queue': 'high_priority'},  # NEW — v2
-    'tasks.agent_tasks.gemini_review_task': {'queue': 'high_priority'},
+    'tasks.agent_tasks.retroactive_scan_task': {'queue': 'high_priority'},
     'tasks.agent_tasks.track_mood_task': {'queue': 'default'},
+    'tasks.agent_runtime_tasks.run_agent_task': {'queue': 'high_priority'},
+    'tasks.agent_runtime_tasks.run_due_agent_schedules': {'queue': 'periodic'},
+    'tasks.agent_runtime_tasks.resolve_approval_task': {'queue': 'high_priority'},
+    'tasks.agent_runtime_tasks.expire_approvals': {'queue': 'periodic'},
+    'tasks.agent_runtime_tasks.deliver_reminders': {'queue': 'periodic'},
+    'tasks.agent_runtime_tasks.deliver_webhook_task': {'queue': 'default'},
     'tasks.agent_tasks.summarize_channel_task': {'queue': 'default'},
     'tasks.agent_tasks.analyze_focus_task': {'queue': 'default'},
+    # Periodic fan-out children — real work, so they go on the normal
+    # queues rather than 'periodic' (which is for cheap dispatchers/ticks).
+    'tasks.agent_tasks.check_wellness_for_user':       {'queue': 'default'},
+    'tasks.agent_tasks.analyze_engagement_for_channel': {'queue': 'default'},
+    'tasks.agent_tasks.extract_knowledge_for_channel': {'queue': 'default'},
+    'tasks.agent_tasks.auto_summarize_community':      {'queue': 'default'},
     'tasks.agent_tasks.check_engagement_periodic': {'queue': 'periodic'},
     'tasks.agent_tasks.check_wellness_periodic': {'queue': 'periodic'},
     'tasks.agent_tasks.extract_knowledge_periodic': {'queue': 'periodic'},

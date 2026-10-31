@@ -80,6 +80,12 @@ def queue_email_notification(user_id: int, event_type: str, metadata: dict):
         Arbitrary data describing the event (sender, message preview, etc.).
     """
     from services.redis_client import get_redis
+    from services.platform_config import email_notifications_enabled
+
+    # 0. Platform-wide kill switch (system admin > Platform Settings)
+    if not email_notifications_enabled():
+        log.debug(f"[EMAIL BATCH] Platform email notifications disabled — skipping {event_type} for user {user_id}")
+        return
 
     # 1. Check user preferences
     settings = _get_user_notification_settings(user_id)

@@ -5,8 +5,8 @@ from email.mime.multipart import MIMEMultipart
 from config import SMTP_EMAIL, SMTP_SERVER, SMTP_PORT, SMTP_APP_PASSWORD
 
 def send_otp_email(to_email: str, otp: str):
-    subject = "AuraFlow Password Reset OTP"
-    body = f"Your AuraFlow password reset code is: {otp}\nThis code is valid for 5 minutes."
+    subject = "Auraflow Password Reset OTP"
+    body = f"Your Auraflow password reset code is: {otp}\nThis code is valid for 5 minutes."
     msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = SMTP_EMAIL or "no-reply@auraflow.local"
@@ -29,11 +29,11 @@ def send_verification_email(to_email: str, verification_token: str, frontend_url
     """
     verify_link = f"{frontend_url}/verify-email?token={verification_token}&email={to_email}"
 
-    subject = "AuraFlow — Verify Your Email Address"
+    subject = "Auraflow — Verify Your Email Address"
     html_body = f"""
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; background: #1a0b2e; border-radius: 12px;">
         <div style="text-align: center; margin-bottom: 24px;">
-            <h1 style="color: #a78bfa; margin: 0; font-size: 28px;">AuraFlow</h1>
+            <h1 style="color: #a78bfa; margin: 0; font-size: 28px;">Auraflow</h1>
             <p style="color: #9ca3af; font-size: 14px; margin-top: 4px;">Smart Communication Platform</p>
         </div>
         <div style="background: #2d1b69; border-radius: 8px; padding: 24px; margin-bottom: 24px;">
@@ -57,7 +57,7 @@ def send_verification_email(to_email: str, verification_token: str, frontend_url
             </p>
         </div>
         <p style="color: #4b5563; font-size: 11px; text-align: center;">
-            If you didn't create an AuraFlow account, you can safely ignore this email.
+            If you didn't create an Auraflow account, you can safely ignore this email.
         </p>
     </div>
     """
@@ -68,7 +68,7 @@ def send_verification_email(to_email: str, verification_token: str, frontend_url
     msg["To"] = to_email
 
     # Plain-text fallback
-    plain = f"Verify your AuraFlow account: {verify_link}\nThis link expires in 24 hours."
+    plain = f"Verify your Auraflow account: {verify_link}\nThis link expires in 24 hours."
     msg.attach(MIMEText(plain, "plain"))
     msg.attach(MIMEText(html_body, "html"))
 

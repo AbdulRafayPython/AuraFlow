@@ -45,6 +45,12 @@ def process_email_batch(self, user_id: int):
         log.info(f"[EMAIL TASK] No pending events for user {user_id} — skipping")
         return
 
+    # The switch may have been turned off after these events were queued.
+    from services.platform_config import email_notifications_enabled
+    if not email_notifications_enabled():
+        log.info(f"[EMAIL TASK] Platform email notifications disabled — dropped {len(raw_events)} event(s) for user {user_id}")
+        return
+
     events = []
     for raw in raw_events:
         try:
@@ -161,7 +167,7 @@ def _render_digest_html(user: dict, grouped: dict, total: int) -> str:
     return f"""
     <div style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;max-width:560px;margin:0 auto;padding:32px;background:#1a0b2e;border-radius:12px;">
       <div style="text-align:center;margin-bottom:24px;">
-        <h1 style="color:#a78bfa;margin:0;font-size:28px;">AuraFlow</h1>
+        <h1 style="color:#a78bfa;margin:0;font-size:28px;">Auraflow</h1>
         <p style="color:#9ca3af;font-size:14px;margin-top:4px;">Notification Digest</p>
       </div>
       <div style="background:#2d1b69;border-radius:8px;padding:24px;margin-bottom:24px;">
@@ -187,14 +193,14 @@ def _send_digest_email(to_email: str, html_body: str):
     from email.mime.multipart import MIMEMultipart
     from config import SMTP_EMAIL, SMTP_SERVER, SMTP_PORT, SMTP_APP_PASSWORD
 
-    subject = "AuraFlow — You have new notifications"
+    subject = "Auraflow — You have new notifications"
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = SMTP_EMAIL or "no-reply@auraflow.local"
     msg["To"] = to_email
 
-    plain = "You have new notifications on AuraFlow. Log in to see them."
+    plain = "You have new notifications on Auraflow. Log in to see them."
     msg.attach(MIMEText(plain, "plain"))
     msg.attach(MIMEText(html_body, "html"))
 

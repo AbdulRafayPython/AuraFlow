@@ -1,5 +1,5 @@
 -- =============================================================
--- AuroFlow - Canonical Database Schema
+-- Auraflow - Canonical Database Schema
 -- Generated from live database on 2026-05-14
 -- =============================================================
 
@@ -640,6 +640,7 @@ CREATE TABLE `messages` (
   `content` text,
   `message_type` enum('text','image','file','system','ai','voice','video','call') NOT NULL DEFAULT 'text',
   `bot_name` varchar(64) DEFAULT NULL,
+  `agent_run_id` bigint DEFAULT NULL,
   `reply_to` bigint DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `edited_at` timestamp NULL DEFAULT NULL,
@@ -657,6 +658,7 @@ CREATE TABLE `messages` (
   KEY `idx_msg_sender` (`sender_id`),
   KEY `idx_msg_channel_sender` (`channel_id`,`sender_id`),
   KEY `idx_messages_channel_id` (`channel_id`,`id`),
+  KEY `idx_msg_agent_run` (`agent_run_id`),
   FULLTEXT KEY `ft_messages` (`content`),
   CONSTRAINT `messages_ibfk_1` FOREIGN KEY (`channel_id`) REFERENCES `channels` (`id`) ON DELETE CASCADE,
   CONSTRAINT `messages_ibfk_2` FOREIGN KEY (`sender_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
@@ -902,6 +904,7 @@ CREATE TABLE `user_summary_schedules` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_user_channel` (`user_id`,`channel_id`),
   KEY `fk_uss_channel` (`channel_id`),
+  KEY `idx_uss_due` (`is_active`,`schedule_time`),
   CONSTRAINT `fk_uss_channel` FOREIGN KEY (`channel_id`) REFERENCES `channels` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_uss_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   CONSTRAINT `user_summary_schedules_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
@@ -932,6 +935,7 @@ CREATE TABLE `users` (
   `email_verification_token` varchar(500) DEFAULT NULL,
   `email_verification_expires` timestamp NULL DEFAULT NULL,
   `role` enum('user','system_admin') NOT NULL DEFAULT 'user',
+  `is_bot` tinyint(1) NOT NULL DEFAULT '0',
   `account_status` enum('active','suspended','banned') NOT NULL DEFAULT 'active',
   `account_status_reason` text,
   `account_status_until` timestamp NULL DEFAULT NULL,
@@ -945,6 +949,7 @@ CREATE TABLE `users` (
   KEY `idx_username` (`username`),
   KEY `idx_email_verification_token` (`email_verification_token`),
   KEY `idx_users_status` (`status`),
+  KEY `idx_users_is_bot` (`is_bot`),
   KEY `idx_users_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -1027,6 +1032,313 @@ CREATE TABLE `engagement_poll_votes` (
   KEY `idx_poll_votes_msg` (`message_id`),
   CONSTRAINT `fk_poll_vote_msg` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_poll_vote_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
+-- agent_runs + agent_run_steps
+-- Agent runtime v2 run log. See migrations/add_agent_runs.sql.
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_run_steps`;
+DROP TABLE IF EXISTS `agent_runs`;
+CREATE TABLE `agent_runs` (
+  `id`            BIGINT       NOT NULL AUTO_INCREMENT,
+  `run_uuid`      CHAR(36)     NOT NULL,
+  `agent_key`     VARCHAR(64)  NOT NULL,
+  `agent_id`      INT          NULL,
+  `trigger_type`  VARCHAR(32)  NOT NULL,
+  `trigger_message_id` BIGINT  NULL,
+  `community_id`  INT          NULL,
+  `channel_id`    INT          NULL,
+  `invoked_by`    INT          NULL,
+  `is_dry_run`    TINYINT(1)   NOT NULL DEFAULT 0,
+  `status`        ENUM('queued','running','waiting_approval','succeeded','failed','unavailable','cancelled') NOT NULL DEFAULT 'queued',
+  `input_text`    TEXT         NULL,
+  `output_text`   TEXT         NULL,
+  `step_count`    INT          NOT NULL DEFAULT 0,
+  `tokens_in`     INT          NOT NULL DEFAULT 0,
+  `tokens_out`    INT          NOT NULL DEFAULT 0,
+  `error`         VARCHAR(500) NULL,
+  `started_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `finished_at`   DATETIME     NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_run_uuid` (`run_uuid`),
+  KEY `idx_run_agent_time` (`agent_key`, `started_at`),
+  KEY `idx_run_agent_id` (`agent_id`, `started_at`),
+  KEY `idx_run_status` (`status`),
+  KEY `idx_run_channel` (`channel_id`, `started_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `agent_run_steps` (
+  `id`          BIGINT       NOT NULL AUTO_INCREMENT,
+  `run_id`      BIGINT       NOT NULL,
+  `step_no`     INT          NOT NULL,
+  `kind`        ENUM('llm','tool_call','tool_result','approval','final') NOT NULL,
+  `tool_name`   VARCHAR(64)  NULL,
+  `args_json`   MEDIUMTEXT   NULL,
+  `result_json` MEDIUMTEXT   NULL,
+  `latency_ms`  INT          NULL,
+  `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_step_run` (`run_id`, `step_no`),
+  CONSTRAINT `fk_step_run` FOREIGN KEY (`run_id`) REFERENCES `agent_runs` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
+-- agent_definitions + agent_triggers
+-- Agents as members (built-in Aura and user-created). See migrations/add_agent_definitions.sql.
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_triggers`;
+DROP TABLE IF EXISTS `agent_definitions`;
+CREATE TABLE `agent_definitions` (
+  `id`             INT          NOT NULL AUTO_INCREMENT,
+  `public_id`      CHAR(36)     NOT NULL,
+  `bot_user_id`    INT          NOT NULL,
+  `owner_user_id`  INT          NOT NULL,
+  `community_id`   INT          NULL,                 -- NULL = available everywhere (built-in / personal)
+  `name`           VARCHAR(80)  NOT NULL,
+  `description`    VARCHAR(500) NULL,
+  `avatar_url`     VARCHAR(500) NULL,
+  `instructions`   TEXT         NOT NULL,
+  `model_tier`     ENUM('fast','smart') NOT NULL DEFAULT 'fast',
+  `tools`          JSON         NOT NULL,             -- ["search_knowledge", ...]
+  `permissions`    JSON         NOT NULL,             -- {"channel_ids": [..]} ; empty = every channel of the community
+  `template_key`   VARCHAR(40)  NULL,
+  `status`         ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft',
+  `version`        INT          NOT NULL DEFAULT 1,
+  `daily_run_cap`  INT          NOT NULL DEFAULT 200,
+  `created_at`     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_agent_public_id` (`public_id`),
+  UNIQUE KEY `uq_agent_bot_user` (`bot_user_id`),
+  KEY `idx_agent_community_status` (`community_id`, `status`),
+  KEY `idx_agent_owner` (`owner_user_id`),
+  CONSTRAINT `fk_agentdef_bot`       FOREIGN KEY (`bot_user_id`)   REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_agentdef_owner`     FOREIGN KEY (`owner_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_agentdef_community` FOREIGN KEY (`community_id`)  REFERENCES `communities` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `agent_triggers` (
+  `id`           INT NOT NULL AUTO_INCREMENT,
+  `agent_id`     INT NOT NULL,
+  `type`         ENUM('mention','keyword','channel_message','schedule','member_joined') NOT NULL,
+  `channel_id`   INT NULL,                 -- NULL = every channel the agent may act in
+  `config`       JSON NULL,                -- {"keywords": [..]} / {"cron": "0 9 * * 5", "tz": "Asia/Dubai"}
+  `next_run_at`  DATETIME NULL,            -- schedule triggers only
+  `enabled`      TINYINT(1) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  KEY `idx_trigger_agent` (`agent_id`),
+  KEY `idx_trigger_type_channel` (`type`, `channel_id`, `enabled`),
+  KEY `idx_trigger_due` (`type`, `enabled`, `next_run_at`),
+  CONSTRAINT `fk_trigger_agent`   FOREIGN KEY (`agent_id`)   REFERENCES `agent_definitions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_trigger_channel` FOREIGN KEY (`channel_id`) REFERENCES `channels` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
+-- agent_knowledge_sources + agent_knowledge_chunks
+-- Per-agent knowledge for the Agent Builder. See migrations/add_agent_knowledge.sql.
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_knowledge_chunks`;
+DROP TABLE IF EXISTS `agent_knowledge_sources`;
+CREATE TABLE `agent_knowledge_sources` (
+  `id`          INT          NOT NULL AUTO_INCREMENT,
+  `agent_id`    INT          NOT NULL,
+  `type`        ENUM('text','file','channel') NOT NULL,
+  `title`       VARCHAR(255) NOT NULL,
+  `ref`         VARCHAR(500) NULL,                 -- file name or channel id
+  `status`      ENUM('pending','ready','failed') NOT NULL DEFAULT 'pending',
+  `error`       VARCHAR(255) NULL,
+  `chunk_count` INT          NOT NULL DEFAULT 0,
+  `created_at`  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ks_agent` (`agent_id`),
+  CONSTRAINT `fk_ks_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent_definitions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `agent_knowledge_chunks` (
+  `id`          BIGINT NOT NULL AUTO_INCREMENT,
+  `source_id`   INT    NOT NULL,
+  `agent_id`    INT    NOT NULL,
+  `chunk_index` INT    NOT NULL,
+  `content`     TEXT   NOT NULL,
+  `embedding`   JSON   NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_chunk_agent` (`agent_id`),
+  KEY `idx_chunk_source` (`source_id`),
+  CONSTRAINT `fk_chunk_source` FOREIGN KEY (`source_id`) REFERENCES `agent_knowledge_sources` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------
+-- agent_approvals
+-- Approvals for agent write actions. See migrations/add_agent_approvals.sql.
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_approvals`;
+CREATE TABLE `agent_approvals` (
+  `id`           BIGINT       NOT NULL AUTO_INCREMENT,
+  `run_id`       BIGINT       NOT NULL,
+  `tool_name`    VARCHAR(64)  NOT NULL,
+  `args_json`    MEDIUMTEXT   NOT NULL,
+  `summary`      VARCHAR(500) NOT NULL,
+  `approver_id`  INT          NOT NULL,
+  `status`       ENUM('pending','approved','rejected','expired') NOT NULL DEFAULT 'pending',
+  `result_json`  MEDIUMTEXT   NULL,
+  `decided_at`   DATETIME     NULL,
+  `expires_at`   DATETIME     NOT NULL,
+  `created_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_appr_user_status` (`approver_id`, `status`),
+  KEY `idx_appr_status_expiry` (`status`, `expires_at`),
+  CONSTRAINT `fk_appr_run` FOREIGN KEY (`run_id`) REFERENCES `agent_runs` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
+-- agent_reminders
+-- Reminders set by the schedule_reminder tool. See migrations/add_agent_reminders.sql.
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_reminders`;
+CREATE TABLE `agent_reminders` (
+  `id`          BIGINT        NOT NULL AUTO_INCREMENT,
+  `agent_id`    INT           NOT NULL,
+  `channel_id`  INT           NOT NULL,
+  `user_id`     INT           NOT NULL,
+  `text`        VARCHAR(500)  NOT NULL,
+  `remind_at`   DATETIME      NOT NULL,
+  `status`      ENUM('pending','sent','failed') NOT NULL DEFAULT 'pending',
+  `error`       VARCHAR(255)  NULL,
+  `created_at`  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `sent_at`     DATETIME      NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_rem_due` (`status`, `remind_at`),
+  KEY `idx_rem_user` (`user_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
+-- agent_listings
+-- Agent marketplace listings. See migrations/add_agent_listings.sql.
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_listings`;
+CREATE TABLE `agent_listings` (
+  `id`               INT          NOT NULL AUTO_INCREMENT,
+  `public_id`        CHAR(36)     NOT NULL,
+  `source_agent_id`  INT          NULL,
+  `publisher_user_id` INT         NOT NULL,
+  `title`            VARCHAR(60)  NOT NULL,
+  `description`      VARCHAR(300) NOT NULL DEFAULT '',
+  `category`         VARCHAR(20)  NOT NULL DEFAULT 'other',
+  `snapshot`         JSON         NOT NULL,
+  `status`           ENUM('published','unpublished') NOT NULL DEFAULT 'published',
+  `installs`         INT          NOT NULL DEFAULT 0,
+  `created_at`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_listing_public` (`public_id`),
+  UNIQUE KEY `uq_listing_source` (`source_agent_id`),
+  KEY `idx_listing_browse` (`status`, `category`, `installs`),
+  KEY `idx_listing_publisher` (`publisher_user_id`),
+  CONSTRAINT `fk_listing_agent` FOREIGN KEY (`source_agent_id`) REFERENCES `agent_definitions` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_listing_user` FOREIGN KEY (`publisher_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
+-- agent_api_keys
+-- API keys and webhooks of agents. See migrations/add_agent_integrations.sql.
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_api_keys`;
+CREATE TABLE `agent_api_keys` (
+  `id`           INT          NOT NULL AUTO_INCREMENT,
+  `agent_id`     INT          NOT NULL,
+  `name`         VARCHAR(60)  NOT NULL,
+  `key_prefix`   VARCHAR(16)  NOT NULL,
+  `key_hash`     CHAR(64)     NOT NULL,
+  `created_by`   INT          NOT NULL,
+  `created_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_used_at` DATETIME     NULL,
+  `revoked_at`   DATETIME     NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_apikey_hash` (`key_hash`),
+  KEY `idx_apikey_agent` (`agent_id`),
+  CONSTRAINT `fk_apikey_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent_definitions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
+-- agent_webhooks
+-- API keys and webhooks of agents. See migrations/add_agent_integrations.sql.
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_webhooks`;
+CREATE TABLE `agent_webhooks` (
+  `id`          INT          NOT NULL AUTO_INCREMENT,
+  `agent_id`    INT          NOT NULL,
+  `url`         VARCHAR(500) NOT NULL,
+  `secret`      VARCHAR(64)  NOT NULL,
+  `events`      VARCHAR(100) NOT NULL DEFAULT 'run.finished',
+  `enabled`     TINYINT(1)   NOT NULL DEFAULT 1,
+  `created_by`  INT          NOT NULL,
+  `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_status` SMALLINT     NULL,
+  `last_error`  VARCHAR(255) NULL,
+  `last_at`     DATETIME     NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_webhook_agent` (`agent_id`, `enabled`),
+  CONSTRAINT `fk_webhook_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent_definitions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
+-- agent_mcp_servers
+-- MCP servers of agents. See migrations/add_agent_mcp.sql.
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_mcp_servers`;
+CREATE TABLE `agent_mcp_servers` (
+  `id`               INT          NOT NULL AUTO_INCREMENT,
+  `agent_id`         INT          NOT NULL,
+  `name`             VARCHAR(24)  NOT NULL,
+  `url`              VARCHAR(500) NOT NULL,
+  `transport`        VARCHAR(8)   NOT NULL DEFAULT 'http',
+  `auth_token`       TEXT         NULL,
+  `oauth_json`       TEXT         NULL,
+  `enabled`          TINYINT(1)   NOT NULL DEFAULT 1,
+  `tools_json`       MEDIUMTEXT   NULL,
+  `tools_fetched_at` DATETIME     NULL,
+  `last_error`       VARCHAR(255) NULL,
+  `created_by`       INT          NOT NULL,
+  `created_at`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mcp_agent_name` (`agent_id`, `name`),
+  CONSTRAINT `fk_mcp_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent_definitions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
+-- agent_listing_ratings
+-- Star ratings of marketplace listings. See migrations/add_agent_ratings.sql.
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_listing_ratings`;
+CREATE TABLE `agent_listing_ratings` (
+  `listing_id` INT        NOT NULL,
+  `user_id`    INT        NOT NULL,
+  `stars`      TINYINT    NOT NULL,
+  `created_at` DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`listing_id`, `user_id`),
+  KEY `idx_rating_user` (`user_id`),
+  CONSTRAINT `fk_rating_listing` FOREIGN KEY (`listing_id`) REFERENCES `agent_listings` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rating_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `chk_rating_stars` CHECK (`stars` BETWEEN 1 AND 5)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- -----------------------------------------------------------
+-- agent_mcp_oauth_states
+-- Logins in progress for MCP OAuth. See migrations/add_agent_mcp_oauth.sql.
+-- -----------------------------------------------------------
+DROP TABLE IF EXISTS `agent_mcp_oauth_states`;
+CREATE TABLE `agent_mcp_oauth_states` (
+  `state`         VARCHAR(64)  NOT NULL,
+  `server_id`     INT          NOT NULL,
+  `user_id`       INT          NOT NULL,
+  `code_verifier` VARCHAR(128) NOT NULL,
+  `redirect_uri`  VARCHAR(500) NOT NULL,
+  `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`state`),
+  KEY `idx_oauth_state_created` (`created_at`),
+  CONSTRAINT `fk_oauth_state_server` FOREIGN KEY (`server_id`) REFERENCES `agent_mcp_servers` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

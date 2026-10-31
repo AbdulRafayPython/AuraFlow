@@ -1,4 +1,4 @@
-# utils/validators.py — Input validation helpers for AuraFlow authentication
+# utils/validators.py — Input validation helpers for Auraflow authentication
 # Additive module: does NOT modify any existing logic.
 import re
 

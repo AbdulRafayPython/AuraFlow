@@ -26,6 +26,38 @@ def _make_mock_conn(rows=None, lastrowid=1):
     return mock_conn, mock_cur
 
 
+def _evict_test_stubs():
+    """Evict hand-made stub modules so the REAL app package can be imported.
+
+    Several test modules pre-register bare ``types.ModuleType`` stubs at
+    MODULE level -- ``sys.modules["app"]`` (agents' lazy
+    ``from app import socketio``) and ``sys.modules["routes.sockets"]``
+    (``from routes.sockets import _post_ai_bot_message``). pytest executes
+    every test module during COLLECTION, before any test runs, so in a
+    full-suite run those stubs are installed even when the stubbing file's
+    own tests never execute.
+
+    A stub then breaks any fixture that needs the real thing:
+      * ``app`` stub has no ``.app``          -> AttributeError
+      * ``routes.sockets`` stub has no
+        ``register_socket_events``            -> ImportError at app.py:60
+
+    Real modules loaded from disk always carry ``__spec__``/``__file__``;
+    the hand-made stubs carry neither, which is how they are told apart.
+    Returns {name: module} so the caller can restore them afterwards --
+    the stubbing suites still expect their stubs once we are done.
+    """
+    evicted = {}
+    for name in list(sys.modules):
+        if name != "app" and not name.startswith("routes."):
+            continue
+        mod = sys.modules[name]
+        if getattr(mod, "__spec__", None) is None and getattr(mod, "__file__", None) is None:
+            evicted[name] = mod
+            del sys.modules[name]
+    return evicted
+
+
 @pytest.fixture
 def mock_conn_factory():
     """Return the helper so individual tests can customise DB rows."""
@@ -34,14 +66,26 @@ def mock_conn_factory():
 
 @pytest.fixture
 def app():
-    """Create Flask app in TESTING mode with sockets disabled."""
-    with patch("database.get_db_connection", return_value=MagicMock()), \
-         patch("services.redis_client.get_redis", return_value=None):
-        import app as app_module
-        flask_app = app_module.app
-        flask_app.config["TESTING"] = True
-        flask_app.config["JWT_SECRET_KEY"] = "test-secret-key"
-        yield flask_app
+    """Create Flask app in TESTING mode with sockets disabled.
+
+    Same stub-eviction dance as tests/UAT/conftest.py -- see the long note
+    there. test_agent_soak.py / test_msg_storm.py install a socketio-only
+    stub as sys.modules["app"] at MODULE level so agents' lazy
+    `from app import socketio` never boots Flask. In a full-suite run that
+    stub can win the slot before this fixture executes, and then
+    `import app` here returns the stub, which has no `.app` attribute.
+    """
+    evicted = _evict_test_stubs()
+
+    try:
+        with patch("database.get_db_connection", return_value=MagicMock()),              patch("services.redis_client.get_redis", return_value=None):
+            import app as app_module
+            flask_app = app_module.app
+            flask_app.config["TESTING"] = True
+            flask_app.config["JWT_SECRET_KEY"] = "test-secret-key"
+            yield flask_app
+    finally:
+        sys.modules.update(evicted)
 
 
 @pytest.fixture

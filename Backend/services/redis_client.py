@@ -1,5 +1,5 @@
 """
-AuraFlow Redis Client
+Auraflow Redis Client
 ======================
 Redis wrapper for caching agent settings, rate limiting, and general cache.
 
@@ -108,18 +108,6 @@ def cache_delete_pattern(pattern):
 
 
 # ── Agent Settings Cache ─────────────────────────────────────────────
-
-def get_agent_settings(community_id, agent_type):
-    """Get cached agent settings for a community."""
-    key = f"agent:settings:{community_id}:{agent_type}"
-    return cache_get(key)
-
-
-def set_agent_settings(community_id, agent_type, settings):
-    """Cache agent settings (5 min TTL)."""
-    key = f"agent:settings:{community_id}:{agent_type}"
-    return cache_set(key, settings, ttl=300)
-
 
 def invalidate_agent_settings(community_id, agent_type=None):
     """Invalidate cached agent settings."""
@@ -317,7 +305,6 @@ def set_user_public_id(user_id, public_id):
 # Key: channel_msgs:{channel_id}  |  TTL: 30 min (refreshed on every push)
 # Eliminates the DB round-trip for GET /messages/channel/{id}?offset=0
 # (the 541-call hot path from the slow-query diagnosis).
-#
 # Layout: LPUSH prepends new messages; LRANGE 0 N returns newest-first,
 # matching the existing DB ORDER BY created_at DESC so the frontend reverse()
 # call continues to work without change.

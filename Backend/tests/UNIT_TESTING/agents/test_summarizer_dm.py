@@ -79,7 +79,7 @@ class TestSummarizeDM:
     def test_returns_summary_on_happy_path(self):
         rows = _dm_rows(40)
         agent = SummarizerAgent()
-        agent.gemini_available = False  # force extractive path, deterministic
+        agent.llm_available = False  # force extractive path, deterministic
 
         with patch('agents.summarizer.get_db_connection',
                    return_value=_fake_db_dm(rows)), \
@@ -106,7 +106,7 @@ class TestSummarizeDM:
     def test_below_threshold_returns_error(self):
         rows = _dm_rows(5)  # < min_messages_for_summary (default 20)
         agent = SummarizerAgent()
-        agent.gemini_available = False
+        agent.llm_available = False
 
         with patch('agents.summarizer.get_db_connection',
                    return_value=_fake_db_dm(rows)), \
@@ -124,7 +124,7 @@ class TestSummarizeDM:
     def test_message_count_threaded_into_query(self):
         rows = _dm_rows(30)
         agent = SummarizerAgent()
-        agent.gemini_available = False
+        agent.llm_available = False
         sql_seen: list = []
         params_seen: list = []
 
@@ -156,7 +156,7 @@ class TestSummarizeDM:
         AND by asserting ``_save_summary`` is never called."""
         rows = _dm_rows(40)
         agent = SummarizerAgent()
-        agent.gemini_available = False
+        agent.llm_available = False
 
         with patch('agents.summarizer.get_db_connection',
                    return_value=_fake_db_dm(rows)), \
@@ -173,7 +173,7 @@ class TestSummarizeDM:
     def test_include_topics_false_blanks_key_points(self):
         rows = _dm_rows(30)
         agent = SummarizerAgent()
-        agent.gemini_available = False
+        agent.llm_available = False
 
         with patch('agents.summarizer.get_db_connection',
                    return_value=_fake_db_dm(rows)), \

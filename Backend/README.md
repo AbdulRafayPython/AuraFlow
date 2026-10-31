@@ -1,4 +1,4 @@
-# AuroFlow Backend
+# Auraflow Backend
 
 Quick start
 

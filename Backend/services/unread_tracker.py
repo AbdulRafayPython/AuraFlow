@@ -345,14 +345,6 @@ def get_user_unreads(user_id):
     }
 
 
-def clear_user_cache(user_id):
-    """Clear cached unreads for a user (on logout)."""
-    with _lock:
-        _channel_unread.pop(user_id, None)
-        _community_unread.pop(user_id, None)
-        _dm_unread.pop(user_id, None)
-
-
 def _persistence_loop():
     """Periodically persist dirty unread counts to DB."""
     while True:

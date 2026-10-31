@@ -3,7 +3,7 @@ TC-UT-36 to TC-UT-48
 Unit tests for agents/moderation.py — ModerationAgent
 Tests: instant_check extreme-content blocking, personal-info detection,
        clean messages pass, scam detection.
-No Redis, no Gemini, no DB — all external calls mocked.
+No Redis, no LLM, no DB — all external calls mocked.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,8 +16,8 @@ from unittest.mock import patch, MagicMock
 def moderator():
     """Shared ModerationAgent with all external services mocked."""
     with patch("database.get_db_connection", return_value=MagicMock()), \
-         patch("agents.moderation._GEMINI_MODERATION_AVAILABLE", False), \
-         patch("agents.moderation._gemini_client", None):
+         patch("agents.moderation._LLM_MODERATION_AVAILABLE", False), \
+         patch("agents.moderation._llm_client", None):
         from agents.moderation import ModerationAgent
         return ModerationAgent()
 

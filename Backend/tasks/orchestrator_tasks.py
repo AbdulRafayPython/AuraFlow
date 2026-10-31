@@ -16,7 +16,7 @@ Two entries:
 
 NOTE: until agents register themselves in `agents/orchestrator.py:_REGISTRY`,
 `run_orchestrator` is a no-op subscriber that just drains events. That is
-intentional for Phase 0.
+intentional.
 """
 
 from __future__ import annotations

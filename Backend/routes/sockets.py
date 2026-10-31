@@ -1,3 +1,4 @@
+# REWRITE: ~2.8k-line module; split handlers per feature (chat, voice, presence, commands) and route bot posts through one helper.
 # routes/sockets.py - Complete Socket.IO event handlers
 from flask_socketio import emit, join_room, leave_room, rooms, disconnect
 from flask_jwt_extended import decode_token
@@ -342,7 +343,7 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
                 'type': 'help',
                 'success': True,
                 'message': (
-                    "AuraFlow AI Commands\n"
+                    "Auraflow AI Commands\n"
                     "/summarize [count]  - Summarize recent messages\n"
                     "/ask <question>     - Ask the AI Assistant\n"
                     "/support <question> - Ask the community knowledge base\n"
@@ -1047,10 +1048,10 @@ def register_socket_events(socketio):
                 if is_blocked:
                     log.info(f"[SOCKET] User {username} is BLOCKED in community {community_id}")
             
-            # 🛡️ BATCH MODERATION — instant-check → broadcast → Redis buffer → Gemini batch
+            # 🛡️ BATCH MODERATION — instant-check → broadcast → Redis buffer → LLM batch
             # Messages broadcast INSTANTLY (only extreme content blocked pre-broadcast).
             # All messages pushed to a per-channel Redis buffer.
-            # When buffer reaches 10 msgs or 30s timeout, Celery batch-reviews with Gemini.
+            # When buffer reaches 10 msgs or 30s timeout, Celery batch-reviews with the LLM.
             moderation_installed = False
             final_action = 'allow'
             if community_id:
@@ -1085,7 +1086,7 @@ def register_socket_events(socketio):
 
             instant_result = None
             if moderation_installed and content:
-                instant_result = moderation_agent.instant_check(content, user_id=user_id, channel_id=channel_id)  # NEW — v2
+                instant_result = moderation_agent.instant_check(content, user_id=user_id, channel_id=channel_id)
                 if instant_result.get('block'):
                     final_action = 'block'
 
@@ -1146,12 +1147,12 @@ def register_socket_events(socketio):
                 except Exception:
                     pass
             else:
-                # ✅ BROADCAST INSTANTLY — Gemini will review in batch later
+                # ✅ BROADCAST INSTANTLY — LLM will review in batch later
                 emit('message_received', {
                     **message, 'author': username
                 }, room=room, include_self=True)
                 
-                # Push to Redis buffer for batch Gemini review
+                # Push to Redis buffer for batch LLM review
                 if moderation_installed and content and message_id:
                     try:
                         import time as _time
@@ -1185,6 +1186,7 @@ def register_socket_events(socketio):
                         'channel_id':  channel_id,
                         'community_id': community_id,
                         'content':     content,
+                        'reply_to':    data.get('reply_to'),
                     })
                 except Exception as _bus_err:
                     log.debug(f"[event_bus] msg.created publish skipped: {_bus_err}")
@@ -2198,7 +2200,7 @@ def register_socket_events(socketio):
             emit('error', {'message': 'Failed to remove reaction'})
     
     # ============================================================================
-    # PIN / UNPIN EVENTS  
+    # PIN / UNPIN EVENTS
     # ============================================================================
 
     @socketio.on('pin_message')
@@ -2236,7 +2238,7 @@ def register_socket_events(socketio):
             log.error(f"[UNPIN] Error: {e}")
 
     # ============================================================================
-    # CUSTOM STATUS BROADCAST  
+    # CUSTOM STATUS BROADCAST
     # ============================================================================
 
     @socketio.on('update_custom_status')

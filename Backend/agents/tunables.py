@@ -1,5 +1,5 @@
 """
-AuraFlow Agent Tunables — Phase 5.2 catalog
+Auraflow Agent Tunables catalog
 ============================================
 Per-agent default values + clamp ranges for the "Agent Goals" admin
 panel. Each tunable is described by a small dict so the GET endpoint

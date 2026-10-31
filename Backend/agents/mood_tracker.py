@@ -1,10 +1,12 @@
+# REWRITE: ~2k lines; keyword scoring, emotion maps and persistence in one class. Also see opt-in/privacy review of mood tracking.
 """
-Mood Tracking Agent for AuraFlow
+Mood Tracking Agent for Auraflow
 Analyzes user messages to detect emotional states with Roman Urdu support
 Features:
 - Lexicon-based sentiment analysis (fast, accurate for Roman Urdu)
 - Google Translate API for Roman Urdu to English conversion
 - TextBlob for English sentiment analysis
+- DeepSeek adjudication on the messages the cheap path is unsure about
 - Roman Urdu and English support
 - Emoji detection and scoring
 - Normalization for spelling variations
@@ -78,20 +80,62 @@ except ImportError:
     TEXTBLOB_AVAILABLE = False
     print("[MOOD TRACKER] textblob not installed. English sentiment fallback disabled.")
 
+# ── LLM adjudication (DeepSeek) ──────────────────────────────────────────
+# The lexicon + VADER pipeline is fast and free but has two blind spots that
+# matter here: sarcasm ("great, another all-nighter") and Roman Urdu that the
+# lexicon has no entry for. Those are exactly the messages that should raise a
+# wellness check-in, and getting them wrong is expensive in both directions —
+# a missed one fails the user, a false one pings someone who is fine.
+# So the LLM does not replace the cheap path, it adjudicates it: it runs only
+# when the cheap path is genuinely uncertain, only on the per-message
+# autonomous path (never the bulk analytics loops, which analyse hundreds of
+# rows at a time), and its verdict is cached by message text.
+try:
+    from utils.ai.llm_client import get_llm_client, is_llm_available
+    _LLM_AVAILABLE = is_llm_available()
+    _llm_client = get_llm_client()
+except Exception:
+    _LLM_AVAILABLE = False
+    _llm_client = None
+
+# Below this confidence the cheap path is guessing, so it is worth a call.
+_LLM_CONFIDENCE_FLOOR = 0.65
+# Shorter than this and there is not enough signal for the model either.
+_LLM_MIN_WORDS = 3
+_LLM_CACHE_TTL = 60 * 60 * 6   # 6h — the mood of a fixed string doesn't change
+
+_MOOD_SYSTEM = (
+    "You judge the emotional state behind a single chat message.\n"
+    "The message may be English, Roman Urdu (Urdu typed in Latin script), "
+    "Hinglish, or a mix. Judge the meaning, not the script.\n"
+    "Rules:\n"
+    "- Read the intent, not the keywords. 'Great, another all nighter' is "
+    "negative. 'I am dead' after a joke is positive.\n"
+    "- Venting about work is negative. Ordinary complaining is negative but "
+    "low intensity, not distress.\n"
+    "- Do not treat swearing as negative on its own. People swear when happy.\n"
+    "- A factual or logistical message is neutral, even if the topic is "
+    "unpleasant.\n"
+    "- confidence is how sure you are. Be honest and use low values for "
+    "genuinely ambiguous messages.\n"
+    "- primary_mood must be one of: happy, sad, angry, anxious, tired, "
+    "excited, frustrated, calm, or null when nothing stands out."
+)
+
 
 class MoodTrackerAgent(AutonomousAgent):
     """
     Tracks user mood and emotional state based on message content
     Supports Roman Urdu and emoji analysis with advanced features
 
-    Autonomous role (Phase 2.1): subscribes to ``msg.created``. On every
+    Autonomous role: subscribes to ``msg.created``. On every
     text message the user has opted in to mood tracking for, we push the
     message's ``sentiment_score`` onto a per-user rolling Redis ZSET
     (last 20). When the rolling mean of the last 5 scores drops below
     an adaptive threshold (default −0.4) AND we have not already
     escalated this user in the past 30 minutes, we publish
     ``mood.escalation`` — the gateway event for the empathy chain
-    (Wellness + Engagement subscribe in Phase 3).
+    (Wellness + Engagement subscribe).
     """
 
     NAME = "mood_tracker"
@@ -283,42 +327,6 @@ class MoodTrackerAgent(AutonomousAgent):
         
         return None
     
-    def _get_display_words_for_sentiment(self, sentiment: str, text: str, words: List[str]) -> Dict[str, List[str]]:
-        """
-        Find matching lexicon words to display for a given sentiment.
-        This makes the output appear as lexicon-based analysis.
-        """
-        display = {'positive': [], 'negative': [], 'neutral': []}
-        text_lower = text.lower()
-        
-        # Search for matching words in the lexicon for the detected sentiment
-        if sentiment == 'positive':
-            for category, word_list in self.lexicon.get('positive', {}).items():
-                for word in word_list:
-                    word_lower = word.lower()
-                    if word_lower in words or (len(word_lower) >= 3 and word_lower in text_lower):
-                        display['positive'].append(word)
-                        if len(display['positive']) >= 2:
-                            return display
-        elif sentiment == 'negative':
-            for category, word_list in self.lexicon.get('negative', {}).items():
-                for word in word_list:
-                    word_lower = word.lower()
-                    if word_lower in words or (len(word_lower) >= 3 and word_lower in text_lower):
-                        display['negative'].append(word)
-                        if len(display['negative']) >= 2:
-                            return display
-        
-        # If no specific words found, add a generic indicator
-        if not display['positive'] and not display['negative']:
-            if sentiment == 'positive':
-                display['positive'].append('[TextBlob: positive]')
-            elif sentiment == 'negative':
-                display['negative'].append('[TextBlob: negative]')
-            else:
-                display['neutral'].append('[neutral]')
-        
-        return display
     
     def _init_translator(self):
         """Initialize translator with error handling"""
@@ -525,16 +533,23 @@ class MoodTrackerAgent(AutonomousAgent):
         
         return mood_counts
     
-    def analyze_message(self, text: str) -> Dict[str, any]:
+    def analyze_message(self, text: str, *, allow_llm: bool = False) -> Dict[str, any]:
         """
         Analyze a single message for sentiment using hybrid approach:
         1. Lexicon-based analysis (fast, trusted for Roman Urdu)
         2. Google Translate for Roman Urdu to English conversion
-        3. TextBlob for English sentiment analysis
-        
+        3. TextBlob/VADER for English sentiment analysis
+        4. LLM adjudication, only when ``allow_llm`` and steps 1-3 are unsure
+
         Args:
             text: Message text (can be English, Roman Urdu, or mixed)
-            
+            allow_llm: Permit a paid LLM call when the cheap path is
+                uncertain. Defaults to False so the bulk analytics loops
+                (``get_mood_trends``, ``get_community_mood``, backfill) stay
+                free — they call this once per message over hundreds of rows.
+                The per-message autonomous path and the on-demand API route
+                pass True.
+
         Returns:
             Dictionary with comprehensive sentiment analysis results
         """
@@ -742,6 +757,23 @@ class MoodTrackerAgent(AutonomousAgent):
         else:
             detected_language = 'english'
         
+        analysis_method = 'lexicon_textblob_hybrid' if used_textblob else 'lexicon_based'
+
+        # Step 8: LLM adjudication on the uncertain cases only.
+        if allow_llm and self._should_ask_llm(
+            confidence, words, detected_language, sentiment
+        ):
+            verdict = self._llm_sentiment(original_text)
+            if verdict:
+                sentiment = verdict['sentiment']
+                confidence = verdict['confidence']
+                sentiment_score = verdict['sentiment_score']
+                # Only overwrite primary_mood when the model named one; the
+                # keyword categories are a useful signal in their own right.
+                if verdict.get('primary_mood'):
+                    primary_mood = verdict['primary_mood']
+                analysis_method = 'llm_adjudicated'
+
         result = {
             'sentiment': sentiment,
             'confidence': round(confidence, 2),
@@ -755,9 +787,9 @@ class MoodTrackerAgent(AutonomousAgent):
             'mood_categories': mood_categories,
             'primary_mood': primary_mood,
             'detected_language': detected_language,
-            'analysis_method': 'lexicon_textblob_hybrid' if used_textblob else 'lexicon_based'
+            'analysis_method': analysis_method,
         }
-        
+
         # Add translation info if text was translated
         if was_translated and translated_text:
             result['translation'] = {
@@ -770,6 +802,116 @@ class MoodTrackerAgent(AutonomousAgent):
         
         return result
     
+    # ── LLM adjudication ─────────────────────────────────────────────────
+
+    def _should_ask_llm(
+        self,
+        confidence: float,
+        words: List[str],
+        detected_language: str,
+        sentiment: str,
+    ) -> bool:
+        """Decide whether this message is worth a paid call.
+
+        Spend a call when the cheap path is unsure, and only then. Three
+        cases qualify:
+
+        1. Low confidence — the lexicon found little or the signals split.
+        2. Non-English — the lexicon covers common Roman Urdu but a message
+           full of words it has never seen scores neutral by default, which
+           is indistinguishable from a genuinely neutral message.
+        3. A confident negative — this is the verdict that triggers a
+           wellness check-in to a real person, so it is worth confirming
+           before acting on it.
+
+        Everything else keeps the free answer.
+        """
+        if not (_LLM_AVAILABLE and _llm_client):
+            return False
+        if len(words) < _LLM_MIN_WORDS:
+            return False
+        if confidence < _LLM_CONFIDENCE_FLOOR:
+            return True
+        if detected_language in ('roman_urdu', 'urdu_script'):
+            return True
+        if sentiment == 'negative':
+            return True
+        return False
+
+    def _llm_sentiment(self, text: str) -> Optional[Dict[str, any]]:
+        """Ask the LLM to classify ``text``. Returns None on any failure.
+
+        Cached in Redis by message text: the same string always has the same
+        reading, and chat repeats itself far more than you would expect.
+        """
+        text = (text or '').strip()[:500]
+        if not text:
+            return None
+
+        cache_key = None
+        redis_client = None
+        try:
+            from utils.ai.llm_client import cache_key as _hash
+            cache_key = f"mood:llm:{_hash(text)}"
+            redis_client = _get_redis()
+            if redis_client is not None:
+                cached = redis_client.get(cache_key)
+                if cached:
+                    return json.loads(cached)
+        except Exception:
+            redis_client = None
+
+        try:
+            verdict = _llm_client.complete_json(
+                f'Message: "{text}"\n\n'
+                'Return a JSON object with keys: sentiment ("positive", '
+                '"neutral" or "negative"), confidence (0 to 1), '
+                'primary_mood (one word or null), and reason (a few words).',
+                system=_MOOD_SYSTEM,
+                temperature=0.0,   # the same message must classify the same way
+                max_tokens=120,
+                timeout=8.0,
+            )
+            if not isinstance(verdict, dict):
+                return None
+
+            sentiment = str(verdict.get('sentiment') or '').lower().strip()
+            if sentiment not in ('positive', 'neutral', 'negative'):
+                return None
+
+            try:
+                confidence = float(verdict.get('confidence', 0.7))
+            except (TypeError, ValueError):
+                confidence = 0.7
+            confidence = max(0.0, min(0.95, confidence))
+
+            mood = verdict.get('primary_mood')
+            mood = str(mood).lower().strip() if mood else None
+            if mood in ('null', 'none', ''):
+                mood = None
+
+            out = {
+                'sentiment': sentiment,
+                'confidence': round(confidence, 2),
+                # Keep sentiment_score on the same -1..1 scale the rest of the
+                # agent (and the mood charts) already use.
+                'sentiment_score': round(
+                    confidence if sentiment == 'positive'
+                    else -confidence if sentiment == 'negative'
+                    else 0.0, 3),
+                'primary_mood': mood,
+            }
+
+            if redis_client is not None and cache_key:
+                try:
+                    redis_client.setex(cache_key, _LLM_CACHE_TTL, json.dumps(out))
+                except Exception:
+                    pass
+            return out
+        except Exception as exc:
+            print(f"[MOOD TRACKER] LLM sentiment failed: {exc}")
+            return None
+
     def _analyze_emojis(self, text: str) -> Dict[str, int]:
         """Analyze emojis in text"""
         emoji_counts = {'positive': 0, 'negative': 0, 'neutral': 0}
@@ -1347,7 +1489,6 @@ class MoodTrackerAgent(AutonomousAgent):
                     user_id = msg['sender_id']
                     if user_id not in user_sentiments:
                         user_sentiments[user_id] = {
-                            'username': msg['username'],
                             'positive': 0,
                             'negative': 0,
                             'neutral': 0,
@@ -1382,22 +1523,7 @@ class MoodTrackerAgent(AutonomousAgent):
                         'message_count': len(hourly_mood[hour])
                     })
                 
-                # Find most positive and most negative users
-                user_list = list(user_sentiments.values())
-                if user_list:
-                    # Calculate positivity ratio for each user
-                    for user in user_list:
-                        if user['total'] > 0:
-                            user['positivity_ratio'] = round(user['positive'] / user['total'], 2)
-                        else:
-                            user['positivity_ratio'] = 0.5
-                    
-                    most_positive = max(user_list, key=lambda x: x['positivity_ratio'])
-                    most_negative = min(user_list, key=lambda x: x['positivity_ratio'])
-                else:
-                    most_positive = None
-                    most_negative = None
-                
+                # Aggregates only: never rank or name individual users here.
                 return {
                     'success': True,
                     'has_data': True,
@@ -1416,9 +1542,7 @@ class MoodTrackerAgent(AutonomousAgent):
                     },
                     'dominant_mood': max(sentiment_counts, key=sentiment_counts.get),
                     'mood_categories': dict(mood_categories_total.most_common(5)),
-                    'hourly_summary': hourly_summary,
-                    'most_positive_user': most_positive['username'] if most_positive else None,
-                    'most_concerned_user': most_negative['username'] if most_negative and most_negative['positivity_ratio'] < 0.3 else None
+                    'hourly_summary': hourly_summary
                 }
                 
         except Exception as e:
@@ -1626,7 +1750,7 @@ class MoodTrackerAgent(AutonomousAgent):
                 conn.close()
 
     # ════════════════════════════════════════════════════════════════════
-    # Autonomous hooks (Phase 2.1)
+    # Autonomous hooks
     # ════════════════════════════════════════════════════════════════════
 
     def sense(self, event: dict) -> Optional[Dict]:
@@ -1655,21 +1779,23 @@ class MoodTrackerAgent(AutonomousAgent):
         """Run lexicon sentiment, update rolling window, check escalation rule."""
         user_id = observation["user_id"]
 
-        # Respect the per-user opt-in toggle — if the user has not enabled
-        # mood tracking, we skip silently. This matches the legacy
-        # track_mood_task gating so behaviour stays consistent.
+        # Mood tracking is opt-in per user (a ``user_agents`` row created when the person
+        # activates it). Anything other than a clear yes — including a failed lookup — skips.
         try:
-            if not self._user_opted_in(user_id):
-                return ("skip", {"reason": "not_opted_in"}, "opt_out")
+            opted_in = self._user_opted_in(user_id)
         except Exception:
-            # Don't block the agent if the user_agents lookup fails — be
-            # conservative and treat as opted-in (matches current default).
-            pass
+            opted_in = False
+        if not opted_in:
+            return ("skip", {"reason": "not_opted_in"}, "opt_out")
 
         cfg = get_personal_settings(user_id, _MOOD_AGENT_TYPE, _MOOD_DEFAULTS)
 
         try:
-            analysis = self.analyze_message(observation["content"]) or {}
+            # The autonomous path is one message per event and its verdict
+            # can page a real person via the wellness chain, so this is the
+            # call site that earns the LLM adjudication.
+            analysis = self.analyze_message(
+                observation["content"], allow_llm=True) or {}
         except Exception as exc:
             return ("skip", {}, f"analyze_failed_{type(exc).__name__}")
 
@@ -1895,7 +2021,7 @@ class MoodTrackerAgent(AutonomousAgent):
     def _persist_mood_row(self, payload: Dict) -> None:
         """Write a row into ``user_moods``. Best-effort — never raises.
 
-        As of Phase 6.2 this is the sole writer for messages flowing
+        This is the sole writer for messages flowing
         through the socket and REST endpoints — the legacy
         ``track_mood_task`` Celery task is still defined but no longer
         dispatched from those paths. If any new caller starts firing

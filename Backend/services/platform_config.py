@@ -21,7 +21,8 @@ Canonical keys (see Backend/routes/admin.py PLATFORM_SETTINGS_DEFAULTS):
     auto_moderation_enabled     bool   — run moderation agent on each message
     moderation_sensitivity      str    — 'low' | 'medium' | 'high'
     auto_ban_threshold          int    — violations before auto-ban
-    email_notifications_enabled bool   — send transactional email
+    email_notifications_enabled bool   — send batched notification digests
+                                         (OTP and verification emails are always sent)
 """
 
 import json
@@ -128,13 +129,6 @@ def invalidate_setting(key: str) -> None:
     with _lock:
         _cache.pop(key, None)
         _cache_expires.pop(key, None)
-
-
-def invalidate_all() -> None:
-    """Clear the entire settings cache."""
-    with _lock:
-        _cache.clear()
-        _cache_expires.clear()
 
 
 # Convenience accessors — keep call sites concise and self-documenting.

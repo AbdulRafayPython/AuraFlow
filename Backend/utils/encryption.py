@@ -1,5 +1,5 @@
 """
-AuraFlow Field-Level Encryption Utility
+Auraflow Field-Level Encryption Utility
 ========================================
 Fernet-based symmetric encryption for sensitive fields (e.g. DM content).
 Requires ENCRYPTION_KEY env var (base64-encoded 32-byte key).
@@ -28,6 +28,11 @@ def _get_fernet():
     except Exception as e:
         log.warning(f"[ENCRYPTION] Failed to initialise Fernet: {e}")
         return None
+
+
+def is_enabled() -> bool:
+    """True when ENCRYPTION_KEY is configured, i.e. stored message text is ciphertext."""
+    return _get_fernet() is not None
 
 
 def encrypt(plaintext: str) -> str:

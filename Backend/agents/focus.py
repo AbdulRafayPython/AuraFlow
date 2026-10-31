@@ -1,13 +1,13 @@
 """
-Focus Agent for AuraFlow
+Focus Agent for Auraflow
 Helps users stay on topic and tracks conversation focus.
 
-Autonomous role (Phase 2.3): subscribes to ``msg.created`` and maintains
+Autonomous role: subscribes to ``msg.created`` and maintains
 a tiny in-memory rolling keyword window per channel. When the Jaccard
 overlap between the older half and newer half drops below the
 per-channel threshold, it publishes a ``focus.drift`` event for
 Summarizer / KnowledgeBuilder to consume. Pure lexical, no embeddings —
-keeps the hot path cheap (no Gemini, no DB).
+keeps the hot path cheap (no LLM, no DB).
 """
 
 import json
@@ -41,7 +41,7 @@ class FocusAgent(AutonomousAgent):
     Detects topic drift and provides focus metrics
     """
 
-    # ── Autonomous contract (Phase 2.3) ─────────────────────────────
+    # ── Autonomous contract ─────────────────────────────
     NAME = "focus"
     GOAL = {"detect_topic_drift": True, "feed_summarizer_and_kb": True}
     SUBSCRIBES = [_event_bus.TOPIC_MSG_CREATED]
@@ -358,87 +358,10 @@ class FocusAgent(AutonomousAgent):
             if conn:
                 conn.close()
     
-    def get_focus_history(self, channel_id: int, limit: int = 10) -> List[Dict]:
-        """Get focus analysis history for a channel"""
-        conn = None
-        try:
-            conn = get_db_connection()
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT 
-                        id, output_text, confidence_score, created_at
-                    FROM ai_agent_logs
-                    WHERE channel_id = %s AND action_type = 'focus_analysis'
-                    ORDER BY created_at DESC
-                    LIMIT %s
-                """, (channel_id, limit))
-                
-                logs = cur.fetchall()
-                
-                return [{
-                    'id': log['id'],
-                    'analysis': json.loads(log['output_text']) if log['output_text'] else {},
-                    'focus_score': round(log['confidence_score'], 2) if log['confidence_score'] else 0,
-                    'created_at': log['created_at'].isoformat() if log['created_at'] else None
-                } for log in logs]
-                
-        except Exception as e:
-            print(f"[FOCUS] Error fetching history: {e}")
-            return []
-        finally:
-            if conn:
-                conn.close()
     
-    def suggest_refocus(self, channel_id: int, current_focus: Dict) -> Dict[str, any]:
-        """
-        Suggest ways to refocus conversation
-        
-        Args:
-            channel_id: Channel ID
-            current_focus: Current focus analysis
-            
-        Returns:
-            Refocus suggestions
-        """
-        suggestions = []
-        
-        if current_focus.get('focus_level') == 'low':
-            # Get dominant topics
-            dominant_topics = current_focus.get('dominant_topics', [])
-            if dominant_topics:
-                top_topic = dominant_topics[0]['topic']
-                suggestions.append(
-                    f"Try steering the conversation back to '{top_topic}'"
-                )
-            
-            # Check for too many topic shifts
-            shifts = current_focus.get('topic_shifts', [])
-            if len(shifts) > 3:
-                suggestions.append(
-                    "Multiple topic changes detected. Consider summarizing and choosing one direction."
-                )
-            
-            # Check engagement
-            msg_per_participant = current_focus.get('messages_per_participant', 0)
-            if msg_per_participant < 2:
-                suggestions.append(
-                    "Low engagement per participant. Encourage more focused discussion."
-                )
-        
-        elif current_focus.get('focus_level') == 'medium':
-            suggestions.append(
-                "Focus is moderate. Stay on current topics to maintain clarity."
-            )
-        
-        return {
-            'success': True,
-            'suggestions': suggestions,
-            'current_focus_level': current_focus.get('focus_level'),
-            'current_score': current_focus.get('focus_score')
-        }
 
     # ────────────────────────────────────────────────────────────────────
-    # Autonomous hooks (Phase 2.3)
+    # Autonomous hooks
     # ────────────────────────────────────────────────────────────────────
 
     def sense(self, event: dict) -> Optional[Dict]:

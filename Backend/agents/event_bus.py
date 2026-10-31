@@ -1,5 +1,5 @@
 """
-AuraFlow Autonomous-Agent Event Bus
+Auraflow Autonomous-Agent Event Bus
 ====================================
 Thin wrapper over the existing Redis client (services.redis_client) that
 exposes a publish/subscribe interface for the autonomous agent

@@ -1,3 +1,4 @@
+# REWRITE: ~2.2k-line module mixing channel, community and member management.
 # routes/channels.py - Complete with Member Management
 from flask import jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -218,51 +219,6 @@ def _post_system_message(community_id, content):
     except Exception as _sys_err:
         print(f"[SYSTEM MSG] skipped: {_sys_err}")
 
-
-def _maybe_post_welcome(community_id, community_name, username, user_id,
-                        first_channel_id):
-    """If the AutoMessage agent is installed AND enabled with welcome_enabled,
-    post a welcome message as the AI bot in the first channel. Best-effort.
-    """
-    if not first_channel_id:
-        return
-    conn = None
-    try:
-        import json as _json
-        conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT enabled, settings FROM community_agents "
-                "WHERE community_id = %s AND agent_type = 'auto_message' "
-                "LIMIT 1",
-                (community_id,),
-            )
-            row = cur.fetchone()
-        if not row or not row.get('enabled'):
-            return
-
-        settings = row.get('settings') or {}
-        if isinstance(settings, str):
-            try:
-                settings = _json.loads(settings)
-            except Exception:
-                settings = {}
-        if settings.get('welcome_enabled') is False:
-            return
-
-        from agents.auto_message import AutoMessageAgent
-        AutoMessageAgent().generate_welcome(
-            community_name=community_name,
-            username=username,
-            community_description=None,
-            community_id=community_id,
-            channel_id=first_channel_id,
-            user_id=user_id,
-            post=True,
-        )
-    finally:
-        if conn:
-            conn.close()
 
 def process_image(file, max_size, maintain_aspect=True):
     """Process and resize image while maintaining quality"""

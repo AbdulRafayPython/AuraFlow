@@ -27,9 +27,17 @@ nltk
 scikit-learn
 spacy
 textblob
-google-genai
+requests
 googletrans==4.0.0-rc1
 deep-translator
+# googletrans pins h11<0.10; newer wsproto imports an h11 API absent there.
+wsproto==0.15.0
 
 # Web Push Notifications
 pywebpush
+
+# Agent builder: schedules, knowledge uploads
+croniter
+tzdata
+pypdf
+python-docx

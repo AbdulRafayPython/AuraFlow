@@ -1,5 +1,5 @@
 """
-seed_database.py — Populate AuraFlow with 50 users, communities, friends, and conversations.
+seed_database.py — Populate Auraflow with 50 users, communities, friends, and conversations.
 
 USAGE:
   cd Backend
@@ -426,7 +426,7 @@ DM_CONVERSATIONS = [
         ("Yeah! I can handle frontend, need a backend person",),
         ("I'm in! I'll set up the Flask API and database",),
         ("Perfect, let's create a Discord for planning",),
-        ("Already on AuraFlow 😄 let's just use DMs here",),
+        ("Already on Auraflow 😄 let's just use DMs here",),
     ],
     [
         ("Bro that was such a clutch play in Valorant today 🔥",),
@@ -512,7 +512,7 @@ def run_seed():
     cur = conn.cursor()
 
     print("=" * 60)
-    print("🌱 AuraFlow Database Seeder")
+    print("🌱 Auraflow Database Seeder")
     print("=" * 60)
 
     # ─── 1. WIPE EXISTING DATA ─────────────────────────────────────
@@ -549,7 +549,7 @@ def run_seed():
     print(f"\n👤 Creating {len(USERS)} users...")
     user_ids = {}  # username -> id
     for username, display_name, email in USERS:
-        bio = f"Hey! I'm {display_name}. Love tech and connecting with people on AuraFlow."
+        bio = f"Hey! I'm {display_name}. Love tech and connecting with people on Auraflow."
         cur.execute("""
             INSERT INTO users (public_id, username, display_name, email, password, bio, avatar_url,
                              status, is_first_login, otp_verified, created_at)

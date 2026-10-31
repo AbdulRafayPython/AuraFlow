@@ -1,5 +1,6 @@
+# REWRITE: superseded by knowledge_builder_v2 but routes/agents.py still calls this v1 class (extract_knowledge); merge into one.
 """
-Knowledge Builder Agent for AuraFlow
+Knowledge Builder Agent for Auraflow
 Builds knowledge base from conversations
 """
 
@@ -377,36 +378,4 @@ class KnowledgeBuilderAgent:
             if conn:
                 conn.close()
     
-    def get_knowledge_history(self, channel_id: int, 
-                             limit: int = 10) -> List[Dict]:
-        """Get knowledge extraction history"""
-        conn = None
-        try:
-            conn = get_db_connection()
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT 
-                        id, output_text, confidence_score, created_at
-                    FROM ai_agent_logs
-                    WHERE channel_id = %s 
-                    AND action_type = 'knowledge_extraction'
-                    ORDER BY created_at DESC
-                    LIMIT %s
-                """, (channel_id, limit))
-                
-                logs = cur.fetchall()
-                
-                return [{
-                    'id': log['id'],
-                    'knowledge_data': json.loads(log['output_text']) if log['output_text'] else {},
-                    'quality_score': round(log['confidence_score'], 2) if log['confidence_score'] else 0,
-                    'created_at': log['created_at'].isoformat() if log['created_at'] else None
-                } for log in logs]
-                
-        except Exception as e:
-            print(f"[KNOWLEDGE] Error fetching history: {e}")
-            return []
-        finally:
-            if conn:
-                conn.close()
 

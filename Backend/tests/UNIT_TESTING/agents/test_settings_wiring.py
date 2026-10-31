@@ -82,10 +82,10 @@ def test_support_show_sources_false_returns_empty_list():
                              'use_gemini_polish': False,
                              'show_sources': False}), \
          patch("agents.support._SKLEARN_AVAILABLE", True), \
-         patch.object(s, "_best_match", return_value={
+         patch.object(s, "_top_matches", return_value=[{
              'id': 1, 'title': 't', 'content': 'answer body', 'score': 0.5,
              'category': 'cat',
-         }):
+         }]):
         out = s.ask("what is x?", community_id=42)
     assert out['matched'] is True
     assert out['sources'] == []
