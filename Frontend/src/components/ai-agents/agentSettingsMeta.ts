@@ -3,7 +3,7 @@
 // Plain-English metadata for the raw setting keys the backend stores against
 // each agent. Shared by:
 //   - pages/admin/AgentSettings.tsx     (community-level overrides)
-//   - components/ai-agents/PersonalAgentsPanel.tsx (personal automations)
+//   - components/ai-agents/AgentSettingsForm.tsx (reads the server schema first; this table fills the gaps)
 //
 // Anything not listed falls back to a prettified version of the key, so no
 // surface ever shows a developer-style snake_case name to a normal user.

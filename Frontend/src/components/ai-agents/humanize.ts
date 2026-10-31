@@ -13,7 +13,7 @@
 //
 // Presentation-only: it never changes what an agent does, only how a past
 // action is described. Used by ExplainabilityRow and every row builder
-// (AgentActivityTimeline, AgentResultPanel, CommunityAgentsTab,
+// (AgentActivityTimeline, AgentResultPanel, AgentActivity,
 // ChannelInterventions).
 
 import { agentLabel } from './AgentAccent';

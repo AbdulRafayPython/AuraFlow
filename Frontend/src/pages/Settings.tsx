@@ -14,7 +14,7 @@ import {
   Crown, BarChart3, ShieldCheck, ExternalLink
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
-import PersonalAgentsPanel from "@/components/ai-agents/PersonalAgentsPanel";
+import AgentsSettingsTab from "@/components/ai-agents/AgentsSettingsTab";
 import { API_SERVER } from "@/config/api";
 
 export default function Settings() {
@@ -169,7 +169,7 @@ export default function Settings() {
     { id: "general" as const, label: "General", icon: SettingsIcon, description: "Language & accessibility" },
     { id: "privacy" as const, label: "Privacy", icon: Shield, description: "Control your privacy" },
     { id: "notifications" as const, label: "Notifications", icon: Bell, description: "Manage alerts" },
-    { id: "agents" as const, label: "AI Agents", icon: Bot, description: "Personal AI assistants" },
+    { id: "agents" as const, label: "AI Agents", icon: Bot, description: "Your agents and the activity panel" },
     { id: "blocked" as const, label: "Blocked", icon: Ban, count: blockedUsers.length, description: "Blocked users" },
     ...(ownedCommunities.length > 0 ? [{ id: "community-admin" as const, label: "Community Admin", icon: Crown, description: "Manage your communities" }] : []),
   ];
@@ -1265,7 +1265,7 @@ export default function Settings() {
             {activeTab === "general" && <GeneralSettings />}
             {activeTab === "privacy" && <PrivacySettings />}
             {activeTab === "notifications" && <NotificationSettings />}
-            {activeTab === "agents" && <PersonalAgentsPanel />}
+            {activeTab === "agents" && <AgentsSettingsTab />}
             {activeTab === "blocked" && <BlockedUsersSettings />}
             {activeTab === "community-admin" && <CommunityAdminSettings />}
           </div>

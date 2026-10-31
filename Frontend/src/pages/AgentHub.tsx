@@ -1,7 +1,7 @@
 // Your agents: the ones you made and your communities' agents, plus Aura.
 // A plain list (logo, name, what it does, when it replies, on/off) like an app manager.
-import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CalendarCheck, LayoutGrid, Loader2, Pause, Play, Plus } from 'lucide-react';
 import { useRealtime } from '@/hooks/useRealtime';
 import { useToast } from '@/hooks/use-toast';
@@ -33,6 +33,8 @@ const AgentHub: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { communities, currentCommunity } = useRealtime();
+  const [searchParams] = useSearchParams();
+  const appliedParam = useRef(false);
   const [scope, setScope] = useState<string>(MINE);
   const [agents, setAgents] = useState<BuilderAgent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +55,14 @@ const AgentHub: React.FC = () => {
   }, [scope]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // /agents?community=<id> opens on that community (the community settings link here).
+  useEffect(() => {
+    const wanted = searchParams.get('community');
+    if (appliedParam.current || !wanted || communities.length === 0) return;
+    appliedParam.current = true;
+    if (communities.some((c) => c.id === wanted)) setScope(wanted);
+  }, [communities, searchParams]);
 
   // Trigger summaries say "#general" instead of a channel number.
   useEffect(() => {
