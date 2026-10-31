@@ -1,5 +1,7 @@
 // REWRITE: ~1.4k lines; contains several API wrappers with no UI caller (see docs/CODEBASE_AUDIT.md).
 import api from './appService';
+import type { SettingsSchema } from '@/lib/settingsSchema';
+import { registerSettingsSchema } from '@/components/ai-agents/agentSettingsMeta';
 
 export interface SummaryResult {
   success: boolean;
@@ -796,6 +798,25 @@ class AIAgentService {
   // AGENT CATALOG & MANAGEMENT
   // =====================================================
   
+  /** What each built-in agent lets you change, from the server. One request per page load. */
+  getSettingsSchema(): Promise<SettingsSchema> {
+    if (!this.settingsSchemaRequest) {
+      this.settingsSchemaRequest = (api.get('/api/agents/settings-schema') as Promise<{ agents?: SettingsSchema }>)
+        .then((r) => {
+          const schema = r?.agents ?? {};
+          registerSettingsSchema(schema);
+          return schema;
+        })
+        .catch((error: any) => {
+          this.settingsSchemaRequest = null;
+          throw new Error(error.data?.error || error.message || 'Failed to load the agent settings');
+        });
+    }
+    return this.settingsSchemaRequest;
+  }
+
+  private settingsSchemaRequest: Promise<SettingsSchema> | null = null;
+
   async getAgentCatalog(communityId?: string | number): Promise<AgentCatalogEntry[]> {
     try {
       const params = communityId ? `?community_id=${communityId}` : '';
@@ -807,7 +828,7 @@ class AIAgentService {
     }
   }
 
-  async installCommunityAgent(communityId: number, agentType: string, settings?: Record<string, any>): Promise<any> {
+  async installCommunityAgent(communityId: string | number, agentType: string, settings?: Record<string, any>): Promise<any> {
     try {
       const response = await api.post(`/api/agents/install/community/${communityId}`, {
         agent_type: agentType,

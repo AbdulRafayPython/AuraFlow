@@ -10,6 +10,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from database import get_db_connection
 from utils import get_user_id, resolve_public_community_id, get_community_id_from_public_id
 import json
+from agents import settings_schema
 
 # Create blueprint
 agents_bp = Blueprint('agents', __name__, url_prefix='/api/agents')
@@ -89,86 +90,7 @@ def _display_agent_type(agent_type: str) -> str:
 # 'knowledge' covers 'knowledge_builder'. The matrix mirrors
 # Frontend/src/components/modals/AgentSettingsModal.tsx::SETTINGS_SCHEMA.
 # Each tuple is (python_type, optional_min, optional_max, optional_choices).
-_SETTINGS_VALIDATORS: dict[str, dict[str, tuple]] = {
-    'moderation': {
-        'auto_filter':         (bool, None, None, None),
-        'sensitivity':         (int, 1, 10, None),
-        'severity_threshold':  (str, None, None, ('low', 'medium', 'high', 'critical')),
-        'notify_admins':       (bool, None, None, None),
-        'roman_urdu_support':  (bool, None, None, None),
-        'max_warnings':        (int, 1, 10, None),
-    },
-    'engagement': {
-        'auto_analyze':        (bool, None, None, None),
-        'analysis_interval':   (int, 10, 120, None),
-        'track_threads':       (bool, None, None, None),
-        'leaderboard':         (bool, None, None, None),
-        'inactivity_alerts':   (bool, None, None, None),
-    },
-    'knowledge': {
-        'auto_extract':              (bool, None, None, None),
-        'extraction_interval_hours': (int, 1, 12, None),
-        'min_quality_score':         (int, 1, 10, None),
-        'auto_categorize':           (bool, None, None, None),
-    },
-    'summarizer': {
-        'auto_summarize_enabled':       (bool, None, None, None),
-        'schedule_time':                (str, None, None, None),  # 'HH:MM'
-        'auto_summarize_message_count': (int, 50, 200, None),
-        'summary_length':               (str, None, None, ('brief', 'standard', 'detailed')),
-        'include_topics':               (bool, None, None, None),
-        'include_action_items':         (bool, None, None, None),
-        # Server-tracked field — not user-editable but written by the
-        # scheduler. Allow as a pass-through so saving doesn't strip it.
-        'last_auto_summary_date':       (str, None, None, None),
-    },
-    'mood': {
-        'track_per_message':    (bool, None, None, None),
-        'alert_negative_trend': (bool, None, None, None),
-        'sensitivity':          (int, 1, 10, None),
-        'language':             (str, None, None, ('english', 'roman_urdu', 'auto')),
-    },
-    'wellness': {
-        'auto_check':          (bool, None, None, None),
-        'break_reminders':     (bool, None, None, None),
-        'check_interval_hours': (int, 1, 8, None),
-        'burnout_detection':   (bool, None, None, None),
-    },
-    'focus': {
-        'auto_analyze':       (bool, None, None, None),
-        'session_reminders':  (bool, None, None, None),
-        'analyze_threshold':  (int, 20, 100, None),
-        'daily_reports':      (bool, None, None, None),
-    },
-    'assistant': {
-        'use_gemini':       (bool, None, None, None),
-        'reply_style':      (str, None, None, ('concise', 'friendly', 'detailed')),
-        'max_history':      (int, 1, 10, None),
-        'allow_jokes':      (bool, None, None, None),
-        'allow_motivation': (bool, None, None, None),
-        'memory_paused':    (bool, None, None, None),
-    },
-    'auto_message': {
-        'welcome_enabled':         (bool, None, None, None),
-        'post_in_default_channel': (bool, None, None, None),
-        'quick_replies_enabled':   (bool, None, None, None),
-        'use_gemini_polish':       (bool, None, None, None),
-    },
-    'support': {
-        'min_score':         (int, 1, 10, None),
-        'max_docs':          (int, 100, 1000, None),
-        'use_gemini_polish': (bool, None, None, None),
-        'show_sources':      (bool, None, None, None),
-    },
-    'translator': {
-        'default_target': (str, None, None, (
-            'en', 'ur', 'hi', 'es', 'fr', 'de', 'ar', 'zh-CN',
-            'pt', 'ru', 'ja', 'tr', 'id', 'bn',
-        )),
-        'auto_detect':    (bool, None, None, None),
-        'cache_enabled':  (bool, None, None, None),
-    },
-}
+_SETTINGS_VALIDATORS: dict[str, dict[str, tuple]] = settings_schema.validators()
 
 
 def _coerce_setting(value, spec: tuple):
@@ -252,6 +174,18 @@ def _validate_agent_settings(agent_type_db: str, raw_settings: dict):
             'invalid': errors,
         }), 400)
     return coerced, None
+
+
+@agents_bp.route('/settings-schema', methods=['GET'])
+@jwt_required()
+def get_settings_schema():
+    """The settings each built-in agent has: label, help text, kind, range or choices and default.
+
+    The same definition builds the checks applied when settings are saved, so a form drawn from
+    this can only offer values the server accepts. Keyed by the agent's registry name
+    (``mood``, ``knowledge``).
+    """
+    return jsonify({'agents': settings_schema.schema()}), 200
 
 
 # =====================================

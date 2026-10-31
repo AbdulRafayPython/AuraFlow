@@ -140,6 +140,8 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (user) {
       checkAgentStatus();
+      // Settings pages label and limit each setting from what the server says it is.
+      aiAgentService.getSettingsSchema().catch(() => undefined);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
