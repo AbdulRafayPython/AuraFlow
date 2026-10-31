@@ -29,10 +29,7 @@ def _get_agent(name: str):
         elif name == 'moderation':
             from agents.moderation import ModerationAgent
             _agents[name] = ModerationAgent()
-        elif name == 'knowledge_builder':
-            from agents.knowledge_builder import KnowledgeBuilderAgent
-            _agents[name] = KnowledgeBuilderAgent()
-        elif name == 'knowledge_builder_v2':
+        elif name in ('knowledge_builder', 'knowledge_builder_v2'):
             from agents.knowledge_builder_v2 import KnowledgeBuilderAgent as KnowledgeBuilderV2
             _agents[name] = KnowledgeBuilderV2()
         elif name == 'focus':
@@ -3544,45 +3541,24 @@ def extract_knowledge_channel(channel_id):
 
         conn.close()
 
-        # Perform extraction
+        # Perform extraction (same agent as the whole-community route below)
         result = _get_agent("knowledge_builder").extract_knowledge(channel_id=channel_id, time_period_hours=time_period_hours)
         if not result.get('success'):
             return jsonify({'success': False, 'error': result.get('error', 'Extraction failed')}), 400
 
-        # Build simple list for immediate response (QA + decisions + topics)
-        knowledge_out = []
-        for qa in result.get('qa_pairs', []):
-            knowledge_out.append({
-                'id': 0,
-                'question': qa.get('question'),
-                'answer': qa.get('answer'),
-                'tags': [],
-                'relevance_score': 0,
-                'usage_count': 0,
-                'created_at': qa.get('timestamp')
-            })
-        for dec in result.get('decisions', []):
-            knowledge_out.append({
-                'id': 0,
-                'question': dec.get('decision'),
-                'answer': '',
-                'tags': [],
-                'relevance_score': 0,
-                'usage_count': 0,
-                'created_at': dec.get('timestamp')
-            })
-        for entry in result.get('knowledge_entries', []):
-            knowledge_out.append({
-                'id': 0,
-                'question': f"Topic: {entry.get('topic', 'General')}",
-                'answer': entry.get('summary', ''),
-                'tags': [entry.get('topic')] if entry.get('topic') else [],
-                'relevance_score': 0,
-                'usage_count': entry.get('message_count', 0),
-                'created_at': entry.get('timestamp')
-            })
-
-        return jsonify({'success': True, 'knowledge': knowledge_out}), 200
+        faqs = result.get('faqs', 0)
+        definitions = result.get('definitions', 0)
+        decisions = result.get('decisions', 0)
+        return jsonify({
+            'success': True,
+            'channel_id': channel_id,
+            'time_period_hours': time_period_hours,
+            'faqs': faqs,
+            'definitions': definitions,
+            'decisions': decisions,
+            'total_items': result.get('total_items', faqs + definitions + decisions),
+            'message': f'Extracted {faqs} FAQs, {definitions} definitions, and {decisions} decisions',
+        }), 200
     except Exception as e:
         print(f"[AGENTS API] Error in extract_knowledge_channel: {e}")
         return jsonify({'error': 'Internal server error'}), 500

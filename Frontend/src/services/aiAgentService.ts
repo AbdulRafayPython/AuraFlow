@@ -427,38 +427,6 @@ class AIAgentService {
     }
   }
 
-  async getCommunityMood(communityId?: number, channelId?: number, hours: number = 24): Promise<any> {
-    try {
-      const params = new URLSearchParams();
-      if (communityId) params.append('community_id', communityId.toString());
-      if (channelId) params.append('channel_id', channelId.toString());
-      params.append('hours', hours.toString());
-      
-      const response: any = await api.get(`/api/agents/mood/community?${params.toString()}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to fetch community mood');
-    }
-  }
-
-  async getMoodRecommendations(userId: number): Promise<any> {
-    try {
-      const response: any = await api.get(`/api/agents/mood/recommendations/${userId}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to fetch mood recommendations');
-    }
-  }
-
-  async getMoodInsights(userId: number): Promise<any> {
-    try {
-      const response: any = await api.get(`/api/agents/mood/insights/${userId}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to fetch mood insights');
-    }
-  }
-
   // =====================================================
   // MODERATION AGENT
   // =====================================================
@@ -542,63 +510,6 @@ class AIAgentService {
     }
   }
 
-  // =====================================================
-  // ICE-BREAKER ACTIVITIES
-  // =====================================================
-  async getIcebreaker(activityType: string = 'random'): Promise<any> {
-    try {
-      const response = await api.get(`/api/agents/engagement/icebreaker?type=${activityType}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch icebreaker');
-    }
-  }
-
-  async getIcebreakerCategories(): Promise<any> {
-    try {
-      const response = await api.get('/api/agents/engagement/icebreaker/categories');
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch categories');
-    }
-  }
-
-  async getQuickPoll(category: string = 'random'): Promise<any> {
-    try {
-      const response = await api.get(`/api/agents/engagement/poll?category=${category}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch poll');
-    }
-  }
-
-  async getFunChallenge(challengeType: string = 'random'): Promise<any> {
-    try {
-      const response = await api.get(`/api/agents/engagement/challenge?type=${challengeType}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch challenge');
-    }
-  }
-
-  async getConversationStarters(category: string = 'general'): Promise<any> {
-    try {
-      const response = await api.get(`/api/agents/engagement/starters?category=${category}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch starters');
-    }
-  }
-
-  async getBoosterPack(engagementLevel: string = 'low'): Promise<any> {
-    try {
-      const response = await api.get(`/api/agents/engagement/booster-pack?level=${engagementLevel}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch booster pack');
-    }
-  }
-
   /**
    * Post engagement content into a channel as a real AI bot message.
    * kind: 'starter' | 'poll' | 'icebreaker' | 'challenge' | 'pack'
@@ -632,28 +543,6 @@ class AIAgentService {
       option_index: optionIndex,
     });
     return response as any;
-  }
-
-  async logActivity(channelId: number, activityType: string, activityTitle: string): Promise<any> {
-    try {
-      const response = await api.post('/api/agents/engagement/activity/log', {
-        channel_id: channelId,
-        activity_type: activityType,
-        activity_title: activityTitle
-      });
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to log activity');
-    }
-  }
-
-  async getActivityStats(channelId: number, days: number = 7): Promise<any> {
-    try {
-      const response = await api.get(`/api/agents/engagement/activity/stats/${channelId}?days=${days}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch activity stats');
-    }
   }
 
   // =====================================================
@@ -734,20 +623,6 @@ class AIAgentService {
     }
   }
 
-  // =====================================================
-  // KNOWLEDGE BUILDER AGENT
-  // =====================================================
-  async extractKnowledgeByChannel(channelId: number, messageCount: number = 50): Promise<KnowledgeEntry[]> {
-    try {
-      const response: any = await api.post(`/api/agents/knowledge/extract/${channelId}`, {
-        message_count: messageCount
-      });
-      return response.data.knowledge || [];
-    } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Failed to extract knowledge');
-    }
-  }
-
   async extractKnowledgeByTime(timePeriodHours: number, topic: string | undefined, communityId: number): Promise<any> {
     try {
       const response: any = await api.post('/api/agents/knowledge/extract', {
@@ -822,16 +697,6 @@ class AIAgentService {
     } catch (error: any) {
       console.error('[KB Service] Stats error:', error);
       throw new Error(error.data?.error || error.message || 'Failed to fetch knowledge stats');
-    }
-  }
-
-  async getRecentKnowledge(communityId: number, limit: number = 20): Promise<any[]> {
-    try {
-      const response: any = await api.get(`/api/agents/knowledge/recent?community_id=${communityId}&limit=${limit}`);
-      return response.items || response.data?.items || [];
-    } catch (error: any) {
-      console.error('[KB Service] Recent items error:', error);
-      throw new Error(error.data?.error || error.message || 'Failed to fetch recent knowledge');
     }
   }
 
@@ -1195,14 +1060,6 @@ class AIAgentService {
       return response.summaries || [];
     } catch (error: any) {
       throw new Error(error.data?.error || error.message || 'Failed to fetch pending summaries');
-    }
-  }
-
-  async deleteScheduledSummary(summaryId: number): Promise<void> {
-    try {
-      await api.del(`/api/agents/summary-schedules/pending/${summaryId}`);
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to delete scheduled summary');
     }
   }
 
