@@ -1,0 +1,153 @@
+# AuraFlow: full local stack (MySQL, Redis, API, Celery worker, Celery beat, web).
+#
+#   copy .env.docker.example .env      # then fill the three secrets
+#   docker compose up --build
+#   open http://localhost:8080
+#
+# See docs/DOCKER.md for details.
+
+name: auraflow
+
+x-backend: &backend
+  build: ./Backend
+  image: auraflow-backend:local
+  restart: unless-stopped
+  # Optional: API keys (DEEPSEEK_API_KEY, SMTP_*, VAPID_*) are read from
+  # Backend/.env when it exists. The `environment` block below wins over it,
+  # so a cloud DB_HOST/REDIS_URL in that file is never used inside Docker.
+  env_file:
+    - path: ./Backend/.env
+      required: false
+  depends_on:
+    mysql:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    db-seed:
+      condition: service_completed_successfully
+
+x-backend-env: &backend-env
+  FLASK_ENV: ${FLASK_ENV:-development}
+  DB_HOST: mysql
+  DB_PORT: "3306"
+  DB_USER: auraflow
+  DB_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+  DB_NAME: auraflow
+  DB_SSL: "false"
+  REDIS_URL: redis://redis:6379/0
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env}
+  # Celery beat owns scheduled summaries; do not also run the in-process thread.
+  ENABLE_INPROCESS_SCHEDULE_CHECKER: "0"
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: auraflow
+      MYSQL_USER: auraflow
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # Runs only when the data volume is empty (first start).
+      - ./Backend/migrations/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    ports:
+      - "127.0.0.1:3307:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-shot: loads Backend/migrations/seed_data.sql (agent registry, platform
+  # settings and demo accounts) when the database has no agents yet.
+  db-seed:
+    image: mysql:8.4
+    restart: "no"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_PWD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+    volumes:
+      - ./Backend/migrations/seed_data.sql:/seed/seed_data.sql:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        if [ "$$SEED_DEMO_DATA" != "true" ]; then echo "[seed] SEED_DEMO_DATA is not true, skipping"; exit 0; fi
+        n=$$(mysql --default-character-set=utf8mb4 -h mysql -u auraflow auraflow -N -B -e "SELECT COUNT(*) FROM agent_registry")
+        if [ "$$n" -gt 0 ]; then echo "[seed] already seeded, skipping"; exit 0; fi
+        mysql --default-character-set=utf8mb4 -h mysql -u auraflow auraflow < /seed/seed_data.sql
+        echo "[seed] demo data loaded"
+
+  api:
+    <<: *backend
+    command: gunicorn -c gunicorn.conf.py wsgi:app
+    environment:
+      <<: *backend-env
+      PORT: "5000"
+      DB_MAX_CONNECTIONS: "12"
+    volumes:
+      - uploads_data:/app/uploads
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  # Run exactly ONE worker: the autonomous-agent orchestrator starts inside
+  # each worker, so a second one would double-dispatch every bus event.
+  worker:
+    <<: *backend
+    command: celery -A celery_app worker --loglevel=info --pool=gevent --concurrency=20 -Q default,high_priority,periodic
+    environment:
+      <<: *backend-env
+      DB_MAX_CONNECTIONS: "10"
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A celery_app inspect ping --timeout 5 -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  beat:
+    <<: *backend
+    command: celery -A celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    environment:
+      <<: *backend-env
+      DB_MAX_CONNECTIONS: "2"
+
+  web:
+    build: ./Frontend
+    image: auraflow-web:local
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  mysql_data:
+  redis_data:
+  uploads_data:

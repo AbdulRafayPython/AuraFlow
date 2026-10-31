@@ -1,0 +1,16 @@
+venv/
+.venv*/
+models/
+uploads/
+tests/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.env.*
+celerybeat-schedule*
+soak_24h_*
+*.log
+*.exit
+*.bat

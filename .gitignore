@@ -1,5 +1,5 @@
 # ==========================================
-# AuraFlow Root .gitignore
+# Auraflow Root .gitignore
 # Covers Backend/ Frontend/ and docs/
 # ==========================================
 
@@ -131,3 +131,11 @@ Backend/soak_24h_*.exit
 /chat_mobile.yml
 /create_modal.yml
 /friends_mobile.yml
+
+# Docker compose secrets (see .env.docker.example)
+/.env
+
+# Local-only artefacts: DB backups, proposal drafts, demo-script state, showcase images
+/output/
+/All Images/
+Backend/scripts/.*_state.json

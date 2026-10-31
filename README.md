@@ -1,10 +1,10 @@
 <div align="center">
 
-# AuraFlow
+# Auraflow
 
 **A real-time community platform with an autonomous multi-agent AI layer.**
 
-AuraFlow blends Discord-style communities, channels, and direct messaging with a system of
+Auraflow blends Discord-style communities, channels, and direct messaging with a system of
 background AI agents that moderate conversations, track community mood, translate messages
 inline, and proactively support members — all in real time.
 
@@ -13,7 +13,7 @@ inline, and proactively support members — all in real time.
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 ![Celery](https://img.shields.io/badge/Celery-Redis-37814A?logo=celery&logoColor=white)
-![Gemini](https://img.shields.io/badge/AI-Google%20Gemini-4285F4?logo=google&logoColor=white)
+![DeepSeek](https://img.shields.io/badge/AI-DeepSeek%20Chat-4D6BFE?logo=deepseek&logoColor=white)
 
 </div>
 
@@ -37,7 +37,7 @@ inline, and proactively support members — all in real time.
 
 ## Overview
 
-AuraFlow is a full-stack, real-time messaging platform organized around **communities** and
+Auraflow is a full-stack, real-time messaging platform organized around **communities** and
 **channels**, with direct messages, friends, reactions, pins, search, and push notifications.
 
 What sets it apart is its **autonomous agent layer**: a set of AI agents that observe platform
@@ -101,7 +101,7 @@ learn(action_id, signal)           # feedback adjusts thresholds over time
 - Python 3.12, Flask, Flask-SocketIO, Flask-JWT-Extended, Flask-CORS, Flask-Compress
 - Celery + Redis (task queue, scheduling, pub/sub event bus)
 - PyMySQL over a MySQL-compatible database (TiDB Serverless) with a pooled connection
-- Google Gemini (`google-genai`) plus NLTK / scikit-learn / spaCy / TextBlob for NLP
+- DeepSeek (`deepseek-chat`, OpenAI-compatible API) plus NLTK / scikit-learn / spaCy / TextBlob for NLP
 - Gunicorn + gevent (production), Web Push (`pywebpush`), SMTP email/OTP
 
 **Frontend**
@@ -135,7 +135,7 @@ flowchart LR
     REDIS -->|dispatch| ORCH
     ORCH --> CELERY
     CELERY --> DB
-    ORCH -->|LLM calls| GEMINI["Google Gemini"]
+    ORCH -->|LLM calls| LLM["DeepSeek<br/>deepseek-chat"]
 ```
 
 ## Project Structure
@@ -169,7 +169,7 @@ AuraFlow/
 - **Node.js 18+** and npm
 - **Redis** (required for Celery, the event bus, and caching)
 - A **MySQL-compatible database** (e.g. TiDB Serverless or MySQL 8)
-- A **Google Gemini API key** for AI features
+- A **DeepSeek API key** for AI features (agents degrade to their rule-based paths without one)
 
 ### 1. Backend
 
@@ -218,8 +218,15 @@ DB_PORT=3306
 JWT_SECRET_KEY=change-me-in-production
 JWT_REFRESH_TOKEN_EXPIRES_DAYS=7
 
-# AI
-GEMINI_API_KEY=your-gemini-api-key
+# AI (DeepSeek)
+DEEPSEEK_API_KEY=your-deepseek-api-key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+
+# Optional LLM tuning (per-call ceilings, shared by every agent)
+LLM_MAX_TOKENS=700
+LLM_TIMEOUT_SECONDS=20
+LLM_HUMANIZE=true
 
 # Cache / queue
 REDIS_URL=redis://localhost:6379/0
@@ -247,7 +254,7 @@ VITE_BACKEND_URL=http://127.0.0.1:5000
 
 ## Running the Full Stack
 
-AuraFlow's background agents and scheduled jobs run through Celery and Redis. For the full
+Auraflow's background agents and scheduled jobs run through Celery and Redis. For the full
 experience, run each of the following in its own terminal (with the venv activated and Redis up).
 
 **1 — API server**
