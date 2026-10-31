@@ -24,6 +24,7 @@ export const RUN_REASON: Record<string, string> = {
   channel_silent: 'The channel went quiet',
   focus_drift: 'The topic changed',
   api: 'Test chat',
+  ask: 'Asked in the Ask box',
   approval: 'You approved an action',
 };
 

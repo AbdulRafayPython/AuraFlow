@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
-from agents.runtime import approvals, builder, knowledge, mcp
+from agents.runtime import approvals, aura_ask, builder, knowledge, mcp
 from agents.runtime.builder import BuilderError
 from agents.runtime.definitions import (
     AgentDefinition, get_definition, get_definition_by_public_id, invalidate_cache, to_spec)
@@ -483,6 +483,33 @@ def test_agent(public_id: str):
                    "args": s.get("args"), "result": _preview(s.get("result")),
                    "latency_ms": s.get("latency_ms")} for s in result.steps],
     }), 200
+
+
+# ── ask Aura privately ──────────────────────────────────────────────────
+
+@agent_builder_bp.route("/aura/ask", methods=["POST"])
+@jwt_required()
+def ask_aura():
+    """The private Ask box: Aura answers the person who asked, nothing is posted anywhere."""
+    data = _body()
+    channel_id = data.get("channel_id")
+    with _db() as (_, cur):
+        user_id = _user_id(cur)
+    try:
+        out = aura_ask.ask(user_id, str(data.get("question") or ""), channel_id=channel_id,
+                           username=get_jwt_identity())
+    except aura_ask.AskError as err:
+        raise BuilderError(err.message, err.status)
+    return jsonify(out), 200
+
+
+@agent_builder_bp.route("/aura/memory", methods=["DELETE"])
+@jwt_required()
+def clear_aura_memory():
+    """Forget what Aura remembers of this person's private questions."""
+    with _db() as (_, cur):
+        user_id = _user_id(cur)
+    return jsonify({"success": aura_ask.forget(user_id)}), 200
 
 
 def _iso(v: Any) -> Any:
