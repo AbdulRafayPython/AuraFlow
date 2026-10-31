@@ -21,6 +21,8 @@ export const RUN_REASON: Record<string, string> = {
   schedule: 'Scheduled post',
   channel_message: 'New message in its channel',
   member_joined: 'Someone joined',
+  channel_silent: 'The channel went quiet',
+  focus_drift: 'The topic changed',
   api: 'Test chat',
   approval: 'You approved an action',
 };

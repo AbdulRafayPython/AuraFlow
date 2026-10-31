@@ -24,7 +24,7 @@ interface AIAgentContextType {
   isLoadingAgents: boolean;
   
   // Agent Catalog & Management
-  getAgentCatalog: (communityId?: number) => Promise<AgentCatalogEntry[]>;
+  getAgentCatalog: (communityId?: string | number) => Promise<AgentCatalogEntry[]>;
   installCommunityAgent: (communityId: number, agentType: string, settings?: Record<string, any>) => Promise<any>;
   uninstallCommunityAgent: (communityId: number, agentType: string) => Promise<any>;
   configureCommunityAgent: (communityId: number, agentType: string, settings: Record<string, any>, enabled?: boolean) => Promise<any>;
@@ -160,7 +160,7 @@ export function AIAgentProvider({ children }: { children: React.ReactNode }) {
   // =====================================================
   // AGENT CATALOG & MANAGEMENT
   // =====================================================
-  const getAgentCatalog = useCallback(async (communityId?: number) => {
+  const getAgentCatalog = useCallback(async (communityId?: string | number) => {
     try {
       return await aiAgentService.getAgentCatalog(communityId);
     } catch (err: any) {

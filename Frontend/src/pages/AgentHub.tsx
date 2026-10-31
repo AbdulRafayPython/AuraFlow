@@ -14,6 +14,7 @@ import ApprovalCard from '@/components/agent-builder/ApprovalCard';
 import StatusChip from '@/components/agent-builder/StatusChip';
 import CreateAgentDialog from '@/components/agent-builder/CreateAgentDialog';
 import AgentLogo from '@/components/ai-agents/AgentLogo';
+import BuiltInAgentList from '@/components/ai-agents/BuiltInAgentList';
 import { PageHeader } from '@/components/app/PageHeader';
 import { Section } from '@/components/app/Section';
 import { EmptyState, ErrorState } from '@/components/app/EmptyState';
@@ -77,6 +78,7 @@ const AgentHub: React.FC = () => {
   };
 
   const communityName = (id: string | null) => communities.find((c) => c.id === id)?.name;
+  const catalogCommunityId = scope !== MINE ? scope : currentCommunity?.id;
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background">
@@ -120,6 +122,7 @@ const AgentHub: React.FC = () => {
               </div>
               <StatusChip status="active" />
             </div>
+            <BuiltInAgentList communityId={catalogCommunityId} communityName={communityName(catalogCommunityId ?? null)} />
           </Section>
 
           <Section

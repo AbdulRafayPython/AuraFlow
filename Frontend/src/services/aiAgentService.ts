@@ -931,7 +931,7 @@ class AIAgentService {
   // AGENT CATALOG & MANAGEMENT
   // =====================================================
   
-  async getAgentCatalog(communityId?: number): Promise<AgentCatalogEntry[]> {
+  async getAgentCatalog(communityId?: string | number): Promise<AgentCatalogEntry[]> {
     try {
       const params = communityId ? `?community_id=${communityId}` : '';
       const response: any = await api.get(`/api/agents/catalog${params}`);
@@ -965,7 +965,7 @@ class AIAgentService {
     }
   }
 
-  async configureCommunityAgent(communityId: number, agentType: string, settings: Record<string, any>, enabled?: boolean): Promise<any> {
+  async configureCommunityAgent(communityId: string | number, agentType: string, settings: Record<string, any>, enabled?: boolean): Promise<any> {
     try {
       const body: any = { settings };
       if (enabled !== undefined) body.enabled = enabled;

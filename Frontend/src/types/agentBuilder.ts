@@ -1,7 +1,7 @@
 // Types for the Agent Builder API (/api/agent-builder). Community ids are the public (uuid) ids.
 
 export type AgentStatus = 'draft' | 'active' | 'paused' | 'archived';
-export type TriggerType = 'mention' | 'keyword' | 'channel_message' | 'schedule' | 'member_joined';
+export type TriggerType = 'mention' | 'keyword' | 'channel_message' | 'schedule' | 'member_joined' | 'channel_silent' | 'focus_drift';
 export type ModelTier = 'fast' | 'smart';
 
 export interface TriggerConfig {
@@ -9,6 +9,8 @@ export interface TriggerConfig {
   cron?: string;
   tz?: string;
   prompt?: string;
+  /** channel_silent: how long the channel must have been quiet, in minutes. */
+  min_minutes?: number;
 }
 
 export interface AgentTrigger {
