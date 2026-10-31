@@ -179,8 +179,8 @@ def create_agent():
                         notes.append("Add a schedule later: pick the channel the agent should post in.")
                         continue
                     t["channel_id"] = data["channel_id"]
-                if t["type"] == "member_joined" and community_id is None:
-                    notes.append("member_joined only works for community agents; it was left out.")
+                if t["type"] in ("member_joined", "channel_silent", "focus_drift") and community_id is None:
+                    notes.append(f"{t['type']} only works for community agents; it was left out.")
                     continue
                 requested.append(t)
         triggers, trig_errors = builder.validate_triggers(requested, community_id=community_id, channel_ok=channel_ok)

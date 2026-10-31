@@ -32,7 +32,8 @@ log = logging.getLogger(__name__)
 CACHE_TTL = 10.0
 AURA_TEMPLATE = "aura"
 
-TRIGGER_TYPES = ("mention", "keyword", "channel_message", "schedule", "member_joined")
+TRIGGER_TYPES = ("mention", "keyword", "channel_message", "schedule", "member_joined",
+                 "channel_silent", "focus_drift")
 
 
 @dataclass(frozen=True)

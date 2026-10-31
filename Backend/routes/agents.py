@@ -1566,6 +1566,34 @@ def get_mood_insights(user_id):
 # MODERATION AGENT ROUTES
 # =====================================
 
+def _moderation_result(raw: dict) -> dict:
+    """Shape ModerationAgent.instant_check() like the client's ModerationResult.
+
+    The original keys stay (``block``, ``reason``, ...) so nothing that reads
+    them breaks; the five client fields are added next to them.
+    """
+    raw = raw or {}
+    reason = str(raw.get('reason') or '')
+    category = raw.get('category')
+    if raw.get('block') and category != 'spam':
+        flag_type, severity, action = 'toxic', 'critical', 'delete'
+    elif raw.get('block'):
+        flag_type, severity, action = 'spam', 'high', 'delete'
+    elif raw.get('warn'):
+        flag_type, severity, action = 'spam', 'medium', 'warn'
+    elif raw.get('flag'):
+        flag_type, severity, action = ('spam' if category == 'scam' else 'other'), 'medium', 'flag'
+    elif raw.get('flag_personal_info'):
+        flag_type, severity, action = 'inappropriate', 'low', 'flag'
+    else:
+        flag_type, severity, action = 'other', 'low', 'none'
+    confidence = raw.get('confidence')
+    if confidence is None:
+        confidence = 1.0 if action != 'none' else 0.0
+    return {**raw, 'flag_type': flag_type, 'severity': severity, 'confidence': float(confidence),
+            'reason': reason, 'action_recommended': action}
+
+
 @agents_bp.route('/moderation/check', methods=['POST'])
 @jwt_required()
 def check_moderation():
@@ -1589,7 +1617,7 @@ def check_moderation():
         conn.close()
         
         # Run moderation
-        result = _get_agent("moderation").moderate_message(text, user_id, channel_id)
+        result = _moderation_result(_get_agent("moderation").instant_check(text, user_id, channel_id))
         
         return jsonify({
             'success': True,

@@ -34,7 +34,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from agents.runtime import builtin_tools, write_tools  # noqa: F401  (registers the tools)
+from agents.runtime import builtin_tools, legacy_tools, write_tools  # noqa: F401  (registers the tools)
 from agents.runtime.context import build_system_prompt, wrap_tool_result
 from agents.runtime.specs import AgentSpec
 from agents.runtime.store import RunStore, get_default_store

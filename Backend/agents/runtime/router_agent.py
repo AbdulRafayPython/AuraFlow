@@ -3,8 +3,8 @@ CustomAgentRouter
 =================
 The bridge between the event bus and the agent runtime. It is a normal
 autonomous agent (registered in ``agents/orchestrator.py``) that subscribes to
-``msg.created`` and ``user.joined_community`` and answers one question: *does
-any agent want this event?*
+``msg.created``, ``user.joined_community``, ``channel.silent`` and ``focus.drift``
+and answers one question: *does any agent want this event?*
 
 It never calls an LLM. ``sense`` matches triggers (pure, cheap), ``decide``
 applies de-duplication and cost guards, and ``act`` only enqueues a Celery task
@@ -18,7 +18,10 @@ Guards:
 * each (message, agent) pair is claimed once in Redis, so two orchestrators
   never double-dispatch;
 * direct invocations (mention / reply) are rate limited per user;
-* every agent has a ``daily_run_cap``.
+* every agent has a ``daily_run_cap``;
+* channel events (silent channel, topic drift) wake an agent at most once per
+  ``EVENT_COOLDOWN_SECONDS`` per channel, and not at all when Redis is down
+  (without it the limit cannot be kept).
 """
 
 from __future__ import annotations
@@ -32,13 +35,17 @@ from agents import memory as _agent_memory
 from agents.base import AutonomousAgent
 from agents.runtime.definitions import (
     AgentDefinition, ensure_builtin_agents_once, load_active_definitions)
-from agents.runtime.triggers import TriggerMatch, match_member_joined, match_message
+from agents.runtime.triggers import TriggerMatch, match_channel_event, match_member_joined, match_message
 from database import get_db_connection
 
 log = logging.getLogger(__name__)
 
 CLAIM_TTL_SECONDS = 300
 DIRECT_KINDS = ("mention", "reply")
+EVENT_COOLDOWN_SECONDS = 30 * 60
+# Channel-level events: bus topic -> trigger type. Nobody spoke to the agent, so these runs act for its owner.
+CHANNEL_EVENT_KINDS = {_bus.TOPIC_CHANNEL_SILENT: "channel_silent", _bus.TOPIC_FOCUS_DRIFT: "focus_drift"}
+MAX_TOPICS = 5
 
 
 def _user_rate_limit() -> int:
@@ -88,10 +95,17 @@ def _reply_parent_sender(message_id: int) -> Optional[int]:
             conn.close()
 
 
+def _topics(value: Any) -> List[str]:
+    """A short, plain list of topic words from an event (they come from chat, so keep them small)."""
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [str(v).strip()[:30] for v in value if str(v).strip()][:MAX_TOPICS]
+
+
 class CustomAgentRouter(AutonomousAgent):
     NAME = "custom_router"
     GOAL = {"route_events_to_agents": True}
-    SUBSCRIBES = [_bus.TOPIC_MSG_CREATED, _bus.TOPIC_USER_JOINED]
+    SUBSCRIBES = [_bus.TOPIC_MSG_CREATED, _bus.TOPIC_USER_JOINED, _bus.TOPIC_CHANNEL_SILENT, _bus.TOPIC_FOCUS_DRIFT]
     COOLDOWN_SECONDS = 0                      # one user may mention an agent repeatedly
     SCOPE_TYPE = _agent_memory.SCOPE_CHANNEL
 
@@ -120,6 +134,12 @@ class CustomAgentRouter(AutonomousAgent):
             matches = match_message(event, defs, reply_parent_bot_id=parent_bot)
             channel_id = event.get("channel_id")
             message_id = event.get("message_id")
+        elif topic in CHANNEL_EVENT_KINDS:
+            if event.get("user_id") in {d.bot_user_id for d in defs}:
+                return None                    # a drift caused by an agent's own post never wakes agents
+            matches = match_channel_event(CHANNEL_EVENT_KINDS[topic], event, defs)
+            channel_id = event.get("channel_id")
+            message_id = None
         else:
             return None
 
@@ -134,8 +154,13 @@ class CustomAgentRouter(AutonomousAgent):
             "message_id": message_id,
             "content": event.get("content"),
             "reply_to": event.get("reply_to"),
+            "silent_minutes": event.get("silent_minutes"),
+            "old_topics": _topics(event.get("old_topics")),
+            "new_topics": _topics(event.get("new_topics")),
+            "event_key": f"{topic}-{channel_id}-{event.get('bucket') or event.get('message_id') or ''}",
             "matches": [{"agent_id": m.definition.id, "trigger_id": m.trigger.id, "kind": m.kind,
-                         "cap": m.definition.daily_run_cap} for m in matches],
+                         "cap": m.definition.daily_run_cap, "owner_user_id": m.definition.owner_user_id}
+                        for m in matches],
             "scope_type": _agent_memory.SCOPE_CHANNEL,
             "scope_id": channel_id,
         }
@@ -143,7 +168,7 @@ class CustomAgentRouter(AutonomousAgent):
     # ── Think ────────────────────────────────────────────────────────
     def decide(self, obs: Dict[str, Any]) -> Tuple[str, Dict[str, Any], str]:
         r = _redis()
-        key = obs.get("message_id") or f"join-{obs.get('user_id')}-{obs.get('community_id')}"
+        key = obs.get("message_id") or obs.get("event_key") or f"join-{obs.get('user_id')}-{obs.get('community_id')}"
         kept: List[Dict[str, Any]] = []
         reasons: List[str] = []
 
@@ -155,6 +180,14 @@ class CustomAgentRouter(AutonomousAgent):
             matches = obs["matches"]
 
         for m in matches:
+            if m["kind"] in CHANNEL_EVENT_KINDS.values():
+                if r is None:
+                    reasons.append("no_redis")
+                    continue
+                if not r.set(f"agent_router:evt:{m['kind']}:{m['agent_id']}:{obs.get('channel_id')}", "1",
+                             nx=True, ex=EVENT_COOLDOWN_SECONDS):
+                    reasons.append("cooldown")
+                    continue
             if r is not None and not r.set(f"agent_router:claim:{key}:{m['agent_id']}", "1",
                                            nx=True, ex=CLAIM_TTL_SECONDS):
                 reasons.append("duplicate")
@@ -192,9 +225,11 @@ class CustomAgentRouter(AutonomousAgent):
         queued = 0
         for m in payload["matches"]:
             queue = "high_priority" if m["kind"] in DIRECT_KINDS else "default"
-            run_agent_task.apply_async(
-                kwargs={"agent_id": m["agent_id"],
-                        "trigger": {**trigger, "type": m["kind"], "trigger_id": m["trigger_id"]}},
-                queue=queue)
+            run_trigger = {**trigger, "type": m["kind"], "trigger_id": m["trigger_id"]}
+            if m["kind"] in CHANNEL_EVENT_KINDS.values():
+                run_trigger.update(user_id=m.get("owner_user_id"), username=None, content=None, reply_to=None,
+                                   silent_minutes=payload.get("silent_minutes"),
+                                   old_topics=payload.get("old_topics"), new_topics=payload.get("new_topics"))
+            run_agent_task.apply_async(kwargs={"agent_id": m["agent_id"], "trigger": run_trigger}, queue=queue)
             queued += 1
         return {"enqueued": queued}

@@ -6,7 +6,8 @@ network access here (the router passes in everything it needs), which keeps
 them cheap enough to run on every message and easy to test.
 
 Trigger types handled here: ``mention``, ``keyword``, ``channel_message``,
-``member_joined``. (``schedule`` arrives with the Agent Builder.)
+``member_joined``, ``channel_silent`` and ``focus_drift``. (``schedule`` is fired by
+``agents.runtime.schedules``.)
 """
 
 from __future__ import annotations
@@ -20,14 +21,15 @@ from agents.runtime.definitions import AgentDefinition, TriggerDef
 _MENTION_RE = re.compile(r"(?<![\w@])@([A-Za-z0-9_]{1,64})")
 
 # Higher wins when one message matches an agent through several triggers.
-PRIORITY = {"mention": 4, "reply": 3, "keyword": 2, "channel_message": 1, "member_joined": 1}
+PRIORITY = {"mention": 4, "reply": 3, "keyword": 2, "channel_message": 1, "member_joined": 1,
+            "channel_silent": 1, "focus_drift": 1}
 
 
 @dataclass(frozen=True)
 class TriggerMatch:
     definition: AgentDefinition
     trigger: TriggerDef
-    kind: str            # 'mention' | 'reply' | 'keyword' | 'channel_message' | 'member_joined'
+    kind: str            # 'mention' | 'reply' | 'keyword' | 'channel_message' | 'member_joined' | 'channel_silent' | 'focus_drift'
 
 
 def mentioned_usernames(content: str) -> Set[str]:
@@ -116,4 +118,34 @@ def match_member_joined(event: Dict[str, Any],
             if trig.enabled and trig.type == "member_joined" and \
                     (trig.channel_id is None or trig.channel_id == channel_id):
                 found.append(TriggerMatch(defn, trig, "member_joined"))
+    return _best(found)
+
+
+def match_channel_event(kind: str, event: Dict[str, Any],
+                        definitions: Iterable[AgentDefinition]) -> List[TriggerMatch]:
+    """Agents that wake for a channel-level event (``channel_silent`` or ``focus_drift``).
+
+    These events say something about a channel, not about a person, so only agents of that
+    community are considered, and only when the trigger covers the channel. A ``channel_silent``
+    trigger can ask for a longer silence than the event reports (``config.min_minutes``).
+    """
+    community_id = event.get("community_id")
+    channel_id = event.get("channel_id")
+    if community_id is None or channel_id is None:
+        return []
+    silent = int(event.get("silent_minutes") or 0)
+    found: List[TriggerMatch] = []
+    for defn in definitions:
+        if defn.community_id != community_id:
+            continue
+        if defn.channel_allowlist and channel_id not in defn.channel_allowlist:
+            continue
+        for trig in defn.triggers:
+            if not trig.enabled or trig.type != kind:
+                continue
+            if trig.channel_id is not None and trig.channel_id != channel_id:
+                continue
+            if kind == "channel_silent" and silent < int((trig.config or {}).get("min_minutes") or 0):
+                continue
+            found.append(TriggerMatch(defn, trig, kind))
     return _best(found)

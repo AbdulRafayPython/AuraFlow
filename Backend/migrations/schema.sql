@@ -1121,7 +1121,7 @@ CREATE TABLE `agent_definitions` (
 CREATE TABLE `agent_triggers` (
   `id`           INT NOT NULL AUTO_INCREMENT,
   `agent_id`     INT NOT NULL,
-  `type`         ENUM('mention','keyword','channel_message','schedule','member_joined') NOT NULL,
+  `type`         ENUM('mention','keyword','channel_message','schedule','member_joined','channel_silent','focus_drift') NOT NULL,
   `channel_id`   INT NULL,                 -- NULL = every channel the agent may act in
   `config`       JSON NULL,                -- {"keywords": [..]} / {"cron": "0 9 * * 5", "tz": "Asia/Dubai"}
   `next_run_at`  DATETIME NULL,            -- schedule triggers only
