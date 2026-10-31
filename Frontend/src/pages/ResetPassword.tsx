@@ -35,7 +35,7 @@ export default function ResetPassword() {
     }
 
     if (!/[A-Z]/.test(newPassword)) {
-      return 'Password must contain at least one uppercase letter';
+      return 'Password must contain at least one letter';
     }
 
     if (!/[a-z]/.test(newPassword)) {
@@ -106,16 +106,16 @@ export default function ResetPassword() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <div className="w-full max-w-md">
-          <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
+          <div className="bg-card text-card-foreground border border-border rounded-lg p-8 text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">Password Reset Successful!</h2>
-            <p className="text-gray-600">Redirecting to login...</p>
+            <h2 className="text-2xl font-bold text-foreground mb-2">Password Reset Successful!</h2>
+            <p className="text-muted-foreground">Redirecting to login...</p>
           </div>
         </div>
       </div>
@@ -123,15 +123,15 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
+        <div className="bg-card text-card-foreground border border-border rounded-lg p-8">
           {/* Header */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">
+            <h1 className="text-3xl font-bold text-foreground mb-2">
               Reset Password
             </h1>
-            <p className="text-gray-600">
+            <p className="text-muted-foreground">
               Create a strong new password for your account
             </p>
           </div>
@@ -139,7 +139,7 @@ export default function ResetPassword() {
           <div className="space-y-6">
             {/* New Password */}
             <div>
-              <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="newPassword" className="block text-sm font-medium text-foreground mb-2">
                 New Password
               </label>
               <div className="relative">
@@ -149,13 +149,13 @@ export default function ResetPassword() {
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Enter new password"
-                  className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition"
+                  className="w-full px-4 py-3 pr-12 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition"
                   disabled={loading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
                   {showPassword ? '👁️' : '👁️‍🗨️'}
                 </button>
@@ -171,12 +171,12 @@ export default function ResetPassword() {
                         className={`h-1 flex-1 rounded ${
                           level <= passwordStrength.strength
                             ? passwordStrength.color
-                            : 'bg-gray-200'
+                            : 'bg-muted'
                         }`}
                       />
                     ))}
                   </div>
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-muted-foreground">
                     Password strength: <span className="font-medium">{passwordStrength.label}</span>
                   </p>
                 </div>
@@ -185,7 +185,7 @@ export default function ResetPassword() {
 
             {/* Confirm Password */}
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-foreground mb-2">
                 Confirm Password
               </label>
               <div className="relative">
@@ -195,13 +195,13 @@ export default function ResetPassword() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Confirm new password"
-                  className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition"
+                  className="w-full px-4 py-3 pr-12 border border-border bg-background text-foreground rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition"
                   disabled={loading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
                   {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
                 </button>
@@ -218,14 +218,14 @@ export default function ResetPassword() {
             </div>
 
             {/* Password Requirements */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm font-medium text-gray-700 mb-2">Password must contain:</p>
-              <ul className="text-xs text-gray-600 space-y-1">
+            <div className="bg-muted rounded-lg p-4">
+              <p className="text-sm font-medium text-foreground mb-2">Password must contain:</p>
+              <ul className="text-xs text-muted-foreground space-y-1">
                 <li className={newPassword.length >= 8 ? 'text-green-600' : ''}>
                   {newPassword.length >= 8 ? '✓' : '○'} At least 8 characters
                 </li>
                 <li className={/[A-Z]/.test(newPassword) ? 'text-green-600' : ''}>
-                  {/[A-Z]/.test(newPassword) ? '✓' : '○'} One uppercase letter
+                  {/[A-Z]/.test(newPassword) ? '✓' : '○'} One letter
                 </li>
                 <li className={/[a-z]/.test(newPassword) ? 'text-green-600' : ''}>
                   {/[a-z]/.test(newPassword) ? '✓' : '○'} One lowercase letter
@@ -247,7 +247,7 @@ export default function ResetPassword() {
             <button
               onClick={handleResetPassword}
               disabled={loading || !newPassword || !confirmPassword}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-primary text-primary-foreground hover:opacity-90 font-semibold py-3 rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Resetting Password...' : 'Reset Password'}
             </button>
@@ -256,7 +256,7 @@ export default function ResetPassword() {
             <div className="text-center">
               <button
                 onClick={() => navigate('/login')}
-                className="text-sm text-gray-600 hover:text-gray-800"
+                className="text-sm text-muted-foreground hover:text-foreground"
               >
                 ← Back to Login
               </button>

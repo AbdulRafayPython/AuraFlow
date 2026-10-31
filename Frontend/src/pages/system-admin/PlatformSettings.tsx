@@ -6,8 +6,8 @@
 import { useState, useEffect } from 'react';
 import adminService from '@/services/adminService';
 import {
-  Settings, Shield, Users, MessageSquare, Bot, Bell, Globe,
-  Save, RefreshCw, Check, AlertCircle, ToggleLeft, ToggleRight,
+  Settings, Shield, Bell, Globe,
+  Save, Check, AlertCircle, 
   Loader2
 } from 'lucide-react';
 
@@ -114,7 +114,7 @@ export default function PlatformSettings() {
       <span className={`inline-flex items-center justify-center h-5 w-5 transform rounded-full bg-white shadow-lg transition-all duration-300 ${
         enabled ? 'translate-x-5' : 'translate-x-1'
       }`}>
-        {enabled && <Check className="w-3 h-3 text-[hsl(var(--theme-accent-primary))]" />}
+        {enabled && <Check className="w-3 h-3 text-[hsl(var(--theme-text-accent))]" />}
       </span>
     </button>
   );
@@ -122,7 +122,7 @@ export default function PlatformSettings() {
   const SectionCard = ({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) => (
     <div className="rounded-2xl border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.5)] overflow-hidden">
       <div className="flex items-center gap-3 px-6 py-4 border-b border-[hsl(var(--theme-border-default))]">
-        <Icon className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
+        <Icon className="w-5 h-5 text-[hsl(var(--theme-text-accent))]" />
         <h3 className="font-semibold text-[hsl(var(--theme-text-primary))]">{title}</h3>
       </div>
       <div className="p-6 space-y-5">{children}</div>
@@ -142,7 +142,7 @@ export default function PlatformSettings() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 text-[hsl(var(--theme-accent-primary))] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[hsl(var(--theme-text-accent))] animate-spin" />
       </div>
     );
   }
@@ -167,7 +167,7 @@ export default function PlatformSettings() {
 
       {/* Status Messages */}
       {error && (
-        <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-red-500/20 text-destructive text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span>{error}</span>
         </div>

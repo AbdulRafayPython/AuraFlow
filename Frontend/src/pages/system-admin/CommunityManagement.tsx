@@ -10,9 +10,9 @@ import { cn } from '@/lib/utils';
 import adminService, { PaginationInfo } from '@/services/adminService';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
-  Search, ChevronLeft, ChevronRight, Users, Hash, MessageSquare,
+  Search, ChevronLeft, ChevronRight, Users, Hash, 
   Trash2, Shield, ShieldOff, UserMinus, Loader2, Pencil, Crown,
-  TrendingUp, TrendingDown, Minus, Mail, Building2, Settings,
+  TrendingUp, TrendingDown, Minus, Mail, Building2,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -52,9 +52,9 @@ function trendPct(curr: number, prev: number) {
   return Math.round(((curr - prev) / prev) * 100);
 }
 function activityLevel(msgs: number): { label: string; cls: string } {
-  if (msgs >= 1000) return { label: 'Extremely High', cls: 'bg-emerald-500/15 text-emerald-400' };
-  if (msgs >= 500) return { label: 'High', cls: 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]' };
-  if (msgs >= 100) return { label: 'Medium', cls: 'bg-amber-500/15 text-amber-400' };
+  if (msgs >= 1000) return { label: 'Extremely High', cls: 'bg-success/15 text-success' };
+  if (msgs >= 500) return { label: 'High', cls: 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-text-accent))]' };
+  if (msgs >= 100) return { label: 'Medium', cls: 'bg-warning/15 text-warning' };
   return { label: 'Low', cls: 'bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))]' };
 }
 function formatCount(n: number) {
@@ -63,8 +63,8 @@ function formatCount(n: number) {
 }
 
 const roleColors: Record<string, string> = {
-  owner: 'bg-amber-500/20 text-amber-500',
-  admin: 'bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-accent-primary))]',
+  owner: 'bg-warning/20 text-warning',
+  admin: 'bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-text-accent))]',
   member: 'bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))]',
 };
 const statusDot: Record<string, string> = { online: 'bg-emerald-500', offline: 'bg-slate-500', idle: 'bg-yellow-500', dnd: 'bg-red-500' };
@@ -95,10 +95,10 @@ function ConfirmDialog({ open, title, message, confirmLabel, confirmClass, child
 function ActivityHeatmap({ data }: { data: number[][] }) {
   const maxVal = useMemo(() => Math.max(1, ...data.flat()), [data]);
   return (
-    <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl p-5">
+    <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl p-5">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold">Member Activity Heatmap</h3>
-        <div className="flex items-center gap-2 text-[10px] text-[hsl(var(--theme-text-muted))]">
+        <div className="flex items-center gap-2 text-xs text-[hsl(var(--theme-text-muted))]">
           <span>LOW</span>
           <div className="flex gap-0.5">
             {[0.1, 0.3, 0.6, 1].map((o, i) => (
@@ -111,7 +111,7 @@ function ActivityHeatmap({ data }: { data: number[][] }) {
       <div className="space-y-1">
         {data.map((row, dayIdx) => (
           <div key={dayIdx} className="flex items-center gap-1">
-            <span className="text-[10px] text-[hsl(var(--theme-text-muted))] w-7 text-right flex-shrink-0">
+            <span className="text-xs text-[hsl(var(--theme-text-muted))] w-7 text-right flex-shrink-0">
               {dayIdx % 2 === 0 ? dayLabels[dayIdx] : ''}
             </span>
             <div className="flex gap-[2px] flex-1">
@@ -374,7 +374,7 @@ export default function SysCommunityManagement() {
         {loading ? (
           <div className="flex gap-4">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="flex-shrink-0 w-[200px] h-[180px] bg-[hsl(var(--theme-bg-secondary)/0.7)] rounded-xl animate-pulse" />
+              <div key={i} className="flex-shrink-0 w-[200px] h-[180px] bg-[hsl(var(--theme-bg-secondary)/0.7)] rounded-xl animate-skeleton" />
             ))}
           </div>
         ) : communities.length === 0 ? (
@@ -414,7 +414,7 @@ export default function SysCommunityManagement() {
                       ) : c.icon ? (
                         <span>{c.icon}</span>
                       ) : (
-                        <Building2 className="h-5 w-5 text-[hsl(var(--theme-accent-primary))]" />
+                        <Building2 className="h-5 w-5 text-[hsl(var(--theme-text-accent))]" />
                       )}
                     </div>
                     {/* Circular progress ring */}
@@ -426,7 +426,7 @@ export default function SysCommunityManagement() {
                           strokeDasharray={`${health * 94.25 / 100} 94.25`}
                         />
                       </svg>
-                      <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold" style={{ color: hColor }}>
+                      <span className="absolute inset-0 flex items-center justify-center text-xs font-bold" style={{ color: hColor }}>
                         {health}%
                       </span>
                     </div>
@@ -480,7 +480,7 @@ export default function SysCommunityManagement() {
                 className={cn(
                   'pb-3 text-sm font-medium capitalize transition-colors',
                   activeTab === tab
-                    ? 'text-[hsl(var(--theme-accent-primary))] border-b-2 border-[hsl(var(--theme-accent-primary))]'
+                    ? 'text-[hsl(var(--theme-text-accent))] border-b-2 border-[hsl(var(--theme-accent-primary))]'
                     : 'text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]'
                 )}
               >
@@ -491,7 +491,7 @@ export default function SysCommunityManagement() {
 
           {detailLoading ? (
             <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-[hsl(var(--theme-accent-primary))]" />
+              <Loader2 className="h-8 w-8 animate-spin text-[hsl(var(--theme-text-accent))]" />
             </div>
           ) : !detail ? (
             <p className="text-center py-12 text-[hsl(var(--theme-text-muted))]">Failed to load details</p>
@@ -501,18 +501,18 @@ export default function SysCommunityManagement() {
               {activeTab === 'overview' && (
                 <div className="space-y-6">
                   {/* Banner */}
-                  <div className="relative h-56 rounded-xl overflow-hidden bg-gradient-to-r from-[hsl(var(--theme-accent-primary)/0.4)] to-[hsl(var(--theme-bg-tertiary))]">
+                  <div className="relative h-56 rounded-xl overflow-hidden bg-[hsl(var(--theme-accent-primary)/0.4)]">
                     {detail.banner_url && (
                       <img src={detail.banner_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
+                    <div className="absolute inset-0 bg-black/70" />
                     {/* Owned by — top right */}
                     {detail.owner && (
-                      <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/40 backdrop-blur-sm rounded-lg px-3 py-2">
+                      <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/40 rounded-lg px-3 py-2">
                         <span className="text-xs text-white/60">Owned by</span>
                         <Avatar className="h-7 w-7 border border-white/20">
                           <AvatarImage src={detail.owner.avatar_url || undefined} className="object-cover" />
-                          <AvatarFallback className="text-[10px] bg-[hsl(var(--theme-bg-tertiary))]">{(detail.owner.display_name || detail.owner.username)[0].toUpperCase()}</AvatarFallback>
+                          <AvatarFallback className="text-xs bg-[hsl(var(--theme-bg-tertiary))]">{(detail.owner.display_name || detail.owner.username)[0].toUpperCase()}</AvatarFallback>
                         </Avatar>
                         <span className="text-sm text-white font-medium">{detail.owner.display_name || detail.owner.username}</span>
                       </div>
@@ -545,7 +545,7 @@ export default function SysCommunityManagement() {
                       { icon: Hash, label: 'Active Channels', value: detail.channel_count, trend: null, color: '#0ea5e9' },
                       { icon: Mail, label: 'Messages This Week', value: detail.messages_7d || 0, trend: msgTrend, color: 'hsl(var(--theme-accent-primary))' },
                     ].map(kpi => (
-                      <div key={kpi.label} className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl p-5">
+                      <div key={kpi.label} className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl p-5">
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 rounded-xl flex-shrink-0" style={{ backgroundColor: `${kpi.color}15` }}>
                             <kpi.icon className="h-5 w-5" style={{ color: kpi.color }} />
@@ -555,7 +555,7 @@ export default function SysCommunityManagement() {
                             <div className="flex items-baseline gap-2">
                               <span className="text-2xl font-bold">{kpi.value.toLocaleString()}</span>
                               {kpi.trend !== null && kpi.trend !== 0 && (
-                                <span className={cn('text-xs font-medium flex items-center gap-0.5', kpi.trend > 0 ? 'text-emerald-400' : 'text-red-400')}>
+                                <span className={cn('text-xs font-medium flex items-center gap-0.5', kpi.trend > 0 ? 'text-success' : 'text-destructive')}>
                                   {kpi.trend > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                                   {Math.abs(kpi.trend)}%
                                 </span>
@@ -584,10 +584,10 @@ export default function SysCommunityManagement() {
                     )}
 
                     {/* Channel Breakdown */}
-                    <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl p-5">
+                    <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl p-5">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-sm font-semibold">Channel Breakdown</h3>
-                        <button onClick={() => setActiveTab('channels')} className="text-xs text-[hsl(var(--theme-accent-primary))] hover:underline">View All</button>
+                        <button onClick={() => setActiveTab('channels')} className="text-xs text-[hsl(var(--theme-text-accent))] hover:underline">View All</button>
                       </div>
                       {detail.channels.length === 0 ? (
                         <p className="text-sm text-[hsl(var(--theme-text-muted))] text-center py-6">No channels</p>
@@ -595,7 +595,7 @@ export default function SysCommunityManagement() {
                         <div className="overflow-auto max-h-52">
                           <table className="w-full text-left text-sm">
                             <thead>
-                              <tr className="text-[10px] uppercase tracking-wider text-[hsl(var(--theme-text-muted))]">
+                              <tr className="text-xs text-[hsl(var(--theme-text-muted))]">
                                 <th className="pb-2 font-semibold">Channel Name</th>
                                 <th className="pb-2 font-semibold text-right">Messages</th>
                                 <th className="pb-2 font-semibold text-right">Activity</th>
@@ -615,7 +615,7 @@ export default function SysCommunityManagement() {
                                       </td>
                                       <td className="py-2.5 text-right tabular-nums">{ch.message_count.toLocaleString()}</td>
                                       <td className="py-2.5 text-right">
-                                        <span className={cn('px-2 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap', lvl.cls)}>
+                                        <span className={cn('px-2 py-0.5 rounded-md text-xs font-semibold whitespace-nowrap', lvl.cls)}>
                                           {lvl.label}
                                         </span>
                                       </td>
@@ -656,10 +656,10 @@ export default function SysCommunityManagement() {
                     </select>
                   </div>
 
-                  <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl overflow-hidden">
+                  <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl overflow-hidden">
                     <table className="w-full text-left">
                       <thead>
-                        <tr className="bg-[hsl(var(--theme-bg-tertiary))] text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--theme-text-muted))] border-b border-[hsl(var(--theme-accent-primary)/0.1)]">
+                        <tr className="bg-[hsl(var(--theme-bg-tertiary))] text-xs font-semibold text-[hsl(var(--theme-text-muted))] border-b border-[hsl(var(--theme-accent-primary)/0.1)]">
                           <th className="px-5 py-3">Member</th>
                           <th className="px-5 py-3">Role</th>
                           <th className="px-5 py-3">Messages</th>
@@ -671,7 +671,7 @@ export default function SysCommunityManagement() {
                       <tbody className="divide-y divide-[hsl(var(--theme-accent-primary)/0.05)]">
                         {membersLoading ? (
                           [...Array(5)].map((_, i) => (
-                            <tr key={i}><td colSpan={6} className="px-5 py-3"><div className="h-5 bg-[hsl(var(--theme-bg-tertiary)/0.5)] rounded animate-pulse" /></td></tr>
+                            <tr key={i}><td colSpan={6} className="px-5 py-3"><div className="h-5 bg-[hsl(var(--theme-bg-tertiary)/0.5)] rounded animate-skeleton" /></td></tr>
                           ))
                         ) : members.length === 0 ? (
                           <tr><td colSpan={6} className="px-5 py-10 text-center text-[hsl(var(--theme-text-muted))]">No members found</td></tr>
@@ -693,13 +693,13 @@ export default function SysCommunityManagement() {
                               </div>
                             </td>
                             <td className="px-5 py-3">
-                              <span className={cn('px-2 py-0.5 rounded text-[10px] font-semibold uppercase', roleColors[m.role] || roleColors.member)}>
+                              <span className={cn('px-2 py-0.5 rounded text-xs font-semibold', roleColors[m.role] || roleColors.member)}>
                                 {m.role}
                               </span>
                             </td>
                             <td className="px-5 py-3 text-sm tabular-nums">{m.message_count.toLocaleString()}</td>
                             <td className="px-5 py-3">
-                              <span className={cn('text-sm', m.violation_count > 0 ? 'text-red-400 font-medium' : 'text-[hsl(var(--theme-text-muted))]')}>
+                              <span className={cn('text-sm', m.violation_count > 0 ? 'text-destructive font-medium' : 'text-[hsl(var(--theme-text-muted))]')}>
                                 {m.violation_count}
                               </span>
                             </td>
@@ -710,15 +710,15 @@ export default function SysCommunityManagement() {
                               {m.role !== 'owner' ? (
                                 <div className="flex items-center justify-end gap-1">
                                   <button onClick={() => setRoleTarget(m)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-[hsl(var(--theme-bg-tertiary))] transition-colors" title={m.role === 'admin' ? 'Demote' : 'Promote'}>
-                                    {m.role === 'admin' ? <ShieldOff className="h-3.5 w-3.5 text-amber-500" /> : <Shield className="h-3.5 w-3.5 text-[hsl(var(--theme-accent-primary))]" />}
+                                    {m.role === 'admin' ? <ShieldOff className="h-3.5 w-3.5 text-warning" /> : <Shield className="h-3.5 w-3.5 text-[hsl(var(--theme-text-accent))]" />}
                                   </button>
-                                  <button onClick={() => setRemoveTarget(m)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 transition-colors" title="Remove">
-                                    <UserMinus className="h-3.5 w-3.5 text-red-500" />
+                                  <button onClick={() => setRemoveTarget(m)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-destructive/10 transition-colors" title="Remove">
+                                    <UserMinus className="h-3.5 w-3.5 text-destructive" />
                                   </button>
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-end">
-                                  <Crown className="h-4 w-4 text-amber-500" />
+                                  <Crown className="h-4 w-4 text-warning" />
                                 </div>
                               )}
                             </td>
@@ -742,10 +742,10 @@ export default function SysCommunityManagement() {
 
               {/* ─────────── CHANNELS TAB ─────────── */}
               {activeTab === 'channels' && (
-                <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl overflow-hidden">
+                <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl overflow-hidden">
                   <table className="w-full text-left">
                     <thead>
-                      <tr className="bg-[hsl(var(--theme-bg-tertiary))] text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--theme-text-muted))] border-b border-[hsl(var(--theme-accent-primary)/0.1)]">
+                      <tr className="bg-[hsl(var(--theme-bg-tertiary))] text-xs font-semibold text-[hsl(var(--theme-text-muted))] border-b border-[hsl(var(--theme-accent-primary)/0.1)]">
                         <th className="px-5 py-3">Channel</th>
                         <th className="px-5 py-3">Type</th>
                         <th className="px-5 py-3">Members</th>
@@ -768,12 +768,12 @@ export default function SysCommunityManagement() {
                               </div>
                             </td>
                             <td className="px-5 py-3">
-                              <span className="px-2 py-0.5 rounded bg-[hsl(var(--theme-bg-tertiary))] text-[10px] font-medium text-[hsl(var(--theme-text-muted))] uppercase">{ch.type}</span>
+                              <span className="px-2 py-0.5 rounded bg-[hsl(var(--theme-bg-tertiary))] text-xs font-medium text-[hsl(var(--theme-text-muted))]">{ch.type}</span>
                             </td>
                             <td className="px-5 py-3 text-sm tabular-nums">{ch.member_count}</td>
                             <td className="px-5 py-3 text-sm tabular-nums">{ch.message_count.toLocaleString()}</td>
                             <td className="px-5 py-3">
-                              <span className={cn('px-2 py-0.5 rounded-md text-[10px] font-semibold', lvl.cls)}>{lvl.label}</span>
+                              <span className={cn('px-2 py-0.5 rounded-md text-xs font-semibold', lvl.cls)}>{lvl.label}</span>
                             </td>
                             <td className="px-5 py-3 text-xs text-[hsl(var(--theme-text-muted))]">
                               {ch.created_at ? new Date(ch.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
@@ -792,7 +792,7 @@ export default function SysCommunityManagement() {
                   {/* Left column: Edit + Danger Zone */}
                   <div className="space-y-6">
                   {/* Edit Section */}
-                  <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl p-6 space-y-4">
+                  <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl p-6 space-y-4">
                     <h3 className="text-sm font-semibold flex items-center gap-2"><Pencil className="h-4 w-4" /> Edit Community</h3>
                     <div>
                       <label className="text-xs font-medium text-[hsl(var(--theme-text-muted))] mb-1.5 block">Name</label>
@@ -821,8 +821,8 @@ export default function SysCommunityManagement() {
                   </div>
 
                   {/* Danger Zone */}
-                  <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-6 space-y-3">
-                    <h3 className="text-sm font-semibold text-red-400 flex items-center gap-2"><Trash2 className="h-4 w-4" /> Danger Zone</h3>
+                  <div className="bg-destructive/5 border border-red-500/20 rounded-xl p-6 space-y-3">
+                    <h3 className="text-sm font-semibold text-destructive flex items-center gap-2"><Trash2 className="h-4 w-4" /> Danger Zone</h3>
                     <p className="text-xs text-[hsl(var(--theme-text-muted))]">
                       Permanently delete this community and all its channels, messages, and member data. This cannot be undone.
                     </p>
@@ -836,7 +836,7 @@ export default function SysCommunityManagement() {
                   </div>
 
                   {/* Right column: Community Details */}
-                  <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl p-6 space-y-3">
+                  <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.1)] rounded-xl p-6 space-y-3">
                     <h3 className="text-sm font-semibold flex items-center gap-2"><Building2 className="h-4 w-4" /> Community Details</h3>
                     {[
                       { label: 'ID', value: `#${detail.id}` },

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Brain, Shield, Heart, TrendingUp, BookOpen, Focus,
   Activity, Settings, FileText, TestTube2, AlertTriangle, CheckCircle,
-  ChevronDown, ChevronUp, Save, X, Power, Loader2, Send, Zap,
-  Clock, Hash, BarChart3, Lock, Bell, Sliders, RefreshCw, Copy, Check
+  Save, X, Power, Loader2, Send, Zap,
+  Clock, Hash, BarChart3, RefreshCw, Copy, Check
 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAIAgents } from '@/contexts/AIAgentContext';
@@ -308,7 +308,7 @@ export default function AgentDetails() {
         style={{ background: 'var(--theme-bg-gradient)' }}
       >
         <div className="text-center">
-          <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-red-500" />
+          <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-destructive" />
           <h2 className="text-2xl font-bold mb-2 text-[hsl(var(--theme-text-primary))]">Agent Not Found</h2>
           <p className="text-[hsl(var(--theme-text-muted))] mb-4">The requested AI agent does not exist.</p>
           <button
@@ -408,7 +408,7 @@ export default function AgentDetails() {
       style={{ background: 'var(--theme-bg-gradient)' }}
     >
       {/* Header */}
-      <div className="flex-shrink-0 border-b bg-[hsl(var(--theme-bg-secondary)/0.8)] border-[hsl(var(--theme-border-default))] backdrop-blur-xl shadow-sm">
+      <div className="flex-shrink-0 border-b bg-[hsl(var(--theme-bg-secondary)/0.8)] border-[hsl(var(--theme-border-default))] shadow-sm">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between mb-4">
             <button
@@ -458,10 +458,10 @@ export default function AgentDetails() {
                 {/* Status Badge */}
                 <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
                   agent.status === 'active'
-                    ? 'bg-green-500/20 text-green-400'
+                    ? 'bg-success/20 text-success'
                     : agent.status === 'error'
-                    ? 'bg-red-500/20 text-red-400'
-                    : 'bg-yellow-500/20 text-yellow-400'
+                    ? 'bg-destructive/20 text-destructive'
+                    : 'bg-warning/20 text-warning'
                 }`}>
                   {agent.status === 'active' && <CheckCircle className="w-3.5 h-3.5" />}
                   {agent.status === 'error' && <AlertTriangle className="w-3.5 h-3.5" />}
@@ -473,8 +473,8 @@ export default function AgentDetails() {
                   onClick={() => setAgentEnabled(!agentEnabled)}
                   className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all ${
                     agentEnabled
-                      ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
-                      : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
+                      ? 'bg-success/20 text-success hover:bg-success/30'
+                      : 'bg-muted text-muted-foreground hover:bg-muted'
                   }`}
                 >
                   <Power className="w-3.5 h-3.5" />
@@ -502,7 +502,7 @@ export default function AgentDetails() {
               onClick={() => toggleSection(tab.id as SectionName)}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative ${
                 expandedSections.has(tab.id as SectionName)
-                  ? 'text-[hsl(var(--theme-accent-primary))]'
+                  ? 'text-[hsl(var(--theme-text-accent))]'
                   : 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))]'
               }`}
             >
@@ -521,7 +521,7 @@ export default function AgentDetails() {
         <div className="max-w-5xl mx-auto p-6 space-y-6">
           {/* Capabilities Section */}
           {expandedSections.has('capabilities') && agentId && AGENT_CAPABILITIES[agentId] && (
-            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] backdrop-blur-sm border-[hsl(var(--theme-border-default))] shadow-sm">
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default))] shadow-sm">
               <div className="p-6">
                 <h2 className="text-lg font-semibold mb-5 text-[hsl(var(--theme-text-primary))]">
                   Capabilities
@@ -531,12 +531,12 @@ export default function AgentDetails() {
                   {/* Features */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 mb-3">
-                      <Zap className="w-4 h-4 text-amber-400" />
+                      <Zap className="w-4 h-4 text-warning" />
                       <h3 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">Features</h3>
                     </div>
                     {AGENT_CAPABILITIES[agentId].features.map((f, i) => (
                       <div key={i} className="flex items-start gap-2.5 p-2.5 rounded-lg bg-[hsl(var(--theme-bg-tertiary)/0.4)]">
-                        <CheckCircle className="w-3.5 h-3.5 mt-0.5 text-emerald-400 flex-shrink-0" />
+                        <CheckCircle className="w-3.5 h-3.5 mt-0.5 text-success flex-shrink-0" />
                         <span className="text-xs text-[hsl(var(--theme-text-secondary))]">{f}</span>
                       </div>
                     ))}
@@ -545,12 +545,12 @@ export default function AgentDetails() {
                   {/* Automations */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 mb-3">
-                      <RefreshCw className="w-4 h-4 text-blue-400" />
+                      <RefreshCw className="w-4 h-4 text-[hsl(var(--theme-text-accent))]" />
                       <h3 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">Automations</h3>
                     </div>
                     {AGENT_CAPABILITIES[agentId].automations.map((a, i) => (
                       <div key={i} className="flex items-start gap-2.5 p-2.5 rounded-lg bg-[hsl(var(--theme-bg-tertiary)/0.4)]">
-                        <Activity className="w-3.5 h-3.5 mt-0.5 text-blue-400 flex-shrink-0" />
+                        <Activity className="w-3.5 h-3.5 mt-0.5 text-[hsl(var(--theme-text-accent))] flex-shrink-0" />
                         <span className="text-xs text-[hsl(var(--theme-text-secondary))]">{a}</span>
                       </div>
                     ))}
@@ -559,12 +559,12 @@ export default function AgentDetails() {
                   {/* Metrics */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 mb-3">
-                      <BarChart3 className="w-4 h-4 text-purple-400" />
+                      <BarChart3 className="w-4 h-4 text-[hsl(var(--theme-text-accent))]" />
                       <h3 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">Tracked Metrics</h3>
                     </div>
                     {AGENT_CAPABILITIES[agentId].metrics.map((m, i) => (
                       <div key={i} className="flex items-start gap-2.5 p-2.5 rounded-lg bg-[hsl(var(--theme-bg-tertiary)/0.4)]">
-                        <Hash className="w-3.5 h-3.5 mt-0.5 text-purple-400 flex-shrink-0" />
+                        <Hash className="w-3.5 h-3.5 mt-0.5 text-[hsl(var(--theme-text-accent))] flex-shrink-0" />
                         <span className="text-xs text-[hsl(var(--theme-text-secondary))]">{m}</span>
                       </div>
                     ))}
@@ -576,7 +576,7 @@ export default function AgentDetails() {
 
           {/* Settings Section */}
           {expandedSections.has('settings') && agentId && AGENT_SETTINGS[agentId] && (
-            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] backdrop-blur-sm border-[hsl(var(--theme-border-default))] shadow-sm">
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default))] shadow-sm">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-5">
                   <h2 className="text-lg font-semibold text-[hsl(var(--theme-text-primary))]">
@@ -613,7 +613,7 @@ export default function AgentDetails() {
                         <button
                           onClick={() => updateSetting(setting.key, !settingsValues[setting.key])}
                           className={`relative w-11 h-6 rounded-full transition-colors ${
-                            settingsValues[setting.key] ? 'bg-emerald-500' : 'bg-[hsl(var(--theme-bg-tertiary))]'
+                            settingsValues[setting.key] ? 'bg-success' : 'bg-[hsl(var(--theme-bg-tertiary))]'
                           }`}
                         >
                           <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow-sm ${
@@ -658,7 +658,7 @@ export default function AgentDetails() {
 
           {/* Logs Section */}
           {expandedSections.has('logs') && (
-            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] backdrop-blur-sm border-[hsl(var(--theme-border-default))] shadow-sm">
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default))] shadow-sm">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-5">
                   <h2 className="text-lg font-semibold text-[hsl(var(--theme-text-primary))]">
@@ -687,7 +687,7 @@ export default function AgentDetails() {
                 
                 {logsLoading ? (
                   <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-5 h-5 animate-spin text-[hsl(var(--theme-accent-primary))]" />
+                    <Loader2 className="w-5 h-5 animate-spin text-[hsl(var(--theme-text-accent))]" />
                   </div>
                 ) : logs.length === 0 ? (
                   <div className="text-center py-8">
@@ -701,9 +701,9 @@ export default function AgentDetails() {
                       {logs.map((log, i) => (
                         <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-[hsl(var(--theme-bg-tertiary)/0.4)] border border-[hsl(var(--theme-border-default)/0.2)]">
                           <div className={`mt-0.5 p-1 rounded-full flex-shrink-0 ${
-                            log.status === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
-                            log.status === 'error' ? 'bg-red-500/20 text-red-400' :
-                            'bg-amber-500/20 text-amber-400'
+                            log.status === 'success' ? 'bg-success/20 text-success' :
+                            log.status === 'error' ? 'bg-destructive/20 text-destructive' :
+                            'bg-warning/20 text-warning'
                           }`}>
                             {log.status === 'success' ? <CheckCircle className="w-3 h-3" /> :
                              log.status === 'error' ? <AlertTriangle className="w-3 h-3" /> :
@@ -715,18 +715,18 @@ export default function AgentDetails() {
                                 {log.action_type || log.agent_name}
                               </span>
                               {log.community_id && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))]">
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))]">
                                   Community #{log.community_id}
                                 </span>
                               )}
                             </div>
                             {log.output_data && (
-                              <p className="text-[11px] text-[hsl(var(--theme-text-muted))] line-clamp-2">
+                              <p className="text-xs text-[hsl(var(--theme-text-muted))] line-clamp-2">
                                 {log.output_data}
                               </p>
                             )}
                           </div>
-                          <span className="text-[10px] text-[hsl(var(--theme-text-muted))] flex-shrink-0 flex items-center gap-1">
+                          <span className="text-xs text-[hsl(var(--theme-text-muted))] flex-shrink-0 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             {log.created_at ? new Date(log.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
                           </span>
@@ -764,7 +764,7 @@ export default function AgentDetails() {
 
           {/* Testing Section */}
           {expandedSections.has('testing') && (
-            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] backdrop-blur-sm border-[hsl(var(--theme-border-default))] shadow-sm">
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default))] shadow-sm">
               <div className="p-6">
                 <h2 className="text-lg font-semibold mb-2 text-[hsl(var(--theme-text-primary))]">
                   Testing & Simulation
@@ -809,9 +809,9 @@ export default function AgentDetails() {
                       <span className="text-xs font-medium text-[hsl(var(--theme-text-secondary))]">Result</span>
                       <button
                         onClick={copyResult}
-                        className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-[hsl(var(--theme-text-muted))] hover:bg-[hsl(var(--theme-bg-hover))]"
+                        className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-[hsl(var(--theme-text-muted))] hover:bg-[hsl(var(--theme-bg-hover))]"
                       >
-                        {copiedResult ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        {copiedResult ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
                         {copiedResult ? 'Copied' : 'Copy'}
                       </button>
                     </div>

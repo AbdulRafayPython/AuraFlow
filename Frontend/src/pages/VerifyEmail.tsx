@@ -56,9 +56,9 @@ const VerifyEmail = () => {
 
   const stateConfig = {
     loading: {
-      icon: <Loader2 className="w-16 h-16 text-indigo-400 animate-spin" />,
+      icon: <Loader2 className="w-16 h-16 text-[hsl(var(--theme-text-accent))] animate-spin" />,
       title: 'Verifying your email…',
-      color: 'text-indigo-400',
+      color: 'text-[hsl(var(--theme-text-accent))]',
     },
     success: {
       icon: <CheckCircle2 className="w-16 h-16 text-emerald-400" />,
@@ -80,28 +80,25 @@ const VerifyEmail = () => {
   const cfg = stateConfig[state];
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#1a0b2e] p-4">
-      {/* Background glow */}
-      <div className="absolute top-1/3 left-1/3 w-[400px] h-[400px] bg-purple-600/30 rounded-full filter blur-[120px]" />
-      <div className="absolute bottom-1/4 right-1/3 w-[300px] h-[300px] bg-indigo-500/20 rounded-full filter blur-[100px]" />
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
 
-      <div className="relative z-10 w-full max-w-md bg-slate-800/95 backdrop-blur-xl rounded-xl shadow-2xl p-8 text-center">
+      <div className="relative z-10 w-full max-w-md bg-card text-card-foreground border border-border rounded-lg p-8 text-center">
         {/* Logo */}
         <div className="mb-6 flex flex-col items-center">
-          <img src="/AuraflowLogo.png" alt="AuraFlow" className="w-14 h-14 mb-2" />
-          <h1 className="text-2xl font-bold text-purple-400 tracking-wide">AuraFlow</h1>
+          <img src="/AuraflowLogo.png" alt="Auraflow" className="w-14 h-14 mb-2" />
+          <h1 className="text-2xl font-bold text-[hsl(var(--theme-text-accent))] tracking-wide">Auraflow</h1>
         </div>
 
         {/* State icon */}
         <div className="flex justify-center mb-4">{cfg.icon}</div>
         <h2 className={`text-xl font-semibold mb-2 ${cfg.color}`}>{cfg.title}</h2>
-        <p className="text-gray-400 text-sm mb-6">{message}</p>
+        <p className="text-muted-foreground text-sm mb-6">{message}</p>
 
         {/* Success → go to login */}
         {state === 'success' && (
           <button
             onClick={() => navigate('/')}
-            className="w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition-colors"
+            className="w-full py-2.5 bg-primary hover:bg-primary text-foreground text-sm font-medium rounded-lg transition-colors"
           >
             Continue to Login
           </button>
@@ -116,7 +113,7 @@ const VerifyEmail = () => {
               <button
                 onClick={handleResend}
                 disabled={resending}
-                className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
+                className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-foreground text-sm font-medium rounded-lg transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
               >
                 {resending && <Loader2 className="w-4 h-4 animate-spin" />}
                 {resending ? 'Sending…' : 'Resend Verification Email'}
@@ -124,7 +121,7 @@ const VerifyEmail = () => {
             )}
             <button
               onClick={() => navigate('/')}
-              className="w-full py-2.5 border border-slate-600 text-gray-300 text-sm font-medium rounded-lg hover:bg-slate-700/50 transition-colors"
+              className="w-full py-2.5 border border-border text-muted-foreground text-sm font-medium rounded-lg hover:bg-accent transition-colors"
             >
               Back to Login
             </button>
@@ -135,7 +132,7 @@ const VerifyEmail = () => {
         {state === 'error' && (
           <button
             onClick={() => navigate('/')}
-            className="w-full py-2.5 border border-slate-600 text-gray-300 text-sm font-medium rounded-lg hover:bg-slate-700/50 transition-colors"
+            className="w-full py-2.5 border border-border text-muted-foreground text-sm font-medium rounded-lg hover:bg-accent transition-colors"
           >
             Back to Login
           </button>

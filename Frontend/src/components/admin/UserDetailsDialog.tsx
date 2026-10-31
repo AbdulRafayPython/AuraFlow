@@ -2,7 +2,7 @@
  * UserDetailsDialog — shared community-admin user-details modal.
  *
  * Originally lived inline in `pages/admin/UserManagement.tsx`. Lifted out in
- * Phase 2.1 so FlaggedContent can open the same modal when an admin clicks an
+ * Added so FlaggedContent can open the same modal when an admin clicks an
  * offending user, without re-implementing the Info / Activity / Communities
  * tabs.
  *
@@ -16,7 +16,7 @@
  * community-scoped.
  */
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -247,12 +247,12 @@ export function UserDetailsDialog({
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4 text-orange-500" />
+                        <AlertTriangle className="h-4 w-4 text-warning" />
                         Violations
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-orange-500">
+                      <div className="text-2xl font-bold text-warning">
                         {user.stats?.violation_count ?? 0}
                       </div>
                     </CardContent>
@@ -260,12 +260,12 @@ export function UserDetailsDialog({
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm flex items-center gap-2">
-                        <Ban className="h-4 w-4 text-red-500" />
+                        <Ban className="h-4 w-4 text-destructive" />
                         Bans
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-red-500">
+                      <div className="text-2xl font-bold text-destructive">
                         {user.stats?.ban_count || 0}
                       </div>
                     </CardContent>

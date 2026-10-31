@@ -1,5 +1,5 @@
 /**
- * Community Admin — Agent Goals (Phase 5.2)
+ * Community Admin — Agent Goals
  * ==========================================
  * Per-agent tunables + clamp windows + kill-switch for autonomous agents.
  *
@@ -183,7 +183,7 @@ export default function AgentGoals({ communityId, communityName, embedded = fals
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
-              <Sliders className="w-6 h-6 text-[hsl(var(--theme-accent-primary))]" />
+              <Sliders className="w-6 h-6 text-[hsl(var(--theme-text-accent))]" />
               Agent Goals
             </h1>
             <p className="text-sm text-[hsl(var(--theme-text-muted))] mt-1 max-w-2xl">
@@ -211,7 +211,7 @@ export default function AgentGoals({ communityId, communityName, embedded = fals
       )}
 
       {error && (
-        <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-red-500/20 text-destructive text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span>{error}</span>
         </div>
@@ -219,7 +219,7 @@ export default function AgentGoals({ communityId, communityName, embedded = fals
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 text-[hsl(var(--theme-accent-primary))] animate-spin" />
+          <Loader2 className="w-8 h-8 text-[hsl(var(--theme-text-accent))] animate-spin" />
         </div>
       ) : orderedAgents.length === 0 ? (
         <div className="text-center py-16 rounded-2xl border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.5)]">
@@ -319,7 +319,7 @@ function AgentGoalCard({ name, state, specs, isSaving, wasSaved, onSave }: CardP
                 </span>
               )}
               {!state.enabled && (
-                <span className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
+                <span className="px-2 py-0.5 rounded-full bg-destructive/10 text-destructive border border-red-500/20">
                   Disabled
                 </span>
               )}
@@ -327,7 +327,7 @@ function AgentGoalCard({ name, state, specs, isSaving, wasSaved, onSave }: CardP
           </div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
-          {wasSaved && <Check className="w-4 h-4 text-emerald-400" />}
+          {wasSaved && <Check className="w-4 h-4 text-success" />}
           <KillSwitch
             enabled={state.enabled}
             disabled={isSaving}
@@ -436,14 +436,14 @@ function TunableRow({
           )}
         </div>
         <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">{help}</p>
-        <p className="text-[11px] text-[hsl(var(--theme-text-muted))] mt-1">
+        <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-1">
           Recommended: <span className="font-medium text-[hsl(var(--theme-text-secondary))]">{formatVal(defaultValue)}</span>
         </p>
       </div>
 
       {/* Current value */}
       <div className="md:col-span-3">
-        <label className="block text-[10px] uppercase tracking-wide text-[hsl(var(--theme-text-muted))] mb-1">
+        <label className="block text-xs text-[hsl(var(--theme-text-muted))] mb-1">
           Current
         </label>
         {isReadOnly ? (
@@ -497,7 +497,7 @@ function TunableRow({
 
       {/* Clamp window — only meaningful for numeric tunables */}
       <div className="md:col-span-4">
-        <label className="block text-[10px] uppercase tracking-wide text-[hsl(var(--theme-text-muted))] mb-1">
+        <label className="block text-xs text-[hsl(var(--theme-text-muted))] mb-1">
           Allowed range {isNumeric && (
             <span className="opacity-50 normal-case">
               (can be {formatVal(spec.min)} to {formatVal(spec.max)})

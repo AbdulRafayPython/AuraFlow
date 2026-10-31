@@ -131,7 +131,6 @@ export default function QuickReplyChips({
         >
           <Sparkles className="h-4 w-4" />
           <span className="absolute -right-0.5 -top-0.5 flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-[hsl(var(--acc))] opacity-70 motion-safe:animate-ping" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-[hsl(var(--acc))] ring-2 ring-[hsl(var(--theme-bg-elevated))]" />
           </span>
         </span>
@@ -139,7 +138,7 @@ export default function QuickReplyChips({
         {/* Intent label — "the assistant understood the message" cue */}
         <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
           <IntentIcon className="h-3.5 w-3.5 text-[hsl(var(--acc))]" aria-hidden />
-          <span className="text-[11.5px] font-semibold tracking-tight text-[hsl(var(--theme-text-primary))]">
+          <span className="text-xs font-semibold tracking-tight text-[hsl(var(--theme-text-primary))]">
             {meta.label}
           </span>
           <span
@@ -156,7 +155,7 @@ export default function QuickReplyChips({
                   key={i}
                   aria-hidden
                   style={{ width: w }}
-                  className="h-6 rounded-full bg-[hsl(var(--acc)/0.12)] animate-pulse motion-reduce:animate-none"
+                  className="h-6 rounded-full bg-[hsl(var(--acc)/0.12)] animate-skeleton motion-reduce:animate-none"
                 />
               ))
             : chips.map((chip, i) => (
@@ -168,7 +167,7 @@ export default function QuickReplyChips({
                   className={
                     'group/chip inline-flex items-center gap-1 rounded-full border ' +
                     'border-[hsl(var(--acc)/0.30)] bg-[hsl(var(--acc)/0.08)] ' +
-                    'py-1 pl-3 pr-2.5 text-[12px] font-medium text-[hsl(var(--theme-text-primary))] ' +
+                    'py-1 pl-3 pr-2.5 text-xs font-medium text-[hsl(var(--theme-text-primary))] ' +
                     'transition-all [transition-duration:150ms] ' +
                     'hover:-translate-y-px hover:border-[hsl(var(--acc)/0.6)] hover:bg-[hsl(var(--acc)/0.16)] ' +
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--acc)/0.55)] ' +

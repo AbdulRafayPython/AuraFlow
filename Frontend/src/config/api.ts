@@ -7,12 +7,17 @@
  *
  * In production: uses VITE_BACKEND_URL env var (set at build time on Vercel)
  * e.g. https://auraflow-backend.onrender.com
+ *
+ * Docker: the web container (nginx) proxies /api, /socket.io and /uploads to
+ * the API, so the image is built with VITE_SAME_ORIGIN=true and uses
+ * same-origin URLs like dev does.
  */
 
 const isDev = import.meta.env.DEV;
+const sameOrigin = import.meta.env.VITE_SAME_ORIGIN === 'true';
 
 /** Base server URL (no trailing slash, no /api) */
-export const API_SERVER = isDev
+export const API_SERVER = isDev || sameOrigin
   ? ''
   : (import.meta.env.VITE_BACKEND_URL || `http://${window.location.hostname}:5000`);
 

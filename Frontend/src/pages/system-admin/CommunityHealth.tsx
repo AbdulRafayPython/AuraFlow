@@ -3,7 +3,7 @@
  * Matching the auraflow_community_management_hub design.
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import adminService from '@/services/adminService';
 import { API_SERVER } from '@/config/api';
@@ -57,7 +57,7 @@ function HealthCircle({ score, size = 48 }: { score: number; size?: number }) {
         <circle cx={24} cy={24} r={r} fill="none" stroke="currentColor" className="text-slate-800" strokeWidth={4} />
         <circle cx={24} cy={24} r={r} fill="none" stroke={color} strokeWidth={4} strokeDasharray={circ} strokeDashoffset={offset} className="transition-all duration-500" />
       </svg>
-      <span className="absolute text-[10px] font-bold" style={{ color }}>{score}%</span>
+      <span className="absolute text-xs font-bold" style={{ color }}>{score}%</span>
     </div>
   );
 }
@@ -71,9 +71,9 @@ const heatmapRows = [
 const heatmapDays = ['Mon', 'Wed', 'Fri', 'Sun'];
 
 function getActivityLabel(percent: number): { label: string; cls: string } {
-  if (percent >= 80) return { label: 'Extremely High', cls: 'bg-green-500/10 text-green-500' };
-  if (percent >= 60) return { label: 'High', cls: 'bg-[hsl(var(--theme-accent-primary)/0.1)] text-[hsl(var(--theme-accent-primary))]' };
-  if (percent >= 30) return { label: 'Medium', cls: 'bg-yellow-500/10 text-yellow-500' };
+  if (percent >= 80) return { label: 'Extremely High', cls: 'bg-success/10 text-success' };
+  if (percent >= 60) return { label: 'High', cls: 'bg-[hsl(var(--theme-accent-primary)/0.1)] text-[hsl(var(--theme-text-accent))]' };
+  if (percent >= 30) return { label: 'Medium', cls: 'bg-warning/10 text-warning' };
   return { label: 'Low', cls: 'bg-slate-500/10 text-slate-500' };
 }
 
@@ -120,7 +120,7 @@ export default function SysCommunityHealth() {
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {[...Array(4)].map((_, i) => (
             <div key={i} className="bg-[hsl(var(--theme-bg-hover))] border border-[hsl(var(--theme-border-default)/0.5)] rounded-xl p-5">
-              <div className="h-32 bg-[hsl(var(--theme-bg-tertiary)/0.3)] rounded animate-pulse" />
+              <div className="h-32 bg-[hsl(var(--theme-bg-tertiary)/0.3)] rounded animate-skeleton" />
             </div>
           ))}
         </div>
@@ -141,7 +141,7 @@ export default function SysCommunityHealth() {
                     )}
                   >
                     <div className="flex justify-between items-start">
-                      <div className="w-14 h-14 rounded-xl bg-[hsl(var(--theme-accent-primary)/0.3)] flex items-center justify-center text-[hsl(var(--theme-accent-primary))] font-bold text-lg overflow-hidden">
+                      <div className="w-14 h-14 rounded-xl bg-[hsl(var(--theme-accent-primary)/0.3)] flex items-center justify-center text-[hsl(var(--theme-text-accent))] font-bold text-lg overflow-hidden">
                         {c.logo_url ? (
                           <img src={`${API_SERVER}${c.logo_url}`} alt={c.name} className="w-full h-full object-cover" />
                         ) : (
@@ -185,8 +185,8 @@ export default function SysCommunityHealth() {
                   className={cn(
                     'pb-4 px-2 border-b-2 font-bold text-sm transition-colors',
                     activeTab === tab.toLowerCase()
-                      ? 'border-[hsl(var(--theme-accent-primary))] text-[hsl(var(--theme-accent-primary))]'
-                      : 'border-transparent text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-accent-primary))]'
+                      ? 'border-[hsl(var(--theme-accent-primary))] text-[hsl(var(--theme-text-accent))]'
+                      : 'border-transparent text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-accent))]'
                   )}
                 >
                   {tab}
@@ -198,7 +198,7 @@ export default function SysCommunityHealth() {
           {/* Community Detail Banner */}
           {selectedCommunity && (
             <div className="relative h-48 rounded-2xl overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-t from-[hsl(var(--theme-bg-secondary))/0.8] to-transparent z-10" />
+              <div className="absolute inset-0 bg-[hsl(var(--theme-bg-secondary))/0.8] z-10" />
               {selectedCommunity.banner_url ? (
                 <img
                   src={`${API_SERVER}${selectedCommunity.banner_url}`}
@@ -206,10 +206,10 @@ export default function SysCommunityHealth() {
                   className="absolute inset-0 w-full h-full object-cover"
                 />
               ) : (
-                <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--theme-accent-primary)/0.3)] to-[hsl(var(--theme-bg-secondary))]" />
+                <div className="absolute inset-0 bg-[hsl(var(--theme-accent-primary)/0.3)]" />
               )}
               <div className="absolute bottom-6 left-6 z-20 flex items-end gap-5">
-                <div className="w-24 h-24 rounded-2xl border-4 border-[hsl(var(--theme-bg-secondary))] bg-[hsl(var(--theme-accent-primary)/0.3)] p-1 shadow-2xl flex items-center justify-center text-[hsl(var(--theme-accent-primary))] text-3xl font-bold overflow-hidden">
+                <div className="w-24 h-24 rounded-2xl border-4 border-[hsl(var(--theme-bg-secondary))] bg-[hsl(var(--theme-accent-primary)/0.3)] p-1 shadow-2xl flex items-center justify-center text-[hsl(var(--theme-text-accent))] text-3xl font-bold overflow-hidden">
                   {selectedCommunity.logo_url ? (
                     <img src={`${API_SERVER}${selectedCommunity.logo_url}`} alt={selectedCommunity.name} className="w-full h-full object-cover rounded-xl" />
                   ) : (
@@ -225,9 +225,9 @@ export default function SysCommunityHealth() {
               </div>
               {selectedCommunity.creator_name && (
                 <div className="absolute top-6 right-6 z-20">
-                  <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md p-2 rounded-lg border border-white/10">
+                  <div className="flex items-center gap-2 bg-black/40 p-2 rounded-lg border border-white/10">
                     <span className="text-xs text-white/70">Owned by</span>
-                    <div className="w-6 h-6 rounded-full bg-[hsl(var(--theme-accent-primary)/0.5)] flex items-center justify-center text-[10px] font-bold text-white">
+                    <div className="w-6 h-6 rounded-full bg-[hsl(var(--theme-accent-primary)/0.5)] flex items-center justify-center text-xs font-bold text-white">
                       {selectedCommunity.creator_name[0]}
                     </div>
                     <span className="text-xs font-bold text-white">{selectedCommunity.creator_name}</span>
@@ -241,7 +241,7 @@ export default function SysCommunityHealth() {
           {healthData.summary && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-[hsl(var(--theme-bg-hover))] p-6 rounded-xl border border-[hsl(var(--theme-border-default)/0.5)] flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-400">
+                <div className="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center text-warning">
                   <Users className="h-5 w-5" />
                 </div>
                 <div>
@@ -249,12 +249,12 @@ export default function SysCommunityHealth() {
                   <p className="text-2xl font-bold">{healthData.summary.total_users.toLocaleString()}</p>
                 </div>
                 <div className="ml-auto flex items-center gap-1">
-                  <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-                  <span className="text-emerald-500 text-xs font-bold">{healthData.metrics.growth_rate}%</span>
+                  <TrendingUp className="h-3.5 w-3.5 text-success" />
+                  <span className="text-success text-xs font-bold">{healthData.metrics.growth_rate}%</span>
                 </div>
               </div>
               <div className="bg-[hsl(var(--theme-bg-hover))] p-6 rounded-xl border border-[hsl(var(--theme-border-default)/0.5)] flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-[hsl(var(--theme-accent-primary)/0.1)] flex items-center justify-center text-[hsl(var(--theme-accent-primary))]">
+                <div className="w-12 h-12 rounded-xl bg-[hsl(var(--theme-accent-primary)/0.1)] flex items-center justify-center text-[hsl(var(--theme-text-accent))]">
                   <Hash className="h-5 w-5" />
                 </div>
                 <div>
@@ -274,8 +274,8 @@ export default function SysCommunityHealth() {
                   <p className="text-2xl font-bold">{healthData.summary.total_messages.toLocaleString()}</p>
                 </div>
                 <div className="ml-auto flex items-center gap-1">
-                  <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-                  <span className="text-emerald-500 text-xs font-bold">{healthData.metrics.engagement_rate}%</span>
+                  <TrendingUp className="h-3.5 w-3.5 text-success" />
+                  <span className="text-success text-xs font-bold">{healthData.metrics.engagement_rate}%</span>
                 </div>
               </div>
             </div>
@@ -288,17 +288,17 @@ export default function SysCommunityHealth() {
               <div className="flex justify-between items-center">
                 <h4 className="font-bold">Member Activity Heatmap</h4>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-[hsl(var(--theme-text-muted))] uppercase tracking-widest font-bold">Low</span>
+                  <span className="text-xs text-[hsl(var(--theme-text-muted))]st font-bold">Low</span>
                   <div className="flex gap-1">
                     {[10, 30, 60, 100].map(v => (
                       <div key={v} className="w-3 h-3 rounded-sm" style={{ background: `hsl(var(--theme-accent-primary) / ${v / 100})` }} />
                     ))}
                   </div>
-                  <span className="text-[10px] text-[hsl(var(--theme-text-muted))] uppercase tracking-widest font-bold">High</span>
+                  <span className="text-xs text-[hsl(var(--theme-text-muted))]st font-bold">High</span>
                 </div>
               </div>
               <div className="grid grid-cols-[24px_1fr] gap-2">
-                <div className="flex flex-col justify-between text-[10px] text-[hsl(var(--theme-text-secondary))] font-medium py-1">
+                <div className="flex flex-col justify-between text-xs text-[hsl(var(--theme-text-secondary))] font-medium py-1">
                   {heatmapDays.map(d => <span key={d}>{d}</span>)}
                 </div>
                 <div className="grid grid-cols-12 gap-1.5">
@@ -313,7 +313,7 @@ export default function SysCommunityHealth() {
             <div className="bg-[hsl(var(--theme-bg-hover))] p-6 rounded-xl border border-[hsl(var(--theme-border-default)/0.5)] space-y-4">
               <div className="flex justify-between items-center">
                 <h4 className="font-bold">Channel Breakdown</h4>
-                <span className="text-[hsl(var(--theme-accent-primary))] text-xs font-bold cursor-pointer hover:underline">View All</span>
+                <span className="text-[hsl(var(--theme-text-accent))] text-xs font-bold cursor-pointer hover:underline">View All</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
@@ -336,7 +336,7 @@ export default function SysCommunityHealth() {
                             </td>
                             <td className="py-3">{ch.message_count.toLocaleString()}</td>
                             <td className="py-3">
-                              <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold', activity.cls)}>
+                              <span className={cn('px-2 py-0.5 rounded-full text-xs font-bold', activity.cls)}>
                                 {activity.label}
                               </span>
                             </td>
@@ -356,7 +356,7 @@ export default function SysCommunityHealth() {
                             </td>
                             <td className="py-3 text-[hsl(var(--theme-text-muted))]">{ch.msgs}</td>
                             <td className="py-3">
-                              <span className="px-2 py-0.5 rounded-full bg-[hsl(var(--theme-text-muted)/0.1)] text-[hsl(var(--theme-text-muted))] text-[10px] font-bold">No data</span>
+                              <span className="px-2 py-0.5 rounded-full bg-[hsl(var(--theme-text-muted)/0.1)] text-[hsl(var(--theme-text-muted))] text-xs font-bold">No data</span>
                             </td>
                           </tr>
                         ))}

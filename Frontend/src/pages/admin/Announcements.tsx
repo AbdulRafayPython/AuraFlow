@@ -3,15 +3,14 @@
  * Create, edit, pin, and delete community announcements.
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useCommunityDashboard } from '@/contexts/CommunityDashboardContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -27,8 +26,6 @@ import {
   Trash2,
   Loader2,
   Clock,
-  AlertCircle,
-  CheckCircle2,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 

@@ -108,7 +108,7 @@ export default function SystemAdminLayout() {
       {/* Mobile Sidebar Overlay */}
       {isMobileOpen && (
         <div
-          className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm"
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden"
           onClick={() => setIsMobileOpen(false)}
         />
       )}
@@ -117,7 +117,7 @@ export default function SystemAdminLayout() {
       <aside
         className={cn(
           'fixed lg:sticky top-0 left-0 z-40 h-screen w-64 flex flex-col',
-          'border-r border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.5)] backdrop-blur-md',
+          'border-r border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.5)]',
           isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
           'transition-transform duration-300'
         )}
@@ -125,10 +125,10 @@ export default function SystemAdminLayout() {
         {/* Logo */}
         <div className="p-6 flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl overflow-hidden shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.2)]">
-            <img src="/AuraflowLogo.png" alt="AuraFlow" className="h-full w-full object-cover" />
+            <img src="/AuraflowLogo.png" alt="Auraflow" className="h-full w-full object-cover" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-[hsl(var(--theme-text-primary))]">AuraFlow</h1>
+            <h1 className="text-xl font-bold tracking-tight text-[hsl(var(--theme-text-primary))]">Auraflow</h1>
             <p className="text-xs text-[hsl(var(--theme-text-muted))]">AI Communication</p>
           </div>
         </div>
@@ -141,7 +141,7 @@ export default function SystemAdminLayout() {
               <React.Fragment key={item.href}>
                 {item.section && (
                   <div className="pt-6 pb-2 px-3">
-                    <span className="text-[10px] text-[hsl(var(--theme-text-muted))] uppercase tracking-widest font-bold">{item.section}</span>
+                    <span className="text-xs text-[hsl(var(--theme-text-muted))]st font-bold">{item.section}</span>
                   </div>
                 )}
                 <NavLink
@@ -151,7 +151,7 @@ export default function SystemAdminLayout() {
                     cn(
                       'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                       isActive
-                        ? 'bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-accent-primary))] border border-[hsl(var(--theme-accent-primary)/0.2)]'
+                        ? 'bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-text-accent))] border border-[hsl(var(--theme-accent-primary)/0.2)]'
                         : 'text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]'
                     )
                   }
@@ -180,7 +180,7 @@ export default function SystemAdminLayout() {
             </div>
             <button
               onClick={handleLogout}
-              className="text-[hsl(var(--theme-text-muted))] hover:text-red-400 transition-colors flex-shrink-0"
+              className="text-[hsl(var(--theme-text-muted))] hover:text-destructive transition-colors flex-shrink-0"
               title="Logout"
             >
               <LogOut className="h-4 w-4" />
@@ -192,11 +192,11 @@ export default function SystemAdminLayout() {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header Bar */}
-        <header className="h-16 flex items-center justify-between px-8 border-b border-[hsl(var(--theme-border-default))] sticky top-0 z-10 bg-[hsl(var(--theme-bg-primary)/0.8)] backdrop-blur-md">
+        <header className="h-16 flex items-center justify-between px-8 border-b border-[hsl(var(--theme-border-default))] sticky top-0 z-10 bg-[hsl(var(--theme-bg-primary)/0.8)]">
           <div className="flex items-center text-sm gap-2">
             <span className="text-[hsl(var(--theme-text-secondary))]">Admin</span>
             <ChevronRight className="h-3 w-3 text-[hsl(var(--theme-text-muted))]" />
-            <span className="text-[hsl(var(--theme-accent-primary))] font-medium">{getPageTitle()}</span>
+            <span className="text-[hsl(var(--theme-text-accent))] font-medium">{getPageTitle()}</span>
           </div>
           <div className="flex items-center gap-4">
             <div className="relative group hidden md:block">

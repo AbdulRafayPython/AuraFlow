@@ -1,4 +1,4 @@
-// public/sw.js — AuroFlow Service Worker for Web Push Notifications
+// public/sw.js — Auraflow Service Worker for Web Push Notifications
 // Handles push events and notification clicks.
 
 self.addEventListener('push', (event) => {
@@ -8,10 +8,10 @@ self.addEventListener('push', (event) => {
   try {
     payload = event.data.json();
   } catch {
-    payload = { title: 'AuroFlow', body: event.data.text() };
+    payload = { title: 'Auraflow', body: event.data.text() };
   }
 
-  const title = payload.title || 'AuroFlow';
+  const title = payload.title || 'Auraflow';
   const options = {
     body: payload.body || '',
     icon: payload.icon || '/AuraflowLogo.png',

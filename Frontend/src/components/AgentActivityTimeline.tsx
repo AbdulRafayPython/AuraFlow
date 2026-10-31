@@ -159,7 +159,7 @@ export function AgentActivityTimeline() {
         <button
           type="button"
           onClick={() => setOpen((x) => !x)}
-          className="flex flex-1 items-center justify-between gap-2 px-3 py-2 text-[12px] font-medium text-[hsl(var(--theme-text-primary))]"
+          className="flex flex-1 items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-[hsl(var(--theme-text-primary))]"
           aria-expanded={open}
         >
           <span className="flex items-center gap-2">
@@ -173,7 +173,7 @@ export function AgentActivityTimeline() {
               className={
                 'rounded-full border border-[hsl(var(--theme-border-default))] ' +
                 'bg-[hsl(var(--theme-bg-secondary))] px-1.5 py-0.5 ' +
-                'text-[10px] tabular-nums text-[hsl(var(--theme-text-muted))]'
+                'text-xs tabular-nums text-[hsl(var(--theme-text-muted))]'
               }
               title={`${actCount} action${actCount === 1 ? '' : 's'} taken out of ${rows.length} recent decision${rows.length === 1 ? '' : 's'}`}
             >

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import authService from '../services/authService';
 import type { User } from '../types';
-import { Loader2, X, Eye, EyeOff, CheckCircle2, XCircle, Mail, User as UserIcon, Lock, Bot, Users, FileText, Shield } from 'lucide-react';
+import { Loader2, X, Eye, EyeOff, CheckCircle2, XCircle, Mail, User as UserIcon, Lock } from 'lucide-react';
 
 type Mode = 'login' | 'signup';
 
@@ -11,126 +11,18 @@ interface AuthCardProps {
   onAuth: (user?: User) => void;
 }
 
-// Loading overlay with static logo and surrounding spinner
+// Quiet loading state during login.
 const LoadingOverlay: React.FC<{ isVisible: boolean }> = ({ isVisible }) => {
   if (!isVisible) return null;
-  
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md transition-all duration-300">
-      <div className="relative flex flex-col items-center gap-6">
-        {/* Pulsing glow behind logo */}
-        <div className="absolute w-44 h-44 bg-purple-500/20 rounded-full filter blur-3xl animate-pulse" />
-        
-        {/* Spinner container */}
-        <div className="relative w-32 h-32 flex items-center justify-center">
-          {/* Outer spinning ring */}
-          <div className="absolute inset-0 rounded-full animate-spin-ring">
-            <svg className="w-full h-full" viewBox="0 0 100 100">
-              <defs>
-                <linearGradient id="spinnerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#8B5CF6" stopOpacity="1" />
-                  <stop offset="50%" stopColor="#A855F7" stopOpacity="0.5" />
-                  <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <circle
-                cx="50"
-                cy="50"
-                r="45"
-                fill="none"
-                stroke="url(#spinnerGradient)"
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
-          
-          {/* Secondary spinning ring (opposite direction) */}
-          <div className="absolute inset-2 rounded-full animate-spin-ring-reverse">
-            <svg className="w-full h-full" viewBox="0 0 100 100">
-              <defs>
-                <linearGradient id="spinnerGradient2" x1="100%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#6366F1" stopOpacity="0.8" />
-                  <stop offset="50%" stopColor="#818CF8" stopOpacity="0.3" />
-                  <stop offset="100%" stopColor="#6366F1" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <circle
-                cx="50"
-                cy="50"
-                r="45"
-                fill="none"
-                stroke="url(#spinnerGradient2)"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeDasharray="70 200"
-              />
-            </svg>
-          </div>
-          
-          {/* Glowing dots on the ring */}
-          <div className="absolute inset-0 animate-spin-ring">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-purple-400 rounded-full shadow-[0_0_10px_4px_rgba(168,85,247,0.6)]" />
-          </div>
-          
-          {/* Static Logo in center */}
-          <div className="relative z-10 animate-pulse-subtle">
-            <img 
-              src="/AuraflowLogo.png" 
-              alt="AuraFlow" 
-              className="w-16 h-16 drop-shadow-[0_0_20px_rgba(139,92,246,0.6)]"
-            />
-          </div>
-        </div>
-        
-        {/* Loading text with shimmer effect */}
-        <div className="relative overflow-hidden">
-          <p className="text-gray-300 text-sm font-medium tracking-wider">
-            Signing you in
-            <span className="inline-flex ml-1">
-              <span className="animate-bounce-dot" style={{ animationDelay: '0ms' }}>.</span>
-              <span className="animate-bounce-dot" style={{ animationDelay: '150ms' }}>.</span>
-              <span className="animate-bounce-dot" style={{ animationDelay: '300ms' }}>.</span>
-            </span>
-          </p>
-        </div>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#111044]/80" role="status" aria-live="polite">
+      <div className="flex items-center gap-3 rounded-2xl bg-white px-6 py-5 text-[#17164e] shadow-2xl">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        <span className="font-semibold">Opening AuraFlow…</span>
       </div>
-      
-      <style>{`
-        @keyframes spin-ring {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        @keyframes spin-ring-reverse {
-          from { transform: rotate(360deg); }
-          to { transform: rotate(0deg); }
-        }
-        @keyframes pulse-subtle {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.05); opacity: 0.9; }
-        }
-        @keyframes bounce-dot {
-          0%, 60%, 100% { transform: translateY(0); }
-          30% { transform: translateY(-4px); }
-        }
-        .animate-spin-ring {
-          animation: spin-ring 1.5s linear infinite;
-        }
-        .animate-spin-ring-reverse {
-          animation: spin-ring-reverse 2s linear infinite;
-        }
-        .animate-pulse-subtle {
-          animation: pulse-subtle 2s ease-in-out infinite;
-        }
-        .animate-bounce-dot {
-          animation: bounce-dot 1.2s ease-in-out infinite;
-          display: inline-block;
-        }
-      `}</style>
     </div>
   );
 };
-
 // Forgot Password Modal Component
 const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [step, setStep] = useState<'email' | 'otp' | 'reset'>('email');
@@ -227,17 +119,18 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="auth-modal rounded-2xl shadow-2xl w-full max-w-md relative animate-fade-in border border-white/[0.06]">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="auth-modal rounded-2xl shadow-2xl w-full max-w-md relative animate-fade-in border border-white/[0.06]" role="dialog" aria-modal="true" aria-labelledby="reset-password-title">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/[0.06]">
-          <h2 className="text-xl font-semibold text-white">
+          <h2 id="reset-password-title" className="text-xl font-semibold text-white">
             {step === 'email' && 'Reset Password'}
             {step === 'otp' && 'Verify OTP'}
             {step === 'reset' && 'Set New Password'}
           </h2>
           <button
             onClick={onClose}
+            aria-label="Close password reset"
             className="text-gray-400 hover:text-white transition-colors"
           >
             <X className="w-5 h-5" />
@@ -294,7 +187,7 @@ const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   value={otp}
                   onChange={(e) => setOtp(e.target.value)}
                   maxLength={6}
-                  className="auth-input text-center text-2xl tracking-widest"
+                  className="auth-input text-center text-2xl"
                   placeholder="000000"
                 />
               </div>
@@ -464,37 +357,18 @@ const Login: React.FC<{
     }
   };
 
-  const handleGoogleLogin = () => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-    window.location.href = `${backendUrl}/api/auth/google`;
-  };
 
   return (
     <div className="w-full auth-animate-in">
-      {/* Logo */}
-      <div className="flex items-center gap-3 mb-3">
-        <img src="/AuraflowLogo.png" alt="AuraFlow" className="w-9 h-9" />
-        <div>
-          <h2 className="text-white font-bold text-lg leading-tight">AuraFlow</h2>
-          <p className="text-xs text-indigo-400 font-medium">AI-Powered Communication</p>
-        </div>
-      </div>
-
-      {/* Welcome heading */}
-      <div className="mb-5">
-        <h1 className="text-[26px] font-bold text-white mb-1">Welcome back!</h1>
-        <p className="text-gray-400 text-sm">We're so excited to see you again!</p>
-      </div>
-
       <div className="space-y-3" onKeyDown={handleKeyPress}>
         {/* Email field */}
         <div className="space-y-2">
-          <label className="auth-label">EMAIL OR USERNAME</label>
+          <label className="auth-label" htmlFor="login-identifier">Email or username</label>
           <div className={`auth-input-wrapper ${errors.email ? 'auth-input-wrapper--error' : ''}`}>
             <UserIcon className="auth-input-icon" />
             <input
-              type="email"
-              inputMode="email"
+              id="login-identifier"
+              type="text"
               autoComplete="username"
               autoCapitalize="none"
               autoCorrect="off"
@@ -505,15 +379,16 @@ const Login: React.FC<{
               placeholder="Enter your email or username"
             />
           </div>
-          {errors.email && <p className="text-xs text-red-400">{errors.email}</p>}
+          {errors.email && <p className="text-xs text-[#b42335]">{errors.email}</p>}
         </div>
 
         {/* Password field */}
         <div className="space-y-2">
-          <label className="auth-label">PASSWORD</label>
+          <label className="auth-label" htmlFor="login-password">Password</label>
           <div className={`auth-input-wrapper ${errors.password ? 'auth-input-wrapper--error' : ''}`}>
             <Lock className="auth-input-icon" />
             <input
+              id="login-password"
               type={showPassword ? 'text' : 'password'}
               autoComplete="current-password"
               enterKeyHint="go"
@@ -526,12 +401,12 @@ const Login: React.FC<{
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               className="auth-input-toggle"
-              tabIndex={-1}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
-          {errors.password && <p className="text-xs text-red-400">{errors.password}</p>}
+          {errors.password && <p className="text-xs text-[#b42335]">{errors.password}</p>}
         </div>
 
         {/* Forgot password */}
@@ -550,7 +425,7 @@ const Login: React.FC<{
           className="auth-btn-primary w-full"
         >
           {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-          {loading ? 'Logging in...' : 'Log In'}
+          {loading ? 'Logging in...' : 'Log in to AuraFlow'}
         </button>
 
         {/* Divider */}
@@ -604,9 +479,9 @@ const Login: React.FC<{
 
         {/* Register link */}
         <p className="text-sm text-gray-400 text-center">
-          Don't have an account?{' '}
+          New to AuraFlow?{' '}
           <button onClick={onSwitchToSignup} className="auth-link font-medium">
-            Register
+            Create an account
           </button>
         </p>
       </div>
@@ -617,7 +492,7 @@ const Login: React.FC<{
 // ── Password strength helpers ──────────────────────────────────────
 const passwordRules = [
   { key: 'length', label: 'At least 8 characters', test: (p: string) => p.length >= 8 },
-  { key: 'upper', label: 'One uppercase letter', test: (p: string) => /[A-Z]/.test(p) },
+  { key: 'upper', label: 'One letter', test: (p: string) => /[A-Z]/.test(p) },
   { key: 'lower', label: 'One lowercase letter', test: (p: string) => /[a-z]/.test(p) },
   { key: 'digit', label: 'One digit', test: (p: string) => /\d/.test(p) },
   { key: 'special', label: 'One special character (!@#$…)', test: (p: string) => /[!@#$%^&*()\-_=+[\]{}|;:'",.<>?/`~\\]/.test(p) },
@@ -789,27 +664,16 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
 
   // ── Signup form ──────────────────────────────────────────────────
   return (
-    <div className="w-full auth-animate-in h-[520px] flex flex-col">
-      {/* Logo */}
-      <div className="flex items-center gap-3 mb-6">
-        <img src="/AuraflowLogo.png" alt="AuraFlow" className="w-10 h-10" />
-        <div>
-          <h2 className="text-white font-bold text-lg leading-tight">AuraFlow</h2>
-          <p className="text-xs text-indigo-400 font-medium">AI-Powered Communication</p>
-        </div>
-      </div>
-
-      <div className="mb-4">
-        <h1 className="text-[28px] font-bold text-white mb-1">Create an account</h1>
-      </div>
+    <div className="w-full auth-animate-in flex flex-col">
 
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
-        <div className="space-y-4 pb-2" onKeyDown={handleKeyPress}>
+        <div className="auth-signup-fields" onKeyDown={handleKeyPress}>
           <div className="space-y-2">
-            <label className="auth-label">EMAIL <span className="text-red-400">*</span></label>
+            <label className="auth-label" htmlFor="signup-email">Email <span className="text-red-400">*</span></label>
             <div className={`auth-input-wrapper ${errors.email ? 'auth-input-wrapper--error' : ''}`}>
               <Mail className="auth-input-icon" />
               <input
+                id="signup-email"
                 type="email"
                 inputMode="email"
                 autoComplete="email"
@@ -822,14 +686,15 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
                 className="auth-input"
               />
             </div>
-            {errors.email && <p className="text-xs text-red-400">{errors.email}</p>}
+            {errors.email && <p className="text-xs text-[#b42335]">{errors.email}</p>}
           </div>
 
           <div className="space-y-2">
-            <label className="auth-label">DISPLAY NAME <span className="text-red-400">*</span></label>
+            <label className="auth-label" htmlFor="signup-display-name">Display name <span className="text-red-400">*</span></label>
             <div className={`auth-input-wrapper ${errors.displayName ? 'auth-input-wrapper--error' : ''}`}>
               <UserIcon className="auth-input-icon" />
               <input
+                id="signup-display-name"
                 type="text"
                 autoComplete="name"
                 autoCapitalize="words"
@@ -839,14 +704,15 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
                 className="auth-input"
               />
             </div>
-            {errors.displayName && <p className="text-xs text-red-400">{errors.displayName}</p>}
+            {errors.displayName && <p className="text-xs text-[#b42335]">{errors.displayName}</p>}
           </div>
 
           <div className="space-y-2">
-            <label className="auth-label">USERNAME <span className="text-red-400">*</span></label>
+            <label className="auth-label" htmlFor="signup-username">Username <span className="text-red-400">*</span></label>
             <div className={`auth-input-wrapper ${errors.username ? 'auth-input-wrapper--error' : ''}`}>
               <UserIcon className="auth-input-icon" />
               <input
+                id="signup-username"
                 type="text"
                 autoComplete="username"
                 autoCapitalize="none"
@@ -854,18 +720,19 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
                 enterKeyHint="next"
                 value={formData.username}
                 onChange={(e) => handleChange('username', e.target.value)}
-                placeholder="letters, numbers, underscores"
+                placeholder="Choose a username"
                 className="auth-input"
               />
             </div>
-            {errors.username && <p className="text-xs text-red-400">{errors.username}</p>}
+            {errors.username && <p className="text-xs text-[#b42335]">{errors.username}</p>}
           </div>
 
           <div className="space-y-2">
-            <label className="auth-label">PASSWORD <span className="text-red-400">*</span></label>
+            <label className="auth-label" htmlFor="signup-password">Password <span className="text-red-400">*</span></label>
             <div className={`auth-input-wrapper ${errors.password ? 'auth-input-wrapper--error' : ''}`}>
               <Lock className="auth-input-icon" />
               <input
+                id="signup-password"
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="new-password"
                 enterKeyHint="next"
@@ -877,16 +744,16 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="auth-input-toggle"
-                tabIndex={-1}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            {errors.password && <p className="text-xs text-red-400">{errors.password}</p>}
+            {errors.password && <p className="text-xs text-[#b42335]">{errors.password}</p>}
 
             {/* Password strength meter */}
             {formData.password.length > 0 && (
-              <div className="space-y-2 mt-2">
+              <div className="auth-password-strength space-y-2 mt-2">
                 <div className="flex items-center gap-2">
                   <div className="flex-1 flex gap-1">
                     {[0, 1, 2, 3, 4].map((i) => (
@@ -898,7 +765,7 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
                       />
                     ))}
                   </div>
-                  <span className={`text-[10px] font-medium ${
+                  <span className={`text-xs font-medium ${
                     strength.level <= 1 ? 'text-red-400' :
                     strength.level === 2 ? 'text-amber-400' :
                     'text-emerald-400'
@@ -912,11 +779,14 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
                         {passed
                           ? <CheckCircle2 className="w-3 h-3 text-emerald-400 flex-shrink-0" />
                           : <XCircle className="w-3 h-3 text-gray-600 flex-shrink-0" />}
-                        <span className={`text-[10px] ${passed ? 'text-emerald-400' : 'text-gray-500'}`}>{rule.label}</span>
+                        <span className={`text-xs ${passed ? 'text-emerald-400' : 'text-gray-500'}`}>{rule.label}</span>
                       </div>
                     );
                   })}
                 </div>
+                <p className="auth-password-strength__compact">
+                  {passwordRules.filter((rule) => rule.test(formData.password)).length}/5 checks met · 8+ chars, upper/lowercase, number, symbol
+                </p>
               </div>
             )}
           </div>
@@ -930,10 +800,10 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
                 className="w-4 h-4 mt-0.5 text-indigo-500 bg-[#1a1a3e] border-white/10 rounded focus:ring-indigo-500"
               />
               <span className="text-xs text-gray-400">
-                I have read and agree to AuraFlow's Terms of Service and Privacy Policy.
+                I have read and agree to Auraflow's Terms of Service and Privacy Policy.
               </span>
             </label>
-            {errors.terms && <p className="text-xs text-red-400">{errors.terms}</p>}
+            {errors.terms && <p className="text-xs text-[#b42335]">{errors.terms}</p>}
           </div>
 
           <button
@@ -942,7 +812,7 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
             className="auth-btn-primary w-full"
           >
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            {loading ? 'Creating account...' : 'Continue'}
+            {loading ? 'Creating account...' : 'Create your account'}
           </button>
 
           <button onClick={onSwitchToLogin} className="auth-link text-sm">
@@ -959,106 +829,20 @@ const Signup: React.FC<{ onSwitchToLogin: () => void; darkMode?: boolean; onAuth
   );
 };
 
-// ── Right Panel Branding Section ──────────────────────────────────
-const BrandingSection: React.FC = () => (
-  <div className="auth-branding">
-    {/* Background effects */}
-    <div className="auth-branding__bg">
-      <div className="auth-branding__glow auth-branding__glow--1" />
-      <div className="auth-branding__glow auth-branding__glow--2" />
-    </div>
-    
-
-    <div className="auth-branding__content">
-      {/* Badge */}
-      <br />
-      <div className="auth-branding__badge">
-        AI-Powered Communication
-      </div>
-
-      {/* Headline */}
-      <h2 className="auth-branding__headline">
-        Smart conversations.<br />
-        Smarter <span className="auth-branding__highlight">outcomes.</span>
-      </h2>
-
-      <p className="auth-branding__subtext">
-        AuraFlow combines intelligent AI agents with real-time communication to help teams move faster and work smarter.
-      </p>
-
-      <br />
-
-      {/* Feature list */}
-      <div className="auth-branding__features">
-        <div className="auth-branding__feature">
-          <div className="auth-branding__feature-icon auth-branding__feature-icon--agents">
-            <Bot className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h4 className="auth-branding__feature-title">AI Agents</h4>
-            <p className="auth-branding__feature-desc">Intelligent agents that understand and respond contextually.</p>
-          </div>
-        </div>
-
-        <div className="auth-branding__feature">
-          <div className="auth-branding__feature-icon auth-branding__feature-icon--collab">
-            <Users className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h4 className="auth-branding__feature-title">Real-time Collaboration</h4>
-            <p className="auth-branding__feature-desc">Work together seamlessly with your team in real-time.</p>
-          </div>
-        </div>
-
-        <div className="auth-branding__feature">
-          <div className="auth-branding__feature-icon auth-branding__feature-icon--summaries">
-            <FileText className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h4 className="auth-branding__feature-title">Smart Summaries</h4>
-            <p className="auth-branding__feature-desc">Get AI-generated summaries and action items instantly.</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Robot image */}
-      <div className="auth-branding__robot-container">
-        <img 
-          src="/ai-robot-mascot.png" 
-          alt="AuraFlow AI Assistant" 
-          className="auth-branding__robot"
-        />
-      </div>
-
-      {/* Status bar */}
-      <div className="auth-branding__status">
-        <span className="auth-branding__status-dot" />
-        <span className="auth-branding__status-text">All systems operational</span>
-        <span className="auth-branding__status-sep">•</span>
-        <Shield className="w-3 h-3 text-gray-400" />
-        <span className="auth-branding__status-text">99.9% uptime</span>
-      </div>
-    </div>
-  </div>
-);
-
-// Main AuthCard component
+// Main authentication card. The page supplies the companion artwork and layout.
 const AuthCard: React.FC<AuthCardProps> = ({ mode, onModeChange, onAuth }) => {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   return (
     <>
-      {/* Full-page loading overlay */}
       <LoadingOverlay isVisible={isLoggingIn} />
-      
       <div className="auth-card">
         <div className="auth-card__inner">
-          {/* Left panel - Form */}
           <div className="auth-card__form-panel">
             {mode === 'login' ? (
-              <Login 
-                onSwitchToSignup={() => onModeChange('signup')} 
+              <Login
+                onSwitchToSignup={() => onModeChange('signup')}
                 onAuth={onAuth}
                 onForgotPassword={() => setShowForgotPassword(true)}
                 onLoadingChange={setIsLoggingIn}
@@ -1067,441 +851,11 @@ const AuthCard: React.FC<AuthCardProps> = ({ mode, onModeChange, onAuth }) => {
               <Signup onSwitchToLogin={() => onModeChange('login')} onAuth={onAuth} />
             )}
           </div>
-
-          {/* Right panel - Branding */}
-          <BrandingSection />
         </div>
       </div>
-
-      {/* Forgot Password Modal */}
       {showForgotPassword && (
         <ForgotPasswordModal onClose={() => setShowForgotPassword(false)} />
       )}
-
-      <style>{`
-        /* ─── Auth Card Container ──────────────────────── */
-        .auth-card {
-          width: 100%;
-          max-width: 1100px;
-        }
-
-        .auth-card__inner {
-          display: flex;
-          border-radius: 20px;
-          overflow: hidden;
-          background: rgba(15, 12, 41, 0.85);
-          backdrop-filter: blur(40px);
-          border: 1px solid rgba(255, 255, 255, 0.06);
-          box-shadow: 
-            0 25px 60px rgba(0, 0, 0, 0.5),
-            0 0 100px rgba(88, 52, 180, 0.08),
-            inset 0 1px 0 rgba(255, 255, 255, 0.04);
-          min-height: 0;
-        }
-
-        /* ─── Form Panel (Left) ────────────────────────── */
-        .auth-card__form-panel {
-          width: 100%;
-          padding: 20px 32px;
-        }
-
-        @media (min-width: 1024px) {
-          .auth-card__form-panel {
-            width: 40%;
-            flex-shrink: 0;
-          }
-        }
-
-        /* ─── Shared Input Styles ──────────────────────── */
-        .auth-label {
-          display: block;
-          font-size: 11px;
-          font-weight: 700;
-          color: rgba(255, 255, 255, 0.7);
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-        }
-
-        .auth-input-wrapper {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          background: rgba(18, 15, 50, 0.8);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: 12px;
-          padding: 0 14px;
-          transition: all 0.2s ease;
-        }
-
-        .auth-input-wrapper:focus-within {
-          border-color: rgba(99, 102, 241, 0.6);
-          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-        }
-
-        .auth-input-wrapper--error {
-          border-color: rgba(239, 68, 68, 0.5) !important;
-        }
-
-        .auth-input-icon {
-          width: 16px;
-          height: 16px;
-          color: rgba(255, 255, 255, 0.25);
-          flex-shrink: 0;
-        }
-
-        .auth-input {
-          flex: 1;
-          background: transparent;
-          border: none;
-          outline: none;
-          color: #e2e8f0;
-          font-size: 14px;
-          padding: 10px 0;
-          width: 100%;
-        }
-
-        .auth-input::placeholder {
-          color: rgba(255, 255, 255, 0.25);
-        }
-
-        .auth-input-toggle {
-          color: rgba(255, 255, 255, 0.3);
-          transition: color 0.2s;
-          background: none;
-          border: none;
-          cursor: pointer;
-          padding: 0;
-        }
-
-        .auth-input-toggle:hover {
-          color: rgba(255, 255, 255, 0.6);
-        }
-
-        /* ─── Buttons ──────────────────────────────────── */
-        .auth-btn-primary {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          padding: 10px 24px;
-          background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
-          color: white;
-          font-size: 14px;
-          font-weight: 600;
-          border: none;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: filter 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .auth-btn-primary:hover {
-          filter: brightness(1.1);
-          transform: translateY(-1px);
-          box-shadow: 0 6px 18px rgba(99, 102, 241, 0.28);
-        }
-
-        .auth-btn-primary:active {
-          transform: translateY(0);
-          filter: brightness(0.97);
-          box-shadow: none;
-        }
-
-        .auth-btn-primary:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-          transform: none !important;
-          filter: none !important;
-          box-shadow: none !important;
-        }
-
-        .auth-btn-google {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          padding: 12px 24px;
-          background: rgba(18, 15, 50, 0.6);
-          color: rgba(255, 255, 255, 0.8);
-          font-size: 14px;
-          font-weight: 500;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 12px;
-          cursor: pointer;
-          transition: all 0.2s ease;
-        }
-
-        .auth-btn-google:hover {
-          background: rgba(25, 22, 60, 0.8);
-          border-color: rgba(255, 255, 255, 0.18);
-        }
-
-        /* ─── Links ────────────────────────────────────── */
-        .auth-link {
-          color: #818cf8;
-          background: none;
-          border: none;
-          cursor: pointer;
-          transition: color 0.2s;
-          padding: 0;
-        }
-
-        .auth-link:hover {
-          color: #a5b4fc;
-          text-decoration: underline;
-        }
-
-        /* ─── Divider ──────────────────────────────────── */
-        .auth-divider {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          color: rgba(255, 255, 255, 0.2);
-          font-size: 12px;
-          font-weight: 500;
-        }
-
-        .auth-divider::before,
-        .auth-divider::after {
-          content: '';
-          flex: 1;
-          height: 1px;
-          background: rgba(255, 255, 255, 0.08);
-        }
-
-        /* ─── Modal ────────────────────────────────────── */
-        .auth-modal {
-          background: rgba(15, 12, 41, 0.95);
-          backdrop-filter: blur(40px);
-        }
-
-        /* ─── Branding Section (Right Panel) ───────────── */
-        .auth-branding {
-          display: none;
-          position: relative;
-          flex: 1;
-          overflow: hidden;
-          border-left: 1px solid rgba(255, 255, 255, 0.04);
-        }
-
-        @media (min-width: 1024px) {
-          .auth-branding {
-            display: block;
-          }
-        }
-
-        .auth-branding__bg {
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-        }
-
-        .auth-branding__glow {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(80px);
-        }
-
-        .auth-branding__glow--1 {
-          top: -50px;
-          right: -80px;
-          width: 300px;
-          height: 300px;
-          background: rgba(99, 52, 200, 0.15);
-        }
-
-        .auth-branding__glow--2 {
-          bottom: -60px;
-          left: -40px;
-          width: 250px;
-          height: 250px;
-          background: rgba(59, 46, 180, 0.1);
-        }
-
-        .auth-branding__content {
-          position: relative;
-          z-index: 2;
-          height: 100%;
-          display: flex;
-          flex-direction: column;
-          padding: 20px 22px 16px;
-        }
-
-        .auth-branding__badge {
-          display: inline-flex;
-          align-self: flex-start;
-          padding: 5px 12px;
-          background: rgba(99, 102, 241, 0.15);
-          border: 1px solid rgba(99, 102, 241, 0.25);
-          border-radius: 20px;
-          color: #a5b4fc;
-          font-size: 12px;
-          font-weight: 500;
-          margin-bottom: 12px;
-        }
-
-        .auth-branding__headline {
-          font-size: 24px;
-          font-weight: 800;
-          color: white;
-          line-height: 1.2;
-          margin-bottom: 6px;
-        }
-
-        .auth-branding__highlight {
-          background: linear-gradient(135deg, #22c55e, #10b981);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
-
-        .auth-branding__subtext {
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.45);
-          line-height: 1.5;
-          margin-bottom: 14px;
-          max-width: 370px;
-        }
-
-        /* ─── Features ─────────────────────────────────── */
-        .auth-branding__features {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-          margin-bottom: auto;
-          max-width: 280px;
-          position: relative;
-          z-index: 3;
-        }
-
-        .auth-branding__feature {
-          display: flex;
-          align-items: flex-start;
-          gap: 12px;
-        }
-
-        .auth-branding__feature-icon {
-          width: 40px;
-          height: 40px;
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-        }
-
-        .auth-branding__feature-icon--agents {
-          background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        }
-
-        .auth-branding__feature-icon--collab {
-          background: linear-gradient(135deg, #7c3aed, #a855f7);
-        }
-
-        .auth-branding__feature-icon--summaries {
-          background: linear-gradient(135deg, #4f46e5, #6366f1);
-        }
-
-        .auth-branding__feature-title {
-          font-size: 14px;
-          font-weight: 600;
-          color: white;
-          margin-bottom: 2px;
-        }
-
-        .auth-branding__feature-desc {
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.4);
-          line-height: 1.4;
-        }
-
-        /* ─── Robot Image ──────────────────────────────── */
-        .auth-branding__robot-container {
-          position: absolute;
-          top: 50%;
-          right: -110px;
-          transform: translateY(-45%);
-          width: 580px;
-          height: 580px;
-          pointer-events: none;
-          opacity: 1;
-          z-index: 1;
-        }
-
-        .auth-branding__robot {
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-          filter: drop-shadow(0 0 60px rgba(99, 102, 241, 0.3));
-          animation: auth-robot-float 6s ease-in-out infinite;
-        }
-
-        @keyframes auth-robot-float {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-10px); }
-        }
-
-        /* ─── Status Bar ───────────────────────────────── */
-        .auth-branding__status {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 7px 14px;
-          background: rgba(12, 10, 35, 0.6);
-          border: 1px solid rgba(255, 255, 255, 0.06);
-          border-radius: 20px;
-          align-self: flex-start;
-          margin-top: 14px;
-          position: relative;
-          z-index: 3;
-        }
-
-        .auth-branding__status-dot {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: #22c55e;
-          box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
-        }
-
-        .auth-branding__status-text {
-          font-size: 11px;
-          color: rgba(255, 255, 255, 0.5);
-        }
-
-        .auth-branding__status-sep {
-          color: rgba(255, 255, 255, 0.15);
-          font-size: 10px;
-        }
-
-        /* ─── Animations ───────────────────────────────── */
-        @keyframes auth-fade-in {
-          from { opacity: 0; transform: translateY(12px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-        .auth-animate-in {
-          animation: auth-fade-in 0.4s ease-out;
-        }
-
-        .animate-fade-in {
-          animation: auth-fade-in 0.3s ease-out;
-        }
-
-        /* ─── Scrollbar ────────────────────────────────── */
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.1);
-          border-radius: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.2);
-        }
-      `}</style>
     </>
   );
 };

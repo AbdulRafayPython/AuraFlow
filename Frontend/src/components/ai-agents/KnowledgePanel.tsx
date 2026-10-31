@@ -116,12 +116,12 @@ function KBCard({ item }: { item: ParsedKBItem }) {
     >
       {/* Card Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.04]">
-        <span className={`text-[10px] font-bold uppercase tracking-wider ${cfg.color}`}>
+        <span className={`text-xs font-bold  ${cfg.color}`}>
           {cfg.label}
         </span>
         <div className="flex items-center gap-2">
           {item.created_at && (
-            <span className="text-[10px] text-[hsl(var(--theme-text-muted))]">
+            <span className="text-xs text-[hsl(var(--theme-text-muted))]">
               {formatDate(item.created_at)}
             </span>
           )}
@@ -141,7 +141,7 @@ function KBCard({ item }: { item: ParsedKBItem }) {
 
       {/* Question / Term */}
       <div className="px-3 pt-2.5 pb-1">
-        <p className="text-[13px] font-semibold text-[hsl(var(--theme-text-primary))] leading-snug">
+        <p className="text-sm font-semibold text-[hsl(var(--theme-text-primary))] leading-snug">
           {item.question}
         </p>
       </div>
@@ -149,7 +149,7 @@ function KBCard({ item }: { item: ParsedKBItem }) {
       {/* Answer / Definition */}
       {item.answer && (
         <div className="px-3 pb-2.5">
-          <p className="text-[12px] leading-[1.55] text-[hsl(var(--theme-text-secondary))] line-clamp-3">
+          <p className="text-xs leading-[1.55] text-[hsl(var(--theme-text-secondary))] line-clamp-3">
             {item.answer}
           </p>
         </div>
@@ -161,7 +161,7 @@ function KBCard({ item }: { item: ParsedKBItem }) {
           {item.tags.slice(0, 3).map((tag, i) => (
             <span
               key={i}
-              className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${cfg.bg} ${cfg.color}`}
+              className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${cfg.bg} ${cfg.color}`}
             >
               {tag}
             </span>
@@ -247,7 +247,7 @@ export function KnowledgePanel({ channelId, channelName, onClose }: KnowledgePan
           <h3 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
             Knowledge Base
           </h3>
-          <span className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+          <span className="text-xs text-[hsl(var(--theme-text-muted))]">
             #{channelName}
           </span>
         </div>
@@ -268,7 +268,7 @@ export function KnowledgePanel({ channelId, channelName, onClose }: KnowledgePan
             placeholder="Search knowledge..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="flex-1 bg-transparent text-[12px] text-[hsl(var(--theme-text-primary))] placeholder:text-[hsl(var(--theme-text-muted))] outline-none"
+            className="flex-1 bg-transparent text-xs text-[hsl(var(--theme-text-primary))] placeholder:text-[hsl(var(--theme-text-muted))] outline-none"
           />
           {search && (
             <button onClick={() => setSearch('')} className="text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-secondary))]">
@@ -284,7 +284,7 @@ export function KnowledgePanel({ channelId, channelName, onClose }: KnowledgePan
           <button
             key={tab.key}
             onClick={() => setFilter(tab.key)}
-            className={`text-[11px] font-medium px-2.5 py-1 rounded-full transition-colors ${
+            className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
               filter === tab.key
                 ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                 : 'bg-transparent text-[hsl(var(--theme-text-muted))] border border-[hsl(var(--theme-border-default)/0.4)] hover:border-[hsl(var(--theme-border-default)/0.7)] hover:text-[hsl(var(--theme-text-secondary))]'
@@ -303,7 +303,7 @@ export function KnowledgePanel({ channelId, channelName, onClose }: KnowledgePan
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16">
             <div className="w-5 h-5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin mb-3" />
-            <p className="text-[12px] text-[hsl(var(--theme-text-muted))]">Loading knowledge base...</p>
+            <p className="text-xs text-[hsl(var(--theme-text-muted))]">Loading knowledge base...</p>
           </div>
         ) : displayed.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -311,14 +311,14 @@ export function KnowledgePanel({ channelId, channelName, onClose }: KnowledgePan
             {parsedItems.length === 0 ? (
               <>
                 <p className="text-sm text-[hsl(var(--theme-text-muted))]">No knowledge yet</p>
-                <p className="text-[11px] text-[hsl(var(--theme-text-muted)/0.7)] mt-1">
+                <p className="text-xs text-[hsl(var(--theme-text-muted)/0.7)] mt-1">
                   Type <code className="bg-white/5 px-1 rounded">/kb</code> in chat to extract knowledge
                 </p>
               </>
             ) : (
               <>
                 <p className="text-sm text-[hsl(var(--theme-text-muted))]">No matching items</p>
-                <p className="text-[11px] text-[hsl(var(--theme-text-muted)/0.7)] mt-1">
+                <p className="text-xs text-[hsl(var(--theme-text-muted)/0.7)] mt-1">
                   Try a different search or filter
                 </p>
               </>
@@ -336,7 +336,7 @@ export function KnowledgePanel({ channelId, channelName, onClose }: KnowledgePan
       {/* ── Footer Stats ── */}
       {!loading && parsedItems.length > 0 && (
         <div className="px-4 py-2.5 border-t border-[hsl(var(--theme-border-default)/0.3)]">
-          <p className="text-[11px] text-[hsl(var(--theme-text-muted))] text-center">
+          <p className="text-xs text-[hsl(var(--theme-text-muted))] text-center">
             <span className="text-amber-400 font-medium">{stats.faq}</span> FAQs
             {' • '}
             <span className="text-blue-400 font-medium">{stats.definition}</span> Definitions

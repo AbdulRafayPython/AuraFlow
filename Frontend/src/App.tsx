@@ -16,8 +16,8 @@ import MediaViewer from './components/media/MediaViewer';
 import { useRealtime } from './hooks/useRealtime';
 import AuthPageWrapper from '@/pages/AuthPageWrapper';
 import MainLayout from './components/layout/MainLayout';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { Toaster } from './components/ui/toaster';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Toaster } from './components/ui/sonner';
 import { ModerationToastListener } from './components/ModerationToast';
 import { AgentEventListener } from './components/AgentEventListener';
 import { AgentActivityTimeline } from './components/AgentActivityTimeline';
@@ -32,11 +32,16 @@ import { ErrorBoundary } from 'react-error-boundary';
 
 // Lazy-loaded pages
 const Welcome = lazy(() => import('./components/onboarding/Welcome'));
+const LandingPage = lazy(() => import('@/pages/LandingPage'));
 const WorkspaceSetup = lazy(() => import('./components/onboarding/WorkspaceSetup'));
 const ProfileSetup = lazy(() => import('./components/onboarding/ProfileSetup'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const AgentDetails = lazy(() => import('@/pages/AgentDetails'));
 const DiscoverCommunities = lazy(() => import('@/pages/DiscoverCommunities'));
+const AgentHub = lazy(() => import('@/pages/AgentHub'));
+const AgentBuilder = lazy(() => import('@/pages/AgentBuilder'));
+const AgentMarketplace = lazy(() => import('@/pages/AgentMarketplace'));
+const Today = lazy(() => import('@/pages/Today'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const OtpVerification = lazy(() => import('./pages/OtpVerification'));
@@ -78,7 +83,7 @@ const SysAuditLogs = lazy(() => import('./pages/system-admin').then(m => ({ defa
 
 function ErrorFallback({ error, resetErrorBoundary }: { error: Error; resetErrorBoundary: () => void }) {
   return (
-    <div className="flex items-center justify-center w-full h-screen bg-gradient-to-br from-slate-900 to-slate-800">
+    <div className="flex items-center justify-center w-full h-screen bg-slate-900">
       <div className="flex flex-col items-center gap-4 text-center p-6">
         <h2 className="text-white text-xl font-semibold">Something went wrong</h2>
         <p className="text-gray-400 text-sm max-w-md">{error.message}</p>
@@ -100,44 +105,44 @@ const AppShellSkeleton = () => (
     {/* Community rail */}
     <div className="hidden md:flex w-[72px] flex-col items-center gap-3 py-4 border-r border-white/5">
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="w-10 h-10 rounded-2xl bg-white/5 animate-pulse" />
+        <div key={i} className="w-10 h-10 rounded-2xl bg-white/5 animate-skeleton" />
       ))}
     </div>
     {/* Channel sidebar */}
     <div className="hidden lg:flex w-60 flex-col gap-2 px-3 py-4 border-r border-white/5">
-      <div className="h-6 w-32 rounded bg-white/5 animate-pulse mb-2" />
+      <div className="h-6 w-32 rounded bg-white/5 animate-skeleton mb-2" />
       {Array.from({ length: 7 }).map((_, i) => (
-        <div key={i} className="h-7 w-full rounded bg-white/5 animate-pulse" style={{ opacity: 1 - i * 0.08 }} />
+        <div key={i} className="h-7 w-full rounded bg-white/5 animate-skeleton" style={{ opacity: 1 - i * 0.08 }} />
       ))}
       <div className="mt-auto flex items-center gap-2 pt-3 border-t border-white/5">
-        <div className="w-8 h-8 rounded-full bg-white/10 animate-pulse" />
+        <div className="w-8 h-8 rounded-full bg-white/10 animate-skeleton" />
         <div className="flex-1 space-y-1">
-          <div className="h-3 w-20 rounded bg-white/10 animate-pulse" />
-          <div className="h-2 w-14 rounded bg-white/5 animate-pulse" />
+          <div className="h-3 w-20 rounded bg-white/10 animate-skeleton" />
+          <div className="h-2 w-14 rounded bg-white/5 animate-skeleton" />
         </div>
       </div>
     </div>
     {/* Main column */}
     <div className="flex-1 flex flex-col min-w-0">
       <div className="h-12 border-b border-white/5 flex items-center px-4 gap-3">
-        <div className="h-5 w-40 rounded bg-white/5 animate-pulse" />
-        <div className="ml-auto h-7 w-7 rounded-full bg-white/5 animate-pulse" />
+        <div className="h-5 w-40 rounded bg-white/5 animate-skeleton" />
+        <div className="ml-auto h-7 w-7 rounded-full bg-white/5 animate-skeleton" />
       </div>
       <div className="flex-1 px-4 sm:px-8 py-6 space-y-5 overflow-hidden">
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="flex gap-3">
-            <div className="w-10 h-10 rounded-full bg-white/5 animate-pulse shrink-0" />
+            <div className="w-10 h-10 rounded-full bg-white/5 animate-skeleton shrink-0" />
             <div className="flex-1 space-y-2">
-              <div className="h-3 w-32 rounded bg-white/5 animate-pulse" />
-              <div className="h-3 rounded bg-white/5 animate-pulse" style={{ width: `${60 + ((i * 13) % 30)}%` }} />
+              <div className="h-3 w-32 rounded bg-white/5 animate-skeleton" />
+              <div className="h-3 rounded bg-white/5 animate-skeleton" style={{ width: `${60 + ((i * 13) % 30)}%` }} />
               {i % 2 === 0 && (
-                <div className="h-3 rounded bg-white/5 animate-pulse" style={{ width: `${40 + ((i * 7) % 35)}%` }} />
+                <div className="h-3 rounded bg-white/5 animate-skeleton" style={{ width: `${40 + ((i * 7) % 35)}%` }} />
               )}
             </div>
           </div>
         ))}
       </div>
-      <div className="h-14 border-t border-white/5 mx-4 sm:mx-8 mb-4 rounded-lg bg-white/5 animate-pulse" />
+      <div className="h-14 border-t border-white/5 mx-4 sm:mx-8 mb-4 rounded-lg bg-white/5 animate-skeleton" />
     </div>
   </div>
 );
@@ -146,6 +151,7 @@ const PageSpinner = AppShellSkeleton;
 
 function AppRouter() {
   const { user, isAuthenticated, completeOnboarding } = useAuth();
+  const { pathname } = useLocation();
   const { isLoadingCommunities, communities } = useRealtime();
   const [onboardingStep, setOnboardingStep] = useState(1);
 
@@ -156,9 +162,15 @@ function AppRouter() {
     }
   }, [user]);
 
-  // Not logged in - show auth page
+  // Public marketing entry point and dedicated authentication routes.
   if (!isAuthenticated) {
-    return <AuthPageWrapper />;
+    if (pathname === '/') return <LandingPage />;
+    if (pathname === '/signup' || pathname === '/login') return <AuthPageWrapper />;
+    return <Navigate to="/login" replace />;
+  }
+
+  if (pathname === '/login' || pathname === '/signup') {
+    return <Navigate to="/" replace />;
   }
 
   // First-time login - show onboarding flow
@@ -216,6 +228,26 @@ function AppRouter() {
       <Route path="/discover" element={
         <MainLayout>
           <DiscoverCommunities />
+        </MainLayout>
+      } />
+      <Route path="/agents" element={
+        <MainLayout>
+          <AgentHub />
+        </MainLayout>
+      } />
+      <Route path="/today" element={
+        <MainLayout>
+          <Today />
+        </MainLayout>
+      } />
+      <Route path="/agents/marketplace" element={
+        <MainLayout>
+          <AgentMarketplace />
+        </MainLayout>
+      } />
+      <Route path="/agents/:agentId" element={
+        <MainLayout>
+          <AgentBuilder />
         </MainLayout>
       } />
       <Route path="/agent/:agentId" element={

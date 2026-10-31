@@ -2,7 +2,7 @@
 // Renders file attachments inside message bubbles (images, audio, video, docs)
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { FileText, Download, Image as ImageIcon, Music, Film, Archive, File, Expand, Play, Pause } from 'lucide-react';
+import { FileText, Image as ImageIcon, Music, Film, Archive, File, Expand, Play, Pause } from 'lucide-react';
 import {
   isImageFile,
   isAudioFile,
@@ -222,12 +222,12 @@ const FileAttachment: React.FC<FileAttachmentProps> = ({
         />
         {/* Hover overlay with expand icon */}
         <div className={`absolute inset-0 rounded-xl flex items-center justify-center bg-black/40 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-          <div className="p-2.5 rounded-full bg-white/20 backdrop-blur-sm">
+          <div className="p-2.5 rounded-full bg-white/20">
             <Expand className="w-5 h-5 text-white" />
           </div>
         </div>
         {fileSize != null && (
-          <span className="text-[10px] mt-1 block text-[hsl(var(--theme-text-muted))]">
+          <span className="text-xs mt-1 block text-[hsl(var(--theme-text-muted))]">
             {formatFileSize(fileSize)}
           </span>
         )}
@@ -323,7 +323,7 @@ const FileAttachment: React.FC<FileAttachmentProps> = ({
             {/* Duration display */}
             <div className="flex items-center justify-between">
               <span className={cn(
-                "text-[11px] font-mono tabular-nums",
+                "text-xs font-mono tabular-nums",
                 variant === 'accent'
                   ? "text-white/70"
                   : "text-[hsl(var(--theme-text-muted))]"
@@ -331,7 +331,7 @@ const FileAttachment: React.FC<FileAttachmentProps> = ({
                 {formatAudioDuration(currentTime)}
               </span>
               <span className={cn(
-                "text-[11px] font-mono tabular-nums",
+                "text-xs font-mono tabular-nums",
                 variant === 'accent'
                   ? "text-white/70"
                   : "text-[hsl(var(--theme-text-muted))]"
@@ -365,7 +365,7 @@ const FileAttachment: React.FC<FileAttachmentProps> = ({
         {!isVoiceMessage && (
           <div className="flex items-center justify-between mt-1.5 px-1">
             <span className={cn(
-              "text-[11px] truncate",
+              "text-xs truncate",
               variant === 'accent'
                 ? "text-white/60"
                 : "text-[hsl(var(--theme-text-muted))]"
@@ -374,7 +374,7 @@ const FileAttachment: React.FC<FileAttachmentProps> = ({
             </span>
             {fileSize != null && (
               <span className={cn(
-                "text-[10px] flex-shrink-0 ml-2",
+                "text-xs flex-shrink-0 ml-2",
                 variant === 'accent'
                   ? "text-white/50"
                   : "text-[hsl(var(--theme-text-muted))]"
@@ -407,14 +407,14 @@ const FileAttachment: React.FC<FileAttachmentProps> = ({
         </video>
         {/* Hover overlay with expand icon */}
         <div className={`absolute inset-0 rounded-xl flex items-center justify-center bg-black/40 transition-opacity duration-200 pointer-events-none ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-          <div className="p-3 rounded-full bg-white/20 backdrop-blur-sm">
+          <div className="p-3 rounded-full bg-white/20">
             <Expand className="w-6 h-6 text-white" />
           </div>
         </div>
         <div className="flex items-center justify-between mt-1">
-          <span className="text-[11px] truncate text-[hsl(var(--theme-text-muted))]">{fileName}</span>
+          <span className="text-xs truncate text-[hsl(var(--theme-text-muted))]">{fileName}</span>
           {fileSize != null && (
-            <span className="text-[10px] flex-shrink-0 ml-2 text-[hsl(var(--theme-text-muted))]">
+            <span className="text-xs flex-shrink-0 ml-2 text-[hsl(var(--theme-text-muted))]">
               {formatFileSize(fileSize)}
             </span>
           )}
@@ -436,7 +436,7 @@ const FileAttachment: React.FC<FileAttachmentProps> = ({
       <div className={`flex-shrink-0 p-2 rounded-lg ${
         variant === 'accent'
           ? 'bg-white/15 text-white'
-          : 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]'
+          : 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-text-accent))]'
       }`}>
         {getFileIcon(fileName)}
       </div>
@@ -447,7 +447,7 @@ const FileAttachment: React.FC<FileAttachmentProps> = ({
           {fileName}
         </p>
         {fileSize != null && (
-          <p className={`text-[11px] ${
+          <p className={`text-xs ${
             variant === 'accent' ? 'text-white/70' : 'text-[hsl(var(--theme-text-muted))]'
           }`}>
             {formatFileSize(fileSize)} &middot; {ext.toUpperCase()}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -78,7 +78,7 @@ export function ConfirmDialog({
                 ? 'bg-red-600 hover:bg-red-700 text-white'
                 : isBasicTheme
                   ? 'bg-[hsl(var(--theme-accent-primary))] hover:bg-[hsl(var(--theme-accent-primary)/0.9)] text-white'
-                  : 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] text-white'
+                  : 'bg-[hsl(var(--theme-accent-primary))] text-white'
             } disabled:opacity-50`}
           >
             {isProcessing ? 'Processing...' : confirmText}

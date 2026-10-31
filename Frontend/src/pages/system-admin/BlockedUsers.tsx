@@ -3,7 +3,7 @@
  * Dark purple themed blocked users management matching admin panel design.
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import adminService, { BlockedUser, PaginationInfo } from '@/services/adminService';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -77,7 +77,7 @@ export default function SysBlockedUsers() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))] p-5 rounded-xl">
           <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 rounded-lg bg-red-500/10 text-red-500">
+            <div className="p-2 rounded-lg bg-destructive/10 text-destructive">
               <UserX className="h-5 w-5" />
             </div>
           </div>
@@ -86,7 +86,7 @@ export default function SysBlockedUsers() {
         </div>
         <div className="bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))] p-5 rounded-xl">
           <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500">
+            <div className="p-2 rounded-lg bg-warning/10 text-warning">
               <AlertTriangle className="h-5 w-5" />
             </div>
           </div>
@@ -112,11 +112,11 @@ export default function SysBlockedUsers() {
           <table className="w-full text-left">
             <thead className="bg-[hsl(var(--theme-bg-hover))]">
               <tr>
-                <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider">User</th>
-                <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider">Reason</th>
-                <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider text-center">Violations</th>
-                <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider">Blocked On</th>
-                <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider text-right">Actions</th>
+                <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))]">User</th>
+                <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))]">Reason</th>
+                <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] text-center">Violations</th>
+                <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))]">Blocked On</th>
+                <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[hsl(var(--theme-border-default))]">
@@ -124,14 +124,14 @@ export default function SysBlockedUsers() {
                 [...Array(5)].map((_, i) => (
                   <tr key={i}>
                     <td className="px-6 py-4" colSpan={5}>
-                      <div className="h-5 bg-[hsl(var(--theme-bg-tertiary)/0.5)] rounded animate-pulse" />
+                      <div className="h-5 bg-[hsl(var(--theme-bg-tertiary)/0.5)] rounded animate-skeleton" />
                     </td>
                   </tr>
                 ))
               ) : filteredUsers.length === 0 ? (
                 <tr>
                   <td className="px-6 py-12 text-center text-[hsl(var(--theme-text-secondary))]" colSpan={5}>
-                    <UserCheck className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
+                    <UserCheck className="h-8 w-8 text-success mx-auto mb-2" />
                     No blocked users found
                   </td>
                 </tr>
@@ -157,9 +157,9 @@ export default function SysBlockedUsers() {
                     </td>
                     <td className="px-6 py-4 text-center">
                       <span className={cn(
-                        'inline-flex px-2.5 py-1 rounded-full text-[11px] font-bold',
+                        'inline-flex px-2.5 py-1 rounded-full text-xs font-bold',
                         (user.total_violations || 0) >= 3
-                          ? 'bg-red-500/10 text-red-500 border border-red-500/20'
+                          ? 'bg-destructive/10 text-destructive border border-red-500/20'
                           : 'bg-slate-500/10 text-[hsl(var(--theme-text-secondary))] border border-slate-500/20'
                       )}>
                         {user.total_violations || 0}
@@ -174,7 +174,7 @@ export default function SysBlockedUsers() {
                     <td className="px-6 py-4 text-right">
                       <button
                         onClick={() => setUnblockDialog({ isOpen: true, blockId: user.id, username: user.user?.username || 'this user' })}
-                        className="px-3 py-1.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-lg text-xs font-bold hover:bg-emerald-500/20 transition-all"
+                        className="px-3 py-1.5 bg-success/10 text-success border border-emerald-500/20 rounded-lg text-xs font-bold hover:bg-success/20 transition-all"
                       >
                         Unblock
                       </button>
@@ -206,7 +206,7 @@ export default function SysBlockedUsers() {
               <button
                 onClick={handleUnblock}
                 disabled={unblockLoading}
-                className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-bold hover:bg-emerald-500/80 transition-all disabled:opacity-50"
+                className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-bold hover:bg-success/80 transition-all disabled:opacity-50"
               >
                 {unblockLoading ? 'Unblocking...' : 'Unblock'}
               </button>

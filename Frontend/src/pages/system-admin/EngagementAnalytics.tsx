@@ -30,8 +30,8 @@ const moodColors: Record<string, string> = {
 
 // At-risk users placeholder
 const atRiskUsers = [
-  { name: 'Marcus V.', status: 'Declining', statusColor: 'text-red-400', avatar: 'M' },
-  { name: 'Sarah L.', status: 'Low Sentiment', statusColor: 'text-yellow-400', avatar: 'S' },
+  { name: 'Marcus V.', status: 'Declining', statusColor: 'text-destructive', avatar: 'M' },
+  { name: 'Sarah L.', status: 'Low Sentiment', statusColor: 'text-warning', avatar: 'S' },
   { name: 'James O.', status: 'Inactive 3d', statusColor: 'text-slate-400', avatar: 'J' },
 ];
 
@@ -129,7 +129,7 @@ export default function SysEngagementAnalytics() {
         {/* Right side info */}
         <div className="flex items-center gap-4">
           <span className="text-xs text-[hsl(var(--theme-text-muted))] flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             Data updated 5 minutes ago
           </span>
           <button className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors">
@@ -142,11 +142,11 @@ export default function SysEngagementAnalytics() {
       {/* 3 KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Platform Growth */}
-        <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
+        <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
           <div className="flex items-start justify-between mb-3">
             <p className="text-sm text-[hsl(var(--theme-text-secondary))] font-medium">Platform Growth</p>
-            <div className="p-2 bg-emerald-500/10 rounded-lg">
-              <TrendingUp className="h-5 w-5 text-emerald-500" />
+            <div className="p-2 bg-success/10 rounded-lg">
+              <TrendingUp className="h-5 w-5 text-success" />
             </div>
           </div>
           <h3 className="text-4xl font-bold mb-4">+{growthPct}%</h3>
@@ -162,15 +162,15 @@ export default function SysEngagementAnalytics() {
               />
             ))}
           </div>
-          <p className="text-xs text-emerald-500 font-medium">+2.1% from last week</p>
+          <p className="text-xs text-success font-medium">+2.1% from last week</p>
         </div>
 
         {/* Avg Daily Active Users */}
-        <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
+        <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
           <div className="flex items-start justify-between mb-3">
             <p className="text-sm text-[hsl(var(--theme-text-secondary))] font-medium">Avg Daily Active Users</p>
             <div className="p-2 bg-[hsl(var(--theme-accent-primary)/0.1)] rounded-lg">
-              <Users className="h-5 w-5 text-[hsl(var(--theme-accent-primary))]" />
+              <Users className="h-5 w-5 text-[hsl(var(--theme-text-accent))]" />
             </div>
           </div>
           <h3 className="text-4xl font-bold mb-4">{avgDailyUsers || 342}</h3>
@@ -179,28 +179,28 @@ export default function SysEngagementAnalytics() {
               {liveAvatars.map((a, i) => (
                 <div
                   key={i}
-                  className="w-8 h-8 rounded-full border-2 border-[hsl(var(--theme-bg-secondary))] bg-gradient-to-br from-[hsl(var(--theme-accent-primary)/0.5)] to-[hsl(var(--theme-accent-secondary)/0.5)] flex items-center justify-center text-[10px] font-bold text-white"
+                  className="w-8 h-8 rounded-full border-2 border-[hsl(var(--theme-bg-secondary))] bg-[hsl(var(--theme-accent-primary)/0.5)] flex items-center justify-center text-xs font-bold text-white"
                 >
                   {a}
                 </div>
               ))}
-              <div className="w-8 h-8 rounded-full border-2 border-[hsl(var(--theme-bg-secondary))] bg-[hsl(var(--theme-accent-primary))] flex items-center justify-center text-[10px] font-bold text-white">
+              <div className="w-8 h-8 rounded-full border-2 border-[hsl(var(--theme-bg-secondary))] bg-[hsl(var(--theme-accent-primary))] flex items-center justify-center text-xs font-bold text-white">
                 +{Math.max((avgDailyUsers || 342) - 4, 38)}
               </div>
             </div>
             <span className="text-xs text-[hsl(var(--theme-text-secondary))]">
-              Live now: <span className="text-emerald-400 font-medium">{Math.round((avgDailyUsers || 342) * 0.12)} users</span>
+              Live now: <span className="text-success font-medium">{Math.round((avgDailyUsers || 342) * 0.12)} users</span>
             </span>
           </div>
-          <p className="text-xs text-emerald-500 font-medium">+{retentionPct}% user retention</p>
+          <p className="text-xs text-success font-medium">+{retentionPct}% user retention</p>
         </div>
 
         {/* Sentiment Score */}
-        <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
+        <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
           <div className="flex items-start justify-between mb-3">
             <p className="text-sm text-[hsl(var(--theme-text-secondary))] font-medium">Sentiment Score</p>
-            <div className="p-2 bg-emerald-500/10 rounded-lg">
-              <Smile className="h-5 w-5 text-emerald-500" />
+            <div className="p-2 bg-success/10 rounded-lg">
+              <Smile className="h-5 w-5 text-success" />
             </div>
           </div>
           <h3 className="text-4xl font-bold mb-4">{sentimentScore}% Positive</h3>
@@ -215,7 +215,7 @@ export default function SysEngagementAnalytics() {
                   strokeLinecap="round"
                 />
               </svg>
-              <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-emerald-400">
+              <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-success">
                 {sentimentScore}%
               </span>
             </div>
@@ -230,22 +230,22 @@ export default function SysEngagementAnalytics() {
               </div>
             </div>
           </div>
-          <p className="text-xs text-emerald-500 font-medium">+1.2% sentiment growth</p>
+          <p className="text-xs text-success font-medium">+1.2% sentiment growth</p>
         </div>
       </div>
 
       {loading ? (
         <div className="space-y-6">
           {[...Array(3)].map((_, i) => (
-            <div key={i} className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
-              <div className="h-[280px] bg-[hsl(var(--theme-bg-tertiary)/0.3)] rounded animate-pulse" />
+            <div key={i} className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
+              <div className="h-[280px] bg-[hsl(var(--theme-bg-tertiary)/0.3)] rounded animate-skeleton" />
             </div>
           ))}
         </div>
       ) : (
         <>
           {/* Message Volume Overview - Full Width Area Chart */}
-          <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
+          <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-bold">Message Volume Overview</h3>
               <div className="flex items-center gap-5 text-xs font-medium">
@@ -293,7 +293,7 @@ export default function SysEngagementAnalytics() {
           {/* Mood Distribution + Top Communities Leaderboard */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Mood Distribution Donut */}
-            <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
+            <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
               <h3 className="text-lg font-bold mb-6">Mood Distribution</h3>
               <div className="flex items-center gap-8">
                 {/* Donut Chart */}
@@ -326,7 +326,7 @@ export default function SysEngagementAnalytics() {
                     <span className="text-3xl font-bold">
                       {totalMessages >= 1000 ? `${(totalMessages / 1000).toFixed(1)}k` : totalMessages || '1.2k'}
                     </span>
-                    <span className="text-[10px] text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider font-bold">Tokens</span>
+                    <span className="text-xs text-[hsl(var(--theme-text-secondary))] font-bold">Tokens</span>
                   </div>
                 </div>
 
@@ -344,7 +344,7 @@ export default function SysEngagementAnalytics() {
             </div>
 
             {/* Top Communities Leaderboard */}
-            <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
+            <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
               <h3 className="text-lg font-bold mb-6">Top Communities Leaderboard</h3>
               <div className="space-y-5">
                 {(topChannels.length > 0
@@ -388,7 +388,7 @@ export default function SysEngagementAnalytics() {
           {/* User Engagement Heatmap + At-Risk Users */}
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6">
             {/* Engagement Heatmap */}
-            <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
+            <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
               <h3 className="text-lg font-bold mb-6">User Engagement Heatmap</h3>
               <div className="overflow-x-auto">
                 <div className="grid grid-cols-8 gap-2 min-w-[400px]">
@@ -417,7 +417,7 @@ export default function SysEngagementAnalytics() {
             </div>
 
             {/* At-Risk Users */}
-            <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6 w-full lg:w-80">
+            <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6 w-full lg:w-80">
               <h3 className="text-lg font-bold mb-6">At-Risk Users</h3>
               <div className="space-y-4">
                 {atRiskUsers.map((u, i) => (
@@ -432,7 +432,7 @@ export default function SysEngagementAnalytics() {
                         {u.status}
                       </p>
                     </div>
-                    <button className="px-3 py-1.5 rounded-lg border border-[hsl(var(--theme-accent-primary)/0.3)] text-xs font-medium text-[hsl(var(--theme-accent-primary))] hover:bg-[hsl(var(--theme-accent-primary)/0.1)] transition-colors whitespace-nowrap">
+                    <button className="px-3 py-1.5 rounded-lg border border-[hsl(var(--theme-accent-primary)/0.3)] text-xs font-medium text-[hsl(var(--theme-text-accent))] hover:bg-[hsl(var(--theme-accent-primary)/0.1)] transition-colors whitespace-nowrap">
                       REACH OUT
                     </button>
                   </div>
@@ -442,17 +442,17 @@ export default function SysEngagementAnalytics() {
           </div>
 
           {/* Recent Reports Section */}
-          <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
+          <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.15)] rounded-2xl p-6">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-bold">Recent Reports</h3>
-              <button className="text-[hsl(var(--theme-accent-primary))] text-sm font-medium hover:underline">
+              <button className="text-[hsl(var(--theme-text-accent))] text-sm font-medium hover:underline">
                 View All History
               </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="text-[hsl(var(--theme-text-muted))] border-b border-[hsl(var(--theme-accent-primary)/0.1)] text-xs uppercase tracking-wider">
+                  <tr className="text-[hsl(var(--theme-text-muted))] border-b border-[hsl(var(--theme-accent-primary)/0.1)] text-xs">
                     <th className="pb-3 font-medium">Report Name</th>
                     <th className="pb-3 font-medium">Generated On</th>
                     <th className="pb-3 font-medium">Status</th>
@@ -467,7 +467,7 @@ export default function SysEngagementAnalytics() {
                       <td className="py-4 text-[hsl(var(--theme-text-secondary))]">{r.date}</td>
                       <td className="py-4">
                         <span className={cn(
-                          'px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider text-white',
+                          'px-2.5 py-1 rounded-full text-xs font-bold text-white',
                           r.statusColor
                         )}>
                           {r.status}
@@ -476,7 +476,7 @@ export default function SysEngagementAnalytics() {
                       <td className="py-4 text-[hsl(var(--theme-text-secondary))]">{r.format}</td>
                       <td className="py-4">
                         {r.downloadable ? (
-                          <button className="text-[hsl(var(--theme-accent-primary))] hover:text-[hsl(var(--theme-accent-secondary))] transition-colors">
+                          <button className="text-[hsl(var(--theme-text-accent))] hover:text-[hsl(var(--theme-accent-secondary))] transition-colors">
                             <ArrowDownToLine className="h-5 w-5" />
                           </button>
                         ) : (
@@ -495,7 +495,7 @@ export default function SysEngagementAnalytics() {
           {/* Footer */}
           <div className="text-center py-6 border-t border-[hsl(var(--theme-border-default))] mt-4">
             <p className="text-xs text-[hsl(var(--theme-text-muted))]">
-              &copy; 2023 AuraFlow AI Communication Platform. All rights reserved. &nbsp;|&nbsp; Privacy Policy &nbsp;|&nbsp; System Status
+              &copy; 2023 Auraflow AI Communication Platform. All rights reserved. &nbsp;|&nbsp; Privacy Policy &nbsp;|&nbsp; System Status
             </p>
           </div>
         </>

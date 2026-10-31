@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getAvatarUrl } from "@/lib/utils";
 import type { Friend } from "@/types";
-import { X, MessageCircle, Phone, Video, Ban, UserMinus } from "lucide-react";
+import { MessageCircle, Phone, Video, Ban, UserMinus } from "lucide-react";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
@@ -66,7 +66,7 @@ export default function FriendProfileModal({
     <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
       <ResponsiveModalContent size="md" className="overflow-y-auto">
         {/* Header with Gradient Background */}
-        <div className="relative h-24 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))]">
+        <div className="relative h-24 bg-[hsl(var(--theme-accent-primary))]">
           {/* Close handled by ResponsiveModal */}
         </div>
 
@@ -159,7 +159,7 @@ export default function FriendProfileModal({
                 if (onMessage) onMessage(friend.id);
                 onClose();
               }}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white font-medium transition-all hover:shadow-[var(--theme-glow-primary)]"
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-[hsl(var(--theme-accent-primary))] text-white font-medium transition-all "
             >
               <MessageCircle className="w-4 h-4" />
               Message

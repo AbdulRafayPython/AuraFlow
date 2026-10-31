@@ -1,7 +1,7 @@
 // components/modals/CommunitySettingsModal.tsx
 import { useState, useRef, useEffect } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
-import { X, Camera, Trash2, Upload, Image as ImageIcon, Loader2, Check, AlertCircle, Bot, Settings as SettingsIcon } from "lucide-react";
+import { Camera, Trash2, Loader2, Check, AlertCircle, Bot, Settings as SettingsIcon } from "lucide-react";
 import { channelService } from "@/services/channelService";
 import { useNotifications } from "@/hooks/useNotifications";
 import { Community } from "@/types";
@@ -349,7 +349,7 @@ export default function CommunitySettingsModal({
                 {name || community.name}
               </h2>
               {isOwnerOrAdmin && (
-                <span className="shrink-0 rounded-full border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] px-2 py-0.5 text-[11px] font-medium capitalize text-[hsl(var(--theme-text-secondary))]">
+                <span className="shrink-0 rounded-full border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] px-2 py-0.5 text-xs font-medium capitalize text-[hsl(var(--theme-text-secondary))]">
                   {community.role}
                 </span>
               )}
@@ -481,7 +481,7 @@ export default function CommunitySettingsModal({
               <button
                 onClick={handleSaveSettings}
                 disabled={isLoading || !name.trim()}
-                className="px-6 py-2.5 rounded-xl font-medium bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-6 py-2.5 rounded-xl font-medium bg-[hsl(var(--theme-accent-primary))] text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                 Save Changes

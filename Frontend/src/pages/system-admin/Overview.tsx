@@ -55,14 +55,14 @@ export default function SystemAdminOverview() {
 
   const severityColors: Record<string, string> = {
     low: 'bg-blue-500/10 text-blue-500 border border-blue-500/20',
-    medium: 'bg-orange-500/10 text-orange-500 border border-orange-500/20',
-    high: 'bg-red-500/10 text-red-500 border border-red-500/20',
-    critical: 'bg-red-500/10 text-red-500 border border-red-500/20',
+    medium: 'bg-warning/10 text-warning border border-orange-500/20',
+    high: 'bg-destructive/10 text-destructive border border-red-500/20',
+    critical: 'bg-destructive/10 text-destructive border border-red-500/20',
   };
 
   const actionColors: Record<string, { dot: string; text: string }> = {
-    pending: { dot: 'bg-orange-500 animate-pulse', text: 'Pending' },
-    none: { dot: 'bg-orange-500 animate-pulse', text: 'Pending' },
+    pending: { dot: 'bg-orange-500', text: 'Pending' },
+    none: { dot: 'bg-orange-500', text: 'Pending' },
     resolved: { dot: 'bg-emerald-500', text: 'Resolved' },
     approve: { dot: 'bg-emerald-500', text: 'Resolved' },
     warn: { dot: 'bg-sky-500', text: 'In Progress' },
@@ -92,10 +92,10 @@ export default function SystemAdminOverview() {
           return (
             <div key={card.label} className="bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))] p-6 rounded-xl hover:border-[hsl(var(--theme-accent-primary)/0.5)] transition-all group">
               <div className="flex justify-between items-start mb-4">
-                <div className="p-2 bg-[hsl(var(--theme-accent-primary)/0.1)] rounded-lg text-[hsl(var(--theme-accent-primary))] group-hover:bg-[hsl(var(--theme-accent-primary))] group-hover:text-white transition-colors">
+                <div className="p-2 bg-[hsl(var(--theme-accent-primary)/0.1)] rounded-lg text-[hsl(var(--theme-text-accent))] group-hover:bg-[hsl(var(--theme-accent-primary))] group-hover:text-white transition-colors">
                   <Icon className="h-5 w-5" />
                 </div>
-                <span className={cn('text-sm font-medium flex items-center', card.trendUp ? 'text-emerald-500' : 'text-orange-500')}>
+                <span className={cn('text-sm font-medium flex items-center', card.trendUp ? 'text-success' : 'text-warning')}>
                   {card.trendUp ? '+' : '-'}{card.trend}%
                   {card.trendUp ? <TrendingUp className="h-3 w-3 ml-0.5" /> : <TrendingDown className="h-3 w-3 ml-0.5" />}
                 </span>
@@ -115,23 +115,23 @@ export default function SystemAdminOverview() {
         <div className="lg:col-span-2 bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))] rounded-xl flex flex-col overflow-hidden">
           <div className="px-6 py-4 border-b border-[hsl(var(--theme-border-default))] flex justify-between items-center">
             <h2 className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">Recent Alerts</h2>
-            <Link to="/system-admin/moderation/flagged" className="text-[hsl(var(--theme-accent-primary))] text-sm font-semibold hover:underline">View All</Link>
+            <Link to="/system-admin/moderation/flagged" className="text-[hsl(var(--theme-text-accent))] text-sm font-semibold hover:underline">View All</Link>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="bg-[hsl(var(--theme-bg-hover))]">
                 <tr>
-                  <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider">Alert ID</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider">Category</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider text-center">Severity</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider text-right">Action</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))]">Alert ID</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))]">Category</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] text-center">Severity</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))]">Status</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-[hsl(var(--theme-text-secondary))] text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[hsl(var(--theme-border-default))]">
                 {loading ? (
                   [...Array(3)].map((_, i) => (
-                    <tr key={i}><td className="px-6 py-4" colSpan={5}><div className="h-4 bg-[hsl(var(--theme-bg-tertiary)/0.5)] rounded animate-pulse" /></td></tr>
+                    <tr key={i}><td className="px-6 py-4" colSpan={5}><div className="h-4 bg-[hsl(var(--theme-bg-tertiary)/0.5)] rounded animate-skeleton" /></td></tr>
                   ))
                 ) : alerts.length === 0 ? (
                   <tr><td className="px-6 py-8 text-center text-[hsl(var(--theme-text-secondary))]" colSpan={5}>No recent alerts — all clear!</td></tr>
@@ -145,7 +145,7 @@ export default function SystemAdminOverview() {
                         <td className="px-6 py-4 text-sm font-medium text-[hsl(var(--theme-text-secondary))]">#{alert.id}</td>
                         <td className="px-6 py-4 text-sm text-[hsl(var(--theme-text-secondary))]">{alert.flag_type}</td>
                         <td className="px-6 py-4 text-center">
-                          <span className={cn('inline-flex px-2 py-1 text-[10px] font-bold rounded uppercase tracking-wider', severityColors[severity])}>{severity}</span>
+                          <span className={cn('inline-flex px-2 py-1 text-xs font-bold rounded', severityColors[severity])}>{severity}</span>
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
@@ -168,7 +168,7 @@ export default function SystemAdminOverview() {
         {/* AI Health Status */}
         <div className="bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))] rounded-xl flex flex-col p-6">
           <div className="flex items-center gap-2 mb-6">
-            <BarChart3 className="h-5 w-5 text-[hsl(var(--theme-accent-primary))]" />
+            <BarChart3 className="h-5 w-5 text-[hsl(var(--theme-text-accent))]" />
             <h2 className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">AI Health Status</h2>
           </div>
           <div className="space-y-6">
@@ -185,11 +185,11 @@ export default function SystemAdminOverview() {
             ))}
             <div className="mt-4 p-4 rounded-lg bg-[hsl(var(--theme-accent-primary)/0.05)] border border-[hsl(var(--theme-accent-primary)/0.1)] flex items-center gap-3">
               <div className="h-10 w-10 rounded-full bg-[hsl(var(--theme-accent-primary)/0.1)] flex items-center justify-center flex-shrink-0">
-                <Zap className="h-5 w-5 text-[hsl(var(--theme-accent-primary))]" />
+                <Zap className="h-5 w-5 text-[hsl(var(--theme-text-accent))]" />
               </div>
               <div>
-                <p className="text-xs font-bold text-[hsl(var(--theme-accent-primary))] uppercase">Optimized Performance</p>
-                <p className="text-[11px] text-[hsl(var(--theme-text-secondary))]">All systems running at peak capacity with 0 packet drops detected.</p>
+                <p className="text-xs font-bold text-[hsl(var(--theme-text-accent))]">Optimized Performance</p>
+                <p className="text-xs text-[hsl(var(--theme-text-secondary))]">All systems running at peak capacity with 0 packet drops detected.</p>
               </div>
             </div>
           </div>
@@ -223,7 +223,7 @@ export default function SystemAdminOverview() {
                 <path d="M0,80 Q10,75 20,85 T40,60 T60,40 T80,55 T100,20 L100,100 L0,100 Z" fill="url(#msgGrad)" opacity="0.1" />
               </svg>
             </div>
-            <div className="w-full flex justify-between absolute -bottom-6 text-[10px] text-[hsl(var(--theme-text-muted))] uppercase font-bold px-2">
+            <div className="w-full flex justify-between absolute -bottom-6 text-xs text-[hsl(var(--theme-text-muted))] font-bold px-2">
               {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => <span key={d}>{d}</span>)}
             </div>
           </div>
@@ -242,7 +242,7 @@ export default function SystemAdminOverview() {
             {[40, 55, 85, 65, 75, 30, 45].map((h, i) => (
               <div key={i} className="w-full group relative flex flex-col items-center">
                 <div className="w-full bg-[hsl(var(--theme-accent-primary)/0.2)] hover:bg-[hsl(var(--theme-accent-primary))] transition-colors rounded-t-lg" style={{ height: `${h}%` }} />
-                <span className="absolute -bottom-6 text-[10px] text-[hsl(var(--theme-text-muted))]">{['M','T','W','T','F','S','S'][i]}</span>
+                <span className="absolute -bottom-6 text-xs text-[hsl(var(--theme-text-muted))]">{['M','T','W','T','F','S','S'][i]}</span>
               </div>
             ))}
           </div>

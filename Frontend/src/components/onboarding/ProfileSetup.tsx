@@ -91,7 +91,7 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
       <div className={`w-full max-w-lg rounded-2xl shadow-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
         {/* Header */}
         <div className={`p-6 pb-4 text-center border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl mb-4 shadow-lg shadow-indigo-500/25">
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-indigo-500 rounded-xl mb-4 shadow-lg shadow-indigo-500/25">
             <User className="w-7 h-7 text-white" />
           </div>
           <h1 className={`text-2xl font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -193,7 +193,7 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
                     : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
                 }`}
               />
-              <p className={`text-[10px] mt-1 text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+              <p className={`text-xs mt-1 text-right ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                 {bio.length}/200
               </p>
             </div>
@@ -213,7 +213,7 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
               <button
                 type="submit"
                 disabled={isLoading || !displayName.trim()}
-                className="flex-1 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25"
+                className="flex-1 py-3 bg-indigo-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25"
               >
                 {isLoading ? (
                   <>
@@ -238,7 +238,7 @@ export default function ProfileSetup({ onComplete, onBack }: ProfileSetupProps) 
             <div className={`w-8 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
             <div className="w-8 h-1 bg-indigo-600 rounded-full"></div>
           </div>
-          <p className={`text-center text-[10px] mt-2 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+          <p className={`text-center text-xs mt-2 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             STEP 3 OF 3
           </p>
         </div>

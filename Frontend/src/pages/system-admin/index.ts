@@ -1,3 +1,4 @@
+// REWRITE: pages/system-admin/* and pages/admin/* are near-parallel trees (BlockedUsers, FlaggedContent, UserManagement, ...); merge behind one scope-aware set of pages.
 export { default as SystemAdminLogin } from './SystemAdminLogin';
 export { default as SystemAdminLayout } from './SystemAdminLayout';
 export { default as SystemAdminOverview } from './Overview';

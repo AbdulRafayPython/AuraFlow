@@ -59,7 +59,6 @@ export function useUnreadCounts() {
       dms: Record<string, number>;
       total_unread: number;
     }) => {
-      console.log(`[UNREAD-HOOK] 🔄 handleInitialUnreads called:`, JSON.stringify(data));
       const channels: Record<number, number> = {};
       const communities: Record<string, number> = {};
       const dms: Record<number, number> = {};
@@ -86,7 +85,6 @@ export function useUnreadCounts() {
         totalDMUnread: totalDM,
         totalUnread: totalChannel + totalDM,
       };
-      console.log(`[UNREAD-HOOK] 📦 Setting initial state:`, JSON.stringify(newState));
       setState(newState);
 
       // Reset dedup tracker — server snapshot is authoritative
@@ -107,18 +105,15 @@ export function useUnreadCounts() {
       message_id: number;
     }) => {
       const myId = user?.id;
-      console.log(`[UNREAD-HOOK] ⚡ handleChannelActivity called:`, data, `myId=${myId}`);
 
       // Skip messages I sent
       if (myId != null && data.sender_id === myId) {
-        console.log(`[UNREAD-HOOK] ⏭️ SKIPPED: sender is me (${myId})`);
         return;
       }
 
       // Skip if I'm currently viewing this channel
       const activeChannel = socketService.getCurrentChannel();
       if (activeChannel === data.channel_id) {
-        console.log(`[UNREAD-HOOK] ⏭️ SKIPPED: currently viewing channel ${activeChannel}`);
         return;
       }
 
@@ -126,13 +121,11 @@ export function useUnreadCounts() {
       if (data.message_id != null && data.message_id > 0) {
         const lastSeen = lastSeenRef.current[data.channel_id] || 0;
         if (data.message_id <= lastSeen) {
-          console.log(`[UNREAD-HOOK] ⏭️ SKIPPED: dedup msg ${data.message_id} <= lastSeen ${lastSeen}`);
           return;
         }
         lastSeenRef.current[data.channel_id] = data.message_id;
       }
 
-      console.log(`[UNREAD-HOOK] ✅ INCREMENTING ch=${data.channel_id} comm=${data.community_id}`);
 
       setState((prev) => {
         const next = {
@@ -153,7 +146,6 @@ export function useUnreadCounts() {
         }
 
         next.totalUnread = next.totalChannelUnread + next.totalDMUnread;
-        console.log(`[UNREAD-HOOK] 📊 New state: ch[${data.channel_id}]=${next.channels[data.channel_id]}, comm[${data.community_id}]=${next.communities[data.community_id]}, total=${next.totalUnread}`);
         return next;
       });
 
@@ -191,7 +183,6 @@ export function useUnreadCounts() {
       community_unread?: number;
       total_unread?: number;
     }) => {
-      console.log(`[UNREAD-HOOK] 🔔 handleUnreadUpdate called:`, JSON.stringify(data));
       setState((prev) => {
         const next = {
           ...prev,
@@ -238,13 +229,11 @@ export function useUnreadCounts() {
   // ── Subscriptions ───────────────────────────────────────────────────
   useEffect(() => {
     if (!isAuthenticated) {
-      console.log('[UNREAD-HOOK] ❌ Not authenticated — resetting state');
       setState(EMPTY_STATE);
       lastSeenRef.current = {};
       return;
     }
 
-    console.log('[UNREAD-HOOK] 🔌 Subscribing to socket events (user authenticated)');
 
     const unsubs = [
       socketService.onInitialUnreads(handleInitialUnreads),
@@ -253,12 +242,10 @@ export function useUnreadCounts() {
       socketService.onDMUnreadUpdate(handleDMUnreadUpdate),
     ];
 
-    console.log('[UNREAD-HOOK] ✅ Registered 4 handlers. Requesting unreads...');
     // Request snapshot in case we missed the initial emission
     socketService.requestUnreads();
 
     return () => {
-      console.log('[UNREAD-HOOK] 🧹 Cleaning up — unsubscribing 4 handlers');
       unsubs.forEach((u) => u());
     };
   }, [

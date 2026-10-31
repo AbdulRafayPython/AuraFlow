@@ -35,12 +35,12 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="bg-card text-card-foreground border border-border p-8 rounded-lg w-full max-w-md">
         <h2 className="text-2xl font-bold text-center mb-6">Forgot Password</h2>
 
         <form onSubmit={handleSubmit}>
-          <label className="block text-gray-700 mb-2">
+          <label className="block text-foreground mb-2">
             Enter your email address
           </label>
 
@@ -52,7 +52,7 @@ export default function ForgotPassword() {
             autoCorrect="off"
             enterKeyHint="send"
             placeholder="Email"
-            className="w-full border p-3 rounded-lg mb-4"
+            className="w-full border p-3 rounded-lg bg-background border-border text-foreground mb-4"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -61,18 +61,13 @@ export default function ForgotPassword() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 transition disabled:bg-blue-400 disabled:cursor-not-allowed"
+            className="w-full bg-primary text-primary-foreground p-3 rounded-lg hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? "Sending..." : "Send OTP"}
           </button>
         </form>
 
-        <p
-          className="text-center mt-4 text-blue-600 cursor-pointer hover:underline"
-          onClick={() => navigate("/login")}
-        >
-          Back to login
-        </p>
+        <button type="button" className="block w-full text-center mt-4 text-[hsl(var(--theme-text-accent))] cursor-pointer hover:underline" onClick={() => navigate("/login")}>Back to login</button>
       </div>
     </div>
   );

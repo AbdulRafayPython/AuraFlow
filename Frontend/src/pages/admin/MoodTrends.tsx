@@ -3,7 +3,7 @@
  * Visualizes sentiment analysis data for the selected community.
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useCommunityDashboard } from '@/contexts/CommunityDashboardContext';
 import adminService, { MoodTrend } from '@/services/adminService';
@@ -32,9 +32,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  ResponsiveContainer,
-  Legend
-} from 'recharts';
+  ResponsiveContainer} from 'recharts';
 import {
   Activity,
   RefreshCw,
@@ -204,7 +202,7 @@ export default function MoodTrends() {
         <Card className="border-green-500/20">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Smile className="h-4 w-4 text-green-500" />
+              <Smile className="h-4 w-4 text-success" />
               Positive Sentiment
             </CardTitle>
           </CardHeader>
@@ -213,14 +211,14 @@ export default function MoodTrends() {
               <Skeleton className="h-8 w-20" />
             ) : (
               <>
-                <div className="text-3xl font-bold text-green-500">{positivePercent}%</div>
+                <div className="text-3xl font-bold text-success">{positivePercent}%</div>
                 <div className="flex items-center gap-1 mt-1 text-xs">
                   {positiveTrend >= 0 ? (
-                    <TrendingUp className="h-3 w-3 text-green-500" />
+                    <TrendingUp className="h-3 w-3 text-success" />
                   ) : (
-                    <TrendingDown className="h-3 w-3 text-red-500" />
+                    <TrendingDown className="h-3 w-3 text-destructive" />
                   )}
-                  <span className={positiveTrend >= 0 ? 'text-green-500' : 'text-red-500'}>
+                  <span className={positiveTrend >= 0 ? 'text-success' : 'text-destructive'}>
                     {positiveTrend >= 0 ? '+' : ''}{positiveTrend}%
                   </span>
                   <span className="text-muted-foreground">vs previous period</span>
@@ -232,7 +230,7 @@ export default function MoodTrends() {
         <Card className="border-red-500/20">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Frown className="h-4 w-4 text-red-500" />
+              <Frown className="h-4 w-4 text-destructive" />
               Negative Sentiment
             </CardTitle>
           </CardHeader>
@@ -241,7 +239,7 @@ export default function MoodTrends() {
               <Skeleton className="h-8 w-20" />
             ) : (
               <>
-                <div className="text-3xl font-bold text-red-500">{negativePercent}%</div>
+                <div className="text-3xl font-bold text-destructive">{negativePercent}%</div>
                 <p className="text-xs text-muted-foreground mt-1">
                   {distribution.negative || 0} messages analyzed
                 </p>
@@ -462,7 +460,7 @@ export default function MoodTrends() {
                           title={`${item.hour}: ${item.dominant_mood} (${item.message_count} msgs)`}
                         >
                           <div className={cn('w-6 h-6 rounded-full', moodColor)} />
-                          <span className="text-[10px] text-muted-foreground">{item.hour.slice(0, 2)}</span>
+                          <span className="text-xs text-muted-foreground">{item.hour.slice(0, 2)}</span>
                         </div>
                       );
                     })}
@@ -492,15 +490,15 @@ export default function MoodTrends() {
               {/* Trend Direction Card */}
               <div className={cn(
                 "p-4 rounded-lg border",
-                trendDirection === 'improving' ? 'bg-green-500/10 border-green-500/20' :
-                trendDirection === 'declining' ? 'bg-red-500/10 border-red-500/20' :
+                trendDirection === 'improving' ? 'bg-success/10 border-green-500/20' :
+                trendDirection === 'declining' ? 'bg-destructive/10 border-red-500/20' :
                 'bg-blue-500/10 border-blue-500/20'
               )}>
                 <div className="flex items-center gap-2 mb-2">
                   {trendDirection === 'improving' ? (
-                    <TrendingUp className="h-5 w-5 text-green-500" />
+                    <TrendingUp className="h-5 w-5 text-success" />
                   ) : trendDirection === 'declining' ? (
-                    <TrendingDown className="h-5 w-5 text-red-500" />
+                    <TrendingDown className="h-5 w-5 text-destructive" />
                   ) : (
                     <Activity className="h-5 w-5 text-blue-500" />
                   )}
@@ -518,15 +516,15 @@ export default function MoodTrends() {
               {/* Dominant Mood Card */}
               <div className={cn(
                 "p-4 rounded-lg border",
-                dominantMood === 'positive' ? 'bg-green-500/10 border-green-500/20' :
-                dominantMood === 'negative' ? 'bg-red-500/10 border-red-500/20' :
+                dominantMood === 'positive' ? 'bg-success/10 border-green-500/20' :
+                dominantMood === 'negative' ? 'bg-destructive/10 border-red-500/20' :
                 'bg-gray-500/10 border-gray-500/20'
               )}>
                 <div className="flex items-center gap-2 mb-2">
                   {dominantMood === 'positive' ? (
-                    <Smile className="h-5 w-5 text-green-500" />
+                    <Smile className="h-5 w-5 text-success" />
                   ) : dominantMood === 'negative' ? (
-                    <Frown className="h-5 w-5 text-red-500" />
+                    <Frown className="h-5 w-5 text-destructive" />
                   ) : (
                     <Meh className="h-5 w-5 text-gray-500" />
                   )}
@@ -538,9 +536,9 @@ export default function MoodTrends() {
               </div>
 
               {/* Attention Areas */}
-              <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <div className="p-4 rounded-lg bg-warning/10 border border-amber-500/20">
                 <div className="flex items-center gap-2 mb-2">
-                  <Frown className="h-5 w-5 text-amber-500" />
+                  <Frown className="h-5 w-5 text-warning" />
                   <span className="font-medium">Attention Areas</span>
                 </div>
                 <p className="text-sm text-muted-foreground">

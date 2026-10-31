@@ -1,23 +1,17 @@
 // Frontend/src/components/ai-agents/AgentMessageShell.tsx
 //
-// Inline channel/DM "agent posted something" shell. Renders the avatar +
-// name row + bordered card that every inline agent surface in Dashboard.tsx
-// and DirectMessageView.tsx now shares.
+// Inline channel/DM "an agent posted something" row. It is a normal
+// MessageRow (flat, same avatar size, same name/time header) with a small APP
+// badge. Identity comes from the agent's icon tint only: no coloured border,
+// no tinted card, no glow.
 //
-// Replaces five duplicated render sites that each hard-coded the older
-// purple-to-blue gradient avatar and glow shadow. This is the calm-ops
-// equivalent: matte avatar, accent-tinted icon, accent border-left, no glow,
-// no gradient, 140ms transitions. Identity comes from icon + accent, not
-// from a colorful avatar fill.
-//
-// Per-agent accent resolution lives in AgentAccent.ts (single source of
-// truth for the 11-agent → 6-domain mapping); this component just calls
-// `accentFor` and applies it where identity is expected.
+// Per-agent accent resolution lives in AgentAccent.ts.
 //
 // Variants:
-//   - default  : populated card; `children` is the agent's content.
-//   - skeleton : pre-result placeholder; renders a single subtle pulse
-//                line plus a "Generating…" status row. No staggered shimmer.
+//   - default  : `children` is the agent's content.
+//   - skeleton : "<Agent> is working…" line with three dots while a result is
+//                generated. Dots pulse (skeleton exception), and stop for
+//                prefers-reduced-motion.
 
 import { ReactNode } from 'react';
 import {
@@ -31,50 +25,99 @@ import {
   Users,
   MessageSquare,
   Bot,
+  Eye,
 } from 'lucide-react';
-import { accentFor, agentLabel, domainFor, type AgentName } from './AgentAccent';
+import { MessageRow } from '@/components/chat/MessageRow';
+import AgentLogo from './AgentLogo';
+import { accentFor, agentLabel, type AgentName } from './AgentAccent';
 
 export type AgentMessageVariant = 'default' | 'skeleton';
 
 export interface AgentMessageShellProps {
-  /** Agent name slug — drives accent + icon + default label. */
+  /** Agent name slug: drives icon tint, icon and default label. */
   agentName: string;
   /** Optional override; defaults to agentLabel(agentName). */
   displayName?: string;
   /** Optional override icon. Defaults to the agent-specific lucide icon. */
   icon?: ReactNode;
-  /** "SCHEDULED" chip instead of "BOT". */
+  /** "Scheduled" badge instead of "APP". */
   isScheduled?: boolean;
-  /** Show the emerald "Only visible to you" chip. */
+  /** Show the "Only visible to you" note. */
   isPrivate?: boolean;
   /** Optional formatted timestamp string (caller controls formatting). */
   timestamp?: string;
-  /** Status line shown under the card while in skeleton variant. */
+  /** Status text while in skeleton variant. */
   skeletonLabel?: string;
   variant?: AgentMessageVariant;
-  /** Card body. Ignored when variant === 'skeleton'. */
+  /** Message body. Ignored when variant === 'skeleton'. */
   children?: ReactNode;
-  /** Optional dismiss action — renders a "Dismiss" link under the card. */
+  /** Optional dismiss action: renders a "Dismiss" link under the body. */
   onDismiss?: () => void;
+  /** Open the agent's detail pane (name and avatar become clickable). */
+  onOpenAgent?: () => void;
 }
 
-const DEFAULT_ICON: Record<string, ReactNode> = {
-  summarizer:           <FileText className="h-4 w-4 sm:h-5 sm:w-5" />,
-  knowledge_builder:    <BookOpen className="h-4 w-4 sm:h-5 sm:w-5" />,
-  knowledge_builder_v2: <BookOpen className="h-4 w-4 sm:h-5 sm:w-5" />,
-  assistant:            <Sparkles className="h-4 w-4 sm:h-5 sm:w-5" />,
-  translator:           <Languages className="h-4 w-4 sm:h-5 sm:w-5" />,
-  mood_tracker:         <Heart className="h-4 w-4 sm:h-5 sm:w-5" />,
-  wellness:             <Heart className="h-4 w-4 sm:h-5 sm:w-5" />,
-  focus:                <Target className="h-4 w-4 sm:h-5 sm:w-5" />,
-  moderation:           <Shield className="h-4 w-4 sm:h-5 sm:w-5" />,
-  engagement:           <Users className="h-4 w-4 sm:h-5 sm:w-5" />,
-  support:              <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5" />,
-  auto_message:         <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5" />,
+const ICONS: Record<string, typeof Bot> = {
+  summarizer: FileText,
+  knowledge_builder: BookOpen,
+  knowledge_builder_v2: BookOpen,
+  assistant: Sparkles,
+  translator: Languages,
+  mood_tracker: Heart,
+  wellness: Heart,
+  focus: Target,
+  moderation: Shield,
+  engagement: Users,
+  support: MessageSquare,
+  auto_message: MessageSquare,
 };
 
-function iconFor(agentName: string): ReactNode {
-  return DEFAULT_ICON[agentName] ?? <Bot className="h-4 w-4 sm:h-5 sm:w-5" />;
+/** Neutral chip that marks a message as coming from an app / agent. */
+export function AppBadge({ label = 'APP' }: { label?: string }) {
+  return (
+    <span className="rounded border border-border bg-[hsl(var(--theme-bg-tertiary))] px-1.5 text-xs font-medium leading-4 text-muted-foreground">
+      {label}
+    </span>
+  );
+}
+
+/** Agent avatar: its app logo (a custom `icon` still wins, e.g. for special shells). */
+export function AgentAvatar({ agentName, name, username, builtin, icon, size = 'md' }: { agentName?: string; name?: string; username?: string; builtin?: boolean; icon?: ReactNode; size?: 'sm' | 'md' | 'lg' | 'xl' }) {
+  if (icon) {
+    return (
+      <div aria-hidden className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-[hsl(var(--theme-bg-tertiary))]" style={{ color: accentFor(agentName ?? '') }}>
+        {icon}
+      </div>
+    );
+  }
+  return <AgentLogo slug={agentName} name={name} username={username} builtin={builtin} size={size === 'sm' ? 'xs' : size} />;
+}
+
+/** Neutral bordered frame for structured agent output (polls, icebreakers, recaps). */
+export function AgentCardFrame({ children }: { children: ReactNode }) {
+  return (
+    <div className="mt-1 max-w-xl rounded-lg border border-border bg-[hsl(var(--theme-bg-secondary))] p-3">
+      {children}
+    </div>
+  );
+}
+
+/** "<Agent> is working…" with three dots. Used while a run is in flight. */
+export function WorkingLine({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground" role="status">
+      {label}
+      <span className="inline-flex items-center gap-0.5" aria-hidden>
+        {[0, 200, 400].map((delay) => (
+          <span
+            key={delay}
+            className="h-1 w-1 rounded-full bg-current animate-skeleton motion-reduce:animate-none"
+            style={{ animationDelay: `${delay}ms`, animationDuration: '1.2s' }}
+          />
+        ))}
+      </span>
+    </span>
+  );
 }
 
 export default function AgentMessageShell({
@@ -88,130 +131,50 @@ export default function AgentMessageShell({
   variant = 'default',
   children,
   onDismiss,
+  onOpenAgent,
 }: AgentMessageShellProps) {
-  const accent = accentFor(agentName);
-  const domain = domainFor(agentName);
   const label = displayName ?? agentLabel(agentName as AgentName);
-  const statusPillLabel = isScheduled ? 'SCHEDULED' : 'BOT';
-  const renderedIcon = icon ?? iconFor(agentName);
 
   return (
-    <div className="cv-auto group relative flex py-2 pr-4 sm:pr-12 pl-14 sm:pl-[72px] mt-[17px] hover:bg-[hsl(var(--theme-bg-hover)/0.3)] transition-colors [transition-duration:140ms]">
-      {/* Avatar — matte, accent-tinted icon. No gradient, no glow. */}
-      <div className="absolute left-2 sm:left-4 mt-0.5">
-        <div
-          className={
-            'flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg ' +
-            'border border-[hsl(var(--theme-border-default))] ' +
-            'bg-[hsl(var(--theme-bg-elevated))] ' +
-            (variant === 'skeleton' ? 'animate-pulse motion-reduce:animate-none ' : '') +
-            'transition-colors [transition-duration:140ms]'
-          }
-          style={{ color: accent }}
-          aria-hidden
-        >
-          {renderedIcon}
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 min-w-0 overflow-hidden">
-        {/* Header row */}
-        <div className="flex items-center gap-2 mb-1 flex-wrap">
-          <span className="font-semibold text-[15px]" style={{ color: accent }}>
-            {label}
-          </span>
-          <span
-            className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border"
-            style={{
-              backgroundColor: `hsl(var(--agent-accent-${domain}) / 0.15)`,
-              color: accent,
-              borderColor: `hsl(var(--agent-accent-${domain}) / 0.25)`,
-            }}
-          >
-            {statusPillLabel}
-          </span>
-          {isPrivate && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Only visible to you
-            </span>
-          )}
-          {timestamp && (
-            <span className="text-[11px] ml-1 text-[hsl(var(--theme-text-muted))]">
-              {timestamp}
-            </span>
-          )}
-        </div>
-
-        {/* Card — accent border-left, matte surface */}
-        <div
-          className={
-            'p-4 rounded-lg border bg-[hsl(var(--theme-bg-elevated))] ' +
-            'border-[hsl(var(--theme-border-default))] ' +
-            'transition-colors [transition-duration:140ms]'
-          }
-          style={{ borderLeft: `2px solid ${accent}` }}
-        >
-          {variant === 'skeleton' ? (
-            <SkeletonBody
-              accent={accent}
-              label={skeletonLabel ?? 'Working'}
-            />
-          ) : (
-            children
-          )}
-        </div>
-
-        {onDismiss && (
-          <button
-            onClick={onDismiss}
-            className="mt-2 text-[11px] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] transition-colors [transition-duration:140ms]"
-          >
-            Dismiss
+    <MessageRow
+      className="cv-auto"
+      authorName={label}
+      timeLabel={timestamp ?? ''}
+      onAuthorClick={onOpenAgent ? () => onOpenAgent() : undefined}
+      avatar={
+        onOpenAgent ? (
+          <button type="button" onClick={onOpenAgent} aria-label={`About ${label}`} className="block rounded-lg">
+            <AgentAvatar agentName={agentName} name={label} icon={icon} />
           </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Calm skeleton body — a single subtle pulse on a card-sized placeholder
- * plus a "{label}…" status row with three dots. Honors prefers-reduced-motion
- * via motion-reduce.
- *
- * The pre-redesign skeleton stacked five staggered animationDelay shimmer
- * bars, which the user described as "very bad" — judder-prone and
- * AI-themepark-looking. This is the calm replacement.
- */
-function SkeletonBody({ accent, label }: { accent: string; label: string }) {
-  return (
-    <div className="flex flex-col gap-3">
-      <div
-        className="h-3 w-[78%] rounded animate-pulse motion-reduce:animate-none"
-        style={{ backgroundColor: 'hsl(var(--theme-text-muted) / 0.12)' }}
-      />
-      <div
-        className="h-3 w-[58%] rounded animate-pulse motion-reduce:animate-none"
-        style={{ backgroundColor: 'hsl(var(--theme-text-muted) / 0.10)' }}
-      />
-      <div className="mt-1 flex items-center gap-2 text-[12px]" style={{ color: accent }}>
-        <span>{label}</span>
-        <div className="inline-flex items-center gap-0.5" aria-hidden>
-          <span
-            className="h-1 w-1 rounded-full animate-bounce motion-reduce:animate-none"
-            style={{ backgroundColor: accent, animationDelay: '0ms', animationDuration: '1s' }}
-          />
-          <span
-            className="h-1 w-1 rounded-full animate-bounce motion-reduce:animate-none"
-            style={{ backgroundColor: accent, animationDelay: '200ms', animationDuration: '1s' }}
-          />
-          <span
-            className="h-1 w-1 rounded-full animate-bounce motion-reduce:animate-none"
-            style={{ backgroundColor: accent, animationDelay: '400ms', animationDuration: '1s' }}
-          />
+        ) : (
+          <AgentAvatar agentName={agentName} name={label} icon={icon} />
+        )
+      }
+      badge={<AppBadge label={isScheduled ? 'Scheduled' : 'APP'} />}
+      headerExtra={
+        isPrivate ? (
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <Eye width={12} height={12} strokeWidth={1.75} aria-hidden /> Only visible to you
+          </span>
+        ) : undefined
+      }
+    >
+      {variant === 'skeleton' ? (
+        <div className="py-0.5">
+          <WorkingLine label={`${skeletonLabel ?? 'Working'}…`} />
         </div>
-      </div>
-    </div>
+      ) : (
+        children
+      )}
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="mt-2 block text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Dismiss
+        </button>
+      )}
+    </MessageRow>
   );
 }

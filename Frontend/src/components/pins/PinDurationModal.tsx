@@ -137,7 +137,7 @@ const PinDurationModal: React.FC<PinDurationModalProps> = ({
       onClick={handleBackdropClick}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-in fade-in duration-150" />
+      <div className="absolute inset-0 bg-black/40-[2px] animate-in fade-in duration-150" />
 
       {/* Modal */}
       <div
@@ -163,11 +163,11 @@ const PinDurationModal: React.FC<PinDurationModalProps> = ({
           )}>
             {isPinnedFlow
               ? <Pin className="w-[18px] h-[18px] text-amber-400" />
-              : <Pin className="w-[18px] h-[18px] text-[hsl(var(--theme-accent-primary))]" />
+              : <Pin className="w-[18px] h-[18px] text-[hsl(var(--theme-text-accent))]" />
             }
           </div>
           <div className="flex-1">
-            <h2 id="pin-modal-title" className="text-[15px] font-semibold text-[hsl(var(--theme-text-primary))]">
+            <h2 id="pin-modal-title" className="text-base font-semibold text-[hsl(var(--theme-text-primary))]">
               {isPinnedFlow ? 'Pinned Message' : 'Pin Message'}
             </h2>
             <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
@@ -260,7 +260,7 @@ const PinDurationModal: React.FC<PinDurationModalProps> = ({
                     'w-full flex items-center gap-3.5 px-4 py-3 rounded-xl transition-all duration-150',
                     'border text-left group',
                     isActive
-                      ? 'bg-[hsl(var(--theme-accent-primary)/0.1)] border-[hsl(var(--theme-accent-primary)/0.4)] shadow-[0_0_0_1px_hsl(var(--theme-accent-primary)/0.15)]'
+                      ? 'bg-[hsl(var(--theme-accent-primary)/0.1)] border-[hsl(var(--theme-accent-primary)/0.4)]'
                       : 'bg-[hsl(var(--theme-bg-surface)/0.5)] border-[hsl(var(--theme-border-subtle)/0.4)] hover:bg-[hsl(var(--theme-bg-hover)/0.8)] hover:border-[hsl(var(--theme-border-subtle)/0.7)]',
                     isSubmitting && 'opacity-60 cursor-not-allowed',
                   )}
@@ -269,7 +269,7 @@ const PinDurationModal: React.FC<PinDurationModalProps> = ({
                   <div className={cn(
                     'flex items-center justify-center w-10 h-10 rounded-lg text-xs font-bold tracking-wide transition-colors',
                     isActive
-                      ? 'bg-[hsl(var(--theme-accent-primary)/0.18)] text-[hsl(var(--theme-accent-primary))]'
+                      ? 'bg-[hsl(var(--theme-accent-primary)/0.18)] text-[hsl(var(--theme-text-accent))]'
                       : 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-muted))] group-hover:text-[hsl(var(--theme-text-secondary))]',
                   )}>
                     {DURATION_ICONS[opt.minutes]}
@@ -280,12 +280,12 @@ const PinDurationModal: React.FC<PinDurationModalProps> = ({
                     <span className={cn(
                       'block text-sm font-medium transition-colors',
                       isActive
-                        ? 'text-[hsl(var(--theme-accent-primary))]'
+                        ? 'text-[hsl(var(--theme-text-accent))]'
                         : 'text-[hsl(var(--theme-text-primary))]',
                     )}>
                       {opt.label}
                     </span>
-                    <span className="block text-[11px] text-[hsl(var(--theme-text-muted))] mt-0.5">
+                    <span className="block text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
                       {DURATION_DESCRIPTIONS[opt.minutes]}
                     </span>
                   </div>

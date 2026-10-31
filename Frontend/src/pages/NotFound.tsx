@@ -13,7 +13,7 @@ const NotFound = () => {
   return (
     <div className="flex items-center justify-center h-full w-full bg-[hsl(var(--theme-bg-primary))]">
       <div className="text-center max-w-md px-6">
-        <div className="text-8xl font-bold mb-4 bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] bg-clip-text text-transparent">
+        <div className="text-8xl font-bold mb-4 text-[hsl(var(--theme-text-accent))]">
           404
         </div>
         <h1 className="text-2xl font-bold mb-2 text-[hsl(var(--theme-text-primary))]">
@@ -32,7 +32,7 @@ const NotFound = () => {
           </button>
           <button
             onClick={() => navigate('/')}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-lg hover:shadow-xl hover:scale-105"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all bg-[hsl(var(--theme-accent-primary))] text-white shadow-lg hover:shadow-xl hover:scale-105"
           >
             <Home className="w-4 h-4" />
             Home

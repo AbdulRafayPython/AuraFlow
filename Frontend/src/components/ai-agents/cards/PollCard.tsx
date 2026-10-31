@@ -101,7 +101,7 @@ export default function PollCard({ messageId, question, options }: PollCardProps
 
   return (
     <div role="group" aria-label={`Poll: ${question}`}>
-      <p className="text-[14px] font-semibold leading-snug text-[hsl(var(--theme-text-primary))]">
+      <p className="text-ui font-semibold leading-snug text-[hsl(var(--theme-text-primary))]">
         {question}
       </p>
 
@@ -155,7 +155,7 @@ export default function PollCard({ messageId, question, options }: PollCardProps
                 <span className="flex min-w-0 items-center gap-2">
                   <span
                     className={cn(
-                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold',
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs font-semibold',
                       mine
                         ? 'border-transparent text-white'
                         : 'border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-muted))]'
@@ -167,7 +167,7 @@ export default function PollCard({ messageId, question, options }: PollCardProps
                   </span>
                   <span
                     className={cn(
-                      'truncate text-[13.5px]',
+                      'truncate text-sm',
                       mine
                         ? 'font-medium text-[hsl(var(--theme-text-primary))]'
                         : 'text-[hsl(var(--theme-text-secondary))]'
@@ -177,7 +177,7 @@ export default function PollCard({ messageId, question, options }: PollCardProps
                   </span>
                   {leading && (
                     <span
-                      className="shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                      className="shrink-0 rounded px-1 py-0.5 text-xs font-semibold "
                       style={{
                         color: accent,
                         backgroundColor: `hsl(var(--agent-accent-community) / 0.14)`,
@@ -191,12 +191,12 @@ export default function PollCard({ messageId, question, options }: PollCardProps
                 {revealed && (
                   <span className="flex shrink-0 items-baseline gap-1.5 tabular-nums">
                     <span
-                      className="text-[12.5px] font-semibold"
+                      className="text-xs font-semibold"
                       style={{ color: mine ? accent : 'hsl(var(--theme-text-secondary))' }}
                     >
                       {pct}%
                     </span>
-                    <span className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+                    <span className="text-xs text-[hsl(var(--theme-text-muted))]">
                       {count}
                     </span>
                   </span>
@@ -208,7 +208,7 @@ export default function PollCard({ messageId, question, options }: PollCardProps
       </div>
 
       {/* Footer: total voters + status. */}
-      <div className="mt-2.5 flex items-center gap-2 text-[11px] text-[hsl(var(--theme-text-muted))]">
+      <div className="mt-2.5 flex items-center gap-2 text-xs text-[hsl(var(--theme-text-muted))]">
         {pending ? (
           <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" style={{ color: accent }} />
         ) : (

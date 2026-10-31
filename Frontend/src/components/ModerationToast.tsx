@@ -22,7 +22,6 @@ export function ModerationToastListener() {
   useEffect(() => {
     // Handle message blocked events
     const handleMessageBlocked = (data: ModerationEvent) => {
-      console.log('[MODERATION] Message blocked:', data);
       
       toast({
         title: "🛡️ Message Blocked",
@@ -34,7 +33,6 @@ export function ModerationToastListener() {
 
     // Handle moderation warnings
     const handleModerationWarning = (data: ModerationWarning) => {
-      console.log('[MODERATION] Warning received:', data);
       
       toast({
         title: "⚠️ Content Warning",
@@ -46,7 +44,6 @@ export function ModerationToastListener() {
 
     // Handle moderation alerts (for moderators/admins)
     const handleModerationAlert = (data: any) => {
-      console.log('[MODERATION] Alert received:', data);
       
       const actionText = data.action === 'blocked' ? 'Blocked' : 'Flagged';
       const description = `${actionText} message from ${data.username}\nReasons: ${data.reasons.join(', ')}\n\n${data.content.substring(0, 100)}${data.content.length > 100 ? '...' : ''}`;

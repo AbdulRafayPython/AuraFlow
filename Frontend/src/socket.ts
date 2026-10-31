@@ -4,11 +4,11 @@ import { io, Socket } from 'socket.io-client';
 // In dev, connect to same origin (Vite proxies /socket.io to backend).
 // In production, use VITE_BACKEND_URL env var or fallback to port 5000.
 const isDev = import.meta.env?.DEV ?? false;
-const API_BASE = isDev
+const sameOrigin = import.meta.env?.VITE_SAME_ORIGIN === 'true';
+const API_BASE = isDev || sameOrigin
   ? ''
   : (import.meta.env?.VITE_BACKEND_URL || `http://${window.location.hostname}:5000`);
 
-console.log('[SOCKET] Socket module loaded, API base:', API_BASE || '(same origin via proxy)');
 
 // Create socket instance but don't auto-connect
 export const socket: Socket = io(API_BASE, {
@@ -35,7 +35,6 @@ export function connectSocket() {
     return;
   }
 
-  console.log('[SOCKET] Connecting with token...');
 
   // Remove "Bearer " prefix if it exists
   let cleanToken = token;
@@ -56,14 +55,12 @@ export function connectSocket() {
 // Function to disconnect socket
 export function disconnectSocket() {
   if (socket.connected) {
-    console.log('[SOCKET] Disconnecting...');
     socket.disconnect();
   }
 }
 
 // Debug events
 socket.on('connect', () => {
-  console.log('[SOCKET] ✅ Connected to server, ID:', socket.id);
 });
 
 socket.on('connect_error', (error) => {
@@ -77,7 +74,6 @@ socket.on('connect_error', (error) => {
     setTimeout(() => {
       const freshToken = localStorage.getItem('token');
       if (freshToken) {
-        console.log('[SOCKET] Retrying with fresh token');
         disconnectSocket();
         setTimeout(() => connectSocket(), 1000);
       }
@@ -90,7 +86,6 @@ socket.on('disconnect', (reason) => {
   
   // Auto-reconnect if it was a transport error or server disconnect
   if (reason === 'io server disconnect' || reason === 'transport close') {
-    console.log('[SOCKET] Will attempt automatic reconnection...');
     setTimeout(() => {
       const token = localStorage.getItem('token');
       if (token) {
@@ -107,7 +102,6 @@ socket.on('error', (error) => {
 // ─── Reconnect with fresh token after silent refresh ─────────────────
 window.addEventListener('auth:token-refreshed', () => {
   if (socket.connected) {
-    console.log('[SOCKET] Token refreshed, reconnecting with new token...');
     disconnectSocket();
     setTimeout(() => connectSocket(), 300);
   }

@@ -45,7 +45,7 @@ export interface ExplainabilityRowData {
   title: string;
   /** Short explanation. Shown verbatim — write user-facing copy at call site. */
   reason: string;
-  /** Scope label, e.g. `#general`, `Community: AuraFlow`, `You`. */
+  /** Scope label, e.g. `#general`, `Community: Auraflow`, `You`. */
   scope?: string;
   /** Visibility chip. Required on standard + expanded; optional in dense. */
   visibility?: AgentVisibility;
@@ -121,7 +121,7 @@ export default function ExplainabilityRow({
     return (
       <div
         className={
-          'group flex items-center gap-2 px-2 py-1.5 text-[12px] leading-4 ' +
+          'group flex items-center gap-2 px-2 py-1.5 text-xs leading-4 ' +
           'border-b border-[hsl(var(--theme-border-default))] last:border-b-0 ' +
           'hover:bg-[hsl(var(--theme-bg-hover))] transition-colors [transition-duration:140ms] ' +
           className
@@ -133,7 +133,7 @@ export default function ExplainabilityRow({
           style={{ backgroundColor: accent }}
         />
         <span
-          className="w-16 shrink-0 truncate text-[11px] font-medium text-[hsl(var(--theme-text-muted))]"
+          className="w-16 shrink-0 truncate text-xs font-medium text-[hsl(var(--theme-text-muted))]"
           title={agentLabel(row.agent)}
         >
           {agentLabel(row.agent)}
@@ -148,7 +148,7 @@ export default function ExplainabilityRow({
           <VisibilityChip visibility={row.visibility} compact className="shrink-0" />
         )}
         {row.createdAt && (
-          <span className="w-8 shrink-0 text-right font-mono text-[10px] text-[hsl(var(--theme-text-muted))]">
+          <span className="w-8 shrink-0 text-right font-mono text-xs text-[hsl(var(--theme-text-muted))]">
             {relativeTime(row.createdAt)}
           </span>
         )}
@@ -186,9 +186,9 @@ export default function ExplainabilityRow({
 
       <div className="min-w-0 flex-1">
         {/* Row 1 — agent label, decision, scope, timestamp */}
-        <div className="flex items-baseline gap-2 text-[11px] leading-4 text-[hsl(var(--theme-text-muted))]">
+        <div className="flex items-baseline gap-2 text-xs leading-4 text-[hsl(var(--theme-text-muted))]">
           <span
-            className="font-medium uppercase tracking-wide"
+            className="font-medium "
             style={{ color: accent }}
           >
             {agentLabel(row.agent)}
@@ -209,19 +209,19 @@ export default function ExplainabilityRow({
         </div>
 
         {/* Row 2 — title (primary) */}
-        <p className="mt-0.5 truncate text-[13px] font-medium text-[hsl(var(--theme-text-primary))]">
+        <p className="mt-0.5 truncate text-sm font-medium text-[hsl(var(--theme-text-primary))]">
           {row.title}
         </p>
 
         {/* Row 3 — reason (expanded mode only; otherwise tooltip-only) */}
         {isExpanded && (
-          <p className="mt-0.5 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+          <p className="mt-0.5 text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
             {detail}
           </p>
         )}
         {!isExpanded && detail !== row.title && (
           <p
-            className="mt-0.5 truncate text-[12px] text-[hsl(var(--theme-text-muted))]"
+            className="mt-0.5 truncate text-xs text-[hsl(var(--theme-text-muted))]"
             title={detail}
           >
             {detail}
@@ -234,7 +234,7 @@ export default function ExplainabilityRow({
             <VisibilityChip visibility={row.visibility} />
             {row.outcome && (
               <span
-                className="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide"
+                className="inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium "
                 style={{
                   borderColor: `hsl(var(--agent-state-${row.outcome}))`,
                   color: `hsl(var(--agent-state-${row.outcome}))`,
@@ -287,7 +287,7 @@ interface ControlProps {
 function FeedbackControls({ onVote, voted, disabled, dense = false, allowDismiss = false, onClose }: ControlProps) {
   if (voted) {
     return (
-      <span className="flex shrink-0 items-center gap-1 text-[11px] text-[hsl(var(--theme-text-muted))]">
+      <span className="flex shrink-0 items-center gap-1 text-xs text-[hsl(var(--theme-text-muted))]">
         <Check className="h-3 w-3" aria-hidden style={{ color: 'hsl(var(--agent-state-positive))' }} />
         {dense ? 'Thanks' : 'Thanks for the feedback'}
         {onClose && (
@@ -317,7 +317,7 @@ function FeedbackControls({ onVote, voted, disabled, dense = false, allowDismiss
     >
       <span
         className={
-          'whitespace-nowrap text-[11px] text-[hsl(var(--theme-text-muted))] ' +
+          'whitespace-nowrap text-xs text-[hsl(var(--theme-text-muted))] ' +
           // In dense rows the thumbs stay visible but the prompt only appears on
           // hover so it never crowds the one-line layout.
           (dense ? 'hidden group-hover:inline' : '')

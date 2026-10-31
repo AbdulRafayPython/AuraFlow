@@ -1,10 +1,21 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* Inter is self-hosted (bundled by Vite from @fontsource-variable/inter). */
+@import '@fontsource-variable/inter/index.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* AuraFlow Design System - Futuristic Discord-like Theme */
+/* AuraFlow design system.
+   Neutral surfaces, one accent, flat. Rules live in docs/UI_REDESIGN_PLAN.md
+   section 3 and are enforced by eslint.config.js.
+
+   Surface tokens (--background, --card, --border ...) alias the active
+   theme's --theme-* values (styles/themes.css), so shadcn primitives and
+   hand-written components always agree on colour.
+
+   Type scale: 12 / 13 / 14 (text-ui) / 15 / 18 / 24 px. 12px is the floor.
+   Radius scale: 4 / 6 / 8 / 12 / full.
+   Shadow: only popovers and menus (shadow-popover). */
 
 /* ============================================
    Z-INDEX SCALE (for reference)
@@ -19,158 +30,100 @@
    z-100    : Tooltips, popovers
    z-9998   : Toasts, notifications
    z-9999   : Tooltips (highest), dropdowns
-   z-[9999] : Modals, dialogs
    ============================================ */
 
 @layer base {
   :root {
-    /* Core Futuristic Palette - Dark Discord-like */
-    --background: 220 13% 18%; /* dark blue-grey like Discord */
-    --foreground: 210 20% 98%; /* near white text */
+    /* Surfaces follow the active theme */
+    --background: var(--theme-bg-primary);
+    --foreground: var(--theme-text-primary);
 
-    /* Surface Colors */
-    --card: 223 14% 16%; /* darker cards */
-    --card-foreground: 210 20% 98%;
-    
-    --popover: 223 14% 16%;
-    --popover-foreground: 210 20% 98%;
+    --card: var(--theme-bg-elevated);
+    --card-foreground: var(--theme-text-primary);
 
-    /* Brand Colors - Futuristic Cyan/Blue */
-    --primary: 200 100% 60%; /* bright cyan */
-    --primary-foreground: 210 20% 8%; /* dark text on bright */
-    --primary-light: 200 100% 85%; /* lighter cyan */
-    --primary-dark: 200 100% 40%; /* darker cyan */
+    --popover: var(--theme-bg-elevated);
+    --popover-foreground: var(--theme-text-primary);
 
-    /* Secondary - Discord-like grey */
-    --secondary: 220 9% 46%; /* Discord secondary */
-    --secondary-foreground: 210 20% 98%;
-
-    /* Muted Colors */
-    --muted: 220 13% 30%; /* darker muted */
-    --muted-foreground: 215 16% 65%;
-
-    /* Accent - Electric Purple */
-    --accent: 270 95% 70%; /* electric purple accent */
-    --accent-foreground: 210 20% 8%;
-    --accent-light: 270 95% 85%;
-
-    /* Status Colors - Neon-ish */
-    --success: 142 90% 50%; /* bright green */
-    --success-foreground: 210 20% 8%;
-    --success-light: 142 90% 85%;
-
-    --warning: 48 100% 60%; /* bright yellow */
-    --warning-foreground: 210 20% 8%;
-    --warning-light: 48 100% 85%;
-
-    --destructive: 0 100% 65%; /* bright red */
-    --destructive-foreground: 210 20% 98%;
-    --destructive-light: 0 100% 85%;
-
-    /* UI Elements */
-    --border: 220 13% 25%; /* subtle dark border */
-    --input: 220 13% 25%;
-    --ring: 200 100% 60%;
-
-    /* Chat Colors - Discord-like message bubbles */
-    --chat-user: 200 100% 15%; /* dark cyan for user */
-    --chat-other: 220 13% 20%; /* dark grey for others */
-    --chat-agent: 270 95% 20%; /* dark purple for AI */
-    --chat-system: 48 100% 15%; /* dark yellow for system */
-
-    /* Agent Status */
-    --agent-active: 142 90% 50%;
-    --agent-inactive: 215 16% 65%;
-    --agent-disabled: 220 13% 35%;
-
-    /* Sidebar - Discord-like dark navigation */
-    --sidebar-background: 223 14% 10%; /* very dark like Discord */
-    --sidebar-foreground: 210 20% 75%;
-    --sidebar-primary: 200 100% 60%;
-    --sidebar-primary-foreground: 210 20% 8%;
-    --sidebar-accent: 223 14% 20%; /* darker accent */
-    --sidebar-accent-foreground: 210 20% 85%;
-    --sidebar-border: 223 14% 15%;
-    --sidebar-ring: 200 100% 60%;
-
-    /* Discord-specific colors */
-    --discord-background: 220 13% 18%;
-    --discord-secondary: 223 14% 16%;
-    --discord-tertiary: 220 13% 30%;
-    --discord-accent: 235 85% 64%; /* Discord blurple */
-    
-    /* Channel colors */
-    --channel-default: 220 9% 46%;
-    --channel-hover: 220 13% 35%;
-    --channel-active: 200 100% 60%;
-    --channel-muted: 215 16% 45%;
-    --channel-unread: 0 100% 65%;
-
-    /* Animation & Layout */
-    --radius: 0.5rem; /* Sharper corners like Discord */
-    --shadow-soft: 0 1px 5px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3);
-    --shadow-medium: 0 4px 12px -1px rgb(0 0 0 / 0.4), 0 2px 8px -2px rgb(0 0 0 / 0.4);
-    --shadow-large: 0 25px 50px -12px rgb(0 0 0 / 0.6), 0 8px 16px -8px rgb(0 0 0 / 0.6);
-    --shadow-neon: 0 0 20px hsl(var(--primary) / 0.5), 0 0 40px hsl(var(--primary) / 0.3);
-
-    /* Futuristic Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
-    --gradient-dark: linear-gradient(135deg, hsl(var(--background)), hsl(var(--card)));
-    --gradient-neon: linear-gradient(135deg, hsl(var(--primary) / 0.2), hsl(var(--accent) / 0.2));
-    --gradient-sidebar: linear-gradient(180deg, hsl(var(--sidebar-background)), hsl(var(--sidebar-accent)));
-  }
-
-  .dark {
-    /* Dark theme (same as default) */
-    --background: 220 13% 18%;
-    --foreground: 210 20% 98%;
-    --card: 223 14% 16%;
-    --card-foreground: 210 20% 98%;
-    --popover: 223 14% 16%;
-    --popover-foreground: 210 20% 98%;
-    --muted: 220 13% 30%;
-    --muted-foreground: 215 16% 65%;
-    --border: 220 13% 25%;
-    --input: 220 13% 25%;
-  }
-
-  /* Light theme */
-  :root:not(.dark) {
-    --background: 0 0% 100%; /* white */
-    --foreground: 222.2 84% 4.9%; /* dark text */
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --primary: 200 100% 50%; /* cyan */
+    /* The one accent */
+    --primary: var(--theme-accent-primary);
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --accent: 270 95% 65%; /* purple */
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 100%;
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
-    --warning: 48 96% 53%;
-    --warning-foreground: 222.2 84% 4.9%;
-    --ring: 200 100% 50%;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 222.2 47.4% 11.2%;
-    --sidebar-primary: 200 100% 50%;
+    --primary-light: 238 100% 90%;
+    --primary-dark: 238 70% 45%;
+
+    --secondary: var(--theme-bg-tertiary);
+    --secondary-foreground: var(--theme-text-primary);
+
+    --muted: var(--theme-bg-tertiary);
+    --muted-foreground: var(--theme-text-muted);
+
+    /* shadcn "accent" is the neutral hover/selected fill (menus, ghost buttons).
+       The brand colour is --primary. */
+    --accent: var(--theme-bg-hover);
+    --accent-foreground: var(--theme-text-primary);
+    --accent-light: var(--theme-bg-active);
+
+    /* Status colours, desaturated */
+    /* Dark surfaces: bright enough to read as text; fills carry dark text. */
+    --success: 150 45% 52%;
+    --success-foreground: 150 60% 8%;
+    --success-light: 150 40% 85%;
+
+    --warning: 38 85% 55%;
+    --warning-foreground: 220 15% 10%;
+    --warning-light: 38 80% 88%;
+
+    --destructive: 0 72% 64%;
+    --destructive-foreground: 0 60% 10%;
+    --destructive-light: 0 70% 90%;
+
+    --border: var(--theme-border-default);
+    --input: var(--theme-border-default);
+    --ring: var(--theme-accent-primary);
+
+    /* Chat surfaces (flat, no tinted agent/system colours) */
+    --chat-user: var(--theme-message-self);
+    --chat-other: var(--theme-message-other);
+    --chat-agent: var(--theme-bg-tertiary);
+    --chat-system: var(--theme-bg-tertiary);
+
+    --agent-active: 150 45% 45%;
+    --agent-inactive: var(--theme-text-muted);
+    --agent-disabled: var(--theme-border-hover);
+
+    --sidebar-background: var(--theme-sidebar-bg);
+    --sidebar-foreground: var(--theme-text-secondary);
+    --sidebar-primary: var(--theme-accent-primary);
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 40% 96.1%;
-    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
-    --sidebar-border: 214.3 31.8% 91.4%;
-    --sidebar-ring: 200 100% 50%;
-    --chat-user: 200 100% 95%;
-    --chat-other: 210 40% 96.1%;
-    --chat-agent: 270 95% 95%;
-    --chat-system: 48 100% 95%;
+    --sidebar-accent: var(--theme-bg-hover);
+    --sidebar-accent-foreground: var(--theme-text-primary);
+    --sidebar-border: var(--theme-border-default);
+    --sidebar-ring: var(--theme-accent-primary);
+
+    --discord-background: var(--theme-bg-primary);
+    --discord-secondary: var(--theme-bg-secondary);
+    --discord-tertiary: var(--theme-bg-tertiary);
+    --discord-accent: var(--theme-accent-primary);
+
+    --channel-default: var(--theme-text-muted);
+    --channel-hover: var(--theme-bg-hover);
+    --channel-active: var(--theme-accent-primary);
+    --channel-muted: var(--theme-text-muted);
+    --channel-unread: var(--theme-accent-primary);
+
+    /* Radius base = 8px (lg). sm 4 / md 6 / lg 8 / xl 12 come from tailwind.config.ts */
+    --radius: 0.5rem;
+
+    --shadow-popover: 0 0 0 1px hsl(var(--theme-border-default)), 0 8px 24px -4px rgb(0 0 0 / 0.35);
+
+    /* Layout metrics (P1 shell) */
+    --rail-width: 56px;
+    --sidebar-width: 260px;
+    --right-pane-width: 380px;
+
+    /* Motion */
+    --ease-out: cubic-bezier(0.2, 0, 0, 1);
+    --duration-fast: 100ms;
+    --duration-base: 150ms;
   }
 }
 
@@ -180,8 +133,7 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    @apply bg-background text-foreground font-sans text-base antialiased;
   }
 
   /* Mobile-first foundation: kill the iOS tap flash on interactive elements
@@ -198,6 +150,11 @@
   html {
     -webkit-text-size-adjust: 100%;
   }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
+  }
 }
 
 /* ── Safe-area + viewport primitives ─────────────────────
@@ -211,83 +168,66 @@
 }
 
 @layer components {
-  /* Animation Classes */
+  /* Animation Classes (opacity/transform only) */
   .animate-fade-in {
-    @apply animate-in fade-in duration-300;
+    @apply animate-in fade-in duration-150;
   }
-  
+
   .animate-slide-in {
-    @apply animate-in slide-in-from-bottom-4 duration-300;
+    @apply animate-in slide-in-from-bottom-2 duration-150;
   }
-  
+
   .animate-scale-in {
-    @apply animate-in zoom-in-95 duration-200;
+    @apply animate-in zoom-in-95 duration-150;
   }
 
   /* Chat Message Variants */
   .message-user {
     @apply bg-chat-user text-foreground;
   }
-  
+
   .message-other {
     @apply bg-chat-other text-foreground;
   }
-  
+
   .message-agent {
-    @apply bg-chat-agent text-foreground border-l-4 border-success;
+    @apply bg-chat-agent text-foreground;
   }
-  
+
   .message-system {
-    @apply bg-chat-system text-foreground border-l-4 border-warning;
+    @apply bg-chat-system text-foreground;
   }
 
   /* Agent Status Indicators */
   .agent-active {
     @apply bg-success text-success-foreground;
   }
-  
+
   .agent-inactive {
     @apply bg-muted text-muted-foreground;
   }
-  
+
   .agent-disabled {
     @apply bg-muted text-muted-foreground opacity-50;
   }
 
-  /* Futuristic Shadows */
-  .shadow-soft {
-    box-shadow: var(--shadow-soft);
-  }
-  
-  .shadow-medium {
-    box-shadow: var(--shadow-medium);
-  }
-  
-  .shadow-large {
-    box-shadow: var(--shadow-large);
-  }
-
-  .shadow-neon {
-    box-shadow: var(--shadow-neon);
-  }
-
-  /* Smooth Transitions */
+  /* Smooth Transitions: colour/opacity/transform only */
   .transition-smooth {
-    @apply transition-all duration-200 ease-out;
+    transition-property: color, background-color, border-color, opacity, transform;
+    transition-duration: var(--duration-base);
+    transition-timing-function: var(--ease-out);
   }
 
   /* Skip layout/paint for off-screen items.
      Apply to long-list rows (messages, members, channels) so the browser
-     short-circuits work for anything outside the viewport. Estimate matches
-     typical row height — tweak per usage if rows are taller/shorter. */
+     short-circuits work for anything outside the viewport. */
   .cv-auto {
     content-visibility: auto;
     contain-intrinsic-size: 0 64px;
   }
 
   /* Mobile viewport + safe-area helpers.
-     Use these on full-screen containers so iOS Safari's URL bar
-     collapse doesn't break layout. dvh = dynamic viewport height. */
+     dvh = dynamic viewport height (iOS Safari URL bar collapse). */
   .h-dvh-safe {
     height: 100dvh;
   }
@@ -314,52 +254,21 @@
      hijack horizontal swipes for back/forward navigation. */
   .touch-pan-y { touch-action: pan-y; }
 
-
-  .hover-lift {
-    @apply transition-smooth hover:shadow-medium hover:-translate-y-0.5;
-  }
-
-  /* Futuristic Button Variants */
-  .btn-primary-gradient {
-    background: var(--gradient-primary);
-    @apply text-primary-foreground shadow-medium transition-smooth;
-  }
-
-  .btn-primary-gradient:hover {
-    box-shadow: var(--shadow-neon);
-  }
-  
-  .btn-neon {
-    @apply bg-primary/20 border border-primary text-primary backdrop-blur-sm hover:bg-primary hover:text-primary-foreground transition-smooth;
-    box-shadow: var(--shadow-neon);
-  }
-  
-  .btn-glass {
-    @apply bg-background/60 backdrop-blur-sm border border-border/50 shadow-medium hover:shadow-large transition-smooth;
-  }
-
-  /* Discord-like channel styles */
+  /* Channel list rows */
   .channel-item {
-    @apply flex items-center px-2 py-1 mx-2 rounded text-channel-default hover:text-foreground hover:bg-channel-hover transition-smooth cursor-pointer;
+    @apply flex items-center px-2 py-1 mx-2 rounded-md text-channel-default hover:text-foreground hover:bg-channel-hover transition-smooth cursor-pointer;
   }
-  
+
   .channel-item.active {
     @apply bg-channel-hover text-foreground;
   }
-  
+
   .channel-item.unread {
-    @apply text-foreground;
-  }
-  
-  .channel-item.unread::before {
-    content: '';
-    @apply absolute left-0 w-1 h-2 bg-channel-unread rounded-r;
+    @apply text-foreground font-semibold;
   }
 
   /* ── Themed Scrollbar (scoped to scroll containers only) ──
-     Previously applied via `*` which forced the browser to evaluate
-     scrollbar styling for every node in the tree. Scoping to elements
-     that actually scroll is materially cheaper. */
+     Scoping to elements that actually scroll is materially cheaper than `*`. */
   html,
   body,
   [class*="overflow-y-auto"],
@@ -368,7 +277,7 @@
   [class*="overflow-y-scroll"],
   [class*="overflow-x-scroll"] {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--theme-accent-primary) / 0.25) transparent;
+    scrollbar-color: hsl(var(--theme-text-muted) / 0.35) transparent;
   }
 
   html::-webkit-scrollbar,
@@ -399,7 +308,7 @@
   [class*="overflow-auto"]::-webkit-scrollbar-thumb,
   [class*="overflow-y-scroll"]::-webkit-scrollbar-thumb,
   [class*="overflow-x-scroll"]::-webkit-scrollbar-thumb {
-    background: hsl(var(--theme-accent-primary) / 0.25);
+    background: hsl(var(--theme-text-muted) / 0.35);
     border-radius: 10px;
   }
 
@@ -410,19 +319,19 @@
   [class*="overflow-auto"]::-webkit-scrollbar-thumb:hover,
   [class*="overflow-y-scroll"]::-webkit-scrollbar-thumb:hover,
   [class*="overflow-x-scroll"]::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--theme-accent-primary) / 0.45);
+    background: hsl(var(--theme-text-muted) / 0.55);
   }
 
   /* Custom Scrollbar — alias kept for backward compat */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--theme-accent-primary) / 0.25) transparent;
+    scrollbar-color: hsl(var(--theme-text-muted) / 0.35) transparent;
   }
 
-  /* Modal Scrollbar — slightly subtler */
+  /* Modal Scrollbar */
   .modal-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--theme-accent-primary) / 0.2) transparent;
+    scrollbar-color: hsl(var(--theme-text-muted) / 0.3) transparent;
     overflow-y: auto;
   }
 
@@ -431,25 +340,12 @@
   }
 
   .modal-scrollbar::-webkit-scrollbar-thumb {
-    background: hsl(var(--theme-accent-primary) / 0.2);
+    background: hsl(var(--theme-text-muted) / 0.3);
     border-radius: 10px;
   }
 
   .modal-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--theme-accent-primary) / 0.4);
-  }
-}
-
-/* Discover Page Hero Animation */
-@keyframes gradientShift {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
+    background: hsl(var(--theme-text-muted) / 0.5);
   }
 }
 
@@ -464,33 +360,30 @@
   }
 }
 
-/* ── Moderation Banner Animations ── */
-@keyframes moderation-warn-enter {
-  0% { opacity: 0; transform: translateY(-8px) scale(0.97); }
-  60% { opacity: 1; transform: translateY(2px) scale(1.01); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
+/* ── Moderation banner entrance (one-shot, no overshoot) ── */
+@keyframes moderation-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes moderation-flag-enter {
-  0% { opacity: 0; transform: translateX(-12px); }
-  60% { opacity: 1; transform: translateX(3px); }
-  100% { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes moderation-remove-enter {
-  0% { opacity: 0; transform: scale(0.92); }
-  50% { opacity: 1; transform: scale(1.02); }
-  100% { opacity: 1; transform: scale(1); }
-}
-
-.moderation-warn-enter {
-  animation: moderation-warn-enter 0.4s ease-out both;
-}
-
-.moderation-flag-enter {
-  animation: moderation-flag-enter 0.4s ease-out both;
-}
-
+.moderation-warn-enter,
+.moderation-flag-enter,
 .moderation-remove-enter {
-  animation: moderation-remove-enter 0.5s ease-out both;
+  animation: moderation-enter 150ms var(--ease-out) both;
+}
+
+/* Loading skeletons: the only infinite animation allowed (see the UI guard). */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-skeleton {
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-skeleton {
+    animation: none;
+  }
 }

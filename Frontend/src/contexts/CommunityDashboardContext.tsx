@@ -42,9 +42,7 @@ export function CommunityDashboardProvider({ children }: { children: React.React
 
   // Fetch communities where user is owner/admin
   const fetchOwnedCommunities = useCallback(async () => {
-    console.log('[CommunityDashboard] fetchOwnedCommunities called', { isAuthenticated, user });
     if (!isAuthenticated || !user) {
-      console.log('[CommunityDashboard] Not authenticated, skipping fetch');
       setOwnedCommunities([]);
       setSelectedCommunity(null);
       setIsLoadingCommunities(false);
@@ -53,11 +51,8 @@ export function CommunityDashboardProvider({ children }: { children: React.React
 
     try {
       setIsLoadingCommunities(true);
-      console.log('[CommunityDashboard] Fetching owned communities...');
       const response: any = await api.get('/api/admin/owned-communities');
-      console.log('[CommunityDashboard] API Response:', response);
       const communities = response.communities || [];
-      console.log('[CommunityDashboard] Parsed communities:', communities);
       setOwnedCommunities(communities);
       
       // Auto-select first community if none selected

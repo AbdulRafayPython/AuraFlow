@@ -69,7 +69,7 @@ export default function SystemEventMessage({ content, timestamp }: SystemEventMe
 
       {/* Pill */}
       <div
-        className={`flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11.5px] font-medium leading-5 ${colorClass} bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default)/0.4)]`}
+        className={`flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-medium leading-5 ${colorClass} bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default)/0.4)]`}
         title={timestamp}
       >
         {/* Colored dot */}

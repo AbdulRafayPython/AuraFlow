@@ -217,7 +217,7 @@ export default function AdminLayout() {
             <>
               <span className="opacity-50">{item.title}</span>
               {item.comingSoon && (
-                <span className="ml-auto px-1.5 py-0.5 text-[10px] bg-accent/20 text-accent rounded font-medium">
+                <span className="ml-auto px-1.5 py-0.5 text-xs bg-accent/20 text-[hsl(var(--theme-text-accent))] rounded font-medium">
                   {item.comingSoon}
                 </span>
               )}
@@ -234,7 +234,7 @@ export default function AdminLayout() {
               <TooltipContent side="right" className="flex items-center gap-2">
                 {item.title}
                 {item.comingSoon && (
-                  <span className="px-1.5 py-0.5 text-[10px] bg-accent/20 text-accent rounded font-medium">
+                  <span className="px-1.5 py-0.5 text-xs bg-accent/20 text-[hsl(var(--theme-text-accent))] rounded font-medium">
                     {item.comingSoon}
                   </span>
                 )}
@@ -255,7 +255,7 @@ export default function AdminLayout() {
             className={cn(
               'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150',
               'hover:bg-muted/60',
-              isActive && 'bg-accent/15 text-accent',
+              isActive && 'bg-accent/15 text-[hsl(var(--theme-text-accent))]',
               !isActive && 'text-muted-foreground hover:text-foreground'
             )}
           >
@@ -291,7 +291,7 @@ export default function AdminLayout() {
           cn(
             'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150',
             'hover:bg-muted/60',
-            active && 'bg-accent/15 text-accent',
+            active && 'bg-accent/15 text-[hsl(var(--theme-text-accent))]',
             !active && 'text-muted-foreground hover:text-foreground',
             depth > 0 && 'text-xs'
           )
@@ -339,16 +339,16 @@ export default function AdminLayout() {
         <div className="relative">
           <img
             src="/AuraflowLogo.png"
-            alt="AuraFlow"
+            alt="Auraflow"
             className={cn('object-contain', isCollapsed ? 'w-8 h-8' : 'w-10 h-10')}
           />
         </div>
         {!isCollapsed && (
           <div className="flex flex-col">
-            <span className="font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-accent to-accent/70">
-              AuraFlow
+            <span className="font-bold text-lg text-foreground">
+              Auraflow
             </span>
-            <span className="text-[10px] text-muted-foreground -mt-1">
+            <span className="text-xs text-muted-foreground -mt-1">
               Community Dashboard
             </span>
           </div>
@@ -365,11 +365,11 @@ export default function AdminLayout() {
                 className="w-full justify-between bg-accent/5 border-accent/20 hover:bg-accent/10"
               >
                 <div className="flex items-center gap-2 truncate">
-                  <div className="w-6 h-6 rounded-md bg-gradient-to-br from-accent/30 to-accent/10 flex items-center justify-center flex-shrink-0">
+                  <div className="w-6 h-6 rounded-md bg-accent/30 flex items-center justify-center flex-shrink-0">
                     {selectedCommunity?.icon ? (
                       <span className="text-sm">{selectedCommunity.icon}</span>
                     ) : (
-                      <Building2 className="w-3 h-3 text-accent" />
+                      <Building2 className="w-3 h-3 text-[hsl(var(--theme-text-accent))]" />
                     )}
                   </div>
                   <span className="truncate text-sm font-medium">
@@ -397,12 +397,12 @@ export default function AdminLayout() {
                   </div>
                   <div className="flex-1 truncate">
                     <span className="text-sm">{community.name}</span>
-                    <span className="text-[10px] text-muted-foreground ml-1">
+                    <span className="text-xs text-muted-foreground ml-1">
                       ({community.member_count} members)
                     </span>
                   </div>
                   {selectedCommunity?.id === community.id && (
-                    <Check className="h-4 w-4 text-accent" />
+                    <Check className="h-4 w-4 text-[hsl(var(--theme-text-accent))]" />
                   )}
                 </DropdownMenuItem>
               ))}
@@ -454,8 +454,8 @@ export default function AdminLayout() {
         {!isCollapsed ? (
           <div className="flex items-center gap-3">
             <Avatar className="h-10 w-10 border-2 border-accent/30">
-              <AvatarImage src={user.avatar_url || user.avatar} />
-              <AvatarFallback className="bg-accent/20 text-accent font-medium">
+              <AvatarImage src={user.avatar_url || user.avatar} alt="" />
+              <AvatarFallback className="bg-accent/20 text-[hsl(var(--theme-text-accent))] font-medium">
                 {user.display_name?.[0] || user.username?.[0] || 'A'}
               </AvatarFallback>
             </Avatar>
@@ -471,8 +471,8 @@ export default function AdminLayout() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Avatar className="h-10 w-10 border-2 border-accent/30">
-                  <AvatarImage src={user.avatar_url || user.avatar} />
-                  <AvatarFallback className="bg-accent/20 text-accent font-medium">
+                  <AvatarImage src={user.avatar_url || user.avatar} alt="" />
+                  <AvatarFallback className="bg-accent/20 text-[hsl(var(--theme-text-accent))] font-medium">
                     {user.display_name?.[0] || user.username?.[0] || 'A'}
                   </AvatarFallback>
                 </Avatar>
@@ -577,7 +577,7 @@ export default function AdminLayout() {
       {/* Mobile Sidebar Overlay */}
       {isMobileOpen && (
         <div
-          className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm"
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden"
           onClick={() => setIsMobileOpen(false)}
         />
       )}
@@ -588,7 +588,7 @@ export default function AdminLayout() {
       <aside
         className={cn(
           'fixed lg:sticky top-0 left-0 z-40 h-screen transition-all duration-300',
-          'backdrop-blur-xl border-r border-[hsl(var(--theme-border-default)/0.5)]',
+          ' border-r border-[hsl(var(--theme-border-default)/0.5)]',
           'text-[hsl(var(--theme-text-primary))]',
           isCollapsed ? 'w-[72px]' : 'w-64',
           isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'

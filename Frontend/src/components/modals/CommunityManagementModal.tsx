@@ -2,10 +2,10 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "@/contexts/ThemeContext";
 import { 
-  X, Trash2, LogOut, AlertCircle, Image, Crown, Shield, User,
-  BarChart3, Users, Hash, MessageSquare, ChevronRight, Palette,
-  Bell, Link2, Copy, Check, ExternalLink, Settings2, ShieldCheck,
-  TrendingUp, Activity, UserCog, Calendar
+  Trash2, LogOut, AlertCircle, Crown, Shield, User,
+  BarChart3, Users, Hash, ChevronRight, Palette,
+  Link2, Copy, Check, Settings2, ShieldCheck,
+  TrendingUp, Activity, Calendar
 } from "lucide-react";
 import { channelService } from "@/services/channelService";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -116,7 +116,7 @@ export default function CommunityManagementModal({
   const getRoleBadge = () => {
     if (isOwner) {
       return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-400 border border-amber-500/30">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30">
           <Crown className="w-3.5 h-3.5" />
           Owner
         </span>
@@ -124,7 +124,7 @@ export default function CommunityManagementModal({
     }
     if (userRole === 'admin') {
       return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-blue-500/20 to-cyan-500/20 text-blue-400 border border-blue-500/30">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-400 border border-blue-500/30">
           <Shield className="w-3.5 h-3.5" />
           Admin
         </span>
@@ -158,11 +158,11 @@ export default function CommunityManagementModal({
               <div 
                 className="w-full h-full"
                 style={{ 
-                  background: `linear-gradient(135deg, ${community.color || '#8B5CF6'} 0%, ${community.color || '#8B5CF6'}66 50%, ${community.color || '#8B5CF6'}33 100%)`
+                  backgroundColor: community.color || '#8B5CF6'
                 }}
               />
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-[hsl(var(--theme-bg-elevated))] via-transparent to-transparent" />
+            <div className="absolute inset-0 bg-[hsl(var(--theme-bg-elevated))]" />
           </div>
 
           {/* Close handled by ResponsiveModal */}
@@ -224,7 +224,7 @@ export default function CommunityManagementModal({
                   onClick={() => setActiveSection(section as typeof activeSection)}
                   className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
                     isActive
-                      ? 'border-[hsl(var(--theme-accent-primary))] text-[hsl(var(--theme-accent-primary))]'
+                      ? 'border-[hsl(var(--theme-accent-primary))] text-[hsl(var(--theme-text-accent))]'
                       : 'border-transparent text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
                   }`}
                 >
@@ -269,7 +269,7 @@ export default function CommunityManagementModal({
 
               {/* Quick Actions */}
               <div className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--theme-text-muted))] px-1">
+                <h3 className="text-xs font-semibold text-[hsl(var(--theme-text-muted))] px-1">
                   Quick Actions
                 </h3>
                 
@@ -298,7 +298,7 @@ export default function CommunityManagementModal({
               </div>
 
               {/* Community Info Card */}
-              <div className="p-4 rounded-xl bg-gradient-to-br from-[hsl(var(--theme-bg-secondary))] to-[hsl(var(--theme-bg-tertiary))] border border-[hsl(var(--theme-border-default))]">
+              <div className="p-4 rounded-xl bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))]">
                 <div className="flex items-center gap-2 mb-3">
                   <div 
                     className="w-3 h-3 rounded-full"
@@ -321,10 +321,10 @@ export default function CommunityManagementModal({
               {/* Admin Dashboard - Primary CTA */}
               <button
                 onClick={handleOpenAdminDashboard}
-                className="w-full p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 hover:from-emerald-500/20 hover:to-teal-500/20 border border-emerald-500/20 hover:border-emerald-500/30 transition-all group"
+                className="w-full p-4 rounded-xl bg-emerald-500/10 hover:from-emerald-500/20 hover:to-teal-500/20 border border-emerald-500/20 hover:border-emerald-500/30 transition-all group"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
                     <BarChart3 className="w-6 h-6 text-white" />
                   </div>
                   <div className="flex-1 text-left">
@@ -341,7 +341,7 @@ export default function CommunityManagementModal({
 
               {/* Management Options */}
               <div className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--theme-text-muted))] px-1">
+                <h3 className="text-xs font-semibold text-[hsl(var(--theme-text-muted))] px-1">
                   Community Settings
                 </h3>
 
@@ -367,7 +367,7 @@ export default function CommunityManagementModal({
 
               {/* Dashboard Features Preview */}
               <div className="p-4 rounded-xl bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))]">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--theme-text-muted))] mb-3">
+                <h4 className="text-xs font-semibold text-[hsl(var(--theme-text-muted))] mb-3">
                   Dashboard Features
                 </h4>
                 <div className="grid grid-cols-2 gap-2">
@@ -387,7 +387,7 @@ export default function CommunityManagementModal({
 
               {/* Role Info */}
               <div className="flex items-start gap-3 p-3 rounded-xl bg-[hsl(var(--theme-accent-primary))]/5 border border-[hsl(var(--theme-accent-primary))]/20">
-                <Crown className="w-5 h-5 flex-shrink-0 mt-0.5 text-[hsl(var(--theme-accent-primary))]" />
+                <Crown className="w-5 h-5 flex-shrink-0 mt-0.5 text-[hsl(var(--theme-text-accent))]" />
                 <p className="text-sm text-[hsl(var(--theme-text-secondary))]">
                   {isOwner 
                     ? "As the owner, you have full control over this community including all management features."

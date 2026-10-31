@@ -5,7 +5,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { channelService } from "@/services/channelService";
 import { useRealtime } from "@/hooks/useRealtime";
 import type { Community } from "@/types";
-import { X, Sparkles, ArrowRight, ArrowLeft, UploadCloud } from "lucide-react";
+import { Sparkles, ArrowRight, ArrowLeft, UploadCloud } from "lucide-react";
 import { ResponsiveModal, ResponsiveModalContent, ResponsiveModalTitle } from "@/components/ui/responsive-modal";
 
 interface CreateCommunityModalProps {
@@ -199,14 +199,14 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[hsl(var(--theme-border-subtle))]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] rounded-xl flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 bg-[hsl(var(--theme-accent-primary))] rounded-xl flex items-center justify-center shadow-md">
               <Sparkles className="w-[18px] h-[18px] text-white" />
             </div>
             <div>
               <ResponsiveModalTitle className="text-base font-semibold text-[hsl(var(--theme-text-primary))]">
                 Create Community
               </ResponsiveModalTitle>
-              <p className="text-[11px] text-[hsl(var(--theme-text-muted))] mt-0.5">
+              <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
                 Step {step} of 2 — {step === 1 ? 'Basic Details' : 'Branding'}
               </p>
             </div>
@@ -222,9 +222,9 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                 <div
                   className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-200 ${
                     step === s
-                      ? 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-md'
+                      ? 'bg-[hsl(var(--theme-accent-primary))] text-white shadow-md'
                       : step > s
-                        ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))] border border-[hsl(var(--theme-accent-primary)/0.3)]'
+                        ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-text-accent))] border border-[hsl(var(--theme-accent-primary)/0.3)]'
                         : 'bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))] border border-[hsl(var(--theme-border-default))]'
                   }`}
                 >
@@ -260,9 +260,9 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
             {error && (
               <div className="p-3 bg-red-500/8 border border-red-500/20 rounded-xl flex items-start gap-2.5">
                 <div className="w-4 h-4 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-red-400 text-[10px] font-bold">!</span>
+                  <span className="text-red-400 text-xs font-bold">!</span>
                 </div>
-                <p className="text-red-400 text-[13px] leading-relaxed">{error}</p>
+                <p className="text-red-400 text-sm leading-relaxed">{error}</p>
               </div>
             )}
 
@@ -278,10 +278,10 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                     {generateIcon}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[13px] text-[hsl(var(--theme-text-secondary))] leading-snug">
+                    <p className="text-sm text-[hsl(var(--theme-text-secondary))] leading-snug">
                       Icon auto-generated from name
                     </p>
-                    <p className="text-[11px] text-[hsl(var(--theme-text-muted))] mt-0.5">
+                    <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
                       Customize color in next step
                     </p>
                   </div>
@@ -290,10 +290,10 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                 {/* Name Field - Refined input styling */}
                 <div className="space-y-1.5">
                   <label className="flex items-center justify-between">
-                    <span className="text-[13px] font-medium text-[hsl(var(--theme-text-primary))]">
-                      Community Name <span className="text-[hsl(var(--theme-accent-primary))] ml-0.5">*</span>
+                    <span className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
+                      Community Name <span className="text-[hsl(var(--theme-text-accent))] ml-0.5">*</span>
                     </span>
-                    <span className="text-[11px] text-[hsl(var(--theme-text-muted))] tabular-nums">
+                    <span className="text-xs text-[hsl(var(--theme-text-muted))] tabular-nums">
                       {formData.name.length}/50
                     </span>
                   </label>
@@ -313,11 +313,11 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                 {/* Description Field - Cleaner textarea */}
                 <div className="space-y-1.5">
                   <label className="flex items-center justify-between">
-                    <span className="text-[13px] font-medium text-[hsl(var(--theme-text-primary))]">
+                    <span className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
                       Description
-                      <span className="text-[hsl(var(--theme-text-muted))] font-normal text-[11px] ml-1.5">Optional</span>
+                      <span className="text-[hsl(var(--theme-text-muted))] font-normal text-xs ml-1.5">Optional</span>
                     </span>
-                    <span className="text-[11px] text-[hsl(var(--theme-text-muted))] tabular-nums">
+                    <span className="text-xs text-[hsl(var(--theme-text-muted))] tabular-nums">
                       {formData.description.length}/200
                     </span>
                   </label>
@@ -340,7 +340,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
               <div className="space-y-5">
                 {/* Color Picker - Refined grid */}
                 <div className="space-y-2.5">
-                  <label className="text-[13px] font-medium text-[hsl(var(--theme-text-primary))]">
+                  <label className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
                     Community Color
                   </label>
                   <div className="grid grid-cols-8 gap-2">
@@ -360,7 +360,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                       />
                     ))}
                   </div>
-                  <p className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+                  <p className="text-xs text-[hsl(var(--theme-text-muted))]">
                     Used for badge and avatar background
                   </p>
                 </div>
@@ -374,10 +374,10 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                     {generateIcon}
                   </div>
                   <div>
-                    <p className="text-[13px] font-medium text-[hsl(var(--theme-text-primary))]">
+                    <p className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
                       {formData.name || 'Community Name'}
                     </p>
-                    <p className="text-[11px] text-[hsl(var(--theme-text-muted))] mt-0.5">
+                    <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
                       Icon preview
                     </p>
                   </div>
@@ -387,12 +387,12 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                   {/* Logo Upload */}
                   <div className="rounded-xl border border-dashed p-3 space-y-2 transition-all border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.4)] hover:border-[hsl(var(--theme-border-hover))]">
                     <div className="flex items-center justify-between">
-                      <p className="text-[12px] font-medium text-[hsl(var(--theme-text-primary))]">Logo</p>
+                      <p className="text-xs font-medium text-[hsl(var(--theme-text-primary))]">Logo</p>
                       {logoFile && (
                         <button
                           type="button"
                           onClick={() => { setLogoFile(null); setLogoPreview(null); }}
-                          className="text-[10px] font-medium text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))] transition-colors"
+                          className="text-xs font-medium text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-accent))] transition-colors"
                           disabled={isBusy}
                         >
                           Clear
@@ -408,7 +408,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                       ) : (
                         <UploadCloud className="w-5 h-5 text-[hsl(var(--theme-text-muted))]" />
                       )}
-                      <span className="text-[11px] text-[hsl(var(--theme-text-muted))] text-center px-2 truncate max-w-full">
+                      <span className="text-xs text-[hsl(var(--theme-text-muted))] text-center px-2 truncate max-w-full">
                         {logoFile ? logoFile.name : 'Square image'}
                       </span>
                     </label>
@@ -425,12 +425,12 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                   {/* Banner Upload */}
                   <div className="rounded-xl border border-dashed p-3 space-y-2 transition-all border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.4)] hover:border-[hsl(var(--theme-border-hover))]">
                     <div className="flex items-center justify-between">
-                      <p className="text-[12px] font-medium text-[hsl(var(--theme-text-primary))]">Banner</p>
+                      <p className="text-xs font-medium text-[hsl(var(--theme-text-primary))]">Banner</p>
                       {bannerFile && (
                         <button
                           type="button"
                           onClick={() => { setBannerFile(null); setBannerPreview(null); }}
-                          className="text-[10px] font-medium text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))] transition-colors"
+                          className="text-xs font-medium text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-accent))] transition-colors"
                           disabled={isBusy}
                         >
                           Clear
@@ -446,7 +446,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                       ) : (
                         <UploadCloud className="w-5 h-5 text-[hsl(var(--theme-text-muted))]" />
                       )}
-                      <span className="text-[11px] text-[hsl(var(--theme-text-muted))] text-center px-2 truncate max-w-full">
+                      <span className="text-xs text-[hsl(var(--theme-text-muted))] text-center px-2 truncate max-w-full">
                         {bannerFile ? bannerFile.name : 'Wide image'}
                       </span>
                     </label>
@@ -469,7 +469,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                 type="button"
                 onClick={step === 1 ? onClose : () => setStep(1)}
                 disabled={isBusy}
-                className="flex-1 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-150 bg-[hsl(var(--theme-bg-secondary)/0.8)] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))] border border-[hsl(var(--theme-border-default))] hover:border-[hsl(var(--theme-border-hover))] active:scale-[0.98] disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 bg-[hsl(var(--theme-bg-secondary)/0.8)] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))] border border-[hsl(var(--theme-border-default))] hover:border-[hsl(var(--theme-border-hover))] active:scale-[0.98] disabled:opacity-50"
               >
                 {step === 1 ? 'Cancel' : (
                   <span className="flex items-center justify-center gap-1.5">
@@ -483,7 +483,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                   type="button"
                   onClick={() => setStep(2)}
                   disabled={isBusy || !formData.name.trim()}
-                  className="flex-[1.5] py-2.5 rounded-xl text-[13px] font-semibold text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-sm hover:shadow-md hover:shadow-[hsl(var(--theme-accent-primary))/0.25] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+                  className="flex-[1.5] py-2.5 rounded-xl text-sm font-semibold text-white bg-[hsl(var(--theme-accent-primary))] shadow-sm hover:shadow-md hover:shadow-[hsl(var(--theme-accent-primary))/0.25] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
                 >
                   <span className="flex items-center justify-center gap-1.5">
                     Continue <ArrowRight className="w-3.5 h-3.5" />
@@ -494,7 +494,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
                   type="button"
                   onClick={(e) => handleSubmit(e)}
                   disabled={isBusy || !formData.name.trim()}
-                  className="flex-[1.5] py-2.5 rounded-xl text-[13px] font-semibold text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-sm hover:shadow-md hover:shadow-[hsl(var(--theme-accent-primary))/0.25] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+                  className="flex-[1.5] py-2.5 rounded-xl text-sm font-semibold text-white bg-[hsl(var(--theme-accent-primary))] shadow-sm hover:shadow-md hover:shadow-[hsl(var(--theme-accent-primary))/0.25] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
                 >
                   {isLoading ? (
                     <span className="flex items-center justify-center gap-2">

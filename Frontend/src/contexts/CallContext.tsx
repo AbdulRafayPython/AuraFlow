@@ -108,19 +108,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return () => { callSoundService.stop(); };
   }, [callState]);
 
-  // ── Cleanup helper ─────────────────────────────────────────────────
-  const resetCallState = useCallback(() => {
-    callWebrtcService.cleanup();
-    setLocalStream(null);
-    setRemoteStream(null);
-    setIsMicOn(true);
-    setIsCameraOn(true);
-    setCallDuration(0);
-    if (durationRef.current) {
-      clearInterval(durationRef.current);
-      durationRef.current = null;
-    }
-  }, []);
 
   const goIdle = useCallback((delay = 2000) => {
     // Release media devices IMMEDIATELY so they're available for the next call
@@ -158,7 +145,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     callWebrtcService.createConnection();
 
     callWebrtcService.onRemoteStream = (stream) => {
-      console.log('[CALL] Got remote stream');
       setRemoteStream(stream);
     };
 
@@ -170,7 +156,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
 
     callWebrtcService.onConnectionStateChange = (state) => {
-      console.log('[CALL] Connection state:', state);
       if (state === 'connected') {
         setCallState('connected');
         startDurationTimer();

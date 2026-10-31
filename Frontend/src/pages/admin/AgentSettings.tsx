@@ -133,7 +133,7 @@ export default function AgentSettings() {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-red-500/20 text-destructive text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span>{error}</span>
         </div>
@@ -141,7 +141,7 @@ export default function AgentSettings() {
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 text-[hsl(var(--theme-accent-primary))] animate-spin" />
+          <Loader2 className="w-8 h-8 text-[hsl(var(--theme-text-accent))] animate-spin" />
         </div>
       ) : agents.length === 0 ? (
         <div className="text-center py-16 rounded-2xl border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.5)]">
@@ -203,7 +203,7 @@ function AgentCard({
             <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5 line-clamp-2">{agent.description}</p>
             <div className="flex items-center gap-3 mt-2 text-xs text-[hsl(var(--theme-text-muted))]">
               {agent.has_override ? (
-                <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <span className="px-2 py-0.5 rounded-full bg-warning/10 text-warning border border-amber-500/20">
                   Customized
                 </span>
               ) : (
@@ -216,9 +216,9 @@ function AgentCard({
           </div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
-          {wasSaved && <Check className="w-4 h-4 text-emerald-400" />}
+          {wasSaved && <Check className="w-4 h-4 text-success" />}
           {isSaving ? (
-            <Loader2 className="w-5 h-5 text-[hsl(var(--theme-accent-primary))] animate-spin" />
+            <Loader2 className="w-5 h-5 text-[hsl(var(--theme-text-accent))] animate-spin" />
           ) : (
             <ToggleSwitch enabled={agent.enabled} onChange={onToggle} disabled={isSaving} />
           )}

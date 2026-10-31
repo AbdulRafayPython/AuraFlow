@@ -1,6 +1,5 @@
 // components/voice/VoiceDock.tsx — Floating Voice Bar
 // Persists while user browses text channels, DMs, etc.
-import React from "react";
 import { useVoice } from "@/contexts/VoiceContext";
 import { getAvatarUrl } from "@/lib/utils";
 import {
@@ -36,7 +35,7 @@ export default function VoiceDock() {
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[150] animate-in slide-in-from-bottom-4 duration-300">
       <div
-        className="flex items-center gap-3 px-4 py-2.5 rounded-2xl shadow-2xl border border-[hsl(var(--theme-border-default)/0.3)] backdrop-blur-xl"
+        className="flex items-center gap-3 px-4 py-2.5 rounded-2xl shadow-2xl border border-[hsl(var(--theme-border-default)/0.3)]"
         style={{
           background: "hsl(var(--theme-bg-secondary) / 0.92)",
           boxShadow:
@@ -51,7 +50,7 @@ export default function VoiceDock() {
           <div className="relative">
             <Radio className="w-4 h-4 text-green-400" />
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500">
-              <span className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-60" />
+              <span className="absolute inset-0 rounded-full bg-green-500 opacity-60" />
             </span>
           </div>
           <span className="text-sm font-medium text-[hsl(var(--theme-text-primary))] max-w-[120px] truncate">
@@ -68,7 +67,7 @@ export default function VoiceDock() {
                 key={user.id}
                 className={`relative w-8 h-8 rounded-full overflow-hidden ring-2 transition-all duration-200 ${
                   isSpeaking
-                    ? "ring-[hsl(var(--theme-accent-primary))] scale-110 z-10 shadow-[0_0_10px_hsl(var(--theme-accent-primary)/0.4)]"
+                    ? "ring-[hsl(var(--theme-accent-primary))] scale-110 z-10"
                     : "ring-[hsl(var(--theme-bg-secondary))]"
                 }`}
                 title={user.display_name}
@@ -80,7 +79,7 @@ export default function VoiceDock() {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white text-[10px] font-bold">
+                  <div className="w-full h-full flex items-center justify-center bg-[hsl(var(--theme-accent-primary))] text-white text-xs font-bold">
                     {user.display_name?.[0]?.toUpperCase() || "?"}
                   </div>
                 )}
@@ -88,7 +87,7 @@ export default function VoiceDock() {
             );
           })}
           {extraCount > 0 && (
-            <div className="w-8 h-8 rounded-full flex items-center justify-center ring-2 ring-[hsl(var(--theme-bg-secondary))] bg-[hsl(var(--theme-bg-tertiary))] text-[10px] font-bold text-[hsl(var(--theme-text-muted))]">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center ring-2 ring-[hsl(var(--theme-bg-secondary))] bg-[hsl(var(--theme-bg-tertiary))] text-xs font-bold text-[hsl(var(--theme-text-muted))]">
               +{extraCount}
             </div>
           )}

@@ -1,6 +1,8 @@
+// REWRITE: ~1.2k-line class with one handler array per event; replace with a typed event map.
 // services/socketService.ts - FIXED: Proper token passing
 import { io, Socket } from 'socket.io-client';
-import type { Message, DirectMessage } from '@/types';
+import type { Message, AgentRunEvent } from '@/types';
+import type { AgentApproval, ApprovalResolvedEvent } from '@/types/agentBuilder';
 
 interface UserStatus {
   username: string;
@@ -55,6 +57,8 @@ interface FriendRequestEvent {
 type MessageHandler = (message: Message) => void;
 type StatusHandler = (status: UserStatus) => void;
 type TypingHandler = (data: TypingIndicator) => void;
+type AgentRunHandler = (phase: 'started' | 'finished', data: AgentRunEvent) => void;
+type AgentApprovalHandler = (phase: 'requested' | 'resolved', data: AgentApproval | ApprovalResolvedEvent) => void;
 type ErrorHandler = (error: { msg: string }) => void;
 type CommunityHandler = (data: any) => void;
 type CommunityRemovedHandler = (data: { community_id: number; community_public_id?: string; user_id: number; reason: string; message?: string; notification?: { community_name: string; community_logo?: string; community_color: string; community_icon: string } }) => void;
@@ -86,6 +90,8 @@ class SocketService {
   private messageHandlers: MessageHandler[] = [];
   private statusHandlers: StatusHandler[] = [];
   private typingHandlers: TypingHandler[] = [];
+  private agentRunHandlers: AgentRunHandler[] = [];
+  private agentApprovalHandlers: AgentApprovalHandler[] = [];
   private errorHandlers: ErrorHandler[] = [];
   private communityHandlers: CommunityHandler[] = [];
   private communityRemovedHandlers: CommunityRemovedHandler[] = [];
@@ -103,7 +109,7 @@ class SocketService {
   private moderationFlagInlineHandlers: ModerationInlineHandler[] = [];
   private moderationUserRemovedHandlers: ModerationInlineHandler[] = [];
   private moderationRetroactiveHandlers: ((data: { message_id: number; channel_id: number; user_id: number; username: string; action: string; severity: string; reasons: string[]; explanation: string; violation_count: number; banner_text: string; timestamp: string }) => void)[] = [];
-  private moderationScanProgressHandlers: ((data: { community_id: number; channel_id: number; status: string; scanned: number; total: number; flagged: number; percent: number }) => void)[] = []; // NEW — v2
+  private moderationScanProgressHandlers: ((data: { community_id: number; channel_id: number; status: string; scanned: number; total: number; flagged: number; percent: number }) => void)[] = [];
   private commandResultHandlers: CommandResultHandler[] = [];
   private unreadUpdateHandlers: UnreadUpdateHandler[] = [];
   private dmUnreadUpdateHandlers: DMUnreadUpdateHandler[] = [];
@@ -139,11 +145,11 @@ class SocketService {
     // In dev, connect to same origin (Vite proxies /socket.io to backend).
     // In production, use VITE_BACKEND_URL env var.
     const isDev = import.meta.env.DEV;
-    const serverUrl = isDev
+    const sameOrigin = import.meta.env.VITE_SAME_ORIGIN === 'true';
+    const serverUrl = isDev || sameOrigin
       ? ''
       : (import.meta.env.VITE_BACKEND_URL || `https://${window.location.hostname}`);
     
-    console.log('[SOCKET] Connecting to:', serverUrl || '(same origin via proxy)');
     
     // Use auth transport for secure token handshake
     this.socket = io(serverUrl, {
@@ -161,7 +167,6 @@ class SocketService {
     
     // If socket is already connected (e.g., shared with socket.ts), trigger room joins immediately
     if (this.socket.connected) {
-      console.log('[SOCKET] ✅ Socket already connected (shared connection), joining rooms...');
       this.socket.emit('join_friend_status');
       this.socket.emit('get_unreads');
     } else if (!this.socket.connected) {
@@ -175,7 +180,6 @@ class SocketService {
     
     // Prevent duplicate listener registration if called multiple times on the same socket
     if (this.listenersAttached) {
-      console.log('[SOCKET] ⏭️ Listeners already attached, skipping duplicate registration');
       // Still ensure we're in the right rooms if already connected
       if (this.socket.connected) {
         this.socket.emit('join_friend_status');
@@ -187,7 +191,6 @@ class SocketService {
 
     // Connection events
     this.socket.on('connect', () => {
-      console.log('[SOCKET] ✅ Connected, id:', this.socket?.id);
       this.reconnectAttempts = 0;
       
       // Start heartbeat to track active status
@@ -195,11 +198,9 @@ class SocketService {
       
       // Rejoin all active rooms after reconnect
       if (this.currentChannel) {
-        console.log(`[SOCKET] Rejoining channel ${this.currentChannel}`);
         this.socket?.emit('join_channel', { channel_id: this.currentChannel });
       }
       if (this.currentDMUser) {
-        console.log(`[SOCKET] Rejoining DM room with user ${this.currentDMUser}`);
         this.socket?.emit('join_dm', { user_id: this.currentDMUser });
       }
       // Always rejoin friend status room for presence tracking
@@ -215,7 +216,6 @@ class SocketService {
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log('[SOCKET] ⚠️ Disconnected:', reason);
       
       // Stop heartbeat when disconnected
       this.stopHeartbeat();
@@ -238,7 +238,6 @@ class SocketService {
 
     // User status updates
     this.socket.on('user_status', (data: UserStatus) => {
-      console.log('[SOCKET] 👤 User status update:', data);
       this.statusHandlers.forEach(handler => handler(data));
     });
 
@@ -246,7 +245,6 @@ class SocketService {
     this.socket.on('message_received', (data: any) => {
       const chan = data?.channel_id ?? data?.channelId;
       const msgId = data?.id;
-      console.log('[SOCKET] 💬 New message received', { id: msgId, channel_id: chan, raw: data });
       
       // Normalize the message structure
       const message: Message = {
@@ -266,13 +264,7 @@ class SocketService {
         card: data.card || undefined,
       };
       
-      if (message.is_blocked) {
-        console.log('[SOCKET] 🚫 Message from BLOCKED user:', message.author);
-      }
       
-      if (message.moderation) {
-        console.log('[SOCKET] ⚠️ Message has moderation:', message.moderation.action);
-      }
       
       this.messageHandlers.forEach(handler => handler(message));
     });
@@ -284,13 +276,27 @@ class SocketService {
 
     // Typing indicator
     this.socket.on('user_typing', (data: TypingIndicator) => {
-      console.log('[SOCKET] ⌨️ User typing:', data);
       this.typingHandlers.forEach(handler => handler(data));
+    });
+
+    // Agent runs ("Aura is thinking…")
+    this.socket.on('agent_run_started', (data: AgentRunEvent) => {
+      this.agentRunHandlers.forEach(handler => handler('started', data));
+    });
+    this.socket.on('agent_run_finished', (data: AgentRunEvent) => {
+      this.agentRunHandlers.forEach(handler => handler('finished', data));
+    });
+
+    // Agent write actions waiting for (or past) a person's approval
+    this.socket.on('agent_approval_requested', (data: AgentApproval) => {
+      this.agentApprovalHandlers.forEach(handler => handler('requested', data));
+    });
+    this.socket.on('agent_approval_resolved', (data: ApprovalResolvedEvent) => {
+      this.agentApprovalHandlers.forEach(handler => handler('resolved', data));
     });
 
     // Status message
     this.socket.on('status', (data: { msg: string; username?: string; type?: string }) => {
-      console.log('[SOCKET] 📢 Status:', data.msg);
     });
 
     // Error handling
@@ -301,94 +307,78 @@ class SocketService {
 
     // Community creation event
     this.socket.on('community_created', (data: any) => {
-      console.log('[SOCKET] 🏘️ New community created:', data);
       this.communityHandlers.forEach(handler => handler(data));
     });
 
     // Community deleted event
     this.socket.on('community_deleted', (data: any) => {
-      console.log('[SOCKET] 🗑️ Community deleted:', data);
       this.communityDeletedHandlers.forEach(handler => handler(data));
     });
 
     // Community left event (user left the community)
     this.socket.on('community_left', (data: any) => {
-      console.log('[SOCKET] 👋 User left community:', data);
       this.communityLeftHandlers.forEach(handler => handler(data));
     });
 
     // Moderation action logged event (for owners to refresh logs)
     this.socket.on('moderation_action_logged', (data: { community_id: number; channel_id: number; action: string; severity: string; timestamp: string }) => {
-      console.log('[SOCKET] 🛡️ Moderation action logged:', data);
       this.moderationActionHandlers.forEach(handler => handler(data));
     });
 
     // Moderation inline warning (Strike 1)
     this.socket.on('moderation_warn_inline', (data: any) => {
-      console.log('[SOCKET] ⚠️ Moderation inline warning:', data);
       this.moderationWarnInlineHandlers.forEach(handler => handler(data));
     });
 
     // Moderation inline flag (Strike 2)
     this.socket.on('moderation_flag_inline', (data: any) => {
-      console.log('[SOCKET] 🚩 Moderation inline flag:', data);
       this.moderationFlagInlineHandlers.forEach(handler => handler(data));
     });
 
     // Moderation user removed (Strike 3)
     this.socket.on('moderation_user_removed', (data: any) => {
-      console.log('[SOCKET] 🚫 Moderation user removed:', data);
       this.moderationUserRemovedHandlers.forEach(handler => handler(data));
     });
 
     // Moderation retroactive (async Gemini review flagged a message after broadcast)
     this.socket.on('moderation_retroactive', (data: any) => {
-      console.log('[SOCKET] 🤖 Gemini retroactive moderation:', data);
       this.moderationRetroactiveHandlers.forEach(handler => handler(data));
     });
 
-    // NEW — v2: Retroactive scan progress
-    this.socket.on('moderation_scan_progress', (data: any) => { // NEW — v2
-      console.log('[SOCKET] 🔍 Scan progress:', data); // NEW — v2
-      this.moderationScanProgressHandlers.forEach(handler => handler(data)); // NEW — v2
-    }); // NEW — v2
+    // Retroactive scan progress
+    this.socket.on('moderation_scan_progress', (data: any) => {
+      this.moderationScanProgressHandlers.forEach(handler => handler(data));
+    });
 
     // AI command result event (for chat commands like /summarize)
     this.socket.on('command_result', (data: { type: string; success: boolean; summary?: string; key_points?: string[]; method?: string; error?: string }) => {
-      console.log('[SOCKET] AI Command result received');
       this.commandResultHandlers.forEach(handler => handler(data));
     });
 
     // Channel operation events
     this.socket.on('channel_created', (data: any) => {
-      console.log('[SOCKET] ✨ Channel created:', data);
       this.channelHandlers.forEach(handler => handler({ type: 'created', data }));
     });
 
     this.socket.on('channel_updated', (data: any) => {
-      console.log('[SOCKET] ✏️ Channel updated:', data);
       this.channelHandlers.forEach(handler => handler({ type: 'updated', data }));
     });
 
     this.socket.on('channel_deleted', (data: any) => {
-      console.log('[SOCKET] 🗑️ Channel deleted:', data);
       this.channelHandlers.forEach(handler => handler({ type: 'deleted', data }));
     });
 
     this.socket.on('community_member_added', (data: any) => {
-      console.log('[SOCKET] 👥 Member added to community:', data);
       this.channelHandlers.forEach(handler => handler({ type: 'member_added', data }));
     });
 
     // Community removed event - user removed/blocked from community
     this.socket.on('community:removed', (data: { community_id: number; user_id: number; reason: string; message?: string; notification?: { community_name: string; community_logo?: string; community_color: string; community_icon: string } }) => {
-      console.log('[SOCKET] 🚫 Removed from community:', data);
       this.communityRemovedHandlers.forEach(handler => handler(data));
     });
 
     // User blocked from community - notify all members to update their UI
     this.socket.on('user_blocked_from_community', (data: { community_id: number; user_id: number; blocked_at: string }) => {
-      console.log('[SOCKET] 🚷 User blocked from community:', data);
       this.userBlockedHandlers.forEach(handler => handler(data));
     });
 
@@ -402,23 +392,19 @@ class SocketService {
       // Clean up old IDs after 10 seconds to prevent memory leak
       setTimeout(() => this.recentDMIds.delete(data.id), 10000);
       
-      console.log('[SOCKET] DM received:', { id: data.id, from: data.sender_id, to: data.receiver_id });
 
       this.directMessageHandlers.forEach(handler => handler(data));
     });
 
     this.socket.on('dm_message_edited', (data: any) => {
-      console.log('[SOCKET] DM edited:', data?.id);
       this.dmEditHandlers.forEach(handler => handler(data));
     });
 
     this.socket.on('dm_message_deleted', (data: any) => {
-      console.log('[SOCKET] DM deleted:', data?.id);
       this.dmDeleteHandlers.forEach(handler => handler(data));
     });
 
     this.socket.on('direct_message_read', (data: { message_id: number; read_by: number }) => {
-      console.log('[SOCKET] ✓ Message marked as read:', data);
       this.directMessageHandlers.forEach(handler => 
         handler({ ...data, id: data.message_id } as any)
       );
@@ -435,11 +421,8 @@ class SocketService {
 
     // Friend request events
     this.socket.on('friend_request_received', (data: FriendRequestEvent) => {
-      console.log('[SOCKET] 🔔 friend_request_received event fired:', JSON.stringify(data));
-      console.log('[SOCKET] 🔔 friendRequestHandlers count:', this.friendRequestHandlers.length);
       this.friendRequestHandlers.forEach((handler, i) => {
         try {
-          console.log(`[SOCKET] 🔔 Calling friendRequest handler #${i}`);
           handler(data);
         } catch (error) {
           console.error('[SOCKET] Friend request handler error:', error);
@@ -448,7 +431,6 @@ class SocketService {
     });
 
     this.socket.on('friend_request_accepted', (data: any) => {
-      console.log('[SOCKET] Friend request accepted:', data);
       // Route to friendStatus handlers (not friendRequest handlers) so friends list refreshes
       this.friendStatusHandlers.forEach(handler => handler({ 
         friend_id: data.acceptor_id || data.sender_id, 
@@ -474,7 +456,6 @@ class SocketService {
     });
 
     this.socket.on('friend_request_rejected', (data: any) => {
-      console.log('[SOCKET] Friend request rejected:', data);
       // Notify friend status handlers to clean up sentRequests
       this.friendStatusHandlers.forEach(handler => handler({ 
         friend_id: data.rejector_id || data.receiver_id, 
@@ -484,7 +465,6 @@ class SocketService {
     });
 
     this.socket.on('friend_request_cancelled', (data: any) => {
-      console.log('[SOCKET] Friend request cancelled:', data);
       // Notify friend status handlers to remove from pendingRequests
       this.friendStatusHandlers.forEach(handler => handler({ 
         friend_id: data.sender_id, 
@@ -494,28 +474,23 @@ class SocketService {
     });
 
     this.socket.on('friend_status_changed', (data: { friend_id: number; status: 'online' | 'offline' | 'idle' | 'dnd' }) => {
-      console.log('[SOCKET] Friend status changed:', data);
       this.friendStatusHandlers.forEach(handler => handler(data));
     });
 
     // Also listen for 'friend_status' (emitted by backend on accept/remove/block)
     this.socket.on('friend_status', (data: { friend_id: number; status: string }) => {
-      console.log('[SOCKET] Friend status update:', data);
       this.friendStatusHandlers.forEach(handler => handler(data));
     });
 
     this.socket.on('friend_removed', (data: { friend_id: number }) => {
-      console.log('[SOCKET] 👋 Friend removed:', data);
       this.friendStatusHandlers.forEach(handler => handler({ friend_id: data.friend_id, status: 'removed' }));
     });
 
     this.socket.on('user_blocked', (data: { blocked_user_id: number }) => {
-      console.log('[SOCKET] 🚫 User blocked:', data);
       this.friendStatusHandlers.forEach(handler => handler({ friend_id: data.blocked_user_id, status: 'blocked' }));
     });
 
     this.socket.on('user_unblocked', (data: { unblocked_user_id: number }) => {
-      console.log('[SOCKET] ✓ User unblocked:', data);
       this.friendStatusHandlers.forEach(handler => handler({ friend_id: data.unblocked_user_id, status: 'unblocked' }));
     });
 
@@ -523,96 +498,79 @@ class SocketService {
 
     // Initial unread counts on connect/reconnect
     this.socket.on('initial_unreads', (data: any) => {
-      console.log('[SOCKET] 📊 Initial unreads received:', JSON.stringify(data));
       this.initialUnreadsHandlers.forEach(handler => handler(data));
     });
 
     // Channel/community unread increment
     this.socket.on('unread_update', (data: any) => {
-      console.log('[SOCKET] 🔔 unread_update received:', JSON.stringify(data));
       this.unreadUpdateHandlers.forEach(handler => handler(data));
     });
 
     // Channel activity — lightweight event emitted to community room for instant unread
     this.socket.on('channel_activity', (data: any) => {
-      console.log('[SOCKET] ⚡ channel_activity received:', JSON.stringify(data), `| handlers registered: ${this.channelActivityHandlers.length}`);
       this.channelActivityHandlers.forEach((handler, i) => {
-        console.log(`[SOCKET] ⚡ Calling handler #${i}`);
         handler(data);
       });
     });
 
     // DM unread increment
     this.socket.on('dm_unread_update', (data: any) => {
-      console.log('[SOCKET] 💬 dm_unread_update received:', JSON.stringify(data));
       this.dmUnreadUpdateHandlers.forEach(handler => handler(data));
     });
 
     // Pin expired (timer ran out)
     this.socket.on('pin_expired', (data: any) => {
-      console.log('[SOCKET] 📌 Pin expired:', data);
       this.pinEventHandlers.forEach(handler => handler({ ...data, type: 'expired' }));
     });
 
     // Channel pin events
     this.socket.on('message_pinned', (data: any) => {
-      console.log('[SOCKET] 📌 Message pinned:', data);
       this.pinEventHandlers.forEach(handler => handler({ ...data, type: 'channel_pinned' }));
     });
 
     this.socket.on('message_unpinned', (data: any) => {
-      console.log('[SOCKET] 📌 Message unpinned:', data);
       this.pinEventHandlers.forEach(handler => handler({ ...data, type: 'channel_unpinned' }));
     });
 
     // DM pin events
     this.socket.on('dm_message_pinned', (data: any) => {
-      console.log('[SOCKET] 📌 DM message pinned:', data);
       this.pinEventHandlers.forEach(handler => handler({ ...data, type: 'dm_pinned' }));
     });
 
     this.socket.on('dm_message_unpinned', (data: any) => {
-      console.log('[SOCKET] 📌 DM message unpinned:', data);
       this.pinEventHandlers.forEach(handler => handler({ ...data, type: 'dm_unpinned' }));
     });
 
     // Bulk friend presence snapshot
     this.socket.on('friends_status_bulk', (data: Record<number, string>) => {
-      console.log('[SOCKET] 👥 Bulk friend status:', Object.keys(data).length, 'friends');
       this.friendsBulkStatusHandlers.forEach(handler => handler(data));
     });
 
     // DM messages read acknowledgement
     this.socket.on('dm_messages_read', (data: { user_id: number }) => {
-      console.log('[SOCKET] ✓ DM messages read by:', data.user_id);
       this.dmUnreadUpdateHandlers.forEach(handler => handler({ sender_id: data.user_id, unread_count: 0, total_dm_unread: 0, total_unread: 0 }));
     });
 
     // Summary generation events (ephemeral, private to sender)
     this.socket.on('summary_generating', (data: { channel_id: number; status: string }) => {
-      console.log('[SOCKET] 🤖 Summary generating for channel:', data.channel_id);
       this.summaryGeneratingHandlers.forEach(handler => handler(data));
     });
 
     this.socket.on('summary_result', (data: { channel_id: number; content: string; method: string; message_count: number; created_at: string }) => {
-      console.log('[SOCKET] 📋 Summary result received for channel:', data.channel_id);
       this.summaryResultHandlers.forEach(handler => handler(data));
     });
 
     // Knowledge Builder ephemeral events (private to sender)
     this.socket.on('kb_generating', (data: { channel_id: number; status: string }) => {
-      console.log('[SOCKET] 📚 KB generating for channel:', data.channel_id);
       this.kbGeneratingHandlers.forEach(handler => handler(data));
     });
 
     this.socket.on('kb_result', (data: { channel_id: number; content: string; subtype: string; total_items: number; faqs: number; definitions: number; decisions: number; method: string; result_count?: number; created_at: string }) => {
-      console.log('[SOCKET] 📚 KB result received for channel:', data.channel_id);
       this.kbResultHandlers.forEach(handler => handler(data));
     });
 
     // Server-pushed persistent notification (from notification_service)
     this.socket.on('notification', (data: any) => {
-      console.log('[SOCKET] 🔔 Server notification received:', data);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('server-notification', { detail: data }));
       }
@@ -631,7 +589,6 @@ class SocketService {
     }
 
     this.socket.emit('join_dm', { user_id: userId });
-    console.log(`[SOCKET] Joined DM room with user ${userId}`);
   }
 
   // Leave DM conversation
@@ -639,7 +596,6 @@ class SocketService {
     if (!this.socket?.connected || !this.currentDMUser) return;
 
     this.socket.emit('leave_dm', { user_id: this.currentDMUser });
-    console.log(`[SOCKET] 💬 Left DM conversation with user ${this.currentDMUser}`);
     this.currentDMUser = null;
   }
 
@@ -673,7 +629,6 @@ class SocketService {
     }
 
     this.socket.emit('send_direct_message', message);
-    console.log(`[SOCKET] DM broadcast: msg ${message.id} to user ${message.receiver_id}`);
   }
 
   // Broadcast friend request sent
@@ -684,7 +639,6 @@ class SocketService {
     }
 
     this.socket.emit('friend_request_sent', request);
-    console.log(`[SOCKET] 👋 Broadcasting friend request to user ${request.receiver_id}`);
   }
 
   // Broadcast friend request acceptance
@@ -695,7 +649,6 @@ class SocketService {
     }
 
     this.socket.emit('friend_request_accepted_response', { request_id: requestId, user_id: userId });
-    console.log(`[SOCKET] ✓ Broadcasting friend request acceptance`);
   }
 
   // Join friend status room
@@ -706,7 +659,6 @@ class SocketService {
     }
 
     this.socket.emit('join_friend_status');
-    console.log('[SOCKET] 👥 Joined friend status room');
   }
 
   // Leave friend status room
@@ -714,7 +666,6 @@ class SocketService {
     if (!this.socket?.connected) return;
 
     this.socket.emit('leave_friend_status');
-    console.log('[SOCKET] 👥 Left friend status room');
   }
 
   // ─── Unread / Read Tracking Emitters ─────────────────────────────
@@ -758,7 +709,6 @@ class SocketService {
     }
 
     this.socket.emit('join_channel', { channel_id: channelId });
-    console.log(`[SOCKET] 🚪 Joining channel ${channelId}`);
   }
 
   // Leave current channel
@@ -766,7 +716,6 @@ class SocketService {
     if (!this.socket?.connected || !this.currentChannel) return;
 
     this.socket.emit('leave_channel', { channel_id: this.currentChannel });
-    console.log(`[SOCKET] 🚪 Left channel ${this.currentChannel}`);
     this.currentChannel = null;
   }
 
@@ -775,7 +724,6 @@ class SocketService {
     if (!this.socket?.connected) return;
 
     this.socket.emit('leave_community', { community_id: communityId });
-    console.log(`[SOCKET] 🚪 Left community ${communityId}`);
     
     // Clear current channel if it belongs to this community
     if (this.currentChannel) {
@@ -830,10 +778,6 @@ class SocketService {
         moderation: message.moderation || undefined,
       },
     });
-    console.log(`[SOCKET] 📤 Broadcasting message ${message.id} to channel ${channelId}`, message.is_blocked ? '(BLOCKED USER)' : '');
-    if (message.moderation) {
-      console.log(`[SOCKET] ⚠️ Broadcasting message with moderation action: ${message.moderation.action}`);
-    }
   }
 
   // Broadcast community creation
@@ -844,7 +788,6 @@ class SocketService {
     }
 
     this.socket.emit('community_created', community);
-    console.log(`[SOCKET] 🏘️ Broadcasting new community ${community.id} - ${community.name}`);
   }
 
   // Broadcast community deletion
@@ -855,7 +798,6 @@ class SocketService {
     }
 
     this.socket.emit('community_deleted', { community_id: communityId });
-    console.log(`[SOCKET] 🗑️ Broadcasting community deletion ${communityId}`);
   }
 
   // Broadcast channel creation
@@ -866,7 +808,6 @@ class SocketService {
     }
 
     this.socket.emit('channel_created', channel);
-    console.log(`[SOCKET] ✨ Broadcasting new channel ${channel.id} - ${channel.name}`);
   }
 
   // Broadcast channel update
@@ -877,7 +818,6 @@ class SocketService {
     }
 
     this.socket.emit('channel_updated', channel);
-    console.log(`[SOCKET] ✏️ Broadcasting channel update ${channel.id}`);
   }
 
   // Broadcast channel deletion
@@ -888,7 +828,6 @@ class SocketService {
     }
 
     this.socket.emit('channel_deleted', { id: channelId, community_id: communityId });
-    console.log(`[SOCKET] 🗑️ Broadcasting channel deletion ${channelId}`);
   }
 
   // Broadcast community member added
@@ -903,7 +842,6 @@ class SocketService {
       member_id: memberId,
       member_username: memberUsername,
     });
-    console.log(`[SOCKET] 👥 Broadcasting member addition to community ${communityId}`);
   }
 
   // Event listeners
@@ -925,6 +863,20 @@ class SocketService {
     this.pollVoteUpdateHandlers.push(handler);
     return () => {
       this.pollVoteUpdateHandlers = this.pollVoteUpdateHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onAgentRun(handler: AgentRunHandler) {
+    this.agentRunHandlers.push(handler);
+    return () => {
+      this.agentRunHandlers = this.agentRunHandlers.filter(h => h !== handler);
+    };
+  }
+
+  onAgentApproval(handler: AgentApprovalHandler) {
+    this.agentApprovalHandlers.push(handler);
+    return () => {
+      this.agentApprovalHandlers = this.agentApprovalHandlers.filter(h => h !== handler);
     };
   }
 
@@ -1014,10 +966,8 @@ class SocketService {
 
   onFriendRequest(handler: FriendRequestHandler) {
     this.friendRequestHandlers.push(handler);
-    console.log(`[SOCKET] 📌 onFriendRequest registered. Total handlers: ${this.friendRequestHandlers.length}`);
     return () => {
       this.friendRequestHandlers = this.friendRequestHandlers.filter(h => h !== handler);
-      console.log(`[SOCKET] 🗑️ onFriendRequest unregistered. Remaining: ${this.friendRequestHandlers.length}`);
     };
   }
 
@@ -1063,13 +1013,12 @@ class SocketService {
     };
   }
 
-  // NEW — v2
-  onModerationScanProgress(handler: (data: { community_id: number; channel_id: number; status: string; scanned: number; total: number; flagged: number; percent: number }) => void) { // NEW — v2
-    this.moderationScanProgressHandlers.push(handler); // NEW — v2
-    return () => { // NEW — v2
-      this.moderationScanProgressHandlers = this.moderationScanProgressHandlers.filter(h => h !== handler); // NEW — v2
-    }; // NEW — v2
-  } // NEW — v2
+  onModerationScanProgress(handler: (data: { community_id: number; channel_id: number; status: string; scanned: number; total: number; flagged: number; percent: number }) => void) {
+    this.moderationScanProgressHandlers.push(handler);
+    return () => {
+      this.moderationScanProgressHandlers = this.moderationScanProgressHandlers.filter(h => h !== handler);
+    };
+  }
 
   onCommandResult(handler: CommandResultHandler) {
     this.commandResultHandlers.push(handler);
@@ -1115,10 +1064,8 @@ class SocketService {
 
   onChannelActivity(handler: ChannelActivityHandler) {
     this.channelActivityHandlers.push(handler);
-    console.log(`[SOCKET] 📌 onChannelActivity registered. Total handlers: ${this.channelActivityHandlers.length}`);
     return () => {
       this.channelActivityHandlers = this.channelActivityHandlers.filter(h => h !== handler);
-      console.log(`[SOCKET] 🗑️ onChannelActivity unregistered. Remaining: ${this.channelActivityHandlers.length}`);
     };
   }
 
@@ -1165,7 +1112,6 @@ class SocketService {
       this.currentChannel = null;
       this.listenersAttached = false;
       this.hasConnectedOnce = false;
-      console.log('[SOCKET] 🔌 Disconnected manually');
     }
   }
 
@@ -1176,7 +1122,6 @@ class SocketService {
     // Send heartbeat every 30 seconds to track active users
     this.heartbeatInterval = setInterval(() => {
       if (this.socket?.connected) {
-        console.log('[HEARTBEAT] Sending heartbeat...');
         this.socket.emit('heartbeat');
       }
     }, 30000); // 30 seconds
@@ -1186,14 +1131,12 @@ class SocketService {
       this.socket.emit('heartbeat');
     }
     
-    console.log('[HEARTBEAT] Started heartbeat monitoring');
   }
 
   private stopHeartbeat() {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
-      console.log('[HEARTBEAT] Stopped heartbeat monitoring');
     }
   }
 
@@ -1216,7 +1159,6 @@ export const socketService = new SocketService();
 window.addEventListener('auth:token-refreshed', () => {
   const token = localStorage.getItem('token');
   if (token && socketService.isConnected()) {
-    console.log('[SOCKET-SVC] Token refreshed, reconnecting with new token...');
     socketService.disconnect();
     setTimeout(() => socketService.connect(token), 300);
   }

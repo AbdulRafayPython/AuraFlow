@@ -12,7 +12,6 @@ export async function initPush(): Promise<void> {
 
   try {
     swRegistration = await navigator.serviceWorker.register('/sw.js');
-    console.log('[PUSH] Service worker registered');
   } catch (e) {
     console.warn('[PUSH] SW registration failed:', e);
   }

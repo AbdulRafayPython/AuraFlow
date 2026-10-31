@@ -22,7 +22,7 @@
  *   new aggregation endpoint; intentionally deferred.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCommunityDashboard } from '@/contexts/CommunityDashboardContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -125,14 +125,14 @@ function AgentCard({ agent, isToggling, isDark, onToggle, onConfigure }: AgentCa
             enabled ? 'bg-accent/10' : 'bg-muted',
           )}
         >
-          {agent.icon || <Bot className="h-6 w-6 text-accent" />}
+          {agent.icon || <Bot className="h-6 w-6 text-[hsl(var(--theme-text-accent))]" />}
         </div>
         <div className="flex items-center gap-2">
           <span
             className={cn(
-              'inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider px-2 py-1 rounded-full',
+              'inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full',
               enabled
-                ? 'bg-emerald-500/15 text-emerald-600 border border-emerald-500/30'
+                ? 'bg-success/15 text-success border border-emerald-500/30'
                 : 'bg-muted text-muted-foreground border border-border/50',
             )}
           >
@@ -181,14 +181,14 @@ function AgentCard({ agent, isToggling, isDark, onToggle, onConfigure }: AgentCa
         <div className="rounded-lg border border-border/50 bg-muted/40 p-3">
           <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
             <Activity className="h-3.5 w-3.5" />
-            <p className="text-[10px] uppercase font-semibold tracking-wider">Actions</p>
+            <p className="text-xs font-semibold">Actions</p>
           </div>
           <p className="text-lg font-bold">{formatCount(agent.usage_count)}</p>
         </div>
         <div className="rounded-lg border border-border/50 bg-muted/40 p-3">
           <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
             <Clock className="h-3.5 w-3.5" />
-            <p className="text-[10px] uppercase font-semibold tracking-wider">Last Active</p>
+            <p className="text-xs font-semibold">Last Active</p>
           </div>
           <p
             className="text-lg font-bold truncate"
@@ -302,7 +302,7 @@ export default function AIAgentsManagement() {
         <div>
           <p className="text-sm text-muted-foreground">Admin &gt; AI Agents</p>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Bot className="h-6 w-6 text-accent" />
+            <Bot className="h-6 w-6 text-[hsl(var(--theme-text-accent))]" />
             AI Agents
           </h1>
         </div>
@@ -329,7 +329,7 @@ export default function AIAgentsManagement() {
         <div>
           <p className="text-sm text-muted-foreground">Admin &gt; AI Agents</p>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Bot className="h-6 w-6 text-accent" />
+            <Bot className="h-6 w-6 text-[hsl(var(--theme-text-accent))]" />
             AI Agents
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -366,10 +366,10 @@ export default function AIAgentsManagement() {
 
       {/* Error banner */}
       {error && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+        <div className="rounded-xl border border-red-500/30 bg-destructive/10 px-4 py-3 flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-red-700 dark:text-red-300">
+            <p className="text-sm font-medium text-red-700 dark:text-destructive">
               {error}
             </p>
           </div>
@@ -396,7 +396,7 @@ export default function AIAgentsManagement() {
         >
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-accent/10">
-              <Bot className="h-5 w-5 text-accent" />
+              <Bot className="h-5 w-5 text-[hsl(var(--theme-text-accent))]" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Agents Available</p>
@@ -413,8 +413,8 @@ export default function AIAgentsManagement() {
           )}
         >
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-emerald-500/10">
-              <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+            <div className="p-2 rounded-lg bg-success/10">
+              <CheckCircle2 className="h-5 w-5 text-success" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Currently Active</p>

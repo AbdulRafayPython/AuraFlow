@@ -204,3 +204,35 @@ export function humanAction(
     detail: humanizeReason(agent, decision, reason),
   };
 }
+
+/**
+ * Friendly label for how a summary or knowledge-base result was produced.
+ *
+ * The backend stores this in `conversation_summaries.method`,
+ * `scheduled_summaries.method` and the KB result payload. Historic rows
+ * carry provider names (`gemini-ai`, `gemini`) and older builds rendered
+ * the raw value, so a member could see "Method: gemini-ai" on a summary.
+ *
+ * A generated artefact should never name the engine behind it: the value is
+ * persisted, so any provider name in it is wrong the moment the provider
+ * changes, and it is meaningless to the person reading the summary. Hence
+ * the default branch — anything that is not explicitly a rule-based method
+ * is reported as "AI Agent", which covers every past and future provider
+ * value without needing this list updated.
+ */
+export function methodLabel(method: string | null | undefined): string {
+  switch ((method ?? '').trim().toLowerCase()) {
+    case '':
+    case 'none':
+      return '—';
+    case 'extractive':
+      return 'Extractive';
+    case 'rule_based':
+    case 'rule-based':
+      return 'Rule-based';
+    case 'hybrid':
+      return 'AI Agent + Rules';
+    default:
+      return 'AI Agent';
+  }
+}

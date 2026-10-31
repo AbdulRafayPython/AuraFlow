@@ -1,3 +1,4 @@
+// REWRITE: ~1.2k lines; split per domain and share types with the system-admin pages.
 /**
  * Community Dashboard Service
  * Handles all admin/community dashboard API calls.
@@ -101,7 +102,7 @@ export interface SystemNotification {
   created_at: string | null;
 }
 
-// Phase 2.1 — thread-context view for a single flagged log row.
+// Thread-context view for a single flagged log row.
 // Returned by GET /community/<id>/moderation/flagged/<log_id>/context.
 export interface FlaggedContextMessage {
   id: number;
@@ -171,7 +172,7 @@ export interface CommunityMember {
   created_at?: string;
   last_seen: string | null;
   /** True when `community_members.is_muted` is set. Server returns this on the
-   * community-scoped members + member-details endpoints (added in Phase 1.5). */
+   * community-scoped members + member-details endpoints. */
   is_muted?: boolean;
   stats: {
     message_count: number;
@@ -302,7 +303,7 @@ class AdminService {
   }
 
   // =====================
-  // AGENT GOALS (Phase 5.2) — per-agent tunables, clamps, kill-switch
+  // AGENT GOALS — per-agent tunables, clamps, kill-switch
   // Backed by /api/agents/<name>/state on the autonomous-agent path.
   // =====================
 
@@ -456,7 +457,7 @@ class AdminService {
   }
 
   /**
-   * Phase 2.1 — Fetch the flagged message + ±window surrounding messages
+   * Fetch the flagged message + ±window surrounding messages
    * from the same channel, so the admin can review the violation in context.
    * `window` is messages on each side (default 5, clamped to 20 server-side).
    */
@@ -518,24 +519,23 @@ class AdminService {
     }
   }
 
-  // NEW — v2
-  async triggerModerationScan(communityId: string, options: { channel_id?: number; hours_back?: number } = {}): Promise<{ task_id: string }> { // NEW — v2
-    try { // NEW — v2
-      const res: any = await api.post(`/api/admin/community/${communityId}/moderation/scan`, options); // NEW — v2
-      return res.data; // NEW — v2
-    } catch (error: any) { // NEW — v2
-      throw new Error(error.data?.error || 'Failed to start scan'); // NEW — v2
-    } // NEW — v2
-  } // NEW — v2
+  async triggerModerationScan(communityId: string, options: { channel_id?: number; hours_back?: number } = {}): Promise<{ task_id: string }> {
+    try {
+      const res: any = await api.post(`/api/admin/community/${communityId}/moderation/scan`, options);
+      return res.data;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to start scan');
+    }
+  }
 
-  async getModerationScanStatus(communityId: string, channelId: number): Promise<{ status: string; scanned: number; total: number; flagged: number; percent: number }> { // NEW — v2
-    try { // NEW — v2
-      const res: any = await api.get(`/api/admin/community/${communityId}/moderation/scan/status?channel_id=${channelId}`); // NEW — v2
-      return res.data; // NEW — v2
-    } catch (error: any) { // NEW — v2
-      throw new Error(error.data?.error || 'Failed to get scan status'); // NEW — v2
-    } // NEW — v2
-  } // NEW — v2
+  async getModerationScanStatus(communityId: string, channelId: number): Promise<{ status: string; scanned: number; total: number; flagged: number; percent: number }> {
+    try {
+      const res: any = await api.get(`/api/admin/community/${communityId}/moderation/scan/status?channel_id=${channelId}`);
+      return res.data;
+    } catch (error: any) {
+      throw new Error(error.data?.error || 'Failed to get scan status');
+    }
+  }
 
   // =====================
   // MEMBER MANAGEMENT (Community Scoped)

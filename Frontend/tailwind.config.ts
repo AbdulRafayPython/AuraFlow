@@ -1,16 +1,15 @@
 import type { Config } from "tailwindcss";
 import tailwindcssAnimate from 'tailwindcss-animate';
+import tailwindScrollbar from 'tailwind-scrollbar';
 
 export default {
   darkMode: ["class"],
-  content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
+  content: ["./index.html", "./pages/**/*.{ts,tsx,js,jsx}", "./components/**/*.{ts,tsx,js,jsx}", "./app/**/*.{ts,tsx,js,jsx}", "./src/**/*.{ts,tsx,js,jsx}"],
   prefix: "",
   safelist: [
-    // Agent card dynamic palettes (DiscoverCommunities → AGENT_SKINS)
-    ...['red', 'emerald', 'indigo', 'orange', 'blue', 'pink', 'purple', 'violet', 'cyan', 'amber', 'slate'].flatMap(c => [
-      `hover:border-${c}-500/40`,
-      `bg-${c}-500/10`, `text-${c}-400`, `border-${c}-500/20`,
-      `from-${c}-500`, `to-${c}-600`,
+    // pages/AgentDetails.tsx builds `bg-${agent.color}-500/20` and `text-${agent.color}-400` at runtime.
+    ...['blue', 'pink', 'red', 'green', 'purple', 'indigo', 'orange', 'violet', 'cyan', 'emerald', 'amber'].flatMap(c => [
+      `bg-${c}-500/20`, `text-${c}-400`,
     ]),
   ],
   theme: {
@@ -21,7 +20,59 @@ export default {
         "2xl": "1400px",
       },
     },
+    // Type scale: 12 / 13 / 14 (ui) / 15 / 18 / 24. 12px is the floor.
+    fontSize: {
+      xs: ["12px", { lineHeight: "16px" }],
+      sm: ["13px", { lineHeight: "20px" }],
+      ui: ["14px", { lineHeight: "20px" }],
+      base: ["15px", { lineHeight: "22px" }],
+      lg: ["18px", { lineHeight: "26px" }],
+      xl: ["18px", { lineHeight: "26px" }],
+      "2xl": ["24px", { lineHeight: "32px" }],
+      "3xl": ["30px", { lineHeight: "38px" }],
+      "4xl": ["36px", { lineHeight: "44px" }],
+      "5xl": ["48px", { lineHeight: "1" }],
+      "6xl": ["60px", { lineHeight: "1" }],
+      "7xl": ["72px", { lineHeight: "1" }],
+      "8xl": ["96px", { lineHeight: "1" }],
+      "9xl": ["128px", { lineHeight: "1" }],
+    },
+    // Radius scale: 4 / 6 / 8 / 12 / full
+    borderRadius: {
+      none: "0px",
+      sm: "4px",
+      DEFAULT: "4px",
+      md: "6px",
+      lg: "8px",
+      xl: "12px",
+      "2xl": "12px",
+      "3xl": "12px",
+      full: "9999px",
+    },
+    // Shadows are for popovers and menus only.
+    boxShadow: {
+      none: "none",
+      sm: "0 1px 2px 0 rgb(0 0 0 / 0.2)",
+      DEFAULT: "0 1px 2px 0 rgb(0 0 0 / 0.2)",
+      md: "var(--shadow-popover)",
+      lg: "var(--shadow-popover)",
+      xl: "var(--shadow-popover)",
+      "2xl": "var(--shadow-popover)",
+      inner: "inset 0 1px 2px 0 rgb(0 0 0 / 0.2)",
+      popover: "var(--shadow-popover)",
+    },
     extend: {
+      fontFamily: {
+        sans: ["'Inter Variable'", "Inter", "-apple-system", "BlinkMacSystemFont", "'Segoe UI'", "Roboto", "sans-serif"],
+      },
+      transitionDuration: {
+        DEFAULT: "150ms",
+      },
+      width: {
+        rail: "var(--rail-width)",
+        sidebar: "var(--sidebar-width)",
+        "right-pane": "var(--right-pane-width)",
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -104,18 +155,6 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
-        admin: {
-          bg: "#0f0814",
-          surface: "#191022",
-          border: "#322345",
-          accent: "#1d1129",
-          primary: "#8c2bee",
-        },
-      },
-      borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
       },
       keyframes: {
         "accordion-down": {
@@ -136,10 +175,10 @@ export default {
         },
       },
       animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
+        "accordion-down": "accordion-down 0.15s ease-out",
+        "accordion-up": "accordion-up 0.15s ease-out",
       },
     },
   },
-  plugins: [tailwindcssAnimate],
+  plugins: [tailwindcssAnimate, tailwindScrollbar],
 } satisfies Config;

@@ -1,5 +1,5 @@
 /**
- * System Admin — How agents work together (Phase 4.4, redesigned)
+ * System Admin — How agents work together
  *
  * Sibling to AgentMetrics: that page quantifies how often each agent acts;
  * this one shows the *hand-offs* between agents — when one agent acts and
@@ -166,7 +166,7 @@ export default function SysAgentCollaboration() {
       {/* ── Summary tiles ────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <SummaryTile
-          icon={<Activity className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />}
+          icon={<Activity className="h-5 w-5 text-success dark:text-success" />}
           title="Agents active"
           primary={data ? String(activeAgents.length) : '—'}
           subline="of 11 agents took an action"
@@ -282,7 +282,7 @@ export default function SysAgentCollaboration() {
             </ul>
           )}
 
-          <div className="border-t border-[hsl(var(--theme-border-default))] px-4 py-2.5 text-[11px] leading-relaxed text-[hsl(var(--theme-text-muted))]">
+          <div className="border-t border-[hsl(var(--theme-border-default))] px-4 py-2.5 text-xs leading-relaxed text-[hsl(var(--theme-text-muted))]">
             <span className="mr-3 inline-flex items-center gap-1.5">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" /> liked
             </span>
@@ -328,7 +328,7 @@ interface SummaryTileProps {
 function SummaryTile({ icon, title, primary, subline, small }: SummaryTileProps) {
   return (
     <div className="rounded-lg border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] p-4">
-      <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[hsl(var(--theme-text-secondary))]">
+      <div className="flex items-center gap-2 text-xs text-[hsl(var(--theme-text-secondary))]">
         {icon}
         {title}
       </div>

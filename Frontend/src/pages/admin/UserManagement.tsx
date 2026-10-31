@@ -8,7 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useCommunityDashboard } from '@/contexts/CommunityDashboardContext';
 import adminService, { CommunityMember, PaginationInfo, BlockedUser } from '@/services/adminService';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -55,7 +55,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
-  ShieldOff,
   UserMinus,
   Volume2,
   VolumeX,
@@ -76,12 +75,12 @@ export default function UserManagement() {
   const [status, setStatus] = useState('all');
   const [role, setRole] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
-  // The shared UserDetailsDialog (Phase 2.1) does its own fetching, so we only
+  // The shared UserDetailsDialog does its own fetching, so we only
   // hold the row that was clicked. `userDetails`/`detailsLoading` are gone —
   // the dialog manages both internally.
   const [selectedUser, setSelectedUser] = useState<CommunityMember | null>(null);
 
-  // ─── Phase 1.5: moderation-action dialogs ────────────────────────────────
+  // ─── moderation-action dialogs ────────────────────────────────
   // One dialog target at a time. `kind` drives which dialog renders and which
   // adminService call fires on confirm. `reason` is shared by warn/mute/ban.
   type ActionKind = 'warn' | 'mute' | 'ban' | 'remove';
@@ -183,7 +182,7 @@ export default function UserManagement() {
     setSelectedUser(user);
   };
 
-  // ─── Phase 1.5: moderation actions ───────────────────────────────────────
+  // ─── moderation actions ───────────────────────────────────────
   // Open the relevant confirm/reason dialog. Reason is cleared per-open so a
   // stale message from a previous victim never leaks into the next dialog.
   const openAction = (kind: ActionKind, user: CommunityMember) => {
@@ -368,7 +367,7 @@ export default function UserManagement() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-500">
+            <div className="text-2xl font-bold text-success">
               {users.filter(u => u.status === 'online').length}
             </div>
           </CardContent>
@@ -388,7 +387,7 @@ export default function UserManagement() {
             <CardTitle className="text-sm font-medium text-muted-foreground">With Violations</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-500">
+            <div className="text-2xl font-bold text-warning">
               {users.filter(u => u.stats.violation_count > 0).length}
             </div>
           </CardContent>
@@ -535,7 +534,7 @@ export default function UserManagement() {
                         <div className="flex items-center gap-1">
                           {getStatusBadge(user.status)}
                           {user.is_muted && (
-                            <Badge variant="outline" className="border-yellow-500/40 text-yellow-500">
+                            <Badge variant="outline" className="border-yellow-500/40 text-warning">
                               <VolumeX className="h-3 w-3 mr-1" />
                               Muted
                             </Badge>
@@ -595,12 +594,12 @@ export default function UserManagement() {
                               disabled={user.role === 'owner'}
                               onClick={() => openAction('warn', user)}
                             >
-                              <AlertTriangle className="h-4 w-4 mr-2 text-yellow-500" />
+                              <AlertTriangle className="h-4 w-4 mr-2 text-warning" />
                               Send Warning
                             </DropdownMenuItem>
                             {user.is_muted ? (
                               <DropdownMenuItem onClick={() => handleUnmute(user)}>
-                                <Volume2 className="h-4 w-4 mr-2 text-green-500" />
+                                <Volume2 className="h-4 w-4 mr-2 text-success" />
                                 Unmute
                               </DropdownMenuItem>
                             ) : (
@@ -608,7 +607,7 @@ export default function UserManagement() {
                                 disabled={user.role === 'owner'}
                                 onClick={() => openAction('mute', user)}
                               >
-                                <VolumeX className="h-4 w-4 mr-2 text-yellow-500" />
+                                <VolumeX className="h-4 w-4 mr-2 text-warning" />
                                 Mute
                               </DropdownMenuItem>
                             )}
@@ -756,7 +755,7 @@ export default function UserManagement() {
                               variant="outline"
                               size="sm"
                               onClick={() => setUnbanTarget(b)}
-                              className="border-green-500/40 text-green-600 hover:bg-green-500/10 hover:text-green-600"
+                              className="border-green-500/40 text-success hover:bg-success/10 hover:text-success"
                             >
                               <UserCheck className="h-4 w-4 mr-2" />
                               Unban
@@ -822,7 +821,7 @@ export default function UserManagement() {
         onConfirm={confirmUnban}
       />
 
-      {/* User Details Dialog — shared component (Phase 2.1). */}
+      {/* User Details Dialog — shared component. */}
       {selectedCommunity && (
         <UserDetailsDialog
           open={!!selectedUser}
@@ -832,7 +831,7 @@ export default function UserManagement() {
         />
       )}
 
-      {/* ─── Moderation-action dialogs (Phase 1.5) ─────────────────────────
+      {/* ─── Moderation-action dialogs ─────────────────────────
           One DestructiveActionDialog per kind. They share `actionTarget`
           state so only one is ever open at a time. */}
 

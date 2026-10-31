@@ -1,3 +1,4 @@
+// REWRITE: ~1.3k lines; duplicates PersonalAgentsPanel.tsx patterns.
 // Frontend/src/components/ai-agents/CommunityAgentsTab.tsx
 //
 // F4 — Community Intelligence Hub.
@@ -254,16 +255,16 @@ function IntelligenceHeader({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+          <p className="text-xs font-medium  text-[hsl(var(--theme-text-muted))]">
             Community AI
           </p>
           <div className="mt-1 flex items-center gap-2">
-            <h2 className="text-[15px] font-semibold text-[hsl(var(--theme-text-primary))]">
+            <h2 className="text-base font-semibold text-[hsl(var(--theme-text-primary))]">
               AI Helpers
             </h2>
             {/* State pill */}
             <span
-              className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+              className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium"
               style={{
                 borderColor: state ? `hsl(var(${accentVar(domain)}) / 0.45)` : undefined,
                 color: state ? `hsl(var(${accentVar(domain)}))` : undefined,
@@ -285,7 +286,7 @@ function IntelligenceHeader({
               )}
             </span>
           </div>
-          <p className="mt-1 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+          <p className="mt-1 text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
             {installedCount} helper{installedCount === 1 ? '' : 's'} turned on ·{' '}
             <span title={lastActionAt ?? ''}>last active {relativeTime(lastActionAt)}</span>
             {metrics && (
@@ -303,7 +304,7 @@ function IntelligenceHeader({
             <button
               type="button"
               onClick={onJumpToActivity}
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-[hsl(var(--theme-text-secondary))] transition-colors [transition-duration:140ms] hover:text-[hsl(var(--theme-text-primary))]"
+              className="inline-flex items-center gap-1 text-xs font-medium text-[hsl(var(--theme-text-secondary))] transition-colors [transition-duration:140ms] hover:text-[hsl(var(--theme-text-primary))]"
             >
               <Activity className="h-3.5 w-3.5" aria-hidden />
               See what they did
@@ -311,14 +312,14 @@ function IntelligenceHeader({
             <button
               type="button"
               onClick={onOpenPolicies}
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-[hsl(var(--theme-text-secondary))] transition-colors [transition-duration:140ms] hover:text-[hsl(var(--theme-text-primary))]"
+              className="inline-flex items-center gap-1 text-xs font-medium text-[hsl(var(--theme-text-secondary))] transition-colors [transition-duration:140ms] hover:text-[hsl(var(--theme-text-primary))]"
             >
               <Sliders className="h-3.5 w-3.5" aria-hidden />
               Adjust rules
             </button>
             <Link
               to="/system-admin/analytics/agent-collaboration"
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-[hsl(var(--theme-text-secondary))] transition-colors [transition-duration:140ms] hover:text-[hsl(var(--theme-text-primary))]"
+              className="inline-flex items-center gap-1 text-xs font-medium text-[hsl(var(--theme-text-secondary))] transition-colors [transition-duration:140ms] hover:text-[hsl(var(--theme-text-primary))]"
             >
               <Network className="h-3.5 w-3.5" aria-hidden />
               How they work together
@@ -329,7 +330,7 @@ function IntelligenceHeader({
       </div>
 
       {error && (
-        <div className="mt-2 flex items-center gap-2 text-[11px] text-[hsl(var(--theme-text-muted))]">
+        <div className="mt-2 flex items-center gap-2 text-xs text-[hsl(var(--theme-text-muted))]">
           <AlertCircle className="h-3 w-3 shrink-0" aria-hidden />
           <span>Couldn't load helper activity.</span>
           <button
@@ -372,14 +373,14 @@ function OutcomeTile({ tile, hasData }: { tile: OutcomeTileData; hasData: boolea
           className="h-1.5 w-1.5 shrink-0 rounded-full"
           style={{ backgroundColor: accent }}
         />
-        <p className="truncate text-[12px] font-medium text-[hsl(var(--theme-text-primary))]">
+        <p className="truncate text-xs font-medium text-[hsl(var(--theme-text-primary))]">
           {tile.label}
         </p>
       </div>
       <p className="mt-2 text-[20px] font-semibold tabular-nums text-[hsl(var(--theme-text-primary))]">
         {hasData ? tile.value : '—'}
       </p>
-      <p className="mt-0.5 text-[11px] leading-4 text-[hsl(var(--theme-text-muted))]">
+      <p className="mt-0.5 text-xs leading-4 text-[hsl(var(--theme-text-muted))]">
         {hasData ? tile.caption : 'No data yet'}
       </p>
     </div>
@@ -462,7 +463,7 @@ function OutcomeTiles({
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="h-[88px] animate-pulse rounded-lg border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))]"
+            className="h-[88px] animate-skeleton rounded-lg border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))]"
           />
         ))}
       </div>
@@ -518,12 +519,12 @@ function PackCard({
       <div className="flex items-start justify-between gap-3 px-3 py-3 pl-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="truncate text-[13px] font-semibold text-[hsl(var(--theme-text-primary))]">
+            <p className="truncate text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
               {pack.label}
             </p>
             {/* Pack state pill */}
             <span
-              className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
+              className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs font-medium"
               style={{
                 borderColor: `hsl(var(${accentVar(stateDomain)}) / 0.4)`,
                 color: `hsl(var(${accentVar(stateDomain)}))`,
@@ -533,7 +534,7 @@ function PackCard({
               {PACK_STATE_LABEL[state]}
             </span>
           </div>
-          <p className="mt-1 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+          <p className="mt-1 text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
             {pack.description}
           </p>
           {/* Member agent chips */}
@@ -544,7 +545,7 @@ function PackCard({
                 <span
                   key={a}
                   className={
-                    'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium tracking-normal transition-opacity [transition-duration:140ms] ' +
+                    'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium tracking-normal transition-opacity [transition-duration:140ms] ' +
                     (enabled ? '' : 'opacity-50')
                   }
                   style={{
@@ -572,7 +573,7 @@ function PackCard({
             disabled={busy}
             onClick={() => onToggle(pack, targetEnable)}
             className={
-              'inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-medium transition-colors [transition-duration:140ms] ' +
+              'inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors [transition-duration:140ms] ' +
               'border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))] ' +
               'disabled:cursor-not-allowed disabled:opacity-50'
             }
@@ -613,7 +614,7 @@ function CoverageMatrix({
 }) {
   if (loading) {
     return (
-      <div className="h-32 animate-pulse rounded-lg border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))]" />
+      <div className="h-32 animate-skeleton rounded-lg border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))]" />
     );
   }
 
@@ -622,7 +623,7 @@ function CoverageMatrix({
       <div
         className={
           'rounded-lg border border-dashed border-[hsl(var(--theme-border-default))] ' +
-          'px-3 py-4 text-center text-[12px] text-[hsl(var(--theme-text-muted))]'
+          'px-3 py-4 text-center text-xs text-[hsl(var(--theme-text-muted))]'
         }
       >
         This community doesn't have any channels yet.
@@ -638,16 +639,16 @@ function CoverageMatrix({
       }
     >
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[12px]">
+        <table className="w-full border-collapse text-xs">
           <thead>
             <tr className="border-b border-[hsl(var(--theme-border-default))]">
-              <th className="sticky left-0 z-10 bg-[hsl(var(--theme-bg-elevated))] px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+              <th className="sticky left-0 z-10 bg-[hsl(var(--theme-bg-elevated))] px-3 py-2 text-left text-xs font-medium  text-[hsl(var(--theme-text-muted))]">
                 Channel
               </th>
               {COVERAGE_COLUMNS.map(col => (
                 <th
                   key={col.key}
-                  className="px-2 py-2 text-center text-[11px] font-medium text-[hsl(var(--theme-text-secondary))]"
+                  className="px-2 py-2 text-center text-xs font-medium text-[hsl(var(--theme-text-secondary))]"
                   title={`${col.label} (${agentLabel(col.agent)})`}
                 >
                   <span className="inline-flex items-center gap-1">
@@ -668,7 +669,7 @@ function CoverageMatrix({
                 key={ch.id}
                 className="border-b border-[hsl(var(--theme-border-default))] last:border-b-0"
               >
-                <td className="sticky left-0 bg-[hsl(var(--theme-bg-elevated))] px-3 py-2 text-[12px] text-[hsl(var(--theme-text-primary))]">
+                <td className="sticky left-0 bg-[hsl(var(--theme-bg-elevated))] px-3 py-2 text-xs text-[hsl(var(--theme-text-primary))]">
                   <span className="text-[hsl(var(--theme-text-muted))]">#</span>
                   {ch.name}
                 </td>
@@ -767,7 +768,7 @@ function CoverageMatrix({
           </tbody>
         </table>
       </div>
-      <div className="border-t border-[hsl(var(--theme-border-default))] px-3 py-2 text-[11px] leading-4 text-[hsl(var(--theme-text-muted))]">
+      <div className="border-t border-[hsl(var(--theme-border-default))] px-3 py-2 text-xs leading-4 text-[hsl(var(--theme-text-muted))]">
         {isAdmin
           ? 'Tap a dot to turn a helper on or off for just one channel. A small mark shows where a channel differs from the community setting.'
           : 'This shows the community-wide setting for each helper.'}
@@ -839,7 +840,7 @@ function RecentActivity({
               type="button"
               onClick={() => onFilterChange(f.key)}
               className={
-                'inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-medium transition-colors [transition-duration:140ms] ' +
+                'inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium transition-colors [transition-duration:140ms] ' +
                 (active
                   ? 'border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))]'
                   : 'border-transparent text-[hsl(var(--theme-text-muted))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-secondary))]')
@@ -849,7 +850,7 @@ function RecentActivity({
             </button>
           );
         })}
-        <span className="ml-auto text-[11px] text-[hsl(var(--theme-text-muted))]">
+        <span className="ml-auto text-xs text-[hsl(var(--theme-text-muted))]">
           Showing the last 25
         </span>
       </div>
@@ -863,11 +864,11 @@ function RecentActivity({
         {loading ? (
           <div className="divide-y divide-[hsl(var(--theme-border-default))]">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="h-[84px] animate-pulse" />
+              <div key={i} className="h-[84px] animate-skeleton" />
             ))}
           </div>
         ) : actions.length === 0 ? (
-          <div className="px-3 py-6 text-center text-[12px] text-[hsl(var(--theme-text-muted))]">
+          <div className="px-3 py-6 text-center text-xs text-[hsl(var(--theme-text-muted))]">
             Your helpers are on, but nothing needed attention today.
           </div>
         ) : (
@@ -1189,7 +1190,7 @@ export default function CommunityAgentsTab({
       />
 
       {!isAdmin && (
-        <p className="rounded-md border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] px-3 py-2 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+        <p className="rounded-md border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] px-3 py-2 text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
           Members can see what the helpers are doing. Only admins can change the rules or turn bundles on and off.
         </p>
       )}
@@ -1197,7 +1198,7 @@ export default function CommunityAgentsTab({
       {/* Section B — outcome tiles */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-[13px] font-semibold text-[hsl(var(--theme-text-primary))]">
+          <h3 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
             At a glance
           </h3>
           <VisibilityChip visibility="admins-only" />
@@ -1208,10 +1209,10 @@ export default function CommunityAgentsTab({
       {/* Section C — automation packs */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-[13px] font-semibold text-[hsl(var(--theme-text-primary))]">
+          <h3 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
             Helper bundles
           </h3>
-          <span className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+          <span className="text-xs text-[hsl(var(--theme-text-muted))]">
             Turn related helpers on or off together
           </span>
         </div>
@@ -1232,10 +1233,10 @@ export default function CommunityAgentsTab({
       {/* Section D — channel coverage */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-[13px] font-semibold text-[hsl(var(--theme-text-primary))]">
+          <h3 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
             Where helpers are active
           </h3>
-          <span className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+          <span className="text-xs text-[hsl(var(--theme-text-muted))]">
             {channels.length} channel{channels.length === 1 ? '' : 's'}
           </span>
         </div>
@@ -1253,7 +1254,7 @@ export default function CommunityAgentsTab({
       {/* Section E — recent activity */}
       <section id="community-hub-activity" className="space-y-3 scroll-mt-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-[13px] font-semibold text-[hsl(var(--theme-text-primary))]">
+          <h3 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
             What happened recently
           </h3>
           <VisibilityChip visibility="admins-only" />
@@ -1281,10 +1282,10 @@ export default function CommunityAgentsTab({
           <span className="flex items-center gap-2.5">
             <ShieldCheck className="h-4 w-4 shrink-0 text-[hsl(var(--theme-text-secondary))]" aria-hidden />
             <span className="flex flex-col">
-              <span className="text-[13px] font-medium text-[hsl(var(--theme-text-primary))]">
+              <span className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
                 Rules &amp; limits
               </span>
-              <span className="text-[11px] leading-4 text-[hsl(var(--theme-text-muted))]">
+              <span className="text-xs leading-4 text-[hsl(var(--theme-text-muted))]">
                 Quiet hours, what needs your approval, how strict to be, and an on/off switch for each helper.
               </span>
             </span>

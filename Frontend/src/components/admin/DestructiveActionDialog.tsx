@@ -12,7 +12,7 @@
  *   - `severity="destructive"` (default) → red confirm button, danger icon
  *   - `severity="warn"`                  → yellow confirm button, warn icon
  *
- * Phase 1.5 ships this component pulled forward from Phase 3.1 because the
+ * Shipped early because the
  * Ban/Mute/Kick flow in UserManagement.tsx needs it first. Subsequent
  * adopters: Announcements.tsx (2.5), FlaggedContent.tsx bulk-action (2.2).
  */
@@ -71,11 +71,11 @@ export function DestructiveActionDialog({
   const Icon = severity === 'warn' ? AlertTriangle : ShieldAlert;
   const accent =
     severity === 'warn'
-      ? 'text-yellow-500'
+      ? 'text-warning'
       : 'text-destructive';
   const confirmClass =
     severity === 'warn'
-      ? 'bg-yellow-500 text-yellow-50 hover:bg-yellow-500/90'
+      ? 'bg-yellow-500 text-yellow-50 hover:bg-warning/90'
       : 'bg-destructive text-destructive-foreground hover:bg-destructive/90';
 
   return (

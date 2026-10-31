@@ -59,12 +59,14 @@ interface AgentResultPanelProps {
   onClose: () => void;
   channelId: number;
   channelName: string;
-  communityId?: number | null;
+  communityId?: number | string | null;
   initialTab?: AgentResultTab;
   /** Set true if the current viewer is an admin/owner of the community. */
   isAdmin?: boolean;
   /** A history of translated messages: kept by parent component. */
   translations?: TranslationHistoryItem[];
+  /** Render inside the shell's right pane: no fixed overlay, no own header. */
+  embedded?: boolean;
 }
 
 export interface TranslationHistoryItem {
@@ -114,6 +116,7 @@ export default function AgentResultPanel({
   initialTab = 'activity',
   isAdmin = false,
   translations = [],
+  embedded = false,
 }: AgentResultPanelProps) {
   const [tab, setTab] = useState<CanonicalTab>(resolveTab(initialTab, isAdmin));
 
@@ -128,21 +131,24 @@ export default function AgentResultPanel({
   return (
     <aside
       className={
-        'fixed inset-y-0 right-0 z-40 flex w-full flex-col sm:w-[400px] ' +
-        'border-l border-[hsl(var(--theme-border-default))] ' +
-        'bg-[hsl(var(--theme-bg-elevated))] ' +
-        'animate-in slide-in-from-right duration-200 motion-reduce:animate-none ' +
-        'pt-safe pb-safe'
+        embedded
+          ? 'flex h-full flex-col'
+          : 'fixed inset-y-0 right-0 z-40 flex w-full flex-col sm:w-[400px] ' +
+            'border-l border-[hsl(var(--theme-border-default))] ' +
+            'bg-[hsl(var(--theme-bg-elevated))] ' +
+            'animate-in slide-in-from-right duration-150 motion-reduce:animate-none ' +
+            'pt-safe pb-safe'
       }
       aria-label={`Channel intelligence for ${channelName}`}
     >
       {/* Header */}
+      {!embedded && (
       <header className="flex items-center justify-between border-b border-[hsl(var(--theme-border-default))] px-4 py-3">
         <div className="min-w-0 flex-1">
-          <h3 className="text-[13px] font-semibold text-[hsl(var(--theme-text-primary))]">
+          <h3 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
             Channel intelligence
           </h3>
-          <p className="truncate text-[11px] text-[hsl(var(--theme-text-muted))]">
+          <p className="truncate text-xs text-[hsl(var(--theme-text-muted))]">
             #{channelName}
           </p>
         </div>
@@ -159,6 +165,7 @@ export default function AgentResultPanel({
           <X className="h-4 w-4" />
         </button>
       </header>
+      )}
 
       {/* Tab strip */}
       <nav
@@ -175,7 +182,7 @@ export default function AgentResultPanel({
               onClick={() => setTab(key)}
               className={
                 'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 ' +
-                'text-[11px] font-medium transition-colors [transition-duration:140ms] ' +
+                'text-xs font-medium transition-colors [transition-duration:140ms] ' +
                 (active
                   ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
                   : 'text-[hsl(var(--theme-text-muted))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-secondary))]')
@@ -336,10 +343,10 @@ function ActivityTab({ channelId, channelName, safetyOnly = false }: ActivityTab
   return (
     <div className="flex flex-col">
       <div className="flex items-center justify-between border-b border-[hsl(var(--theme-border-default))] px-3 py-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+        <span className="text-xs font-medium  text-[hsl(var(--theme-text-muted))]">
           {safetyOnly ? 'Safety feed' : 'Live decisions'}
         </span>
-        <span className="font-mono text-[10px] tabular-nums text-[hsl(var(--theme-text-muted))]">
+        <span className="font-mono text-xs tabular-nums text-[hsl(var(--theme-text-muted))]">
           {rows.length}
         </span>
       </div>
@@ -395,7 +402,7 @@ function RecapTab({ channelId }: { channelId: number }) {
   return (
     <div className="flex flex-col">
       <div className="flex items-center justify-between border-b border-[hsl(var(--theme-border-default))] px-3 py-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+        <span className="text-xs font-medium  text-[hsl(var(--theme-text-muted))]">
           Recent recaps
         </span>
         <button
@@ -403,7 +410,7 @@ function RecapTab({ channelId }: { channelId: number }) {
           onClick={onGenerate}
           disabled={busy}
           className={
-            'inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium ' +
+            'inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium ' +
             'border border-[hsl(var(--theme-border-default))] ' +
             'text-[hsl(var(--theme-text-secondary))] ' +
             'transition-colors [transition-duration:140ms] ' +
@@ -416,7 +423,7 @@ function RecapTab({ channelId }: { channelId: number }) {
       </div>
 
       {loading && (
-        <p className="px-3 py-6 text-center text-[11px] text-[hsl(var(--theme-text-muted))]">Loading…</p>
+        <p className="px-3 py-6 text-center text-xs text-[hsl(var(--theme-text-muted))]">Loading…</p>
       )}
 
       {!loading && items && items.length === 0 && (
@@ -432,14 +439,14 @@ function RecapTab({ channelId }: { channelId: number }) {
           {items.map((s: any) => (
             <li key={s.id} className="px-3 py-3">
               <div className="mb-1 flex items-center justify-between">
-                <span className="font-mono text-[10px] uppercase tracking-wide text-[hsl(var(--agent-accent-community))]">
+                <span className="font-mono text-xs  text-[hsl(var(--agent-accent-community))]">
                   Recap
                 </span>
-                <span className="font-mono text-[10px] text-[hsl(var(--theme-text-muted))]">
+                <span className="font-mono text-xs text-[hsl(var(--theme-text-muted))]">
                   {s.created_at ? new Date(s.created_at).toLocaleString() : ''}
                 </span>
               </div>
-              <p className="line-clamp-6 whitespace-pre-wrap text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+              <p className="line-clamp-6 whitespace-pre-wrap text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
                 {s.summary || s.content}
               </p>
             </li>
@@ -514,7 +521,7 @@ function FocusTab({ channelId }: { channelId: number }) {
   return (
     <div className="flex flex-col">
       <div className="flex items-center justify-between border-b border-[hsl(var(--theme-border-default))] px-3 py-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+        <span className="text-xs font-medium  text-[hsl(var(--theme-text-muted))]">
           Channel focus · 24h
         </span>
         <button
@@ -522,7 +529,7 @@ function FocusTab({ channelId }: { channelId: number }) {
           onClick={refresh}
           disabled={busy}
           className={
-            'inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium ' +
+            'inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium ' +
             'border border-[hsl(var(--theme-border-default))] ' +
             'text-[hsl(var(--theme-text-secondary))] ' +
             'transition-colors [transition-duration:140ms] ' +
@@ -535,7 +542,7 @@ function FocusTab({ channelId }: { channelId: number }) {
       </div>
 
       {!data && busy && (
-        <div className="flex items-center justify-center gap-2 px-3 py-8 text-[12px] text-[hsl(var(--theme-text-muted))]">
+        <div className="flex items-center justify-center gap-2 px-3 py-8 text-xs text-[hsl(var(--theme-text-muted))]">
           <Loader2 className="h-4 w-4 animate-spin" />
           Analyzing channel focus…
         </div>
@@ -560,7 +567,7 @@ function FocusTab({ channelId }: { channelId: number }) {
       {data && (
         <div className="space-y-3 px-3 py-3">
           <div className="rounded border border-[hsl(var(--theme-border-default))] p-3">
-            <p className="text-[11px] text-[hsl(var(--theme-text-muted))]">Focus score</p>
+            <p className="text-xs text-[hsl(var(--theme-text-muted))]">Focus score</p>
             <p
               className="mt-0.5 font-mono text-2xl tabular-nums"
               style={{ color: 'hsl(var(--agent-accent-focus))' }}
@@ -571,14 +578,14 @@ function FocusTab({ channelId }: { channelId: number }) {
 
           {Array.isArray(topics) && topics.length > 0 && (
             <div className="rounded border border-[hsl(var(--theme-border-default))] p-3">
-              <p className="mb-2 text-[11px] text-[hsl(var(--theme-text-muted))]">
+              <p className="mb-2 text-xs text-[hsl(var(--theme-text-muted))]">
                 Dominant topics
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {topics.slice(0, 8).map((t: any, i: number) => (
                   <span
                     key={i}
-                    className="rounded border px-1.5 py-0.5 text-[10px]"
+                    className="rounded border px-1.5 py-0.5 text-xs"
                     style={{
                       borderColor: 'hsl(var(--agent-accent-focus) / 0.4)',
                       color: 'hsl(var(--agent-accent-focus))',
@@ -617,16 +624,16 @@ function TranslationsTab({ items }: { items: TranslationHistoryItem[] }) {
         <li key={i} className="px-3 py-3">
           <div className="mb-1.5 flex items-center justify-between">
             <span
-              className="font-mono text-[10px] uppercase tracking-wide"
+              className="font-mono text-xs "
               style={{ color: 'hsl(var(--agent-accent-translation))' }}
             >
               → {t.target_language}
             </span>
-            <span className="font-mono text-[10px] text-[hsl(var(--theme-text-muted))]">
+            <span className="font-mono text-xs text-[hsl(var(--theme-text-muted))]">
               {new Date(t.at).toLocaleTimeString()}
             </span>
           </div>
-          <p className="line-clamp-2 text-[11px] text-[hsl(var(--theme-text-muted))]">
+          <p className="line-clamp-2 text-xs text-[hsl(var(--theme-text-muted))]">
             {t.original}
           </p>
           <div className="mt-1 flex items-start gap-1.5">
@@ -635,7 +642,7 @@ function TranslationsTab({ items }: { items: TranslationHistoryItem[] }) {
               style={{ color: 'hsl(var(--agent-accent-translation))' }}
               aria-hidden
             />
-            <p className="whitespace-pre-wrap text-[12px] leading-5 text-[hsl(var(--theme-text-primary))]">
+            <p className="whitespace-pre-wrap text-xs leading-5 text-[hsl(var(--theme-text-primary))]">
               {t.translated}
             </p>
           </div>
@@ -659,8 +666,8 @@ function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center px-6 py-12 text-center text-[hsl(var(--theme-text-muted))]">
       <div className="mb-2">{icon}</div>
-      <p className="text-[13px] text-[hsl(var(--theme-text-secondary))]">{title}</p>
-      {subtitle && <p className="mt-1 text-[11px] opacity-80">{subtitle}</p>}
+      <p className="text-sm text-[hsl(var(--theme-text-secondary))]">{title}</p>
+      {subtitle && <p className="mt-1 text-xs opacity-80">{subtitle}</p>}
     </div>
   );
 }

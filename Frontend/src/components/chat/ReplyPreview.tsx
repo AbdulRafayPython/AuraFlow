@@ -34,7 +34,7 @@ const ReplyPreview: React.FC<ReplyPreviewProps> = ({ preview, variant = 'default
     <button
       type="button"
       onClick={onClick}
-      className={`group flex items-center gap-2 text-[11px] mb-1.5 pl-2.5 pr-3 py-1.5 rounded-lg max-w-[320px] cursor-pointer transition-all duration-150 ${
+      className={`group flex items-center gap-2 text-xs mb-1.5 pl-2.5 pr-3 py-1.5 rounded-lg max-w-[320px] cursor-pointer transition-all duration-150 ${
         variant === 'accent'
           ? 'bg-white/10 hover:bg-white/15 text-white/85 border border-white/10'
           : 'bg-[hsl(var(--theme-bg-tertiary)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary)/0.8)] text-[hsl(var(--theme-text-secondary))] border border-[hsl(var(--theme-border-subtle))]'
@@ -44,7 +44,7 @@ const ReplyPreview: React.FC<ReplyPreviewProps> = ({ preview, variant = 'default
       <Reply className={`w-3 h-3 flex-shrink-0 rotate-180 transition-colors ${
         variant === 'accent' 
           ? 'text-white/60 group-hover:text-white/80' 
-          : 'text-[hsl(var(--theme-text-muted))] group-hover:text-[hsl(var(--theme-accent-primary))]'
+          : 'text-[hsl(var(--theme-text-muted))] group-hover:text-[hsl(var(--theme-text-accent))]'
       }`} />
       
       {/* Image Thumbnail (if replying to image with URL) */}
@@ -62,7 +62,7 @@ const ReplyPreview: React.FC<ReplyPreviewProps> = ({ preview, variant = 'default
       <span className={`font-semibold flex-shrink-0 ${
         variant === 'accent' 
           ? 'text-white/95' 
-          : 'text-[hsl(var(--theme-accent-primary))]'
+          : 'text-[hsl(var(--theme-text-accent))]'
       }`}>
         {preview.author}
       </span>

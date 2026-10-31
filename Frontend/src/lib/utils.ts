@@ -71,3 +71,20 @@ export function formatMessagePreview(
   }
 }
 
+
+/**
+ * Black or white text, whichever reads better (WCAG contrast) on a hex
+ * background such as a user-chosen community colour. Falls back to white.
+ */
+export function readableTextOn(color: string | null | undefined): string {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec((color || "").trim());
+  if (!m) return "#fff";
+  const hex = m[1].length === 3 ? m[1].split("").map((c) => c + c).join("") : m[1];
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  // contrast with white = 1.05/(lum+.05); with black = (lum+.05)/.05
+  return 1.05 / (lum + 0.05) >= (lum + 0.05) / 0.05 ? "#fff" : "#111";
+}

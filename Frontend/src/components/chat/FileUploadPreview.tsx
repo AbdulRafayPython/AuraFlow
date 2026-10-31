@@ -48,7 +48,7 @@ const FileUploadPreview: React.FC<FileUploadPreviewProps> = ({ file, uploadProgr
           className="w-12 h-12 rounded-md object-cover flex-shrink-0"
         />
       ) : (
-        <div className="w-12 h-12 rounded-md flex items-center justify-center flex-shrink-0 bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]">
+        <div className="w-12 h-12 rounded-md flex items-center justify-center flex-shrink-0 bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-text-accent))]">
           {getIcon(file.name)}
         </div>
       )}
@@ -58,7 +58,7 @@ const FileUploadPreview: React.FC<FileUploadPreviewProps> = ({ file, uploadProgr
         <p className="text-sm font-medium truncate text-[hsl(var(--theme-text-primary))]">
           {file.name}
         </p>
-        <p className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+        <p className="text-xs text-[hsl(var(--theme-text-muted))]">
           {formatFileSize(file.size)} &middot; {getFileExtension(file.name).toUpperCase()}
         </p>
 
@@ -75,7 +75,7 @@ const FileUploadPreview: React.FC<FileUploadPreviewProps> = ({ file, uploadProgr
 
       {/* Cancel / Spinner */}
       {isUploading ? (
-        <Loader2 className="w-5 h-5 animate-spin flex-shrink-0 text-[hsl(var(--theme-accent-primary))]" />
+        <Loader2 className="w-5 h-5 animate-spin flex-shrink-0 text-[hsl(var(--theme-text-accent))]" />
       ) : (
         <button
           onClick={onCancel}

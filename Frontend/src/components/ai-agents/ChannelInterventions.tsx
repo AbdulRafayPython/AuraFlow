@@ -302,7 +302,7 @@ function InterventionCard({
               type="button"
               onClick={primary.onClick}
               className={
-                'inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ' +
+                'inline-flex items-center rounded border px-2 py-0.5 text-xs font-medium ' +
                 'transition-colors [transition-duration:140ms] hover:bg-[hsl(var(--theme-bg-hover))]'
               }
               style={{
@@ -319,7 +319,7 @@ function InterventionCard({
               onClick={secondary.onClick}
               className={
                 'inline-flex items-center rounded border border-[hsl(var(--theme-border-default))] ' +
-                'px-2 py-0.5 text-[11px] font-medium text-[hsl(var(--theme-text-secondary))] ' +
+                'px-2 py-0.5 text-xs font-medium text-[hsl(var(--theme-text-secondary))] ' +
                 'transition-colors [transition-duration:140ms] hover:bg-[hsl(var(--theme-bg-hover))] ' +
                 'hover:text-[hsl(var(--theme-text-primary))]'
               }

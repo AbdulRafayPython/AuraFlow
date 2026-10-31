@@ -26,8 +26,8 @@ export default function InlineTranslation({
 
   if (state.status === 'loading') {
     return (
-      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-[hsl(var(--theme-text-muted))]">
-        <Languages className="h-3 w-3 animate-pulse" style={{ color: ACCENT }} aria-hidden />
+      <div className="mt-1 flex items-center gap-1.5 text-xs text-[hsl(var(--theme-text-muted))]">
+        <Languages className="h-3 w-3 animate-skeleton" style={{ color: ACCENT }} aria-hidden />
         <span>Translating…</span>
       </div>
     );
@@ -42,7 +42,7 @@ export default function InlineTranslation({
       className="mt-1 rounded-md border-l-2 bg-[hsl(var(--theme-bg-secondary)/0.4)] py-1 pl-2 pr-2"
       style={{ borderColor: ACCENT }}
     >
-      <div className="flex items-center gap-1.5 text-[11px] text-[hsl(var(--theme-text-muted))]">
+      <div className="flex items-center gap-1.5 text-xs text-[hsl(var(--theme-text-muted))]">
         <Languages className="h-3 w-3 shrink-0" style={{ color: ACCENT }} aria-hidden />
         <span className="font-medium" style={{ color: ACCENT }}>
           {label}
@@ -50,13 +50,13 @@ export default function InlineTranslation({
         <button
           type="button"
           onClick={onToggle}
-          className="ml-1 rounded px-1 text-[10px] font-medium uppercase tracking-wide transition-colors hover:text-[hsl(var(--theme-text-secondary))]"
+          className="ml-1 rounded px-1 text-xs font-medium  transition-colors hover:text-[hsl(var(--theme-text-secondary))]"
         >
           {collapsed ? 'Show' : 'Hide'}
         </button>
       </div>
       {!collapsed && state.text && (
-        <p className="mt-0.5 text-[14px] leading-[1.4] text-[hsl(var(--theme-text-primary))]">
+        <p className="mt-0.5 text-ui leading-[1.4] text-[hsl(var(--theme-text-primary))]">
           {state.text}
         </p>
       )}

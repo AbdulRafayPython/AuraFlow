@@ -1,7 +1,9 @@
+// REWRITE: ~1.3k lines; duplicates much of the channel chat view in pages/Dashboard.tsx.
 // components/DirectMessageView.tsx - DM conversation view
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video, Sparkles } from 'lucide-react';
 import AgentMessageShell from '@/components/ai-agents/AgentMessageShell';
+import { methodLabel } from '@/components/ai-agents/humanize';
 import { aiAgentService, type DMSummaryResult } from '@/services/aiAgentService';
 import { useDirectMessages } from '@/contexts/DirectMessagesContext';
 import { useFriends } from '@/contexts/FriendsContext';
@@ -13,6 +15,13 @@ import type { CallPeer } from '@/contexts/CallContext';
 import EmojiPickerButton from '@/components/EmojiPickerButton';
 import ReactionPicker from '@/components/ReactionPicker';
 import MessageReactions from '@/components/MessageReactions';
+import { MessageRow, DayDivider, RepliesLink } from '@/components/chat/MessageRow';
+import { MessageToolbar } from '@/components/chat/MessageToolbar';
+import { Composer } from '@/components/chat/Composer';
+import { ThreadPane, type ThreadMessage } from '@/components/chat/ThreadPane';
+import { useRightPane } from '@/components/app/RightPane';
+import { startsGroup, startsNewDay, formatDayLabel, indexReplies } from '@/lib/messageGrouping';
+import { getRecentEmoji, recordEmoji } from '@/lib/emoji';
 import { reactionService } from '@/services/reactionService';
 import { socket } from '@/socket';
 import { socketService } from '@/services/socketService';
@@ -47,7 +56,9 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const [isSending, setIsSending] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
-  const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
+  const { open: openRightPane, close: closeRightPane } = useRightPane();
+  const [threadParentId, setThreadParentId] = useState<number | null>(null);
+  const [recentEmojiVersion, setRecentEmojiVersion] = useState(0);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
   const [dmReactions, setDmReactions] = useState<Record<number, any[]>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -604,6 +615,8 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   };
 
   const handleReactionToggle = async (dmId: number, emoji: string) => {
+    recordEmoji(emoji);
+    setRecentEmojiVersion((v) => v + 1);
     try {
       // Server returns full aggregated reactions — no follow-up GET needed
       const result = await reactionService.toggleDMReaction(dmId, emoji);
@@ -626,7 +639,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   };
 
   const formatTime = (date: string) => {
-    return new Date(date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    return new Date(date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   };
 
   const formatDate = (date: string) => {
@@ -648,14 +661,66 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
     return timeDiff > 5 * 60 * 1000; // 5 minutes
   };
 
+  const replyIndex = useMemo(() => indexReplies(enrichedMessages), [enrichedMessages]);
+  const quickEmoji = useMemo(() => getRecentEmoji(3), [recentEmojiVersion]);
+
+  const openThread = (id: number) => {
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
+      setThreadParentId(id);
+    } else {
+      const first = replyIndex.get(id)?.[0];
+      if (first) scrollToMessage(first);
+    }
+  };
+
+  // Keep the right-pane thread in sync with the loaded messages.
+  useEffect(() => {
+    if (threadParentId == null) return;
+    const parent = enrichedMessages.find((m) => m.id === threadParentId);
+    if (!parent) return;
+    const toThread = (m: DirectMessage): ThreadMessage => {
+      const mine = m.sender_id === currentUserId;
+      return {
+        id: m.id,
+        authorName: mine ? 'You' : (m.sender?.display_name || m.sender?.username || displayName || username),
+        avatarUrl: mine ? (currentUser?.avatar_url || currentUser?.avatar) : m.sender?.avatar_url,
+        username: mine ? currentUser?.username : m.sender?.username,
+        timeLabel: formatTime(m.created_at),
+        content: m.attachment ? String(m.content || '').replace(m.attachment.file_url, '').trim() : String(m.content || ''),
+        attachmentName: m.attachment?.file_name,
+      };
+    };
+    openRightPane({
+      key: `dm-thread-${threadParentId}`,
+      title: 'Thread',
+      onClose: () => setThreadParentId(null),
+      body: (
+        <ThreadPane
+          parent={toThread(parent)}
+          replies={enrichedMessages.filter((m) => m.reply_to_preview?.id === threadParentId).map(toThread)}
+          onReply={() => handleReply(parent)}
+          onJump={scrollToMessage}
+        />
+      ),
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadParentId, enrichedMessages]);
+
+  // Switching conversation (or leaving) closes the thread.
+  useEffect(() => {
+    setThreadParentId(null);
+    closeRightPane();
+  }, [userId, closeRightPane]);
+  useEffect(() => () => closeRightPane(), [closeRightPane]);
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[hsl(var(--theme-bg-primary))] transition-colors duration-300">
       {/* Header - Clean and Professional */}
-      <header className="px-4 sm:px-6 py-3 border-b flex-shrink-0 flex items-center gap-3 bg-[hsl(var(--theme-header-bg)/0.85)] backdrop-blur-xl border-[hsl(var(--theme-border-default)/0.6)] transition-colors duration-300 sticky top-0 z-40">
+      <header className="h-12 px-4 border-b flex-shrink-0 flex items-center gap-3 bg-[hsl(var(--theme-header-bg))] border-[hsl(var(--theme-border-default))] sticky top-0 z-40">
         {onClose && (
           <button
             onClick={onClose}
-            className="p-2 rounded-xl transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] active:scale-95"
+            className="p-2 rounded-md transition-colors duration-150 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -665,17 +730,17 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             <img
               src={getAvatarUrl(avatar, username)}
               alt={displayName || username}
-              className="w-10 h-10 rounded-full object-cover ring-2 ring-[hsl(var(--theme-border-default)/0.5)] hover:ring-[hsl(var(--theme-accent-primary)/0.6)] transition-all duration-300 cursor-pointer"
+              className="w-8 h-8 rounded-lg object-cover cursor-pointer"
               onClick={(e) => handleProfileClick(username, e)}
             />
             {/* Online status dot */}
-            <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[hsl(var(--theme-bg-primary))]" />
+            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-success rounded-full border-2 border-[hsl(var(--theme-bg-primary))]" />
           </div>
           <div className="flex-1 min-w-0">
-            <h2 className="text-[15px] font-semibold truncate text-[hsl(var(--theme-text-primary))] leading-tight">
+            <h2 className="text-base font-semibold truncate text-[hsl(var(--theme-text-primary))] leading-tight">
               {displayName || username}
             </h2>
-            <p className="text-[11px] text-emerald-500 font-medium tracking-wide">
+            <p className="text-xs text-success">
               Online
             </p>
           </div>
@@ -685,7 +750,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             <button
               onClick={() => requestDmSummary(100)}
               disabled={isGeneratingDmSummary}
-              className="p-2.5 rounded-xl transition-all [transition-duration:140ms] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--agent-accent-community))] disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
+              className="p-2 rounded-md transition-colors duration-150 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--agent-accent-community))] disabled:opacity-30 disabled:cursor-not-allowed"
               title="Catch me up — summarize this conversation"
               aria-label="Summarize this conversation"
             >
@@ -694,7 +759,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             <button
               onClick={handleAudioCall}
               disabled={callState !== 'idle'}
-              className="p-2.5 rounded-xl transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))] disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
+              className="p-2 rounded-md transition-colors duration-150 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-accent))] disabled:opacity-30 disabled:cursor-not-allowed"
               title="Audio Call"
             >
               <Phone className="w-[18px] h-[18px]" />
@@ -702,7 +767,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             <button
               onClick={handleVideoCall}
               disabled={callState !== 'idle'}
-              className="p-2.5 rounded-xl transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))] disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
+              className="p-2 rounded-md transition-colors duration-150 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-accent))] disabled:opacity-30 disabled:cursor-not-allowed"
               title="Video Call"
             >
               <Video className="w-[18px] h-[18px]" />
@@ -715,371 +780,84 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
       <main 
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-4 py-4 relative"
+        role="log"
+        aria-label={`Conversation with ${displayName || username}`}
+        className="flex-1 overflow-y-auto overflow-x-hidden py-4 relative"
       >
         {enrichedMessages.length === 0 ? (
           <div className="h-full flex items-center justify-center">
-            <div className="text-center space-y-3 animate-in fade-in duration-500">
+            <div className="text-center space-y-3">
               <div className="w-16 h-16 mx-auto rounded-full bg-[hsl(var(--theme-bg-secondary))] flex items-center justify-center">
                 <Send className="w-6 h-6 text-[hsl(var(--theme-text-muted)/0.5)] -rotate-45" />
               </div>
               <div>
-                <p className="text-sm font-medium text-[hsl(var(--theme-text-secondary))]">No messages yet</p>
-                <p className="text-xs mt-1 text-[hsl(var(--theme-text-muted)/0.7)]">Say hello to {displayName || username}!</p>
+                <p className="text-base font-medium text-[hsl(var(--theme-text-secondary))]">No messages yet</p>
+                <p className="text-sm mt-1 text-[hsl(var(--theme-text-muted))]">Say hello to {displayName || username}!</p>
               </div>
             </div>
           </div>
         ) : (
           enrichedMessages.map((msg, index) => {
-            const showDateDivider = shouldShowDateDivider(msg, enrichedMessages[index - 1]);
-            const showAvatar = shouldShowAvatar(msg, enrichedMessages[index - 1]);
+            const prev = enrichedMessages[index - 1];
+            const showDateDivider = startsNewDay(prev, msg);
+            const grouped = !startsGroup(prev, msg);
             const isSent = msg.sender_id === currentUserId;
+            const isFileMessage = !!msg.attachment && (msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'voice' || msg.message_type === 'video');
+            const canEdit = isSent && !msg.attachment && msg.message_type !== 'image' && msg.message_type !== 'file' && msg.message_type !== 'voice' && msg.message_type !== 'video';
+            const authorName = isSent ? 'You' : (msg.sender?.display_name || msg.sender?.username || 'Unknown');
+            const authorUsername = isSent ? (currentUser?.username || 'You') : (msg.sender?.username || 'unknown');
+            const authorAvatar = isSent ? (currentUser?.avatar_url || currentUser?.avatar) : msg.sender?.avatar_url;
+            const replyCount = replyIndex.get(msg.id)?.length ?? 0;
 
             return (
-              <div key={msg.id} className={`${showAvatar ? 'mt-3' : 'mt-0.5'} animate-in fade-in slide-in-from-bottom-1 duration-200`}>
-                {showDateDivider && (
-                  <div className="flex items-center gap-3 my-5">
-                    <div className="flex-1 h-px bg-gradient-to-r from-transparent via-[hsl(var(--theme-border-default)/0.6)] to-transparent" />
-                    <span className="text-[11px] font-medium px-3 py-1 rounded-full bg-[hsl(var(--theme-bg-secondary)/0.8)] text-[hsl(var(--theme-text-muted))] backdrop-blur-sm">
-                      {formatDate(msg.created_at)}
-                    </span>
-                    <div className="flex-1 h-px bg-gradient-to-r from-transparent via-[hsl(var(--theme-border-default)/0.6)] to-transparent" />
-                  </div>
-                )}
+              <div key={msg.id}>
+                {showDateDivider && <DayDivider label={formatDayLabel(msg.created_at)} />}
 
-                {/* Call log message — centered bubble */}
+                {/* Call log message */}
                 {msg.message_type === 'call' ? (
-                  <div
-                    id={`dm-msg-${msg.id}`}
-                    className={`flex ${isSent ? 'justify-end' : 'justify-start'} px-2 py-1`}
-                  >
+                  <div id={`dm-msg-${msg.id}`} className="mt-3 flex px-4 py-1">
                     <CallMessageBubble
                       content={msg.content}
                       isSent={isSent}
                       createdAt={msg.created_at}
                     />
                   </div>
-                ) : !isSent ? (
-                  <div 
-                    id={`dm-msg-${msg.id}`}
-                    className="flex gap-2.5 group px-2 py-0.5 rounded-lg transition-all duration-200 justify-start relative"
-                    onMouseEnter={() => setHoveredMessageId(msg.id)}
-                    onMouseLeave={() => setHoveredMessageId(null)}
-                  >
-                    <div className="flex-shrink-0 self-end mb-1">
-                      {showAvatar ? (
-                        <img
-                          src={getAvatarUrl(msg.sender?.avatar_url, msg.sender?.username || 'unknown')}
-                          alt={msg.sender?.username || 'Unknown'}
-                          className="w-8 h-8 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity ring-1 ring-[hsl(var(--theme-border-default)/0.3)]"
-                          onClick={(e) => handleProfileClick(msg.sender?.username || 'unknown', e)}
-                        />
-                      ) : (
-                        <div className="w-8 h-8" />
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0" style={{ maxWidth: '65%' }}>
-                      {showAvatar && (
-                        <div className="flex items-baseline gap-2 mb-1">
-                          <span
-                            className="font-semibold text-[13px] text-[hsl(var(--theme-text-primary))] hover:underline cursor-pointer"
-                            onClick={(e) => handleProfileClick(msg.sender?.username || 'unknown', e)}
-                          >
-                            {msg.sender?.display_name || msg.sender?.username || 'Unknown'}
-                          </span>
-                          <span className="text-[11px] text-[hsl(var(--theme-text-muted)/0.7)]">{formatTime(msg.created_at)}</span>
-                        </div>
-                      )}
-
-                      {editingId === msg.id ? (
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={editContent}
-                            onChange={(e) => setEditContent(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') { e.preventDefault(); handleEdit(msg.id); }
-                              if (e.key === 'Escape') { setEditingId(null); setEditContent(''); }
-                            }}
-                            className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-input-bg))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))]"
-                            autoFocus
-                          />
-                          <button
-                            onClick={() => handleEdit(msg.id)}
-                            className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => { setEditingId(null); setEditContent(''); }}
-                            className="px-3 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-gray-600 transition"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          {/* Reply-to preview (received) */}
-                          {msg.reply_to_preview && (
-                            <ReplyPreview
-                              preview={msg.reply_to_preview}
-                              onClick={() => scrollToMessage(msg.reply_to_preview!.id)}
-                            />
-                          )}
-                          <div className="flex items-start gap-2">
-                            {/* File attachment (received message) */}
-                            {msg.attachment && (msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'voice' || msg.message_type === 'video') ? (
-                              <div className="w-fit max-w-md">
-                                <FileAttachment
-                                  fileName={msg.attachment.file_name}
-                                  fileUrl={msg.attachment.file_url}
-                                  fileSize={msg.attachment.file_size}
-                                  mimeType={msg.attachment.mime_type}
-                                  uploaderName={displayName || username}
-                                  uploadedAt={msg.created_at}
-                                  duration={msg.attachment.duration}
-                                />
-                                {msg.content && msg.content !== msg.attachment.file_url && (
-                                  <p className="text-sm mt-1 px-4 text-[hsl(var(--theme-text-primary))]">{msg.content}</p>
-                                )}
-                              </div>
-                            ) : (
-                            <p className={`text-sm leading-relaxed break-words [overflow-wrap:anywhere] max-w-full px-4 py-2.5 w-fit text-[hsl(var(--theme-text-primary))] bg-[hsl(var(--theme-message-other))] transition-colors duration-200 ${showAvatar ? 'rounded-2xl rounded-tl-md' : 'rounded-2xl rounded-tl-md'}`}>
-                              <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-normal' : ''}>
-                                {msg.content}
-                              </span>
-                              {!showAvatar && (
-                                <span className="text-[10px] ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-[hsl(var(--theme-text-muted)/0.6)]">
-                                  {formatTime(msg.created_at)}
-                                </span>
-                              )}
-                            </p>
-                            )}
-                            {msg.edited_at && (
-                              <span className="text-xs mt-3 text-[hsl(var(--theme-text-muted)/0.7)]">(edited)</span>
-                            )}
-                          </div>
-                          
-                          {/* Reactions Display */}
-                          <div className="flex flex-wrap items-center gap-1.5 mt-1 ml-0.5">
-                            {dmReactions[msg.id] && dmReactions[msg.id].length > 0 && (
-                              <MessageReactions
-                                reactions={dmReactions[msg.id]}
-                                onReactionClick={(emoji) => handleReactionToggle(msg.id, emoji)}
-                              />
-                            )}
-                            
-                            {/* Add Reaction Button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id);
-                              }}
-                              className="opacity-0 group-hover:opacity-100 transition-all duration-300 px-1.5 py-0.5 rounded text-xs flex items-center gap-1 text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]"
-                              title="Add reaction"
-                            >
-                              <SmilePlus className="w-3 h-3" />
-                            </button>
-                            {/* Reply Button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleReply(msg);
-                              }}
-                              className="opacity-0 group-hover:opacity-100 transition-all duration-300 px-1.5 py-0.5 rounded text-xs flex items-center gap-1 text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]"
-                              title="Reply"
-                            >
-                              <Reply className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </>
-                      )}
-                      
-                      {/* Reaction Picker - Shown when button clicked */}
-                      {reactionPickerMessageId === msg.id && (
-                        <div data-reaction-picker className="absolute left-10 mt-1 z-30 shadow-xl">
-                          <ReactionPicker
-                            onReactionSelect={(emoji) => {
-                              handleReactionToggle(msg.id, emoji);
-                              setReactionPickerMessageId(null);
-                            }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
                 ) : (
-                  /* Sender message (right) */
-                  <div 
-                    id={`dm-msg-${msg.id}`}
-                    className="flex gap-2 group px-2 py-0.5 rounded-lg transition-all duration-200 justify-end relative"
-                    onMouseEnter={() => setHoveredMessageId(msg.id)}
-                    onMouseLeave={() => setHoveredMessageId(null)}
-                  >
-                    {/* Message Menu — 3-dot.
-                        self-start stops this wrapper from stretching to the full
-                        (possibly tall, e.g. image) message height — otherwise the
-                        dropdown's `top-full` anchors to the bottom of the message
-                        instead of just below the button. */}
-                    <div
-                      data-message-menu
-                      className="opacity-0 group-hover:opacity-100 transition-all duration-200 relative flex-shrink-0 self-start flex items-center"
-                    >
-                      <button
-                        onClick={() => setMenuOpen(menuOpen === msg.id ? null : msg.id)}
-                        className="p-1.5 rounded-lg transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
-                      >
-                        <MoreVertical className="w-4 h-4" />
-                      </button>
-
-                      {menuOpen === msg.id && (
-                        <div
-                          data-message-menu
-                          className="absolute right-0 top-full mt-1 w-36 rounded-xl shadow-lg z-30 border bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] overflow-hidden"
-                        >
-                          {/* Only show Edit for plain text messages */}
-                          {(!msg.attachment && msg.message_type !== 'image' && msg.message_type !== 'file' && msg.message_type !== 'voice' && msg.message_type !== 'video') && (
-                            <button
-                              onClick={() => { setEditingId(msg.id); setEditContent(msg.content); setMenuOpen(null); }}
-                              className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-all duration-200 text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))]"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                              Edit
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleDelete(msg.id)}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 transition-all duration-200 border-t hover:bg-red-500/10 border-[hsl(var(--theme-border-default)/0.5)]"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0 text-right" style={{ maxWidth: '65%' }}>
-                      {showAvatar && (
-                        <div className="flex items-baseline gap-2 mb-1 justify-end">
-                          <span className="text-[11px] text-[hsl(var(--theme-text-muted)/0.7)]">{formatTime(msg.created_at)}</span>
-                          <span className="font-semibold text-[13px] text-[hsl(var(--theme-text-primary))]">
-                            You
-                          </span>
-                        </div>
-                      )}
-
-                      {editingId === msg.id ? (
-                        <div className="flex gap-2 justify-end">
-                          <input
-                            type="text"
-                            value={editContent}
-                            onChange={(e) => setEditContent(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') { e.preventDefault(); handleEdit(msg.id); }
-                              if (e.key === 'Escape') { setEditingId(null); setEditContent(''); }
-                            }}
-                            className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-input-bg))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))]"
-                            autoFocus
-                          />
-                          <button
-                            onClick={() => { setEditingId(null); setEditContent(''); }}
-                            className="px-3 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-gray-600 transition"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={() => handleEdit(msg.id)}
-                            className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition"
-                          >
-                            Save
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          {/* Reply-to preview (sent) */}
-                          {msg.reply_to_preview && (
-                            <div className="flex justify-end">
-                              <ReplyPreview
-                                preview={msg.reply_to_preview}
-                                variant="accent"
-                                onClick={() => scrollToMessage(msg.reply_to_preview!.id)}
-                              />
-                            </div>
-                          )}
-                          <div className="flex items-start gap-2 justify-end">
-                            {msg.edited_at && (
-                              <span className="text-xs mt-3 text-[hsl(var(--theme-text-muted)/0.7)]">(edited)</span>
-                            )}
-                            {/* File attachment (sent message) */}
-                            {msg.attachment && (msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'voice' || msg.message_type === 'video') ? (
-                              <div className="w-fit max-w-md">
-                                <FileAttachment
-                                  fileName={msg.attachment.file_name}
-                                  fileUrl={msg.attachment.file_url}
-                                  fileSize={msg.attachment.file_size}
-                                  mimeType={msg.attachment.mime_type}
-                                  variant="accent"
-                                  uploaderName={currentUser?.display_name || currentUser?.username || 'You'}
-                                  uploadedAt={msg.created_at}
-                                  duration={msg.attachment.duration}
-                                />
-                                {msg.content && msg.content !== msg.attachment.file_url && (
-                                  <p className="text-sm mt-1 px-4 text-right text-[hsl(var(--theme-text-primary))]">{msg.content}</p>
-                                )}
-                              </div>
-                            ) : (
-                            <p className={`text-sm leading-relaxed break-words [overflow-wrap:anywhere] max-w-full text-white bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] px-4 py-2.5 w-fit shadow-md hover:shadow-lg transition-all duration-200 ml-auto ${showAvatar ? 'rounded-2xl rounded-tr-md' : 'rounded-2xl rounded-tr-md'}`}>
-                              <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-normal' : ''}>
-                                {msg.content}
-                              </span>
-                              {!showAvatar && (
-                                <span className="text-[10px] ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-white/50">
-                                  {formatTime(msg.created_at)}
-                                </span>
-                              )}
-                            </p>
-                            )}
-                          </div>
-                          
-                          {/* Reactions Display */}
-                          <div className="flex flex-wrap items-center gap-1.5 mt-1 mr-1 justify-end">
-                            {dmReactions[msg.id] && dmReactions[msg.id].length > 0 && (
-                              <MessageReactions
-                                reactions={dmReactions[msg.id]}
-                                onReactionClick={(emoji) => handleReactionToggle(msg.id, emoji)}
-                              />
-                            )}
-                            
-                            {/* Add Reaction Button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id);
-                              }}
-                              className="opacity-0 group-hover:opacity-100 transition-all duration-300 px-2 py-1 rounded-lg text-xs flex items-center gap-1 text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]"
-                              title="Add reaction"
-                            >
-                              <SmilePlus className="w-3.5 h-3.5" />
-                            </button>
-                            {/* Reply Button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleReply(msg);
-                              }}
-                              className="opacity-0 group-hover:opacity-100 transition-all duration-300 px-2 py-1 rounded-lg text-xs flex items-center gap-1 text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]"
-                              title="Reply"
-                            >
-                              <Reply className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </>
-                      )}
-                      
-                      {/* Reaction Picker - Shown when button clicked */}
-                      {reactionPickerMessageId === msg.id && (
-                        <div data-reaction-picker className="absolute right-10 mt-1 z-30 shadow-xl">
+                  <MessageRow
+                    domId={`dm-msg-${msg.id}`}
+                    authorName={authorName}
+                    avatarUrl={authorAvatar}
+                    username={authorUsername}
+                    timeLabel={formatTime(msg.created_at)}
+                    shortTimeLabel={new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                    grouped={grouped}
+                    onAuthorClick={isSent ? undefined : (e) => handleProfileClick(authorUsername, e)}
+                    reactions={
+                      dmReactions[msg.id] && dmReactions[msg.id].length > 0 ? (
+                        <MessageReactions
+                          reactions={dmReactions[msg.id]}
+                          onReactionClick={(emoji) => handleReactionToggle(msg.id, emoji)}
+                        />
+                      ) : undefined
+                    }
+                    footer={replyCount > 0 ? <RepliesLink count={replyCount} onClick={() => openThread(msg.id)} /> : undefined}
+                    toolbar={
+                      editingId === msg.id ? undefined : (
+                        <MessageToolbar
+                          quickEmoji={quickEmoji}
+                          onReact={(emoji) => handleReactionToggle(msg.id, emoji)}
+                          onOpenPicker={() => setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id)}
+                          actions={[
+                            { key: 'reply', label: 'Reply', icon: Reply, onClick: () => handleReply(msg) },
+                            ...(canEdit ? [{ key: 'edit', label: 'Edit message', icon: Edit2, onClick: () => { setEditingId(msg.id); setEditContent(msg.content); } }] : []),
+                            ...(isSent ? [{ key: 'delete', label: 'Delete message', icon: Trash2, onClick: () => handleDelete(msg.id) }] : []),
+                          ]}
+                        />
+                      )
+                    }
+                    overlay={
+                      reactionPickerMessageId === msg.id ? (
+                        <div data-reaction-picker className="absolute right-4 top-0 z-50">
                           <ReactionPicker
                             onReactionSelect={(emoji) => {
                               handleReactionToggle(msg.id, emoji);
@@ -1087,21 +865,72 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                             }}
                           />
                         </div>
-                      )}
-                    </div>
-
-                    <div className="flex-shrink-0 self-end mb-1">
-                      {showAvatar ? (
-                        <img
-                          src={getAvatarUrl(currentUser?.avatar_url || currentUser?.avatar, currentUser?.username || 'You')}
-                          alt="You"
-                          className="w-8 h-8 rounded-full object-cover ring-1 ring-[hsl(var(--theme-border-default)/0.3)]"
+                      ) : undefined
+                    }
+                  >
+                    {editingId === msg.id ? (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); handleEdit(msg.id); }
+                            if (e.key === 'Escape') { setEditingId(null); setEditContent(''); }
+                          }}
+                          aria-label="Edit message"
+                          className="h-9 flex-1 rounded-md border border-border bg-[hsl(var(--theme-input-bg))] px-3 text-base text-foreground focus:border-primary focus:outline-none"
+                          autoFocus
                         />
-                      ) : (
-                        <div className="w-8 h-8" />
-                      )}
-                    </div>
-                  </div>
+                        <button
+                          type="button"
+                          onClick={() => { setEditingId(null); setEditContent(''); }}
+                          className="h-9 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(msg.id)}
+                          className="h-9 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {msg.reply_to_preview && (
+                          <ReplyPreview
+                            preview={msg.reply_to_preview}
+                            onClick={() => scrollToMessage(msg.reply_to_preview!.id)}
+                          />
+                        )}
+                        {isFileMessage ? (
+                          <div className="w-fit max-w-md">
+                            <FileAttachment
+                              fileName={msg.attachment!.file_name}
+                              fileUrl={msg.attachment!.file_url}
+                              fileSize={msg.attachment!.file_size}
+                              mimeType={msg.attachment!.mime_type}
+                              uploaderName={authorName}
+                              uploadedAt={msg.created_at}
+                              duration={msg.attachment!.duration}
+                            />
+                            {msg.content && msg.content !== msg.attachment!.file_url && (
+                              <p className="mt-1">{msg.content}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(msg.content.trim()) ? 'text-4xl leading-tight' : ''}>
+                            {msg.content}
+                          </span>
+                        )}
+                        {msg.edited_at && (
+                          <span className="ml-1 text-xs text-muted-foreground">(edited)</span>
+                        )}
+                      </>
+                    )}
+                  </MessageRow>
                 )}
               </div>
             );
@@ -1132,17 +961,17 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             timestamp={formatTime(dmSummary.created_at)}
             onDismiss={() => { setDmSummary(null); setDisplayedDmSummaryText(''); }}
           >
-            <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+            <div className="text-ui leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
               {displayedDmSummaryText}
               {displayedDmSummaryText.length < dmSummary.content.length && (
                 <span
-                  className="inline-block w-0.5 h-4 ml-0.5 animate-pulse motion-reduce:animate-none align-middle"
+                  className="inline-block w-0.5 h-4 ml-0.5 align-middle"
                   style={{ backgroundColor: 'hsl(var(--agent-accent-community))' }}
                 />
               )}
             </div>
-            <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
-              <span>Method: {dmSummary.method}</span>
+            <div className="mt-3 flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+              <span>Method: {methodLabel(dmSummary.method)}</span>
               <span>•</span>
               <span>{dmSummary.message_count} messages analyzed</span>
             </div>
@@ -1161,7 +990,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
       </main>
 
       {/* Input Area */}
-      <footer className="border-t backdrop-blur flex-shrink-0 bg-[hsl(var(--theme-bg-primary)/0.95)] border-[hsl(var(--theme-border-default)/0.4)] transition-colors duration-300">
+      <footer className="flex-shrink-0 bg-[hsl(var(--theme-bg-primary))]">
         {/* Reply Bar */}
         {replyingTo && (
           <ReplyBar
@@ -1186,7 +1015,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
         {/* File Upload Preview */}
         {pendingFile && (
-          <div className="px-6 pt-3">
+          <div className="px-4 pt-3">
             <FileUploadPreview
               file={pendingFile}
               uploadProgress={uploadProgress}
@@ -1195,61 +1024,42 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
           </div>
         )}
 
-        <form onSubmit={handleSend} className="px-4 sm:px-6 py-3">
-          <div className="flex items-center gap-2.5 rounded-2xl px-3.5 py-2.5 border focus-within:border-[hsl(var(--theme-accent-primary)/0.6)] focus-within:ring-1 focus-within:ring-[hsl(var(--theme-accent-primary)/0.2)] transition-all duration-200 border-[hsl(var(--theme-border-default)/0.5)] bg-[hsl(var(--theme-input-bg))] hover:border-[hsl(var(--theme-border-hover)/0.7)]">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="p-1.5 rounded-lg transition-all duration-200 text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))] hover:bg-[hsl(var(--theme-bg-hover))] active:scale-95"
-              title="Attach a file"
-            >
-              <Paperclip className="w-[18px] h-[18px]" />
-            </button>
-            <input
-              type="text"
-              enterKeyHint="send"
-              inputMode="text"
-              autoCapitalize="sentences"
-              autoComplete="off"
-              autoCorrect="on"
-              placeholder={`Message @${displayName || username}`}
-              value={message}
-              onChange={(e) => {
-                setMessage(e.target.value);
-                if (e.target.value.trim()) emitTyping();
-              }}
-              disabled={isSending}
-              className="flex-1 bg-transparent outline-none text-sm disabled:opacity-50 text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted)/0.5)]"
-              onKeyPress={(e) => {
+        <div className="px-4 pb-4 pt-1">
+          <Composer
+            value={message}
+            onChange={(e) => {
+              setMessage(e.target.value);
+              if (e.target.value.trim()) emitTyping();
+            }}
+            onValueChange={setMessage}
+            onSend={() => handleSend({ preventDefault() {} } as React.FormEvent)}
+            canSend={message.trim().length > 0 || !!pendingFile}
+            placeholder={`Message @${displayName || username}`}
+            disabled={isSending}
+            onAttach={() => fileInputRef.current?.click()}
+            inputProps={{
+              onKeyPress: (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSend(e as any);
                 }
-              }}
-            />
-            <EmojiPickerButton
-              onEmojiSelect={handleEmojiSelect}
-              pickerPosition="top"
-              disabled={isSending}
-            />
-            <VoiceRecorder
-              onSend={handleVoiceSend}
-              disabled={isSending}
-            />
-            <button
-              type="submit"
-              disabled={(!message.trim() && !pendingFile) || isSending}
-              className={`p-2 rounded-xl transition-all duration-200 flex-shrink-0 active:scale-95 ${
-                message.trim() || pendingFile
-                  ? 'text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-sm hover:shadow-md'
-                  : 'text-[hsl(var(--theme-text-muted)/0.4)] cursor-not-allowed'
-              }`}
-              title="Send message (Enter)"
-            >
-              <Send className="w-[18px] h-[18px]" />
-            </button>
-          </div>
-        </form>
+              },
+            }}
+            trailing={
+              <>
+                <EmojiPickerButton
+                  onEmojiSelect={handleEmojiSelect}
+                  pickerPosition="top"
+                  disabled={isSending}
+                />
+                <VoiceRecorder
+                  onSend={handleVoiceSend}
+                  disabled={isSending}
+                />
+              </>
+            }
+          />
+        </div>
       </footer>
 
       {/* Profile Popover */}

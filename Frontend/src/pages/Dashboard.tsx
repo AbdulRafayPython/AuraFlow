@@ -1,20 +1,29 @@
+// REWRITE: ~2k-line page holding chat, composer, command picker and agent UI; split into components/hooks.
 // pages/Dashboard.tsx - Professional Real-time Version with Theme Support
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Search, Settings, Hash, Paperclip, Smile, Bot, Sun, Moon, Send, Wifi, WifiOff, Plus, Mic, SmilePlus, X, Palette, Reply, Pin, PinOff, Radio, BookOpen, Trash2, Brain, Languages } from "lucide-react";
-import { useTheme, THEMES } from "@/contexts/ThemeContext";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { Search, Hash, Paperclip, Bot, Sparkles, Sun, Moon, Wifi, WifiOff, Plus, Mic, SmilePlus, X, Reply, Pin, PinOff, Radio, BookOpen, Trash2, Brain, Languages } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
 import { getAvatarUrl } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import EmojiPickerButton from "@/components/EmojiPickerButton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import ReactionPicker from "@/components/ReactionPicker";
+import { MessageRow, DayDivider, RepliesLink, NewMessagesLine } from "@/components/chat/MessageRow";
+import { MessageListSkeleton } from "@/components/chat/MessageListSkeleton";
+import { MessageToolbar } from "@/components/chat/MessageToolbar";
+import { Composer } from "@/components/chat/Composer";
+import { ThreadPane, type ThreadMessage } from "@/components/chat/ThreadPane";
+import { useRightPane } from "@/components/app/RightPane";
+import { startsGroup, startsNewDay, formatDayLabel, indexReplies, firstUnreadId } from "@/lib/messageGrouping";
+import { getRecentEmoji, recordEmoji } from "@/lib/emoji";
 import MessageReactions from "@/components/MessageReactions";
 import { ModerationBadge } from "@/components/ModerationBadge";
 import { ModerationWarningBanner } from "@/components/ModerationWarningBanner";
 import { reactionService } from "@/services/reactionService";
 import { socket } from "@/socket";
-import { SocketDebugPanel } from "@/components/SocketDebugPanel";
 import FileAttachment from "@/components/chat/FileAttachment";
 import FileUploadPreview from "@/components/chat/FileUploadPreview";
 import ReplyPreview from "@/components/chat/ReplyPreview";
@@ -30,14 +39,22 @@ import type { PinModalContext } from "@/components/pins/PinDurationModal";
 import PinnedMessageBanner, { type ActivePinData } from "@/components/pins/PinnedMessageBanner";
 import { pinService, type PinDurationMinutes } from "@/services/pinService";
 import { useAuth } from "@/contexts/AuthContext";
-import { KnowledgePanel } from "@/components/ai-agents/KnowledgePanel";
 import AgentBar from "@/components/ai-agents/AgentBar";
 import AgentMessageShell from "@/components/ai-agents/AgentMessageShell";
+import AgentThinkingIndicator from "@/components/ai-agents/AgentThinkingIndicator";
+import InlineApprovals from "@/components/ai-agents/InlineApprovals";
+import MentionPopup from "@/components/chat/MentionPopup";
+import { useMentionableAgents } from "@/hooks/useMentionableAgents";
+import { applyMention, detectMention, filterMentionable } from "@/lib/agentBuilder";
+import type { MentionableAgent } from "@/types/agentBuilder";
+import { methodLabel } from "@/components/ai-agents/humanize";
 import EngagementCard from "@/components/ai-agents/cards/EngagementCard";
+import { AgentCardFrame } from "@/components/ai-agents/AgentMessageShell";
+import { useOpenAgent } from "@/components/ai-agents/AgentDetailPane";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import AgentResultPanel, { AgentResultTab, TranslationHistoryItem } from "@/components/ai-agents/AgentResultPanel";
 import ChannelInterventions from "@/components/ai-agents/ChannelInterventions";
 import QuickReplyChips from "@/components/chat/QuickReplyChips";
-import { statusService } from "@/services/statusService";
 import { friendService } from "@/services/friendService";
 import { useUnreadCounts } from "@/hooks/useUnreadCounts";
 import { aiAgentService } from "@/services/aiAgentService";
@@ -84,6 +101,7 @@ export default function Dashboard() {
     sendMessage,
     sendTyping,
     typingUsers,
+    thinkingAgents,
     isLoadingMessages,
     loadMoreMessages,
     selectChannel,
@@ -97,7 +115,13 @@ export default function Dashboard() {
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [showVoiceChannel, setShowVoiceChannel] = useState(false);
-  const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
+  const { open: openRightPane, close: closeRightPane, content: rightPaneContent } = useRightPane();
+  const openAgent = useOpenAgent();
+  const isWide = useMediaQuery('(min-width: 1024px)');
+  // Message whose replies are open in the right pane.
+  const [threadParentId, setThreadParentId] = useState<number | null>(null);
+  // Bumped after a reaction so the hover toolbar re-reads recent emoji.
+  const [recentEmojiVersion, setRecentEmojiVersion] = useState(0);
   // Mobile-only: tap a message to reveal its action bar (iMessage-style).
   // Hover doesn't fire on touch, so on phones we use selectedMessageId instead.
   const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null);
@@ -106,6 +130,10 @@ export default function Dashboard() {
   const [messageReactions, setMessageReactions] = useState<Record<number, any[]>>({});
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
+  // "@agent" autocomplete: caret tracks where the user is typing inside the input
+  const [caret, setCaret] = useState(0);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -137,7 +165,10 @@ export default function Dashboard() {
   const [pinModalContext, setPinModalContext] = useState<PinModalContext | undefined>(undefined);
 
   // Centralised unread tracking (socket-driven, no HTTP polling)
-  const { markChannelRead: markChRead } = useUnreadCounts();
+  const { markChannelRead: markChRead, channels: unreadByChannel } = useUnreadCounts();
+  // Unread count when this channel was opened (read before ChannelSidebar marks it read),
+  // and the first message that was unread then. Drives the "New" line.
+  const entryUnreadRef = useRef<{ channelId: number; count: number; firstId: number | null } | null>(null);
 
   // Pending skeleton for synchronous personal/channel agent commands
   // (/mood, /wellness, /focus). These run inside the HTTP request and their
@@ -251,18 +282,22 @@ export default function Dashboard() {
   })();
   const availableCommands = filteredCommands;
 
-  // Log messages for debugging blocked users
-  useEffect(() => {
-    console.log('[DASHBOARD] Total messages:', messages.length);
-    const blockedMessages = messages.filter(m => m.is_blocked);
-    if (blockedMessages.length > 0) {
-      console.log('[DASHBOARD] Found blocked messages:', blockedMessages.map(m => ({
-        id: m.id,
-        author: m.author,
-        is_blocked: m.is_blocked
-      })));
-    }
-  }, [messages]);
+  const mentionableAgents = useMentionableAgents(currentCommunity?.id);
+  const mention = detectMention(message, caret);
+  const mentionOptions = mention ? filterMentionable(mentionableAgents, mention.query) : [];
+  const mentionOpen = !!mention && mentionOptions.length > 0 && !mentionDismissed && !message.startsWith('/');
+
+  const pickMention = (agent: MentionableAgent) => {
+    if (!mention) return;
+    const next = applyMention(message, mention, agent.username);
+    setMessage(next.text);
+    setCaret(next.caret);
+    setMentionIndex(0);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(next.caret, next.caret);
+    });
+  };
 
   // Focus input when channel changes
   useEffect(() => {
@@ -364,7 +399,7 @@ export default function Dashboard() {
       const data = event.detail;
       if (data?.type === 'help' && data?.success) {
         toast({
-          title: 'AuraFlow AI Commands',
+          title: 'Auraflow AI Commands',
           description: String(data.message || '').replace(/[*`]/g, ''),
           duration: 12000,
         });
@@ -571,16 +606,11 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChannel?.id]);
 
-  // --- Ctrl+K global search shortcut ---
+  // Cmd/Ctrl+K is the global jump palette (AppShortcuts); its "Search messages" action lands here.
   useEffect(() => {
-    const handleGlobalKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        setSearchOpen(prev => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleGlobalKey);
-    return () => window.removeEventListener('keydown', handleGlobalKey);
+    const open = () => setSearchOpen(true);
+    window.addEventListener('auraflow:open-search', open);
+    return () => window.removeEventListener('auraflow:open-search', open);
   }, []);
 
   // --- Handlers for search, pins, profile ---
@@ -698,6 +728,8 @@ export default function Dashboard() {
   };
 
   const handleReactionToggle = async (messageId: number, emoji: string) => {
+    recordEmoji(emoji);
+    setRecentEmojiVersion((v) => v + 1);
     try {
       // Server returns the full aggregated reactions — no follow-up GET needed
       const result = await reactionService.toggleMessageReaction(messageId, emoji);
@@ -921,6 +953,18 @@ export default function Dashboard() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // "@agent" suggestions take the arrow/Tab/Enter/Esc keys while they are open
+    if (mentionOpen) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setMentionIndex((i) => (i + 1) % mentionOptions.length); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setMentionIndex((i) => (i - 1 + mentionOptions.length) % mentionOptions.length); return; }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        pickMention(mentionOptions[Math.min(mentionIndex, mentionOptions.length - 1)]);
+        return;
+      }
+      if (e.key === "Escape") { setMentionDismissed(true); return; }
+    }
+
     // Handle command suggestions navigation
     if (showCommandSuggestions) {
       if (e.key === "ArrowDown") {
@@ -962,6 +1006,9 @@ export default function Dashboard() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setMessage(value);
+    setCaret(e.target.selectionStart ?? value.length);
+    setMentionIndex(0);
+    setMentionDismissed(false);
 
     // Show command suggestions while user types the command (before the first space)
     if (value.startsWith('/') && !value.includes(' ')) {
@@ -1029,14 +1076,6 @@ export default function Dashboard() {
            date1.getDate() === date2.getDate();
   };
 
-  const shouldShowDateDivider = (currentMsg: any, previousMsg: any) => {
-    if (!previousMsg) return true;
-    
-    const currentDate = new Date(currentMsg.created_at);
-    const previousDate = new Date(previousMsg.created_at);
-    
-    return !isSameDay(currentDate, previousDate);
-  };
 
   const getAvatarInitials = (name: string) => {
     if (!name) return "?";
@@ -1058,27 +1097,119 @@ export default function Dashboard() {
     return colors[index];
   };
 
+  // Messages as rendered: slash-commands typed by the user are not shown.
+  const visibleMessages = useMemo(
+    () => messages.filter((m) => m.message_type !== 'text' || !m.content.startsWith('/')),
+    [messages],
+  );
+  const replyIndex = useMemo(() => indexReplies(messages), [messages]);
+
+  // "New messages" line: snapshot the unread count on channel change (render phase, before
+  // the sidebar marks it read), then pin the first unread message once messages are loaded.
+  if (currentChannel && entryUnreadRef.current?.channelId !== currentChannel.id) {
+    entryUnreadRef.current = { channelId: currentChannel.id, count: unreadByChannel[currentChannel.id] || 0, firstId: null };
+  }
+  const entry = entryUnreadRef.current;
+  if (entry && entry.firstId === null && entry.count > 0 && visibleMessages.length > 0) {
+    entry.firstId = firstUnreadId(visibleMessages, entry.count, authUser?.id);
+  }
+  const quickEmoji = useMemo(() => getRecentEmoji(3), [recentEmojiVersion]);
+
+  const openThread = (id: number) => {
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
+      setThreadParentId(id);
+    } else {
+      // The right pane is desktop-only: on small screens jump to the first reply instead.
+      const first = replyIndex.get(id)?.[0];
+      if (first) scrollToMessage(first);
+    }
+  };
+
+  // Keep the right-pane thread in sync with the loaded messages.
+  useEffect(() => {
+    if (threadParentId == null) return;
+    const parent = messages.find((m) => m.id === threadParentId);
+    if (!parent) return;
+    const toThread = (m: any): ThreadMessage => ({
+      id: m.id,
+      authorName: m.author || 'Unknown User',
+      avatarUrl: m.avatar_url,
+      username: m.author,
+      timeLabel: formatMessageTime(m.created_at),
+      content: m.attachment ? String(m.content || '').replace(m.attachment.file_url, '').trim() : String(m.content || ''),
+      attachmentName: m.attachment?.file_name,
+    });
+    openRightPane({
+      key: `thread-${threadParentId}`,
+      title: 'Thread',
+      onClose: () => setThreadParentId(null),
+      body: (
+        <ThreadPane
+          parent={toThread(parent)}
+          replies={messages.filter((m) => m.reply_to_preview?.id === threadParentId).map(toThread)}
+          onReply={() => handleReply(parent)}
+          onJump={scrollToMessage}
+        />
+      ),
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadParentId, messages]);
+
+  const agentForAuthor = (author?: string | null) => {
+    const name = String(author || '').trim().toLowerCase();
+    if (!name) return undefined;
+    return mentionableAgents.find((a) => a.name.toLowerCase() === name || a.username.toLowerCase() === name);
+  };
+
+  // Aura / Channel intelligence lives in the right pane on desktop.
+  const auraOpen = agentPanelOpen || kbPanelOpen;
+  const isCommunityAdmin = currentCommunity?.role === 'admin' || currentCommunity?.role === 'owner';
+  useEffect(() => {
+    if (!isWide || !auraOpen || !currentChannel) return;
+    openRightPane({
+      key: 'aura',
+      title: 'Aura',
+      onClose: () => { setAgentPanelOpen(false); setKbPanelOpen(false); },
+      body: (
+        <AgentResultPanel
+          embedded
+          open
+          onClose={() => { setAgentPanelOpen(false); setKbPanelOpen(false); }}
+          channelId={currentChannel.id}
+          channelName={currentChannel.name}
+          communityId={currentCommunity?.id ?? null}
+          initialTab={kbPanelOpen ? 'knowledge' : agentPanelTab}
+          isAdmin={isCommunityAdmin}
+          translations={translationHistory}
+        />
+      ),
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isWide, auraOpen, kbPanelOpen, agentPanelTab, currentChannel?.id, translationHistory]);
+
+  // The pane was closed from elsewhere (e.g. a thread replaced it).
+  useEffect(() => {
+    if (!auraOpen && rightPaneContent?.key === 'aura') closeRightPane();
+  }, [auraOpen, rightPaneContent?.key, closeRightPane]);
+
+  // Leaving the channel (or the page) closes its thread.
+  useEffect(() => {
+    setThreadParentId(null);
+    closeRightPane();
+  }, [currentChannel?.id, closeRightPane]);
+  useEffect(() => () => closeRightPane(), [closeRightPane]);
+
   return (
     <div 
       className="flex flex-col h-full transition-colors duration-300 relative"
       style={{ background: 'var(--theme-bg-gradient)' }}
     >
-      {/* Gradient overlay for depth - hidden for basic/onyx themes */}
-      {currentTheme !== 'basic' && currentTheme !== 'onyx' && (
-        <div 
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: 'radial-gradient(ellipse at 30% 20%, hsl(var(--theme-accent-primary) / 0.03) 0%, transparent 50%), radial-gradient(ellipse at 70% 80%, hsl(var(--theme-accent-secondary) / 0.03) 0%, transparent 50%)',
-          }}
-        />
-      )}
-      
       {/* Voice Channel — now handled by VoiceDock + VoiceRoomModal at App level */}
       {currentChannel?.type === 'voice' && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center" style={{ background: 'hsl(var(--theme-bg-primary))' }}>
           <div className="text-center space-y-4">
             <div className="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center bg-[hsl(var(--theme-accent-primary)/0.1)]">
-              <Radio className="w-8 h-8 text-[hsl(var(--theme-accent-primary))]" />
+              <Radio className="w-8 h-8 text-[hsl(var(--theme-text-accent))]" />
             </div>
             <div>
               <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))]">
@@ -1093,7 +1224,7 @@ export default function Dashboard() {
                 const textChannel = channels.find(ch => ch.type === 'text');
                 if (textChannel) selectChannel(textChannel.id);
               }}
-              className="text-sm text-[hsl(var(--theme-accent-primary))] hover:underline"
+              className="text-sm text-[hsl(var(--theme-text-accent))] hover:underline"
             >
               Go to a text channel
             </button>
@@ -1103,12 +1234,12 @@ export default function Dashboard() {
 
       {/* Header - Discord Style with Theme Support */}
       <header
-        className="h-12 flex items-center justify-between border-b shadow-sm relative z-10 border-[hsl(var(--theme-border-default)/0.5)] transition-colors duration-300"
-        style={{ background: 'hsl(var(--theme-header-bg) / 0.85)' }}
+        className="h-12 flex items-center justify-between gap-2 border-b relative z-10 border-[hsl(var(--theme-border-default))]"
+        style={{ background: 'hsl(var(--theme-header-bg))' }}
       >
-        <div className="flex items-center h-full">
+        <div className="flex items-center h-full min-w-0 flex-1">
           {/* Channel Info */}
-          <div className="flex items-center gap-2 pl-14 md:pl-4 pr-4 h-full border-r border-[hsl(var(--theme-border-default)/0.4)]">
+          <div className="flex items-center gap-2 pl-14 md:pl-4 pr-4 h-full shrink-0">
             <div className="flex items-center justify-center w-6 h-6 text-[hsl(var(--theme-text-secondary))]">
               {currentChannel?.type === 'voice' ? (
                 <Mic className="w-5 h-5" />
@@ -1116,18 +1247,25 @@ export default function Dashboard() {
                 <Hash className="w-5 h-5" />
               )}
             </div>
-            <h2 className="text-[15px] font-semibold text-[hsl(var(--theme-text-primary))]">
+            <h2 className="text-base font-semibold truncate max-w-[24ch] text-[hsl(var(--theme-text-primary))]">
               {currentChannel?.name || "Select a channel"}
             </h2>
           </div>
           
           {/* Channel Description - hidden on mobile */}
           {currentChannel?.description && (
-            <div className="hidden sm:flex items-center gap-3 px-4 h-full">
-              <div className="w-px h-6 bg-[hsl(var(--theme-border-default))]" />
-              <p className="text-[13px] text-[hsl(var(--theme-text-secondary))]">
-                {currentChannel.description}
-              </p>
+            <div className="hidden sm:flex items-center gap-3 pr-4 h-full min-w-0 flex-1">
+              <div className="w-px h-4 shrink-0 bg-[hsl(var(--theme-border-default))]" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="min-w-0 flex-1 truncate text-sm text-[hsl(var(--theme-text-muted))]">
+                    {currentChannel.description}
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" align="start" className="max-w-sm whitespace-pre-wrap">
+                  {currentChannel.description}
+                </TooltipContent>
+              </Tooltip>
             </div>
           )}
 
@@ -1136,10 +1274,10 @@ export default function Dashboard() {
               shown once connected, or if a connection that existed before
               actually drops. Nothing to alarm the user about before then. */}
           {(isConnected || hasConnectedOnce) && (
-            <div className={`ml-2 flex items-center gap-1 px-2 ${
+            <div className={`ml-2 flex shrink-0 items-center gap-1 px-2 ${
               isConnected
-                ? "text-green-400/70"
-                : "text-red-400 animate-pulse"
+                ? "text-success"
+                : "text-destructive"
             }`}>
               {isConnected ? (
                 <Wifi className="w-3.5 h-3.5" />
@@ -1153,20 +1291,40 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="flex items-center gap-1 sm:gap-2 pr-2 sm:pr-4">
+        <div className="flex min-w-0 shrink items-center gap-1 sm:gap-2 pr-2 sm:pr-4">
           {/* Search Button - Ctrl+K */}
           <button
             onClick={() => setSearchOpen(true)}
-            className="hidden md:flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg text-sm border transition-all bg-[hsl(var(--theme-input-bg))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-muted))] hover:border-[hsl(var(--theme-accent-primary)/0.5)] hover:text-[hsl(var(--theme-text-secondary))] w-56"
+            className="hidden md:flex min-w-0 shrink items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-sm border transition-colors bg-[hsl(var(--theme-input-bg))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-muted))] hover:border-[hsl(var(--theme-accent-primary)/0.5)] hover:text-[hsl(var(--theme-text-secondary))] w-56"
           >
             <Search className="w-4 h-4 flex-shrink-0" />
-            <span className="flex-1 text-left text-[13px]">Search messages...</span>
-            <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--theme-bg-tertiary))] border border-[hsl(var(--theme-border-default))]">⌘K</kbd>
+            <span className="min-w-0 flex-1 truncate text-left text-sm">Search messages...</span>
           </button>
 
           {/* Auto-translate language (per-viewer inline translation) */}
           {currentChannel && (
             <LanguageMenu value={translateLang} onChange={setTranslateLang} />
+          )}
+
+          {/* Aura: opens the assistant / channel intelligence in the right pane */}
+          {currentChannel && (
+            <button
+              onClick={() => {
+                if (auraOpen) { setAgentPanelOpen(false); setKbPanelOpen(false); }
+                else { setAgentPanelTab(isCommunityAdmin ? 'activity' : 'recap'); setAgentPanelOpen(true); }
+              }}
+              aria-pressed={auraOpen}
+              title="Aura"
+              aria-label="Aura"
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
+                auraOpen
+                  ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
+                  : 'text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))]'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span className="hidden xl:inline">Aura</span>
+            </button>
           )}
 
           {/* Summary History */}
@@ -1175,14 +1333,14 @@ export default function Dashboard() {
               onClick={() => setSummaryHistoryOpen(prev => !prev)}
               className={`p-2 rounded-lg transition-colors relative ${
                 summaryHistoryOpen
-                  ? 'bg-purple-500/20 text-purple-400'
+                  ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
                   : 'hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]'
               }`}
               title="Summary History"
             >
               <BookOpen className="w-4 h-4" />
               {savedSummaries.length > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center rounded-full text-[10px] font-bold px-1 bg-purple-500 text-white">
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center rounded-full text-xs font-semibold px-1 bg-[hsl(var(--theme-accent-primary))] text-white">
                   {savedSummaries.length}
                 </span>
               )}
@@ -1195,7 +1353,7 @@ export default function Dashboard() {
               onClick={() => setKbPanelOpen(prev => !prev)}
               className={`p-2 rounded-lg transition-colors relative ${
                 kbPanelOpen
-                  ? 'bg-amber-500/20 text-amber-400'
+                  ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
                   : 'hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]'
               }`}
               title="Knowledge Base"
@@ -1210,14 +1368,14 @@ export default function Dashboard() {
               onClick={() => setPinsOpen(prev => !prev)}
               className={`p-2 rounded-lg transition-colors relative ${
                 pinsOpen
-                  ? 'bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-accent-primary))]'
+                  ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
                   : 'hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]'
               }`}
               title="Pinned Messages"
             >
               <Pin className="w-4 h-4" />
               {pinnedCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center rounded-full text-[10px] font-bold px-1 bg-[hsl(var(--theme-accent-primary))] text-white">
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center rounded-full text-xs font-semibold px-1 bg-[hsl(var(--theme-accent-primary))] text-white">
                   {pinnedCount}
                 </span>
               )}
@@ -1273,16 +1431,7 @@ export default function Dashboard() {
           background: 'transparent'
         }}
       >
-        {isLoadingMessages && messages.length === 0 && (
-          <div className="flex justify-center items-center h-full">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-10 w-10 border-3 border-t-transparent mx-auto mb-4 border-[hsl(var(--theme-accent-primary))]"></div>
-              <p className="text-sm text-[hsl(var(--theme-text-secondary))]">
-                Loading messages...
-              </p>
-            </div>
-          </div>
-        )}
+        {isLoadingMessages && messages.length === 0 && <MessageListSkeleton />}
         {!currentChannel ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center max-w-lg px-4 sm:px-6">
@@ -1290,9 +1439,9 @@ export default function Dashboard() {
                 <Hash className="w-7 h-7 sm:w-10 sm:h-10 text-[hsl(var(--theme-text-muted))]" />
               </div>
               <h3 className="text-2xl font-bold mb-2 text-[hsl(var(--theme-text-primary))]">
-                Welcome to AuraFlow
+                Welcome to Auraflow
               </h3>
-              <p className="text-[15px] leading-relaxed text-[hsl(var(--theme-text-secondary))]">
+              <p className="text-base leading-relaxed text-[hsl(var(--theme-text-secondary))]">
                 Select a channel from the sidebar to start messaging with your team
               </p>
             </div>
@@ -1306,7 +1455,7 @@ export default function Dashboard() {
               <h3 className="text-xl sm:text-[32px] font-bold mb-2 text-[hsl(var(--theme-text-primary))]">
                 Welcome to #{currentChannel.name}!
               </h3>
-              <p className="text-[13px] sm:text-[15px] text-[hsl(var(--theme-text-secondary))]">
+              <p className="text-sm sm:text-base text-[hsl(var(--theme-text-secondary))]">
                 This is the start of the <span className="font-semibold">#{currentChannel.name}</span> channel.
               </p>
             </div>
@@ -1321,7 +1470,7 @@ export default function Dashboard() {
               <h3 className="text-xl sm:text-[32px] font-bold mb-2 text-[hsl(var(--theme-text-primary))]">
                 Welcome to #{currentChannel?.name}!
               </h3>
-              <p className="text-[15px] text-[hsl(var(--theme-text-secondary))]">
+              <p className="text-base text-[hsl(var(--theme-text-secondary))]">
                 This is the start of the <span className="font-semibold">#{currentChannel?.name}</span> channel.
               </p>
             </div>
@@ -1334,37 +1483,18 @@ export default function Dashboard() {
             )}
 
             {/* Messages */}
-            <div className="flex-1">
-              {messages.filter(msg => msg.message_type !== 'text' || !msg.content.startsWith('/')).map((msg, index, filteredMessages) => {
-                const showDateDivider = index === 0 || !isSameDay(new Date(msg.created_at), new Date(filteredMessages[index - 1]?.created_at));
-                const showAuthor = index === 0 || filteredMessages[index - 1]?.sender_id !== msg.sender_id || showDateDivider;
+            <div className="flex-1" role="log" aria-label={`Messages in ${currentChannel?.name || 'channel'}`}>
+              {visibleMessages.map((msg, index) => {
+                const prevMsg = visibleMessages[index - 1];
+                const showDateDivider = index !== 0 && startsNewDay(prevMsg, msg);
+                const grouped = !startsGroup(prevMsg, msg);
                 const authorName = msg.author || "Unknown User";
-                
-                // Check time gap - show header if more than 7 minutes apart
-                const prevMsg = filteredMessages[index - 1];
-                const timeDiff = prevMsg ? new Date(msg.created_at).getTime() - new Date(prevMsg.created_at).getTime() : Infinity;
-                const showHeaderByTime = timeDiff > 7 * 60 * 1000;
-                const shouldShowHeader = showAuthor || showHeaderByTime;
-                
-                // Debug blocked status
-                if (msg.is_blocked) {
-                  console.log(`[BLOCKED USER] Message ${msg.id} from ${authorName} is_blocked:`, msg.is_blocked);
-                }
-
+                const replyCount = replyIndex.get(msg.id)?.length ?? 0;
 
                 return (
                   <div key={`${msg.id}-${index}`}>
-                    {/* Date Divider - Discord Style */}
-                    {showDateDivider && index !== 0 && (
-                      <div className="relative flex items-center justify-center my-4 mx-4">
-                        <div className="absolute inset-0 flex items-center">
-                          <div className="w-full h-px bg-[hsl(var(--theme-border-default)/0.7)]" />
-                        </div>
-                        <span className="relative z-10 text-[11px] font-semibold px-2 py-0.5 bg-[hsl(var(--theme-bg-primary))] text-[hsl(var(--theme-text-muted))]">
-                          {formatDateDivider(msg.created_at)}
-                        </span>
-                      </div>
-                    )}
+                    {showDateDivider && <DayDivider label={formatDayLabel(msg.created_at)} />}
+                    {entryUnreadRef.current?.firstId === msg.id && <NewMessagesLine />}
 
                     {/* ── System Event Label (join / leave / remove / ban) ── */}
                     {msg.message_type === 'system' ? (
@@ -1373,254 +1503,165 @@ export default function Dashboard() {
                         timestamp={formatMessageTime(msg.created_at)}
                       />
                     ) : msg.message_type === 'ai' ? (
-                      <div
-                        id={`msg-${msg.id}`}
-                        onMouseEnter={() => setHoveredMessageId(msg.id)}
-                        onMouseLeave={() => setHoveredMessageId(null)}
-                      >
+                      <div id={`msg-${msg.id}`}>
                         <AgentMessageShell
                           agentName={agentSlugFromAuthor((msg as any).author)}
                           displayName={((msg as any).author && String((msg as any).author).trim()) || 'AI Bot'}
+                          onOpenAgent={(() => {
+                            const a = agentForAuthor((msg as any).author);
+                            return a ? () => openAgent(a) : undefined;
+                          })()}
                           timestamp={formatMessageTime(msg.created_at)}
                         >
-                          {(msg as any).card ? (
-                            <EngagementCard card={(msg as any).card} messageId={msg.id} />
-                          ) : (
-                            <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
-                              {msg.content}
-                            </div>
-                          )}
-                        </AgentMessageShell>
-                      </div>
-                    ) : (
-
-                    /* ── Regular User Message ────────────────── */
-                    <div
-                      id={`msg-${msg.id}`}
-                      className={`group relative flex py-0.5 pr-4 sm:pr-12 pl-14 sm:pl-[72px] ${
-                        shouldShowHeader ? 'mt-[17px]' : 'mt-0'
-                      } ${
-                        msg.is_pinned
-                          ? 'bg-[hsl(var(--theme-accent-primary)/0.04)] border-l-2 border-l-[hsl(var(--theme-accent-primary)/0.5)] hover:bg-[hsl(var(--theme-accent-primary)/0.07)]'
-                          : 'hover:bg-[hsl(var(--theme-bg-hover)/0.3)]'
-                      } ${isMobile && selectedMessageId === msg.id ? 'bg-[hsl(var(--theme-bg-hover)/0.4)]' : ''} transition-colors duration-150`}
-                      onMouseEnter={() => setHoveredMessageId(msg.id)}
-                      onMouseLeave={() => setHoveredMessageId(null)}
-                      onClick={() => {
-                        if (!isMobile) return;
-                        setSelectedMessageId((prev) => (prev === msg.id ? null : msg.id));
-                      }}
-                    >
-                      {/* Avatar - Positioned absolutely */}
-                      {shouldShowHeader ? (
-                        <div className="absolute left-2 sm:left-4 mt-0.5">
-                          {msg.avatar_url ? (
-                            <img
-                              src={getAvatarUrl(msg.avatar_url, authorName)}
-                              alt={authorName}
-                              className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover cursor-pointer hover:shadow-lg transition-shadow"
-                              onClick={(e) => handleProfileClick(msg.author || authorName, e)}
-                            />
-                          ) : (
-                            <div
-                              className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full ${getAvatarColor(authorName)} flex items-center justify-center text-white font-medium text-xs sm:text-sm cursor-pointer hover:shadow-lg transition-shadow`}
-                              onClick={(e) => handleProfileClick(msg.author || authorName, e)}
-                            >
-                              {getAvatarInitials(authorName)}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="absolute left-2 sm:left-4 w-8 sm:w-10 text-[10px] sm:text-[11px] text-right opacity-0 group-hover:opacity-100 transition-opacity select-none text-[hsl(var(--theme-text-muted))]">
-                          {new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
-                        </span>
-                      )}
-
-                      {/* Content */}
-                      <div className="flex-1 min-w-0 overflow-hidden">
-                        {shouldShowHeader && (
-                          <div className="flex items-center gap-1 mb-0.5">
-                            <span
-                              className="font-medium text-[15px] hover:underline cursor-pointer text-[hsl(var(--theme-text-primary))]"
-                              onClick={(e) => handleProfileClick(msg.author || authorName, e)}
-                            >
-                              {authorName}
-                            </span>
-                            {/* Role badges could go here */}
-                            <span className="text-[11px] ml-1 text-[hsl(var(--theme-text-muted))]">
-                              {formatMessageTime(msg.created_at)}
-                            </span>
-                            {/* Removed/Blocked Tag */}
-                            {msg.is_blocked && (
-                              <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500/20 text-red-400">
-                                Removed
-                              </span>
-                            )}
-                            {/* Moderation Badge */}
-                            {msg.moderation && (
-                              <ModerationBadge
-                                action={msg.moderation.action}
-                                severity={msg.moderation.severity}
-                                reasons={msg.moderation.reasons}
-                              />
-                            )}
-                            {/* Pinned indicator */}
-                            {msg.is_pinned && (
-                              <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[hsl(var(--theme-accent-primary)/0.1)] text-[hsl(var(--theme-accent-primary))]" title="Pinned message">
-                                <Pin className="w-3 h-3" />
-                                <span className="text-[10px] font-medium leading-none">Pinned</span>
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {/* Show Removed tag even when header is hidden */}
-                        {!shouldShowHeader && msg.is_blocked && (
-                          <span className="inline-block mr-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500/20 text-red-400">
-                            Removed
-                          </span>
-                        )}
-                        <div className="text-[15px] leading-[1.375rem] break-words text-[hsl(var(--theme-text-primary))]">
-                          {/* Reply-to preview */}
                           {msg.reply_to_preview && (
                             <ReplyPreview
                               preview={msg.reply_to_preview}
                               onClick={() => scrollToMessage(msg.reply_to_preview!.id)}
                             />
                           )}
-                          {/* File / Image / Audio / Video attachment */}
-                          {msg.attachment && (msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'voice' || msg.message_type === 'video') && (
-                            <FileAttachment
-                              fileName={msg.attachment.file_name}
-                              fileUrl={msg.attachment.file_url}
-                              fileSize={msg.attachment.file_size}
-                              mimeType={msg.attachment.mime_type}
-                              uploaderName={authorName}
-                              uploadedAt={msg.created_at}
-                              duration={msg.attachment.duration}
+                          {(msg as any).card ? (
+                            <AgentCardFrame><EngagementCard card={(msg as any).card} messageId={msg.id} /></AgentCardFrame>
+                          ) : (
+                            <div className="text-ui leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+                              {msg.content}
+                            </div>
+                          )}
+                        </AgentMessageShell>
+                      </div>
+                    ) : (
+                    /* ── Regular User Message ────────────────── */
+                    <MessageRow
+                      domId={`msg-${msg.id}`}
+                      authorName={authorName}
+                      avatarUrl={msg.avatar_url}
+                      username={msg.author || authorName}
+                      timeLabel={formatMessageTime(msg.created_at)}
+                      shortTimeLabel={new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                      grouped={grouped}
+                      pinned={!!msg.is_pinned}
+                      selected={isMobile && selectedMessageId === msg.id}
+                      onAuthorClick={(e) => handleProfileClick(msg.author || authorName, e)}
+                      onClick={() => {
+                        if (!isMobile) return;
+                        setSelectedMessageId((prev) => (prev === msg.id ? null : msg.id));
+                      }}
+                      headerExtra={
+                        <>
+                          {msg.is_blocked && (
+                            <span className="rounded bg-destructive/15 px-1.5 text-xs font-semibold text-destructive">Removed</span>
+                          )}
+                          {msg.moderation && (
+                            <ModerationBadge
+                              action={msg.moderation.action}
+                              severity={msg.moderation.severity}
+                              reasons={msg.moderation.reasons}
                             />
                           )}
-                          {/* Text content / caption */}
-                          {msg.content && (() => {
-                            // If there's an attachment, strip the file URL from content to show only caption
-                            let displayContent = msg.content;
-                            if (msg.attachment) {
-                              displayContent = displayContent.replace(msg.attachment.file_url, '').replace(/^\n+/, '').trim();
-                            }
-                            if (!displayContent) return null;
-                            return (
-                              <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(displayContent.trim()) ? 'text-[44px] leading-[54px]' : ''}>
-                                {displayContent}
-                              </span>
-                            );
-                          })()}
-                        </div>
-                        
-                        {/* Autonomous inline translation (per-viewer) */}
-                        {translateLang !== 'off' && msg.content && (
-                          <InlineTranslation
-                            state={autoTranslate.get(msg.id)}
-                            targetLang={translateLang}
-                            collapsed={autoTranslate.isCollapsed(msg.id)}
-                            onToggle={() => autoTranslate.toggleCollapsed(msg.id)}
+                        </>
+                      }
+                      reactions={
+                        messageReactions[msg.id]?.length > 0 ? (
+                          <MessageReactions
+                            reactions={messageReactions[msg.id]}
+                            onReactionClick={(emoji) => handleReactionToggle(msg.id, emoji)}
                           />
-                        )}
-
-                        {/* Moderation Warning Banner — visible to all */}
-                        {msg.moderation && msg.moderation.action !== 'allow' && (
-                          <ModerationWarningBanner
-                            action={msg.moderation.action}
-                            severity={msg.moderation.severity}
-                            reasons={msg.moderation.reasons}
-                            username={authorName}
-                            violationCount={msg.moderation.violation_count}
-                            maxViolations={3}
-                            message={msg.moderation.message}
-                            explanation={msg.moderation.explanation}
-                          />
-                        )}
-
-                        {/* Reactions Display */}
-                        {(messageReactions[msg.id]?.length > 0 || hoveredMessageId === msg.id) && (
-                          <div className="flex flex-wrap items-center gap-1 mt-1">
-                            {messageReactions[msg.id] && messageReactions[msg.id].length > 0 && (
-                              <MessageReactions
-                                reactions={messageReactions[msg.id]}
-                                onReactionClick={(emoji) => handleReactionToggle(msg.id, emoji)}
-                              />
-                            )}
+                        ) : undefined
+                      }
+                      footer={replyCount > 0 ? <RepliesLink count={replyCount} onClick={() => openThread(msg.id)} /> : undefined}
+                      toolbar={
+                        <MessageToolbar
+                          quickEmoji={quickEmoji}
+                          visible={isMobile && selectedMessageId === msg.id}
+                          onReact={(emoji) => handleReactionToggle(msg.id, emoji)}
+                          onOpenPicker={() => setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id)}
+                          actions={[
+                            { key: 'reply', label: 'Reply', icon: Reply, onClick: () => handleReply(msg) },
+                            { key: 'translate', label: 'Translate', icon: Languages, onClick: () => handleTranslateMessage(msg) },
+                            {
+                              key: 'pin',
+                              label: msg.is_pinned ? 'View / unpin' : 'Pin message',
+                              icon: msg.is_pinned ? PinOff : Pin,
+                              active: !!msg.is_pinned,
+                              onClick: () => handlePinMessage(msg.id),
+                            },
+                          ]}
+                        />
+                      }
+                      overlay={
+                        reactionPickerMessageId === msg.id ? (
+                          <div data-reaction-picker className="absolute right-4 top-0 z-50">
+                            <ReactionPicker
+                              onReactionSelect={(emoji) => {
+                                handleReactionToggle(msg.id, emoji);
+                                setReactionPickerMessageId(null);
+                              }}
+                            />
                           </div>
-                        )}
-                      </div>
-
-                      {/* Action Buttons - Floating on hover (desktop) / tap (mobile) */}
-                      <div className={`absolute -top-4 right-2 sm:right-4 transition-all ${
-                        isMobile
-                          ? (selectedMessageId === msg.id ? 'opacity-100' : 'opacity-0 pointer-events-none')
-                          : 'opacity-0 group-hover:opacity-100'
-                      }`}>
-                        <div className={`flex items-center rounded-md shadow-lg border bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))] ${isMobile ? '[&_button]:min-w-[44px] [&_button]:min-h-[44px] [&_button]:justify-center' : ''}`}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id);
-                            }}
-                            className="p-1.5 transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))] rounded-l-md"
-                            title="Add Reaction"
-                          >
-                            <SmilePlus className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleReply(msg);
-                            }}
-                            className="p-1.5 transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]"
-                            title="Reply"
-                          >
-                            <Reply className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleTranslateMessage(msg);
-                            }}
-                            className="p-1.5 transition-colors text-[hsl(var(--theme-text-muted))] hover:text-cyan-400 hover:bg-[hsl(var(--theme-bg-hover))]"
-                            title="Translate"
-                          >
-                            <Languages className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handlePinMessage(msg.id);
-                            }}
-                            className={`p-1.5 transition-colors rounded-r-md ${
-                              msg.is_pinned
-                                ? 'text-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-accent-primary)/0.08)] hover:bg-[hsl(var(--theme-accent-primary)/0.15)]'
-                                : 'text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
-                            }`}
-                            title={msg.is_pinned ? "View / Unpin" : "Pin Message"}
-                          >
-                            {msg.is_pinned
-                              ? <PinOff className="w-4 h-4" />
-                              : <Pin className="w-4 h-4" />
-                            }
-                          </button>
-                        </div>
-                      </div>
-                      
-                      {/* Reaction Picker */}
-                      {reactionPickerMessageId === msg.id && (
-                        <div data-reaction-picker className="absolute top-0 right-16 z-50 shadow-2xl">
-                          <ReactionPicker
-                            onReactionSelect={(emoji) => {
-                              handleReactionToggle(msg.id, emoji);
-                              setReactionPickerMessageId(null);
-                            }}
-                          />
-                        </div>
+                        ) : undefined
+                      }
+                    >
+                      {/* Show Removed tag even when the header is hidden */}
+                      {grouped && msg.is_blocked && (
+                        <span className="mr-2 rounded bg-destructive/15 px-1.5 text-xs font-semibold text-destructive">Removed</span>
                       )}
-                    </div>
+                      {/* Reply-to preview */}
+                      {msg.reply_to_preview && (
+                        <ReplyPreview
+                          preview={msg.reply_to_preview}
+                          onClick={() => scrollToMessage(msg.reply_to_preview!.id)}
+                        />
+                      )}
+                      {/* File / Image / Audio / Video attachment */}
+                      {msg.attachment && (msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'voice' || msg.message_type === 'video') && (
+                        <FileAttachment
+                          fileName={msg.attachment.file_name}
+                          fileUrl={msg.attachment.file_url}
+                          fileSize={msg.attachment.file_size}
+                          mimeType={msg.attachment.mime_type}
+                          uploaderName={authorName}
+                          uploadedAt={msg.created_at}
+                          duration={msg.attachment.duration}
+                        />
+                      )}
+                      {/* Text content / caption */}
+                      {msg.content && (() => {
+                        // If there's an attachment, strip the file URL from content to show only caption
+                        let displayContent = msg.content;
+                        if (msg.attachment) {
+                          displayContent = displayContent.replace(msg.attachment.file_url, '').replace(/^\n+/, '').trim();
+                        }
+                        if (!displayContent) return null;
+                        return (
+                          <span className={/^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}]+$/u.test(displayContent.trim()) ? 'text-4xl leading-tight' : ''}>
+                            {displayContent}
+                          </span>
+                        );
+                      })()}
+
+                      {/* Autonomous inline translation (per-viewer) */}
+                      {translateLang !== 'off' && msg.content && (
+                        <InlineTranslation
+                          state={autoTranslate.get(msg.id)}
+                          targetLang={translateLang}
+                          collapsed={autoTranslate.isCollapsed(msg.id)}
+                          onToggle={() => autoTranslate.toggleCollapsed(msg.id)}
+                        />
+                      )}
+
+                      {/* Moderation Warning Banner — visible to all */}
+                      {msg.moderation && msg.moderation.action !== 'allow' && (
+                        <ModerationWarningBanner
+                          action={msg.moderation.action}
+                          severity={msg.moderation.severity}
+                          reasons={msg.moderation.reasons}
+                          username={authorName}
+                          violationCount={msg.moderation.violation_count}
+                          maxViolations={3}
+                          message={msg.moderation.message}
+                          explanation={msg.moderation.explanation}
+                        />
+                      )}
+                    </MessageRow>
                     )}
                   </div>
                 );
@@ -1630,18 +1671,19 @@ export default function Dashboard() {
 
             {/* Typing Indicators - Discord Style */}
             {typingUsers.length > 0 && (
-              <div className="flex items-center gap-2 h-6 px-4 text-[13px] text-[hsl(var(--theme-text-secondary))]">
-                <div className="flex items-center gap-0.5">
-                  <div className="w-2 h-2 rounded-full animate-bounce bg-[hsl(var(--theme-text-muted))]" style={{ animationDelay: "0ms", animationDuration: "1s" }}></div>
-                  <div className="w-2 h-2 rounded-full animate-bounce bg-[hsl(var(--theme-text-muted))]" style={{ animationDelay: "200ms", animationDuration: "1s" }}></div>
-                  <div className="w-2 h-2 rounded-full animate-bounce bg-[hsl(var(--theme-text-muted))]" style={{ animationDelay: "400ms", animationDuration: "1s" }}></div>
-                </div>
+              <div className="flex h-6 items-center gap-2 px-4 text-sm text-muted-foreground" role="status">
                 <span>
                   <strong>{typingUsers.map((u) => u.username).join(", ")}</strong>
-                  {typingUsers.length === 1 ? " is typing..." : " are typing..."}
+                  {typingUsers.length === 1 ? " is typing…" : " are typing…"}
                 </span>
               </div>
             )}
+
+            {/* Agent runs in flight for this channel */}
+            <AgentThinkingIndicator agents={thinkingAgents.filter((a) => a.channelId === currentChannel?.id)} />
+
+            {/* Things an agent is waiting to do in this channel, for the person who asked */}
+            <InlineApprovals channelId={currentChannel?.id} />
 
             {/* Summary Skeleton Screen - Shows immediately when generating */}
             {isGeneratingSummary && (
@@ -1661,17 +1703,17 @@ export default function Dashboard() {
                 timestamp={formatMessageTime(ephemeralSummary.created_at)}
                 onDismiss={() => { setEphemeralSummary(null); setDisplayedSummaryText(''); }}
               >
-                <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+                <div className="text-ui leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
                   {displayedSummaryText}
                   {displayedSummaryText.length < ephemeralSummary.content.length && (
                     <span
-                      className="inline-block w-0.5 h-4 ml-0.5 animate-pulse motion-reduce:animate-none align-middle"
+                      className="inline-block w-0.5 h-4 ml-0.5 align-middle"
                       style={{ backgroundColor: 'hsl(var(--agent-accent-community))' }}
                     />
                   )}
                 </div>
-                <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
-                  <span>Method: {ephemeralSummary.method}</span>
+                <div className="mt-3 flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                  <span>Method: {methodLabel(ephemeralSummary.method)}</span>
                   <span>•</span>
                   <span>{ephemeralSummary.message_count} messages analyzed</span>
                 </div>
@@ -1688,12 +1730,12 @@ export default function Dashboard() {
                   timestamp={formatMessageTime(sched.created_at)}
                   onDismiss={() => setPendingScheduledSummaries(prev => prev.filter(s => s.id !== sched.id))}
                 >
-                  <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+                  <div className="text-ui leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
                     {sched.content}
                   </div>
                   {(sched.method || sched.message_count) && (
-                    <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
-                      {sched.method && <span>Method: {sched.method}</span>}
+                    <div className="mt-3 flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                      {sched.method && <span>Method: {methodLabel(sched.method)}</span>}
                       {sched.method && sched.message_count && <span>•</span>}
                       {sched.message_count && <span>{sched.message_count} messages analyzed</span>}
                     </div>
@@ -1734,12 +1776,12 @@ export default function Dashboard() {
                 timestamp={formatMessageTime(ephemeralKBResult.created_at)}
                 onDismiss={() => setEphemeralKBResult(null)}
               >
-                <div className="text-[14px] leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
+                <div className="text-ui leading-[1.5] whitespace-pre-line text-[hsl(var(--theme-text-secondary))]">
                   {ephemeralKBResult.content}
                 </div>
                 {ephemeralKBResult.subtype === 'extract' && (
-                  <div className="mt-3 flex items-center gap-3 text-[11px] text-[hsl(var(--theme-text-muted))]">
-                    <span>Method: {ephemeralKBResult.method}</span>
+                  <div className="mt-3 flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
+                    <span>Method: {methodLabel(ephemeralKBResult.method)}</span>
                     {ephemeralKBResult.total_items > 0 && (
                       <>
                         <span>•</span>
@@ -1790,13 +1832,18 @@ export default function Dashboard() {
             />
           )}
 
+          {/* @agent suggestions */}
+          {mentionOpen && (
+            <MentionPopup agents={mentionOptions} activeIndex={mentionIndex} onPick={pickMention} onHover={setMentionIndex} />
+          )}
+
           {/* Command Suggestions Dropdown */}
           {showCommandSuggestions && availableCommands.length > 0 && (
             <div
-              className="absolute bottom-full left-0 mb-2 w-full max-w-xs rounded-md shadow-xl border overflow-hidden z-50 backdrop-blur-xl bg-[hsl(var(--theme-bg-elevated)/0.95)] border-[hsl(var(--theme-border-default))]"
+              className="absolute bottom-full left-0 mb-2 w-full max-w-xs rounded-lg shadow-popover border overflow-hidden z-50 bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]"
               style={{ fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' }}
             >
-              <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider border-b bg-[hsl(var(--theme-bg-secondary)/0.8)] text-[hsl(var(--theme-text-muted))] border-[hsl(var(--theme-border-default))]">
+              <div className="px-2.5 py-1 text-xs font-medium border-b bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-muted))] border-[hsl(var(--theme-border-default))]">
                 Commands
               </div>
               {availableCommands.map((cmd, index) => (
@@ -1817,28 +1864,28 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2">
                     <Bot className={`w-3.5 h-3.5 shrink-0 ${
                       index === selectedCommandIndex
-                        ? "text-[hsl(var(--theme-accent-primary))]"
+                        ? "text-[hsl(var(--theme-text-accent))]"
                         : "text-[hsl(var(--theme-text-muted))]"
                     }`} />
                     <div className="flex-1 min-w-0 flex items-baseline gap-2">
-                      <span className={`font-medium text-[12px] tabular-nums ${
+                      <span className={`font-medium text-xs tabular-nums ${
                         index === selectedCommandIndex
-                          ? "text-[hsl(var(--theme-accent-primary))]"
+                          ? "text-[hsl(var(--theme-text-accent))]"
                           : "text-[hsl(var(--theme-text-primary))]"
                       }`}>
                         {cmd.command}
                       </span>
-                      <span className="truncate text-[11px] text-[hsl(var(--theme-text-muted))]">
+                      <span className="truncate text-xs text-[hsl(var(--theme-text-muted))]">
                         {cmd.description}
                       </span>
                     </div>
                   </div>
                 </button>
               ))}
-              <div className="px-2.5 py-1 text-[10px] border-t flex items-center gap-2 bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-muted))] border-[hsl(var(--theme-border-default))]">
-                <span><kbd className="px-1 py-0 rounded text-[9px] bg-[hsl(var(--theme-bg-tertiary))]">↑↓</kbd> nav</span>
-                <span><kbd className="px-1 py-0 rounded text-[9px] bg-[hsl(var(--theme-bg-tertiary))]">Tab</kbd> select</span>
-                <span><kbd className="px-1 py-0 rounded text-[9px] bg-[hsl(var(--theme-bg-tertiary))]">Esc</kbd> close</span>
+              <div className="px-2.5 py-1 text-xs border-t flex items-center gap-2 bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-muted))] border-[hsl(var(--theme-border-default))]">
+                <span><kbd className="px-1 py-0 rounded text-xs bg-[hsl(var(--theme-bg-tertiary))]">↑↓</kbd> nav</span>
+                <span><kbd className="px-1 py-0 rounded text-xs bg-[hsl(var(--theme-bg-tertiary))]">Tab</kbd> select</span>
+                <span><kbd className="px-1 py-0 rounded text-xs bg-[hsl(var(--theme-bg-tertiary))]">Esc</kbd> close</span>
               </div>
             </div>
           )}
@@ -1878,78 +1925,52 @@ export default function Dashboard() {
             />
           )}
 
-          <div className={`flex items-center rounded-lg transition-colors duration-150 border ${
-            message.startsWith('/')
-              ? "bg-[hsl(var(--theme-accent-primary)/0.15)] ring-1 ring-[hsl(var(--theme-accent-primary)/0.5)] border-[hsl(var(--theme-accent-primary)/0.3)]"
-              : "bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary)/0.6)] border-[hsl(var(--theme-border-default)/0.4)]"
-          }`}>
-            {/* Plus Button - File Upload. Sending/uploading go over plain
-                HTTP, not the socket, so none of the compose controls need to
-                wait on isConnected — that only gates real-time delivery to
-                OTHER users, not your own ability to type and send. */}
-            <button
-              className="flex-shrink-0 p-3 rounded-l-lg transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
-              disabled={!currentChannel}
-              onClick={() => fileInputRef.current?.click()}
-              title="Upload a file"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-
-            <input
-              ref={inputRef}
-              type="text"
-              enterKeyHint="send"
-              inputMode="text"
-              autoCapitalize="sentences"
-              autoComplete="off"
-              autoCorrect="on"
-              placeholder={
-                message.startsWith('/')
-                  ? "Type a command..."
-                  : currentChannel
-                    ? `Message #${currentChannel.name}`
-                    : "Select a channel to start messaging"
-              }
-              value={message}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              disabled={!currentChannel || isSending}
-              className={`flex-1 bg-transparent outline-none text-sm sm:text-[15px] py-2.5 min-w-0 ${
-                message.startsWith('/')
-                  ? "text-[hsl(var(--theme-accent-primary))] placeholder-[hsl(var(--theme-accent-primary)/0.6)]"
-                  : "text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]"
-              } disabled:opacity-50`}
-            />
-
-            <div className="flex items-center gap-1 pr-2">
-              <button
-                className="p-2 rounded-md transition-colors text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
-                disabled={!currentChannel}
-                onClick={() => fileInputRef.current?.click()}
-                title="Attach a file"
-              >
-                <Paperclip className="w-5 h-5" />
-              </button>
-              <EmojiPickerButton
-                onEmojiSelect={handleEmojiSelect}
-                pickerPosition="top"
-                disabled={!currentChannel}
-              />
-              <VoiceRecorder
-                onSend={handleVoiceSend}
-                disabled={!currentChannel}
-              />
-            </div>
-          </div>
+          {/* Sending/uploading go over plain HTTP, not the socket, so none of the
+              compose controls wait on isConnected: that only gates real-time
+              delivery to OTHER users, not your own ability to type and send. */}
+          <Composer
+            value={message}
+            onChange={handleInputChange}
+            onValueChange={setMessage}
+            onSend={handleSendMessage}
+            canSend={(message.trim().length > 0 || !!pendingFile) && !!currentChannel}
+            inputRef={inputRef}
+            inputProps={{
+              onKeyDown: handleKeyDown,
+              onSelect: (e) => setCaret(e.currentTarget.selectionStart ?? 0),
+            }}
+            placeholder={
+              message.startsWith('/')
+                ? "Type a command..."
+                : currentChannel
+                  ? `Message #${currentChannel.name}`
+                  : "Select a channel to start messaging"
+            }
+            disabled={!currentChannel || isSending}
+            commandMode={message.startsWith('/')}
+            onAttach={() => fileInputRef.current?.click()}
+            trailing={
+              <>
+                <EmojiPickerButton
+                  onEmojiSelect={handleEmojiSelect}
+                  pickerPosition="top"
+                  disabled={!currentChannel}
+                />
+                <VoiceRecorder
+                  onSend={handleVoiceSend}
+                  disabled={!currentChannel}
+                />
+              </>
+            }
+          />
 
           {/* Only warn about a dropped connection if we were actually
               connected before — never during the initial handshake, and
               sending/uploading still work over HTTP regardless. This is
               informational, not blocking. */}
           {hasConnectedOnce && !isConnected && (
-            <div className="mt-2 flex items-center gap-2 text-xs text-red-400">
-              <WifiOff className="w-3.5 h-3.5 animate-pulse" />
+            <div className="mt-2 flex items-center gap-2 text-xs text-destructive" role="status">
+              <WifiOff className="w-3.5 h-3.5" />
               <span>Realtime connection lost — messages still send, but live updates may lag until it reconnects.</span>
             </div>
           )}
@@ -1988,7 +2009,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-purple-400" />
               <h3 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">Summary History</h3>
-              <span className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+              <span className="text-xs text-[hsl(var(--theme-text-muted))]">
                 #{currentChannel.name}
               </span>
             </div>
@@ -2006,7 +2027,7 @@ export default function Dashboard() {
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <BookOpen className="w-8 h-8 text-[hsl(var(--theme-text-muted)/0.3)] mb-3" />
                 <p className="text-sm text-[hsl(var(--theme-text-muted))]">No summaries yet</p>
-                <p className="text-[11px] text-[hsl(var(--theme-text-muted)/0.7)] mt-1">Type /summarize in the chat to generate one</p>
+                <p className="text-xs text-[hsl(var(--theme-text-muted)/0.7)] mt-1">Type /summarize in the chat to generate one</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -2015,15 +2036,15 @@ export default function Dashboard() {
                     {/* Summary header */}
                     <div className="flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--theme-border-default)/0.15)]">
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-medium text-purple-400">
-                          {s.method === 'gemini' ? 'AI' : 'Extractive'}
+                        <span className="text-xs font-medium text-purple-400">
+                          {methodLabel(s.method)}
                         </span>
-                        <span className="text-[10px] text-[hsl(var(--theme-text-muted))]">
+                        <span className="text-xs text-[hsl(var(--theme-text-muted))]">
                           {s.message_count} msgs
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-[hsl(var(--theme-text-muted))]">
+                        <span className="text-xs text-[hsl(var(--theme-text-muted))]">
                           {s.created_at ? new Date(s.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
                         </span>
                         <button
@@ -2041,7 +2062,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     {/* Summary content */}
-                    <div className="px-3 py-2.5 text-[12px] leading-[1.6] text-[hsl(var(--theme-text-secondary))] whitespace-pre-line max-h-[200px] overflow-y-auto">
+                    <div className="px-3 py-2.5 text-xs leading-[1.6] text-[hsl(var(--theme-text-secondary))] whitespace-pre-line max-h-[200px] overflow-y-auto">
                       {s.summary}
                     </div>
                   </div>
@@ -2053,7 +2074,7 @@ export default function Dashboard() {
       )}
 
       {/* --- Channel Intelligence rail (Activity / Recap / Knowledge / Focus / Translations / Safety) --- */}
-      {currentChannel && (
+      {currentChannel && !isWide && (
         <AgentResultPanel
           open={agentPanelOpen || kbPanelOpen}
           onClose={() => { setAgentPanelOpen(false); setKbPanelOpen(false); }}

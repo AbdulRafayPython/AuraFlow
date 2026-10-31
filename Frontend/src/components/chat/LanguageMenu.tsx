@@ -40,17 +40,17 @@ export default function LanguageMenu({ value, onChange }: LanguageMenuProps) {
         title="Auto-translate messages into your language"
         className={`flex items-center gap-1 p-2 rounded-lg transition-colors ${
           active
-            ? 'bg-cyan-500/15 text-cyan-400'
+            ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
             : 'hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]'
         }`}
       >
         <Globe className="w-4 h-4" />
-        <span className="text-[11px] font-semibold hidden sm:inline">{shortLabel}</span>
+        <span className="text-xs font-semibold hidden sm:inline">{shortLabel}</span>
       </button>
 
       {open && (
         <div className="absolute right-0 mt-1 w-52 max-h-80 overflow-y-auto rounded-lg border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] shadow-xl z-50 py-1">
-          <p className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+          <p className="px-3 py-1.5 text-xs font-medium text-[hsl(var(--theme-text-muted))]">
             Auto-translate to
           </p>
           {entries.map(([code, label]) => (
@@ -60,7 +60,7 @@ export default function LanguageMenu({ value, onChange }: LanguageMenuProps) {
                 onChange(code);
                 setOpen(false);
               }}
-              className="flex w-full items-center justify-between px-3 py-1.5 text-left text-[13px] text-[hsl(var(--theme-text-secondary))] transition-colors hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]"
+              className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-[hsl(var(--theme-text-secondary))] transition-colors hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]"
             >
               <span>{label}</span>
               {value === code && <Check className="h-3.5 w-3.5 text-cyan-400" />}

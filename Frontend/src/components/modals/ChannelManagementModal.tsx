@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
-import { X, Hash, Volume2, Edit2, Trash2, AlertCircle } from "lucide-react";
+import { Hash, Volume2, Edit2, Trash2, AlertCircle } from "lucide-react";
 import { channelService } from "@/services/channelService";
 import { socketService } from "@/services/socketService";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -126,9 +126,9 @@ export default function ChannelManagementModal({
         <div className="flex items-center justify-between p-5 border-b sticky top-0 border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))]">
           <div className="flex items-center gap-3">
             {channel.type === "voice" ? (
-              <Volume2 className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
+              <Volume2 className="w-5 h-5 text-[hsl(var(--theme-text-accent))]" />
             ) : (
-              <Hash className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
+              <Hash className="w-5 h-5 text-[hsl(var(--theme-text-accent))]" />
             )}
             <h2 className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
               Channel Settings
@@ -145,7 +145,7 @@ export default function ChannelManagementModal({
               {channel.type === "voice" ? (
                 <Volume2 className="w-5 h-5 text-[hsl(var(--theme-accent-secondary))]" />
               ) : (
-                <Hash className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
+                <Hash className="w-5 h-5 text-[hsl(var(--theme-text-accent))]" />
               )}
               <div>
                 <p className="text-sm font-semibold text-[hsl(var(--theme-text-secondary))]">
@@ -206,7 +206,7 @@ export default function ChannelManagementModal({
                 <button
                   onClick={handleSaveChanges}
                   disabled={isLoading}
-                  className="flex-1 px-4 py-2 rounded-lg font-semibold text-sm bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-[var(--theme-glow-primary)] text-white transition-all disabled:opacity-50"
+                  className="flex-1 px-4 py-2 rounded-lg font-semibold text-sm bg-[hsl(var(--theme-accent-primary))] text-white transition-all disabled:opacity-50"
                 >
                   {isLoading ? "Saving..." : "Save Changes"}
                 </button>
@@ -243,7 +243,7 @@ export default function ChannelManagementModal({
             <div className="space-y-3 pt-4 border-t border-[hsl(var(--theme-border-default))]">
               <button
                 onClick={() => setIsEditing(true)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all bg-[hsl(var(--theme-accent-primary))]/10 hover:bg-[hsl(var(--theme-accent-primary))]/20 text-[hsl(var(--theme-accent-primary))]"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all bg-[hsl(var(--theme-accent-primary))]/10 hover:bg-[hsl(var(--theme-accent-primary))]/20 text-[hsl(var(--theme-text-accent))]"
               >
                 <Edit2 className="w-4 h-4" />
                 Edit Channel

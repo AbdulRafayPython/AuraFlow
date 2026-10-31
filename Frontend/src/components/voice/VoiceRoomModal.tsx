@@ -1,6 +1,5 @@
 // components/voice/VoiceRoomModal.tsx — Expanded Voice Room View
 // Original premium design — NOT a Discord clone
-import React from "react";
 import { useVoice } from "@/contexts/VoiceContext";
 import { getAvatarUrl } from "@/lib/utils";
 import {
@@ -37,7 +36,7 @@ export default function VoiceRoomModal() {
     <div className="fixed inset-0 z-[200] flex items-center justify-center">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/60"
         onClick={() => setVoiceRoomModalOpen(false)}
       />
 
@@ -57,11 +56,11 @@ export default function VoiceRoomModal() {
           <div className="flex items-center gap-3">
             <div className="relative">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[hsl(var(--theme-accent-primary)/0.15)]">
-                <Radio className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
+                <Radio className="w-5 h-5 text-[hsl(var(--theme-text-accent))]" />
               </div>
               {/* Live pulse */}
               <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-[hsl(var(--theme-bg-secondary))]">
-                <span className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75" />
+                <span className="absolute inset-0 rounded-full bg-green-500 opacity-75" />
               </span>
             </div>
             <div>
@@ -113,7 +112,7 @@ export default function VoiceRoomModal() {
                       <div
                         className={`w-16 h-16 rounded-full overflow-hidden transition-all duration-300 ${
                           isSpeaking
-                            ? "ring-[3px] ring-[hsl(var(--theme-accent-primary))] shadow-[0_0_20px_hsl(var(--theme-accent-primary)/0.3)]"
+                            ? "ring-[3px] ring-[hsl(var(--theme-accent-primary))]"
                             : "ring-2 ring-transparent"
                         }`}
                       >
@@ -124,7 +123,7 @@ export default function VoiceRoomModal() {
                             className="w-full h-full object-cover"
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white font-bold text-lg">
+                          <div className="w-full h-full flex items-center justify-center bg-[hsl(var(--theme-accent-primary))] text-white font-bold text-lg">
                             {user.display_name?.[0]?.toUpperCase() || "?"}
                           </div>
                         )}
@@ -154,7 +153,7 @@ export default function VoiceRoomModal() {
                       <p className="text-sm font-medium truncate text-[hsl(var(--theme-text-primary))]">
                         {user.display_name}
                         {isMe && (
-                          <span className="text-[10px] ml-1 text-[hsl(var(--theme-text-muted))]">
+                          <span className="text-xs ml-1 text-[hsl(var(--theme-text-muted))]">
                             (you)
                           </span>
                         )}

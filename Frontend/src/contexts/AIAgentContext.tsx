@@ -8,7 +8,6 @@ import {
   KnowledgeEntry,
   AgentCatalogEntry,
   InstalledAgent,
-  AgentLog,
   AgentLogsResponse,
   AssistantReply,
   TranslationResult,

@@ -113,13 +113,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
-      console.log('[WorkspaceContext] No token found, skipping initial load');
       return;
     }
 
     // Add a small delay to ensure AuthContext has initialized
     const loadTimer = setTimeout(() => {
-      console.log('[WorkspaceContext] Loading workspaces and friend requests in parallel');
       // Independent fetches — fire them together rather than awaiting one before the next.
       Promise.all([
         loadWorkspaces(),

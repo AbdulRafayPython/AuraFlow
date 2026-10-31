@@ -229,7 +229,7 @@ export default function AgentBar({
       role="toolbar"
       aria-label="Channel AI assist"
     >
-      <span className="shrink-0 px-1 text-[11px] font-medium uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+      <span className="shrink-0 px-1 text-xs font-medium  text-[hsl(var(--theme-text-muted))]">
         Assist
       </span>
       <span
@@ -350,7 +350,7 @@ function AssistButton({ accent, icon, label, onClick, disabled }: AssistButtonPr
       title={label}
       className={
         'group inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 ' +
-        'text-[12px] font-medium text-[hsl(var(--theme-text-secondary))] ' +
+        'text-xs font-medium text-[hsl(var(--theme-text-secondary))] ' +
         'transition-colors [transition-duration:140ms] ' +
         'hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))] ' +
         'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
@@ -379,7 +379,7 @@ function AssistTrigger({
       title={label}
       className={
         'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 ' +
-        'text-[12px] font-medium text-[hsl(var(--theme-text-secondary))] ' +
+        'text-xs font-medium text-[hsl(var(--theme-text-secondary))] ' +
         'transition-colors [transition-duration:140ms] ' +
         'hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]'
       }
@@ -435,7 +435,7 @@ function AskPopover({
         className="w-80 border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] p-3 shadow-none"
       >
         <div className="space-y-3">
-          <h4 className="flex items-center gap-1.5 text-[13px] font-semibold text-[hsl(var(--theme-text-primary))]">
+          <h4 className="flex items-center gap-1.5 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
             <Sparkles className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
             Ask the assistant
           </h4>
@@ -451,7 +451,7 @@ function AskPopover({
                   submit();
                 }
               }}
-              className="h-8 text-[12px]"
+              className="h-8 text-xs"
             />
             <Button
               size="sm"
@@ -464,11 +464,11 @@ function AskPopover({
             </Button>
           </div>
           {a && (
-            <div className="rounded border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] p-2.5 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))] whitespace-pre-wrap">
+            <div className="rounded border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] p-2.5 text-xs leading-5 text-[hsl(var(--theme-text-secondary))] whitespace-pre-wrap">
               {a}
             </div>
           )}
-          <p className="text-[10px] text-[hsl(var(--theme-text-muted))]">
+          <p className="text-xs text-[hsl(var(--theme-text-muted))]">
             Replies stay private to you until you choose to share.
           </p>
         </div>
@@ -526,11 +526,11 @@ function SparkPopover({
         align="start"
         className="w-72 border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] p-2 shadow-none"
       >
-        <h4 className="flex items-center gap-1.5 px-1.5 py-1 text-[13px] font-semibold text-[hsl(var(--theme-text-primary))]">
+        <h4 className="flex items-center gap-1.5 px-1.5 py-1 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
           <Zap className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
           Spark a conversation
         </h4>
-        <p className="px-1.5 pb-1.5 text-[10px] text-[hsl(var(--theme-text-muted))]">
+        <p className="px-1.5 pb-1.5 text-xs text-[hsl(var(--theme-text-muted))]">
           Posts into this channel for everyone to see.
         </p>
         <div className="space-y-1">
@@ -553,8 +553,8 @@ function SparkPopover({
                   {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <OptIcon className="h-4 w-4" />}
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-[12px] font-medium text-[hsl(var(--theme-text-primary))]">{opt.label}</span>
-                  <span className="block text-[11px] leading-4 text-[hsl(var(--theme-text-muted))]">{opt.desc}</span>
+                  <span className="block text-xs font-medium text-[hsl(var(--theme-text-primary))]">{opt.label}</span>
+                  <span className="block text-xs leading-4 text-[hsl(var(--theme-text-muted))]">{opt.desc}</span>
                 </span>
               </button>
             );
@@ -609,7 +609,7 @@ function TranslatePopover({
         className="w-80 border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] p-3 shadow-none"
       >
         <div className="space-y-3">
-          <h4 className="flex items-center gap-1.5 text-[13px] font-semibold text-[hsl(var(--theme-text-primary))]">
+          <h4 className="flex items-center gap-1.5 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
             <Languages className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
             Translate text
           </h4>
@@ -620,7 +620,7 @@ function TranslatePopover({
             rows={3}
             className={
               'w-full resize-none rounded border border-[hsl(var(--theme-border-default))] ' +
-              'bg-[hsl(var(--theme-bg-secondary))] p-2 text-[12px] leading-5 ' +
+              'bg-[hsl(var(--theme-bg-secondary))] p-2 text-xs leading-5 ' +
               'text-[hsl(var(--theme-text-primary))] focus:outline-none focus:ring-1 ' +
               'focus:ring-[hsl(var(--theme-border-focus))]'
             }
@@ -631,7 +631,7 @@ function TranslatePopover({
               onChange={(e) => setTarget(e.target.value)}
               className={
                 'flex-1 rounded border border-[hsl(var(--theme-border-default))] ' +
-                'bg-[hsl(var(--theme-bg-secondary))] px-2 py-1.5 text-[12px] ' +
+                'bg-[hsl(var(--theme-bg-secondary))] px-2 py-1.5 text-xs ' +
                 'text-[hsl(var(--theme-text-primary))]'
               }
             >
@@ -660,7 +660,7 @@ function TranslatePopover({
             </Button>
           </div>
           {out && (
-            <div className="rounded border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] p-2.5 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))] whitespace-pre-wrap">
+            <div className="rounded border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] p-2.5 text-xs leading-5 text-[hsl(var(--theme-text-secondary))] whitespace-pre-wrap">
               {out}
             </div>
           )}

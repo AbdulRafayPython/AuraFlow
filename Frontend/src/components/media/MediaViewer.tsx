@@ -175,11 +175,6 @@ const MediaViewer: React.FC = () => {
     }
   }, [closeViewer]);
 
-  const resetView = useCallback(() => {
-    setZoom(1);
-    setRotation(0);
-    setPosition({ x: 0, y: 0 });
-  }, []);
 
   if (!isOpen || !currentMedia) return null;
 
@@ -200,14 +195,14 @@ const MediaViewer: React.FC = () => {
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex flex-col animate-in fade-in duration-200"
+      className="fixed inset-0 z-[9999] bg-black/90 flex flex-col animate-in fade-in duration-200"
       onClick={handleBackdropClick}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/60 to-transparent">
+      <div className="flex items-center justify-between px-4 py-3 bg-black/60">
         {/* File Info */}
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center text-white/80">
@@ -217,7 +212,7 @@ const MediaViewer: React.FC = () => {
             <h3 className="text-sm font-medium text-white truncate max-w-[300px]">
               {currentMedia.fileName}
             </h3>
-            <div className="flex items-center gap-2 text-[11px] text-white/60">
+            <div className="flex items-center gap-2 text-xs text-white/60">
               {currentMedia.fileSize && (
                 <span>{formatFileSize(currentMedia.fileSize)}</span>
               )}
@@ -292,7 +287,7 @@ const MediaViewer: React.FC = () => {
         {hasGallery && (
           <button
             onClick={(e) => { e.stopPropagation(); prevMedia(); }}
-            className="absolute left-4 z-10 p-3 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white transition-all backdrop-blur-sm"
+            className="absolute left-4 z-10 p-3 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white transition-all"
             title="Previous (←)"
           >
             <ChevronLeft className="w-6 h-6" />
@@ -345,8 +340,8 @@ const MediaViewer: React.FC = () => {
           )}
 
           {isAudio && (
-            <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-8 flex flex-col items-center gap-4">
-              <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] flex items-center justify-center">
+            <div className="bg-white/5 rounded-2xl p-8 flex flex-col items-center gap-4">
+              <div className="w-24 h-24 rounded-2xl bg-[hsl(var(--theme-accent-primary))] flex items-center justify-center">
                 <Music className="w-10 h-10 text-white" />
               </div>
               <p className="text-white font-medium">{currentMedia.fileName}</p>
@@ -355,8 +350,8 @@ const MediaViewer: React.FC = () => {
           )}
 
           {currentMedia.type === 'document' && (
-            <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-8 flex flex-col items-center gap-4 max-w-md">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] flex items-center justify-center">
+            <div className="bg-white/5 rounded-2xl p-8 flex flex-col items-center gap-4 max-w-md">
+              <div className="w-20 h-20 rounded-2xl bg-[hsl(var(--theme-accent-primary))] flex items-center justify-center">
                 <FileText className="w-10 h-10 text-white" />
               </div>
               <div className="text-center">
@@ -380,7 +375,7 @@ const MediaViewer: React.FC = () => {
         {hasGallery && (
           <button
             onClick={(e) => { e.stopPropagation(); nextMedia(); }}
-            className="absolute right-4 z-10 p-3 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white transition-all backdrop-blur-sm"
+            className="absolute right-4 z-10 p-3 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white transition-all"
             title="Next (→)"
           >
             <ChevronRight className="w-6 h-6" />
@@ -390,7 +385,7 @@ const MediaViewer: React.FC = () => {
 
       {/* Footer with metadata */}
       {(currentMedia.uploaderName || currentMedia.uploadedAt) && (
-        <div className="px-4 py-3 bg-gradient-to-t from-black/60 to-transparent">
+        <div className="px-4 py-3 bg-black/60">
           <div className="flex items-center justify-center gap-4 text-xs text-white/60">
             {currentMedia.uploaderName && (
               <div className="flex items-center gap-1.5">
@@ -410,7 +405,7 @@ const MediaViewer: React.FC = () => {
 
       {/* Gallery Thumbnails (if multiple items) */}
       {hasGallery && gallery.length <= 10 && (
-        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 rounded-xl bg-black/40 backdrop-blur-sm">
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 rounded-xl bg-black/40">
           {gallery.map((item, index) => (
             <button
               key={item.id}

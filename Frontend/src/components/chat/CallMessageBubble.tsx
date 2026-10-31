@@ -92,7 +92,7 @@ export const CallMessageBubble: React.FC<Props> = ({ content, isSent, createdAt 
     : 'text-[hsl(var(--theme-text-primary))]';
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-2xl w-fit max-w-[280px] bg-[hsl(var(--theme-bg-secondary)/0.5)] border border-[hsl(var(--theme-border-default)/0.4)] backdrop-blur-sm transition-all duration-200 hover:bg-[hsl(var(--theme-bg-secondary)/0.7)]">
+    <div className="flex items-center gap-3 px-4 py-3 rounded-2xl w-fit max-w-[280px] bg-[hsl(var(--theme-bg-secondary)/0.5)] border border-[hsl(var(--theme-border-default)/0.4)] transition-all duration-200 hover:bg-[hsl(var(--theme-bg-secondary)/0.7)]">
       {/* Icon circle */}
       <div className={`flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center ${iconBg} ${iconColor} transition-colors duration-200`}>
         {call_type === 'video' && status === 'attended' ? (
@@ -104,23 +104,23 @@ export const CallMessageBubble: React.FC<Props> = ({ content, isSent, createdAt 
 
       {/* Info */}
       <div className="flex flex-col min-w-0 gap-0.5">
-        <span className={`text-[13px] font-semibold leading-tight ${labelColor}`}>
+        <span className={`text-sm font-semibold leading-tight ${labelColor}`}>
           {label}
         </span>
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+          <span className="text-xs text-[hsl(var(--theme-text-muted))]">
             {call_type === 'video' ? 'Video' : 'Audio'}
           </span>
           {status === 'attended' && duration > 0 && (
             <>
-              <span className="text-[11px] text-[hsl(var(--theme-text-muted)/0.5)]">·</span>
-              <span className="text-[11px] font-medium text-[hsl(var(--theme-text-secondary))]">
+              <span className="text-xs text-[hsl(var(--theme-text-muted)/0.5)]">·</span>
+              <span className="text-xs font-medium text-[hsl(var(--theme-text-secondary))]">
                 {formatDuration(duration)}
               </span>
             </>
           )}
-          <span className="text-[11px] text-[hsl(var(--theme-text-muted)/0.5)]">·</span>
-          <span className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+          <span className="text-xs text-[hsl(var(--theme-text-muted)/0.5)]">·</span>
+          <span className="text-xs text-[hsl(var(--theme-text-muted))]">
             {formatTime(createdAt)}
           </span>
         </div>

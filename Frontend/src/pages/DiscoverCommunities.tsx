@@ -5,6 +5,8 @@
 // visibility scope. Community discovery cards advertise intelligence-profile
 // badges derived locally — no new backend field. Per
 // docs/AUTONOMOUS_AGENT_FRONTEND_REDESIGN.md §9 / §16/F5.
+import { readableTextOn } from "@/lib/utils";
+import { PageHeader } from "@/components/app/PageHeader";
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Search, Users, Compass, Gamepad2, Music, Film, FlaskConical, GraduationCap,
@@ -288,24 +290,24 @@ function OutcomeCardView({ card }: { card: OutcomeCard }) {
           <Icon className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <h4 className="text-[13px] font-semibold leading-5 text-[hsl(var(--theme-text-primary))]">
+          <h4 className="text-sm font-semibold leading-5 text-[hsl(var(--theme-text-primary))]">
             {card.title}
           </h4>
-          <p className="text-[11px] uppercase tracking-wide text-[hsl(var(--theme-text-muted))] mt-0.5">
+          <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
             {card.controller} controls · {agentLabel(card.agent)}
           </p>
         </div>
       </header>
 
       {/* Problem statement */}
-      <p className="px-4 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+      <p className="px-4 text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
         {card.problem}
       </p>
 
       {/* Simulation strip — 1 to 3 lines */}
       <div className="mt-3 mx-4 rounded border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-primary))]">
         <div className="px-3 py-2 border-b border-[hsl(var(--theme-border-default))]">
-          <span className="text-[10px] uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+          <span className="text-xs text-[hsl(var(--theme-text-muted))]">
             What it looks like
           </span>
         </div>
@@ -314,7 +316,7 @@ function OutcomeCardView({ card }: { card: OutcomeCard }) {
             line.kind === 'user' ? (
               <li
                 key={i}
-                className="flex gap-2 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]"
+                className="flex gap-2 text-xs leading-5 text-[hsl(var(--theme-text-secondary))]"
               >
                 <span className="text-[hsl(var(--theme-text-muted))] font-medium">@{line.who}</span>
                 <span className="min-w-0 flex-1 truncate">{line.text}</span>
@@ -322,10 +324,10 @@ function OutcomeCardView({ card }: { card: OutcomeCard }) {
             ) : (
               <li
                 key={i}
-                className="flex items-start gap-2 text-[12px] leading-5"
+                className="flex items-start gap-2 text-xs leading-5"
               >
                 <span
-                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium flex-shrink-0"
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium flex-shrink-0"
                   style={{
                     color: accentFor(line.agent),
                     background: accentSoftFor(line.agent, 0.10),
@@ -343,7 +345,7 @@ function OutcomeCardView({ card }: { card: OutcomeCard }) {
 
       {/* Footer: surface + visibility */}
       <footer className="mt-3 px-4 pb-4 flex items-center justify-between gap-2">
-        <span className="text-[11px] text-[hsl(var(--theme-text-muted))] truncate">
+        <span className="text-xs text-[hsl(var(--theme-text-muted))] truncate">
           {card.surface}
         </span>
         <VisibilityChip visibility={card.visibility} />
@@ -371,7 +373,7 @@ function OutcomeLane({
             <Icon className="h-5 w-5 text-[hsl(var(--theme-text-secondary))]" />
             {title}
           </h2>
-          <p className="mt-1 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+          <p className="mt-1 text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
             {subtitle}
           </p>
         </div>
@@ -401,7 +403,7 @@ function IntelBadgeRow({ profile }: { profile?: string[] }) {
               inline-flex items-center gap-1 rounded border
               border-[hsl(var(--theme-border-default))]
               bg-[hsl(var(--theme-bg-primary)/0.6)]
-              px-1.5 py-0.5 text-[10px] font-medium
+              px-1.5 py-0.5 text-xs font-medium
             "
             style={{ color: accent }}
           >
@@ -543,7 +545,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
         {/* Sidebar Header */}
         <div className="p-4 border-b border-[hsl(var(--theme-border-default)/0.3)]">
           <h2 className="text-xl font-bold text-[hsl(var(--theme-text-primary))] flex items-center gap-2">
-            <Compass className="w-6 h-6 text-[hsl(var(--theme-accent-primary))]" />
+            <Compass className="w-6 h-6 text-[hsl(var(--theme-text-accent))]" />
             Discover
           </h2>
         </div>
@@ -573,7 +575,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
               className={`sticky top-0 z-30 transition-all duration-300 ${isScrolled
                   ? 'bg-[hsl(var(--theme-bg-primary))] shadow-lg border-b border-[hsl(var(--theme-border-default)/0.3)]'
                   : !isDarkMode
-                    ? 'bg-[hsl(var(--theme-bg-primary)/0.85)] backdrop-blur-sm shadow-sm'
+                    ? 'bg-[hsl(var(--theme-bg-primary)/0.85)] shadow-sm'
                     : 'bg-transparent'
                 }`}
             >
@@ -615,9 +617,9 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                       onClick={() => setSelectedCategory(cat.id)}
                       className={`flex-shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${selectedCategory === cat.id
                           ? isScrolled
-                            ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]'
+                            ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-text-accent))]'
                             : !isDarkMode
-                              ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]'
+                              ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-text-accent))]'
                               : 'bg-white/15 text-white'
                           : isScrolled
                             ? 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))]'
@@ -643,7 +645,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                     type="text"
                     value={searchTerm}
                     onChange={(e) => handleSearch(e.target.value)}
-                    placeholder="Search"
+                    placeholder="Search" aria-label="Search communities"
                     className={`w-full pl-9 pr-3 py-1.5 rounded text-sm border-none focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] transition-all ${isScrolled || !isDarkMode
                         ? 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]'
                         : 'bg-[#1e1f22]/60 text-white placeholder-white/40'
@@ -663,46 +665,17 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                 setIsScrolled(scrollTop > 10);
               }}
             >
-              {/* Hero Section - Now scrollable */}
-              <div className="relative">
-                {/* Hero Background - Blue/Purple gradient like Discord */}
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    background: 'linear-gradient(140deg, #5865f2 0%, #7289da 15%, #5865f2 30%, #4752c4 50%, #3c45a5 70%, #2d3494 85%, #1e2371 100%)',
-                  }}
-                />
-
-                {/* Decorative blur elements */}
-                <div className="absolute inset-0 overflow-hidden">
-                  <div className="absolute right-0 top-0 w-[500px] h-[500px] bg-[#eb459e]/15 rounded-full blur-[100px]" />
-                  <div className="absolute -left-20 bottom-0 w-[400px] h-[400px] bg-[#5865f2]/40 rounded-full blur-[80px]" />
-                </div>
-
-                {/* Hero Content - Reduced height */}
-                <div className="relative z-10 px-4 sm:px-8 pt-6 sm:pt-8 pb-8 sm:pb-12">
-                  <h1
-                    className="text-2xl sm:text-4xl lg:text-[48px] font-extrabold text-white mb-3 leading-[1.1] tracking-tight"
-                    style={{
-                      fontFamily: "'Ginto', 'Helvetica Neue', Helvetica, Arial, sans-serif",
-                      fontStyle: 'italic',
-                      fontWeight: 900,
-                      letterSpacing: '-0.5px',
-                    }}
-                  >
-                    FIND YOUR COMMUNITY<br />ON AURAFLOW
-                  </h1>
-                  <p className="text-white/70 text-[15px] max-w-lg">
-                    From gaming, to music, to learning, there's a place for you.
-                  </p>
-                </div>
-              </div>
+              <PageHeader
+                title="Discover communities"
+                description="From gaming to music to learning, there is a place for you."
+                className="pl-16 md:pl-4"
+              />
 
               {/* Content Below Hero */}
               <div style={{ background: 'hsl(var(--theme-bg-primary))' }}>
                 {isLoading ? (
                   <div className="flex items-center justify-center h-64">
-                    <Loader2 className="w-8 h-8 animate-spin text-[hsl(var(--theme-accent-primary))]" />
+                    <Loader2 className="w-8 h-8 animate-spin text-[hsl(var(--theme-text-accent))]" />
                   </div>
                 ) : (
                   <div className="p-6">
@@ -755,12 +728,12 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                                     <div
                                       className="absolute inset-0"
                                       style={{
-                                        background: `linear-gradient(135deg, ${community.color || '#5865f2'} 0%, #eb459f 50%, #fee75c 100%)`,
+                                        backgroundColor: community.color || '#5865f2',
                                       }}
                                     />
                                   )}
                                   {/* Overlay gradient for text readability */}
-                                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                                  <div className="absolute inset-0 bg-black/60" />
                                   {/* Decorative shapes (only when no banner) */}
                                   {!bannerUrl && (
                                     <div className="absolute inset-0 opacity-30">
@@ -776,8 +749,8 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                                     <img src={logoUrl} alt={community.name} className="w-full h-full object-cover" />
                                   ) : (
                                     <div
-                                      className="w-full h-full flex items-center justify-center text-white font-bold text-sm"
-                                      style={{ backgroundColor: community.color || '#5865f2' }}
+                                      className="w-full h-full flex items-center justify-center font-bold text-sm"
+                                      style={{ backgroundColor: community.color || '#5865f2', color: readableTextOn(community.color || '#5865f2') }}
                                     >
                                       {community.icon || getInitials(community.name)}
                                     </div>
@@ -787,7 +760,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                                 {/* Content */}
                                 <div className="pt-8 pb-4 px-4">
                                   <div className="flex items-center gap-1.5 mb-1">
-                                    <Verified className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                                    <Verified className="w-4 h-4 text-success flex-shrink-0" />
                                     <h3 className="font-semibold text-[hsl(var(--theme-text-primary))] truncate text-sm">
                                       {community.name}
                                     </h3>
@@ -810,7 +783,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
 
                                 {/* Loading overlay when joining */}
                                 {joiningId === community.id && (
-                                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-sm">
+                                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                                     <Loader2 className="w-6 h-6 animate-spin text-white" />
                                   </div>
                                 )}
@@ -831,7 +804,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                           </>
                         ) : (
                           <>
-                            <TrendingUp className="w-5 h-5 text-[hsl(var(--theme-accent-primary))]" />
+                            <TrendingUp className="w-5 h-5 text-[hsl(var(--theme-text-accent))]" />
                             Popular Communities
                           </>
                         )}
@@ -841,7 +814,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                         <div className="flex flex-col items-center justify-center py-16">
                           <Compass className="w-16 h-16 text-[hsl(var(--theme-text-muted))] mb-4" />
                           <p className="text-lg font-medium text-[hsl(var(--theme-text-secondary))]">
-                            {searchTerm ? 'No communities match that search.' : 'No communities exist on AuraFlow yet.'}
+                            {searchTerm ? 'No communities match that search.' : 'No communities exist on Auraflow yet.'}
                           </p>
                           <p className="text-sm text-[hsl(var(--theme-text-muted))] mt-1">
                             {searchTerm ? 'Try a different search term' : 'Be the first to create one!'}
@@ -869,13 +842,11 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                                     <div
                                       className="absolute inset-0"
                                       style={{
-                                        background: community.color
-                                          ? `linear-gradient(135deg, ${community.color}, ${community.color}88)`
-                                          : 'linear-gradient(135deg, hsl(var(--theme-accent-primary)), hsl(var(--theme-accent-secondary)))'
+                                        backgroundColor: community.color || 'hsl(var(--theme-accent-primary))'
                                       }}
                                     />
                                   )}
-                                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                                  <div className="absolute inset-0 bg-black/40" />
                                 </div>
 
                                 {/* Community Icon */}
@@ -884,8 +855,8 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                                     <img src={logoUrl} alt={community.name} className="w-full h-full object-cover" />
                                   ) : (
                                     <div
-                                      className="w-full h-full flex items-center justify-center text-white font-bold"
-                                      style={{ backgroundColor: community.color || '#5865f2' }}
+                                      className="w-full h-full flex items-center justify-center font-bold"
+                                      style={{ backgroundColor: community.color || '#5865f2', color: readableTextOn(community.color || '#5865f2') }}
                                     >
                                       {community.icon || getInitials(community.name)}
                                     </div>
@@ -899,7 +870,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                                       {community.name}
                                     </h3>
                                     {(community.member_count || 0) >= 100 && (
-                                      <Verified className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                                      <Verified className="w-3.5 h-3.5 text-success flex-shrink-0" />
                                     )}
                                   </div>
 
@@ -907,7 +878,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                                   <IntelBadgeRow profile={community.intelligence_profile} />
 
                                   <p className="text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mb-3 min-h-[32px]">
-                                    {community.description || 'A community on AuraFlow'}
+                                    {community.description || 'A community on Auraflow'}
                                   </p>
 
                                   <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
@@ -919,11 +890,11 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                                 </div>
 
                                 {/* Hover overlay */}
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-sm">
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center">
                                   <button
                                     onClick={() => handleJoin(community.id)}
                                     disabled={joiningId === community.id}
-                                    className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] hover:shadow-lg hover:scale-105 transition-all duration-200 disabled:opacity-60 flex items-center gap-2"
+                                    className="px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-[hsl(var(--theme-accent-primary))] hover:shadow-lg hover:scale-105 transition-all duration-200 disabled:opacity-60 flex items-center gap-2"
                                   >
                                     {joiningId === community.id ? (
                                       <>
@@ -948,7 +919,7 @@ export default function DiscoverCommunities({ onClose, onJoinCommunity }: Discov
                       {hasMore && communities.length > 0 && (
                         <div ref={observerTarget} className="py-8 flex justify-center">
                           {isLoadingMore && (
-                            <Loader2 className="w-6 h-6 animate-spin text-[hsl(var(--theme-accent-primary))]" />
+                            <Loader2 className="w-6 h-6 animate-spin text-[hsl(var(--theme-text-accent))]" />
                           )}
                         </div>
                       )}

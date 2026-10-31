@@ -18,7 +18,6 @@
 
 import { useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { ToastAction } from '@/components/ui/toast';
 import { socket } from '@/socket';
 
 interface WellnessCheckinEvent {
@@ -157,9 +156,8 @@ export function AgentEventListener() {
     // `dismissed`, which the learn() loop weights more strongly
     // against the template.
     //
-    // We can't rely on `onOpenChange` here: the toast factory in
-    // use-toast.ts sets its own and would clobber ours. A timer
-    // matched to the duration is the simplest correct path.
+    // A timer matched to the duration is the simplest correct path
+    // (the use-toast shim does not expose sonner's onDismiss).
     const handleWellness = (data: WellnessCheckinEvent) => {
       const isDeesc = data.trigger === 'mod_violation';
       const DURATION_MS = 10000;
@@ -182,16 +180,8 @@ export function AgentEventListener() {
         title: isDeesc ? '🌱 Quick reset?' : '💚 Wellness check-in',
         description: data.text,
         duration: DURATION_MS,
-        action: (
-          <div className="flex shrink-0 items-center gap-1">
-            <ToastAction altText="Engage" onClick={onEngage}>
-              Engage
-            </ToastAction>
-            <ToastAction altText="Dismiss" onClick={onDismiss} className="text-muted-foreground">
-              Dismiss
-            </ToastAction>
-          </div>
-        ),
+        action: { label: 'Engage', onClick: onEngage },
+        cancel: { label: 'Dismiss', onClick: onDismiss },
       });
       emitActivityRow({
         agent_name: 'wellness',
@@ -287,7 +277,7 @@ export function AgentEventListener() {
       socket.off('summary_checkpoint', handleSummary);
       socket.off('agent_action', handleAgentAction);
     };
-    // `toast` is stable from a Radix hook; eslint may warn but it's fine.
+    // `toast` is a stable module-level function; eslint may warn but it's fine.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

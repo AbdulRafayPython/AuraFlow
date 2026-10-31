@@ -70,7 +70,7 @@ export default function VisibilityChip({
       title={help}
       className={
         'inline-flex items-center gap-1 rounded border border-[hsl(var(--theme-border-default))] ' +
-        'bg-[hsl(var(--theme-bg-secondary))] px-1.5 py-0.5 text-[10px] font-medium ' +
+        'bg-[hsl(var(--theme-bg-secondary))] px-1.5 py-0.5 text-xs font-medium ' +
         'text-[hsl(var(--theme-text-muted))] ' +
         className
       }

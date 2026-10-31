@@ -239,3 +239,29 @@ export interface TypingUser {
   username: string;
   timestamp: number;
 }
+
+/** An agent as described by the agent_run_* socket events. */
+export interface AgentRunInfo {
+  id: string;
+  name: string;
+  username: string;
+  avatar?: string | null;
+}
+
+export interface AgentRunEvent {
+  agent: AgentRunInfo;
+  channel_id: number;
+  message_id?: number | null;
+  trigger?: string;
+  status?: string;
+  reply_message_id?: number | null;
+}
+
+/** An agent run that has started but not finished yet. */
+export interface ThinkingAgent {
+  key: string;
+  name: string;
+  avatar?: string | null;
+  channelId: number;
+  since: number;
+}

@@ -161,7 +161,7 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
           <>
             {/* Header */}
             <div className={`p-6 pb-4 text-center border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-              <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl mb-4 shadow-lg shadow-indigo-500/25">
+              <div className="inline-flex items-center justify-center w-14 h-14 bg-indigo-500 rounded-xl mb-4 shadow-lg shadow-indigo-500/25">
                 <Building2 className="w-7 h-7 text-white" />
               </div>
               <h1 className={`text-2xl font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -238,7 +238,7 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
                 <div className="w-8 h-1 bg-indigo-600 rounded-full"></div>
                 <div className={`w-8 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
               </div>
-              <p className={`text-center text-[10px] mt-2 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+              <p className={`text-center text-xs mt-2 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                 STEP 2 OF 3
               </p>
             </div>
@@ -337,7 +337,7 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
                 <button
                   type="submit"
                   disabled={isLoading || !workspaceName.trim()}
-                  className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg font-medium text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
+                  className="w-full py-3 bg-indigo-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg font-medium text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
                 >
                   {isLoading ? (
                     <>
@@ -432,11 +432,11 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
                             <div 
                               className="absolute inset-0"
                               style={{ 
-                                background: `linear-gradient(135deg, ${community.color || '#6366f1'} 0%, ${community.color || '#6366f1'}88 50%, ${community.color || '#6366f1'}44 100%)`
+                                backgroundColor: community.color || '#6366f1'
                               }}
                             />
                           )}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                          <div className="absolute inset-0 bg-black/40" />
                         </div>
 
                         {/* Content Section */}
@@ -470,19 +470,19 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
                                 {community.name}
                               </h3>
                               <div className="flex items-center gap-2 mt-0.5">
-                                <span className={`text-[10px] flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                                <span className={`text-xs flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                                   <Users className="w-2.5 h-2.5" />
                                   {community.member_count || 0}
                                 </span>
                                 {community.channel_count !== undefined && (
-                                  <span className={`text-[10px] flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                                  <span className={`text-xs flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                                     <Hash className="w-2.5 h-2.5" />
                                     {community.channel_count}
                                   </span>
                                 )}
                               </div>
                               {community.description && (
-                                <p className={`text-[10px] mt-1 line-clamp-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                <p className={`text-xs mt-1 line-clamp-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                                   {community.description}
                                 </p>
                               )}
@@ -492,7 +492,7 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
                             <button
                               onClick={() => handleJoinCommunity(community)}
                               disabled={joiningId === community.id}
-                              className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-medium rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                              className="px-3 py-1.5 bg-purple-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-medium rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
                             >
                               {joiningId === community.id ? (
                                 <Loader className="w-3 h-3 animate-spin" />

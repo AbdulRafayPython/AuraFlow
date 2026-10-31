@@ -7,6 +7,8 @@ import { useCall } from "@/contexts/CallContext";
 import type { CallPeer } from "@/contexts/CallContext";
 import { getAvatarUrl } from "@/lib/utils";
 import AddFriendModal from "@/components/modals/AddFriendModal";
+import { PageHeader } from "@/components/app/PageHeader";
+import { Icon } from "@/components/app/Icon";
 import FriendProfileModal from "@/components/modals/FriendProfileModal";
 import {
   Users,
@@ -22,7 +24,6 @@ import {
   Check,
   X,
   Clock,
-  Shield,
   Send,
 } from "lucide-react";
 
@@ -33,10 +34,10 @@ interface FriendsProps {
 }
 
 const statusColors = {
-  online: "bg-green-500",
-  idle: "bg-yellow-500",
-  dnd: "bg-red-500",
-  offline: "bg-gray-500",
+  online: "bg-success",
+  idle: "bg-warning",
+  dnd: "bg-destructive",
+  offline: "bg-muted-foreground",
 };
 
 const statusLabels = {
@@ -108,19 +109,6 @@ export default function Friends({ onOpenDM }: FriendsProps) {
     return matchesSearch;
   });
 
-  const handleAddFriend = async () => {
-    if (!addFriendInput.trim()) return;
-    
-    setIsAdding(true);
-    try {
-      await sendFriendRequest(addFriendInput);
-      setAddFriendInput("");
-    } catch (error) {
-      console.error("Failed to add friend:", error);
-    } finally {
-      setIsAdding(false);
-    }
-  };
 
   const FriendCard = ({ friend }: { friend: Friend }) => {
     const getLastSeenText = (lastSeen?: string) => {
@@ -142,7 +130,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
 
     return (
     <div
-      className={`flex items-center justify-between p-4 rounded-lg border transition-all hover:shadow-[var(--theme-glow-secondary)] backdrop-blur-sm bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary)/0.7)] ${showMenu === friend.id ? 'relative z-50' : ''}`}
+      className={`flex items-center justify-between p-4 rounded-lg border transition-all bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary)/0.7)] ${showMenu === friend.id ? 'relative z-50' : ''}`}
     >
       {/* Friend Info - Clickable to open profile */}
       <div 
@@ -171,13 +159,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
             {/* Status is already shown via the colored dot on the avatar —
                 the text pill just crowds the name on narrow screens. */}
             <span className={`hidden sm:inline-flex flex-shrink-0 items-center gap-1 text-xs px-2 py-0.5 rounded font-medium ${
-              friend.status === "online"
-                ? "bg-green-500/20 text-green-400"
-                : friend.status === "idle"
-                ? "bg-yellow-500/20 text-yellow-400"
-                : friend.status === "dnd"
-                ? "bg-red-500/20 text-red-400"
-                : "bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))]"
+              "bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-secondary))]"
             }`}>
               <div className={`w-1.5 h-1.5 rounded-full ${statusColors[friend.status]}`} />
               {statusLabels[friend.status]}
@@ -203,7 +185,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
             e.stopPropagation();
             handleMessageFriend(friend.id);
           }}
-          className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))]"
+          className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-accent))]"
           title="Send message"
         >
           <MessageCircle className="w-5 h-5" />
@@ -224,7 +206,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
           className={`p-2 rounded-lg transition-colors ${
             callState !== 'idle'
               ? 'bg-[hsl(var(--theme-bg-tertiary)/0.5)] text-[hsl(var(--theme-text-muted))] cursor-not-allowed opacity-60'
-              : 'hover:bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))] hover:text-green-500'
+              : 'hover:bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))] hover:text-success'
           }`}
           title="Audio Call"
         >
@@ -256,20 +238,20 @@ export default function Friends({ onOpenDM }: FriendsProps) {
         {/* More Menu */}
         <div className="relative">
           <button
-            onClick={() => setShowMenu(showMenu === friend.id ? null : friend.id)}
+            aria-label="More actions" onClick={() => setShowMenu(showMenu === friend.id ? null : friend.id)}
             className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))]"
           >
-            <MoreVertical className="w-5 h-5" />
+            <MoreVertical className="w-5 h-5" aria-hidden="true" />
           </button>
 
           {showMenu === friend.id && (
-            <div className="absolute right-0 top-full mt-1 w-48 rounded-lg shadow-xl border z-50 backdrop-blur-xl bg-[hsl(var(--theme-bg-secondary)/0.95)] border-[hsl(var(--theme-border-default)/0.5)]">
+            <div className="absolute right-0 top-full mt-1 w-48 rounded-lg shadow-xl border z-50 bg-[hsl(var(--theme-bg-secondary)/0.95)] border-[hsl(var(--theme-border-default)/0.5)]">
               <button
                 onClick={() => {
                   removeFriend(friend.id);
                   setShowMenu(null);
                 }}
-                className="w-full text-left px-4 py-2 text-sm hover:bg-red-500/10 text-red-500 flex items-center gap-2"
+                className="w-full text-left px-4 py-2 text-sm hover:bg-destructive/10 text-destructive flex items-center gap-2"
               >
                 <UserMinus className="w-4 h-4" />
                 Remove Friend
@@ -279,7 +261,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
                   blockUser(friend.id);
                   setShowMenu(null);
                 }}
-                className="w-full text-left px-4 py-2 text-sm hover:bg-red-500/10 text-red-500 flex items-center gap-2"
+                className="w-full text-left px-4 py-2 text-sm hover:bg-destructive/10 text-destructive flex items-center gap-2"
               >
                 <Ban className="w-4 h-4" />
                 Block User
@@ -294,7 +276,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
 
   const PendingRequestCard = ({ request }: { request: FriendRequest }) => (
     <div
-      className="flex items-center justify-between p-4 rounded-lg border backdrop-blur-sm bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default)/0.5)] transition-all hover:shadow-[var(--theme-glow-secondary)]"
+      className="flex items-center justify-between p-4 rounded-lg border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default)/0.5)] transition-all "
     >
       <div className="flex items-center gap-4 flex-1">
         <img
@@ -316,7 +298,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
       <div className="flex items-center gap-2">
         <button
           onClick={() => acceptFriendRequest(request.id)}
-          className={`p-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors ${isBasicTheme ? '' : 'hover:shadow-[0_0_15px_rgba(34,197,94,0.4)]'}`}
+          className={`p-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors`}
           title="Accept request"
         >
           <Check className="w-5 h-5" />
@@ -334,7 +316,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
 
   const SentRequestCard = ({ request }: { request: FriendRequest }) => (
     <div
-      className="flex items-center justify-between p-4 rounded-lg border backdrop-blur-sm bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default)/0.5)] transition-all hover:shadow-[var(--theme-glow-secondary)]"
+      className="flex items-center justify-between p-4 rounded-lg border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default)/0.5)] transition-all "
     >
       <div className="flex items-center gap-4 flex-1">
         <img
@@ -367,42 +349,27 @@ export default function Friends({ onOpenDM }: FriendsProps) {
       className="flex flex-col h-full relative transition-colors duration-300"
       style={{ background: 'var(--theme-bg-gradient)' }}
     >
-      {/* Gradient overlay for depth */}
-      <div 
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background: 'radial-gradient(ellipse at 30% 20%, hsl(var(--theme-accent-primary) / 0.03) 0%, transparent 50%), radial-gradient(ellipse at 70% 80%, hsl(var(--theme-accent-secondary) / 0.03) 0%, transparent 50%)',
-        }}
-      />
-      
-      {/* Header — pl-16 on mobile clears MainLayout's floating hamburger
-          button (fixed top-4 left-4), which would otherwise sit on top of
-          the heading since this header pins to the very top of the view. */}
-      <div
-        className="pl-16 pr-4 sm:pr-6 md:pl-6 py-4 border-b backdrop-blur-md border-[hsl(var(--theme-border-default)/0.5)] relative z-10"
-        style={{ background: 'hsl(var(--theme-bg-secondary) / 0.7)' }}
-      >
-        <div className="flex items-center justify-between gap-2 mb-4">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Users className="w-6 h-6 flex-shrink-0 text-[hsl(var(--theme-accent-primary))]" />
-            <h1 className="text-xl sm:text-2xl font-bold truncate text-[hsl(var(--theme-text-primary))]">
-              Friends
-            </h1>
-          </div>
-          {activeTab !== "add" && (
+      <PageHeader
+        title="Friends"
+        icon={<Icon icon={Users} size="lg" />}
+        className="pl-16 md:pl-4"
+        actions={
+          activeTab !== "add" ? (
             <div className="relative">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-[hsl(var(--theme-text-muted))]" />
+              <Icon icon={Search} size="md" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[hsl(var(--theme-text-muted))]" />
               <input
                 type="text"
-                placeholder="Search friends..."
+                placeholder="Search friends"
+                aria-label="Search friends"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 rounded-lg text-sm w-32 sm:w-64 border focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))] backdrop-blur-sm bg-[hsl(var(--theme-input-bg)/0.8)] border-[hsl(var(--theme-border-default)/0.5)] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]"
+                className="h-8 w-32 rounded-md border border-border bg-[hsl(var(--theme-input-bg))] pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none sm:w-60"
               />
             </div>
-          )}
-        </div>
-
+          ) : undefined
+        }
+      />
+      <div className="border-b border-border px-4 py-2">
         {/* Tabs */}
         <div className="flex items-center gap-4 overflow-x-auto">
           {tabs.map((tab) => {
@@ -419,7 +386,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
                 }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
                   activeTab === tab.id
-                    ? "bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] text-white shadow-[var(--theme-glow-primary)]"
+                    ? "bg-[hsl(var(--theme-accent-primary))] text-white "
                     : "text-[hsl(var(--theme-text-muted))] hover:bg-[hsl(var(--theme-bg-tertiary)/0.6)] hover:text-[hsl(var(--theme-text-primary))]"
                 }`}
               >
@@ -428,7 +395,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
                 {tab.count > 0 && (
                   <span className={`px-2 py-0.5 rounded-full text-xs ${
                     activeTab === tab.id
-                      ? "bg-white/20 text-white"
+                      ? "bg-black/25 text-white"
                       : "bg-[hsl(var(--theme-bg-tertiary)/0.8)] text-[hsl(var(--theme-text-muted))]"
                   }`}>
                     {tab.count}
@@ -450,7 +417,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
                 onClick={() => setRequestsTab("incoming")}
                 className={`px-4 py-2 font-medium text-sm border-b-2 transition-all ${
                   requestsTab === "incoming"
-                    ? "border-[hsl(var(--theme-accent-primary))] text-[hsl(var(--theme-accent-primary))]"
+                    ? "border-[hsl(var(--theme-accent-primary))] text-[hsl(var(--theme-text-accent))]"
                     : "border-transparent text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
                 }`}
               >
@@ -465,7 +432,7 @@ export default function Friends({ onOpenDM }: FriendsProps) {
                 onClick={() => setRequestsTab("outgoing")}
                 className={`px-4 py-2 font-medium text-sm border-b-2 transition-all ${
                   requestsTab === "outgoing"
-                    ? "border-[hsl(var(--theme-accent-primary))] text-[hsl(var(--theme-accent-primary))]"
+                    ? "border-[hsl(var(--theme-accent-primary))] text-[hsl(var(--theme-text-accent))]"
                     : "border-transparent text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
                 }`}
               >

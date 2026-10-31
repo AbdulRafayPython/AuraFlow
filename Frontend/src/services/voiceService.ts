@@ -35,12 +35,10 @@ class VoiceService {
     return new Promise((resolve, reject) => {
       const sock = socketService.getSocket();
       if (sock?.connected) {
-        console.log("[VOICE SERVICE] Socket already connected, SID:", sock.id);
         resolve();
         return;
       }
 
-      console.log("[VOICE SERVICE] Waiting for socket connection...");
       
       // Poll for socketService readiness
       const startTime = Date.now();
@@ -48,7 +46,6 @@ class VoiceService {
         const s = socketService.getSocket();
         if (s?.connected) {
           clearInterval(pollInterval);
-          console.log("[VOICE SERVICE] Socket connected! SID:", s.id);
           resolve();
           return;
         }
@@ -66,7 +63,6 @@ class VoiceService {
    */
   async joinVoiceChannel(channelId: number): Promise<void> {
     try {
-      console.log(`[VOICE SERVICE] Joining channel ${channelId}`);
       
       // Wait for socket connection first
       await this.waitForSocketConnection();
@@ -75,7 +71,6 @@ class VoiceService {
 
       // Emit join event
       sock.emit("join_voice_channel", { channel_id: channelId });
-      console.log("[VOICE SERVICE] Emitted join_voice_channel event via SID:", sock.id);
 
       // Wait for response
       return new Promise<void>((resolve, reject) => {
@@ -88,7 +83,6 @@ class VoiceService {
 
         const onMembersUpdate = (data: any) => {
           clearTimeout(timeout);
-          console.log("[VOICE SERVICE] Received voice_members_update:", data);
           sock.off("voice_members_update", onMembersUpdate);
           sock.off("voice_error", onError);
           resolve();
@@ -115,7 +109,6 @@ class VoiceService {
    * Leave a voice channel
    */
   leaveVoiceChannel(channelId: number): void {
-    console.log(`[VOICE SERVICE] Leaving channel ${channelId}`);
     this.getSocket().emit("leave_voice_channel", { channel_id: channelId });
   }
 
@@ -123,7 +116,6 @@ class VoiceService {
    * Toggle microphone on/off
    */
   toggleMicrophone(channelId: number, isMuted: boolean): void {
-    console.log(`[VOICE SERVICE] Setting muted=${isMuted}`);
     this.getSocket().emit("voice_state_changed", {
       channel_id: channelId,
       is_muted: isMuted,
@@ -135,7 +127,6 @@ class VoiceService {
    * Toggle deafen on/off
    */
   toggleDeafen(channelId: number, isDeaf: boolean, isMuted: boolean): void {
-    console.log(`[VOICE SERVICE] Setting deafened=${isDeaf}`);
     this.getSocket().emit("voice_state_changed", {
       channel_id: channelId,
       is_muted: isMuted || isDeaf,
@@ -150,7 +141,6 @@ class VoiceService {
     return new Promise((resolve, reject) => {
       try {
         const sock = this.getSocket();
-        console.log(`[VOICE SERVICE] Fetching members for channel ${channelId}`);
         sock.emit("get_voice_channel_members", { channel_id: channelId });
 
         const timeout = setTimeout(() => {
@@ -159,7 +149,6 @@ class VoiceService {
 
         sock.once("voice_channel_members", (data) => {
           clearTimeout(timeout);
-          console.log("[VOICE SERVICE] Received members:", data.members);
           resolve(data.members || []);
         });
 
@@ -177,7 +166,6 @@ class VoiceService {
    * Send WebRTC offer to a peer
    */
   sendOffer(channelId: number, targetUser: string, offer: RTCSessionDescriptionInit): void {
-    console.log(`[VOICE SERVICE] Sending offer to ${targetUser}`);
     this.getSocket().emit("send_offer", {
       channel_id: channelId,
       target_user: targetUser,
@@ -189,7 +177,6 @@ class VoiceService {
    * Send WebRTC answer to a peer
    */
   sendAnswer(channelId: number, targetUser: string, answer: RTCSessionDescriptionInit): void {
-    console.log(`[VOICE SERVICE] Sending answer to ${targetUser}`);
     this.getSocket().emit("send_answer", {
       channel_id: channelId,
       target_user: targetUser,
@@ -201,7 +188,6 @@ class VoiceService {
    * Send ICE candidate to a peer
    */
   sendIceCandidate(channelId: number, targetUser: string, candidate: RTCIceCandidateInit): void {
-    console.log(`[VOICE SERVICE] Sending ICE candidate to ${targetUser}`);
     this.getSocket().emit("send_ice_candidate", {
       channel_id: channelId,
       target_user: targetUser,
@@ -214,7 +200,6 @@ class VoiceService {
    */
   async requestMicrophoneAccess(): Promise<MediaStream> {
     try {
-      console.log("[VOICE SERVICE] Requesting microphone access");
       
       // Audio constraints for voice chat
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -228,17 +213,10 @@ class VoiceService {
         video: false,
       });
       
-      console.log("[VOICE SERVICE] ✅ Microphone access granted");
-      console.log("[VOICE SERVICE] 🎤 Audio constraints applied:", {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      });
       
       // Log actual track settings
       stream.getAudioTracks().forEach((track) => {
         const settings = track.getSettings();
-        console.log("[VOICE SERVICE] 🎤 Actual track settings:", settings);
       });
       
       return stream;
@@ -252,7 +230,6 @@ class VoiceService {
    * Stop all audio tracks in a stream
    */
   stopAudioStream(stream: MediaStream): void {
-    console.log("[VOICE SERVICE] Stopping audio stream");
     stream.getTracks().forEach((track) => {
       track.stop();
     });

@@ -17,7 +17,7 @@
  * phase adds it to the backend, the field will flow through naturally.
  */
 
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useCommunityDashboard, OwnedCommunity } from '@/contexts/CommunityDashboardContext';
@@ -41,7 +41,7 @@ function RoleBadge({ role }: { role: string }) {
   const normalized = (role || '').toLowerCase();
   if (normalized === 'owner') {
     return (
-      <Badge className="gap-1 bg-amber-500/15 text-amber-600 hover:bg-amber-500/15 border-amber-500/30">
+      <Badge className="gap-1 bg-warning/15 text-warning hover:bg-warning/15 border-amber-500/30">
         <Star className="h-3 w-3" />
         Owner
       </Badge>
@@ -117,7 +117,7 @@ function CommunityCard({ community, isSelected, isDark, onOpen }: CommunityCardP
                 : 'hsl(var(--accent) / 0.1)',
             }}
           >
-            {community.icon || <Building2 className="h-6 w-6 text-accent" />}
+            {community.icon || <Building2 className="h-6 w-6 text-[hsl(var(--theme-text-accent))]" />}
           </div>
         )}
         <div className="flex-1 min-w-0">
@@ -224,7 +224,7 @@ export default function CommunityManagement() {
         <div>
           <p className="text-sm text-muted-foreground">Admin &gt; My Communities</p>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Building2 className="h-6 w-6 text-accent" />
+            <Building2 className="h-6 w-6 text-[hsl(var(--theme-text-accent))]" />
             My Communities
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -266,7 +266,7 @@ export default function CommunityManagement() {
         >
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-accent/10">
-              <Building2 className="h-5 w-5 text-accent" />
+              <Building2 className="h-5 w-5 text-[hsl(var(--theme-text-accent))]" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Communities</p>
@@ -283,8 +283,8 @@ export default function CommunityManagement() {
           )}
         >
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-emerald-500/10">
-              <Users className="h-5 w-5 text-emerald-500" />
+            <div className="p-2 rounded-lg bg-success/10">
+              <Users className="h-5 w-5 text-success" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Total Members</p>

@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import adminService from '@/services/adminService';
 import {
-  FileText, Search, Filter, ChevronLeft, ChevronRight,
+  FileText, Search, ChevronLeft, ChevronRight,
   Shield, UserX, AlertTriangle, Ban, Eye, RefreshCw,
   Loader2, Calendar, Clock
 } from 'lucide-react';
@@ -29,19 +29,19 @@ interface AuditLogEntry {
 }
 
 const ACTION_BADGES: Record<string, { label: string; color: string; icon: any }> = {
-  'user.warn': { label: 'Warning', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30', icon: AlertTriangle },
-  'user.suspend': { label: 'Suspend', color: 'bg-orange-500/20 text-orange-400 border-orange-500/30', icon: UserX },
-  'user.ban': { label: 'Ban', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: Ban },
-  'user.unsuspend': { label: 'Restore', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', icon: RefreshCw },
+  'user.warn': { label: 'Warning', color: 'bg-warning/20 text-warning border-amber-500/30', icon: AlertTriangle },
+  'user.suspend': { label: 'Suspend', color: 'bg-warning/20 text-warning border-orange-500/30', icon: UserX },
+  'user.ban': { label: 'Ban', color: 'bg-destructive/20 text-destructive border-red-500/30', icon: Ban },
+  'user.unsuspend': { label: 'Restore', color: 'bg-success/20 text-success border-emerald-500/30', icon: RefreshCw },
   'user.unban': { label: 'Unban', color: 'bg-teal-500/20 text-teal-400 border-teal-500/30', icon: RefreshCw },
   'user.role_change': { label: 'Role Change', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', icon: Shield },
-  'user.block': { label: 'Block', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: Ban },
+  'user.block': { label: 'Block', color: 'bg-destructive/20 text-destructive border-red-500/30', icon: Ban },
   'user.unblock': { label: 'Unblock', color: 'bg-teal-500/20 text-teal-400 border-teal-500/30', icon: RefreshCw },
   'flag.resolve': { label: 'Flag Resolved', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30', icon: Shield },
   'community.update': { label: 'Community Updated', color: 'bg-sky-500/20 text-sky-400 border-sky-500/30', icon: Eye },
-  'community.delete': { label: 'Community Deleted', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: Ban },
+  'community.delete': { label: 'Community Deleted', color: 'bg-destructive/20 text-destructive border-red-500/30', icon: Ban },
   'community.member_role_change': { label: 'Member Role', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', icon: Shield },
-  'community.member_remove': { label: 'Member Removed', color: 'bg-orange-500/20 text-orange-400 border-orange-500/30', icon: UserX },
+  'community.member_remove': { label: 'Member Removed', color: 'bg-warning/20 text-warning border-orange-500/30', icon: UserX },
   'agent.toggle': { label: 'Agent Toggle', color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30', icon: Shield },
   'agent.community_toggle': { label: 'Agent (Community)', color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30', icon: Shield },
   'settings.update': { label: 'Settings Updated', color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30', icon: Shield },
@@ -227,7 +227,7 @@ export default function AuditLogs() {
       <div className="rounded-2xl border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.5)] overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-64">
-            <Loader2 className="w-8 h-8 text-[hsl(var(--theme-accent-primary))] animate-spin" />
+            <Loader2 className="w-8 h-8 text-[hsl(var(--theme-text-accent))] animate-spin" />
           </div>
         ) : logs.length === 0 ? (
           <div className="text-center py-16">

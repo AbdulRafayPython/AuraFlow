@@ -1,7 +1,7 @@
 // components/pins/PinnedMessageBanner.tsx — Fixed banner below header showing the active pinned message
 // Includes real-time countdown timer that updates every minute for performance
 // Smooth slide-in/out animation, responsive, HCI-compliant
-import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 import { Pin, X, Clock, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -127,12 +127,12 @@ const PinnedMessageBanner: React.FC<PinnedMessageBannerProps> = memo(({
           'flex items-center gap-3 px-4 py-2',
           'bg-[hsl(var(--theme-accent-primary)/0.06)]',
           'border-b border-[hsl(var(--theme-accent-primary)/0.12)]',
-          'backdrop-blur-sm',
+          '',
         )}
       >
         {/* Pin icon */}
         <div className="flex-shrink-0">
-          <Pin className="w-4 h-4 text-[hsl(var(--theme-accent-primary))] rotate-45" />
+          <Pin className="w-4 h-4 text-[hsl(var(--theme-text-accent))] rotate-45" />
         </div>
 
         {/* Clickable content area — jump to message */}
@@ -142,14 +142,14 @@ const PinnedMessageBanner: React.FC<PinnedMessageBannerProps> = memo(({
         >
           {/* Author + countdown row */}
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-[hsl(var(--theme-accent-primary))] truncate">
+            <span className="text-xs font-semibold text-[hsl(var(--theme-text-accent))] truncate">
               {pin.message.display_name}
             </span>
 
             {/* Countdown timer */}
             {countdown && (
               <span className={cn(
-                'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium flex-shrink-0',
+                'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0',
                 countdown === 'Expired'
                   ? 'bg-red-500/15 text-red-400'
                   : 'bg-[hsl(var(--theme-accent-primary)/0.1)] text-[hsl(var(--theme-accent-primary)/0.8)]',

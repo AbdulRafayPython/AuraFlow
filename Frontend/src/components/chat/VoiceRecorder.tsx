@@ -148,7 +148,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     return (
       <div className={cn(
         "flex items-center gap-3 px-3 py-2.5 rounded-2xl",
-        "bg-gradient-to-r from-red-500/8 to-red-500/12",
+        "bg-destructive/10",
         "border border-red-500/20",
         "shadow-sm shadow-red-500/5",
         "animate-in slide-in-from-right-2 duration-300",
@@ -173,7 +173,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
           {/* Pulsing recording dot */}
           <div className={cn(
             "w-2 h-2 rounded-full bg-red-500 flex-shrink-0",
-            !isPaused && "animate-pulse"
+            !isPaused && "opacity-80"
           )} />
 
           {/* Waveform visualizer */}

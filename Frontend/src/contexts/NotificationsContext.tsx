@@ -90,7 +90,7 @@ interface NotificationsContextType {
 const NotificationsContext = createContext<NotificationsContextType | undefined>(undefined);
 
 // Storage key prefix for localStorage
-const STORAGE_KEY_PREFIX = 'auroflow_notifications_';
+const STORAGE_KEY_PREFIX = 'Auraflow_notifications_';
 
 // Helper to get storage key for a user
 const getStorageKey = (userId: number) => `${STORAGE_KEY_PREFIX}${userId}`;
@@ -196,7 +196,6 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   // Load notifications from storage + server when user logs in
   useEffect(() => {
     if (isAuthenticated && user?.id && !initializedRef.current) {
-      console.log('[NotificationsContext] Loading persisted notifications for user:', user.id);
       const stored = loadNotificationsFromStorage(user.id);
       if (stored.length > 0) {
         setNotifications(stored);
@@ -243,7 +242,6 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
     // Refresh notifications when socket reconnects to catch any missed events
     const handleSocketReconnect = () => {
-      console.log('[NotificationsContext] Socket reconnected, refreshing notifications');
       refreshFromServer();
     };
 
@@ -265,7 +263,6 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   // Listen for community removal notifications from custom event
   useEffect(() => {
     const handleCommunityRemoval = (event: CustomEvent) => {
-      console.log('[NotificationsContext] Community removal notification received:', event.detail);
       addNotification(event.detail);
     };
 
@@ -284,14 +281,12 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     // Check if we've already processed this notification (either by content hash
     // or if a server-notification already arrived for the same type+related_id)
     if (processedIdsRef.current.has(contentHash)) {
-      console.log('[NotificationsContext] Duplicate notification ignored:', contentHash);
       return '';
     }
     
     // Also check if a server-pushed notification already covers this
     const dataId = notification.data?.request_id || notification.data?.id;
     if (dataId && processedIdsRef.current.has(`${notification.type}-related-${dataId}`)) {
-      console.log('[NotificationsContext] Duplicate (server already handled):', notification.type, dataId);
       return '';
     }
     
@@ -435,12 +430,10 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       return;
     }
 
-    console.log('[NotificationsContext] Setting up real-time listeners');
 
     // Listen for friend requests
     const handleFriendRequest = (event: CustomEvent) => {
       const request = event.detail;
-      console.log('[NotificationsContext] Friend request received:', request);
       
       addNotification({
         type: 'friend_request',
@@ -459,7 +452,6 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     // Listen for new messages
     const handleNewMessage = (event: CustomEvent) => {
       const message = event.detail;
-      console.log('[NotificationsContext] New message notification:', message);
       
       // Don't notify for own messages
       if (message.sender_id === user.id) {
@@ -489,7 +481,6 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     // Listen for friend request accepted
     const handleFriendAccepted = (event: CustomEvent) => {
       const data = event.detail;
-      console.log('[NotificationsContext] Friend request accepted:', data);
       
       addNotification({
         type: 'friend_accepted',

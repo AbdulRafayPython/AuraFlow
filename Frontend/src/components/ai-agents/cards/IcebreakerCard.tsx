@@ -26,17 +26,17 @@ export default function IcebreakerCard({
 }: IcebreakerCardProps) {
   return (
     <div>
-      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide"
+      <div className="flex items-center gap-1.5 text-xs font-medium "
            style={{ color: accent }}>
         <Snowflake className="h-3.5 w-3.5" aria-hidden />
         Ice-breaker
       </div>
 
-      <h4 className="mt-1.5 text-[15px] font-semibold text-[hsl(var(--theme-text-primary))]">
+      <h4 className="mt-1.5 text-base font-semibold text-[hsl(var(--theme-text-primary))]">
         {title}
       </h4>
       {description && (
-        <p className="mt-1 text-[13px] leading-relaxed text-[hsl(var(--theme-text-secondary))]">
+        <p className="mt-1 text-sm leading-relaxed text-[hsl(var(--theme-text-secondary))]">
           {description}
         </p>
       )}
@@ -46,7 +46,7 @@ export default function IcebreakerCard({
           {questions.map((q, i) => (
             <li key={i} className="flex items-start gap-2.5">
               <span
-                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
+                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
                 style={{
                   color: accent,
                   backgroundColor: `hsl(var(--agent-accent-community) / 0.14)`,
@@ -55,7 +55,7 @@ export default function IcebreakerCard({
               >
                 {i + 1}
               </span>
-              <span className="text-[13.5px] leading-relaxed text-[hsl(var(--theme-text-secondary))]">
+              <span className="text-sm leading-relaxed text-[hsl(var(--theme-text-secondary))]">
                 {q}
               </span>
             </li>
@@ -65,7 +65,7 @@ export default function IcebreakerCard({
 
       {example && (
         <div
-          className="mt-2.5 rounded-md px-2.5 py-1.5 text-[12.5px] italic text-[hsl(var(--theme-text-muted))]"
+          className="mt-2.5 rounded-md px-2.5 py-1.5 text-xs italic text-[hsl(var(--theme-text-muted))]"
           style={{ backgroundColor: 'hsl(var(--theme-text-muted) / 0.08)' }}
         >
           e.g. {example}
@@ -73,7 +73,7 @@ export default function IcebreakerCard({
       )}
 
       {duration && (
-        <div className="mt-2.5 inline-flex items-center gap-1 text-[11px] text-[hsl(var(--theme-text-muted))]">
+        <div className="mt-2.5 inline-flex items-center gap-1 text-xs text-[hsl(var(--theme-text-muted))]">
           <Clock className="h-3 w-3" aria-hidden />
           ~{duration}
         </div>

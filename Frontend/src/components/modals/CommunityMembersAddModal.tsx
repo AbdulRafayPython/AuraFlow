@@ -2,11 +2,11 @@
 // components/modals/CommunityMembersAddModal.tsx
 // ============================================================================
 
-import React, { useState, useEffect, useRef } from "react";
-import { X, Search, UserPlus, Users, Loader2 } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Search, UserPlus, Users, Loader2 } from "lucide-react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { getAvatarUrl } from "@/lib/utils";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 import { channelService } from "@/services/channelService";
 import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
@@ -125,7 +125,7 @@ export default function CommunityMembersAddModal({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-[hsl(var(--theme-border-default))]">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] rounded-3xl flex items-center justify-center shadow-xl">
+            <div className="w-14 h-14 bg-[hsl(var(--theme-accent-primary))] rounded-3xl flex items-center justify-center shadow-xl">
               <Users className="w-8 h-8 text-white" />
             </div>
             <div>
@@ -153,7 +153,7 @@ export default function CommunityMembersAddModal({
               className="w-full pl-14 pr-5 py-4 rounded-2xl border focus:border-[hsl(var(--theme-accent-primary))] focus:outline-none focus:ring-4 focus:ring-[hsl(var(--theme-accent-primary))]/20 text-base font-medium transition-all bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted))]"
             />
             {isSearching && (
-              <Loader2 className="absolute right-5 top-1/2 -translate-y-1/2 w-5 h-5 animate-spin text-[hsl(var(--theme-accent-primary))]" />
+              <Loader2 className="absolute right-5 top-1/2 -translate-y-1/2 w-5 h-5 animate-spin text-[hsl(var(--theme-text-accent))]" />
             )}
           </div>
 
@@ -194,9 +194,9 @@ export default function CommunityMembersAddModal({
                     </div>
                   </div>
                   {addingUserId === user.id ? (
-                    <Loader2 className="w-5 h-5 animate-spin text-[hsl(var(--theme-accent-primary))]" />
+                    <Loader2 className="w-5 h-5 animate-spin text-[hsl(var(--theme-text-accent))]" />
                   ) : (
-                    <UserPlus className="w-5 h-5 text-[hsl(var(--theme-accent-primary))] opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <UserPlus className="w-5 h-5 text-[hsl(var(--theme-text-accent))] opacity-0 group-hover:opacity-100 transition-opacity" />
                   )}
                 </button>
               ))}
@@ -255,7 +255,7 @@ export default function CommunityMembersAddModal({
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-semibold ${
                         member.role === "owner"
-                          ? "bg-[hsl(var(--theme-accent-primary))]/20 text-[hsl(var(--theme-accent-primary))]"
+                          ? "bg-[hsl(var(--theme-accent-primary))]/20 text-[hsl(var(--theme-text-accent))]"
                           : member.role === "admin"
                           ? "bg-blue-500/20 text-blue-400"
                           : "bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-secondary))]"

@@ -34,7 +34,7 @@ export default function Welcome({ onContinue }: WelcomeProps) {
         {/* Header */}
         <div className="p-6 pb-4 text-center border-b border-slate-200 dark:border-slate-700">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl mb-4 shadow-lg shadow-indigo-500/25 overflow-hidden">
-            <img src="/AuraflowLogo.png" alt="AuraFlow" className="h-full w-full object-cover" />
+            <img src="/AuraflowLogo.png" alt="Auraflow" className="h-full w-full object-cover" />
           </div>
           <h1 className={`text-2xl font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             Welcome{user?.display_name || user?.username ? `, ${user.display_name || user.username}` : ''} 👋
@@ -49,7 +49,7 @@ export default function Welcome({ onContinue }: WelcomeProps) {
           {/* Description */}
           <div className={`mb-5 p-4 rounded-lg ${isDarkMode ? 'bg-slate-700/50' : 'bg-slate-50'}`}>
             <p className={`text-sm leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-              <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>AuraFlow</span> helps your team chat, collaborate, and connect with AI agents for seamless communication.
+              <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Auraflow</span> helps your team chat, collaborate, and connect with AI agents for seamless communication.
             </p>
           </div>
 
@@ -72,7 +72,7 @@ export default function Welcome({ onContinue }: WelcomeProps) {
                   <h3 className={`text-xs font-medium ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     {feature.title}
                   </h3>
-                  <p className={`text-[10px] mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     {feature.description}
                   </p>
                 </div>
@@ -83,7 +83,7 @@ export default function Welcome({ onContinue }: WelcomeProps) {
           {/* Continue Button */}
           <button
             onClick={onContinue}
-            className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
+            className="w-full py-3 bg-indigo-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
           >
             Continue Setup
             <ArrowRight className="w-4 h-4" />
@@ -97,7 +97,7 @@ export default function Welcome({ onContinue }: WelcomeProps) {
             <div className={`w-8 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
             <div className={`w-8 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
           </div>
-          <p className={`text-center text-[10px] mt-2 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+          <p className={`text-center text-xs mt-2 font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
             STEP 1 OF 3
           </p>
         </div>

@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { login as authLogin, getMe } from '@/services/authService';
-import { Shield, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
 
 export default function SystemAdminLogin() {
   const navigate = useNavigate();
@@ -61,29 +61,13 @@ export default function SystemAdminLogin() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[hsl(var(--theme-bg-primary))]">
-      {/* Dark purple background with gradient blobs */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--theme-bg-primary))] via-[hsl(var(--theme-bg-secondary))] to-[hsl(var(--theme-bg-primary))]" />
-        <div className="absolute top-1/4 left-1/3 w-[500px] h-[500px] bg-[hsl(var(--theme-accent-primary)/0.15)] rounded-full filter blur-[120px]" />
-        <div className="absolute bottom-1/3 right-1/4 w-[400px] h-[400px] bg-purple-500/10 rounded-full filter blur-[100px]" />
-        <div className="absolute top-1/2 left-1/2 w-[300px] h-[300px] bg-[hsl(var(--theme-accent-primary)/0.1)] rounded-full filter blur-[90px]" />
-        {/* Grid pattern */}
-        <div className="absolute inset-0 opacity-[0.03]">
-          <div className="absolute inset-0" style={{
-            backgroundImage: `linear-gradient(rgba(140, 43, 238, 0.3) 1px, transparent 1px),
-                              linear-gradient(90deg, rgba(140, 43, 238, 0.3) 1px, transparent 1px)`,
-            backgroundSize: '60px 60px'
-          }} />
-        </div>
-      </div>
-
       <div className="relative z-10 w-full max-w-md">
         {/* Logo & Branding */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl overflow-hidden shadow-lg shadow-[hsl(var(--theme-accent-primary)/0.25)] mb-4">
-            <img src="/AuraflowLogo.png" alt="AuraFlow" className="h-full w-full object-cover" />
+            <img src="/AuraflowLogo.png" alt="Auraflow" className="h-full w-full object-cover" />
           </div>
-          <h1 className="text-2xl font-bold text-[hsl(var(--theme-text-primary))] tracking-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>AuroFlow</h1>
+          <h1 className="text-2xl font-bold text-[hsl(var(--theme-text-primary))] tracking-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Auraflow</h1>
           <p className="text-sm text-[hsl(var(--theme-text-secondary))] mt-1">System Administration</p>
         </div>
 
@@ -95,7 +79,7 @@ export default function SystemAdminLogin() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-red-500/20 text-destructive text-sm">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>{error}</span>
               </div>

@@ -27,15 +27,10 @@ import {
 import {
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  Legend
-} from 'recharts';
+  ResponsiveContainer} from 'recharts';
 import {
   TrendingUp,
   RefreshCw,
@@ -170,7 +165,7 @@ export default function EngagementAnalytics() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <TrendingUp className="h-6 w-6 text-green-500" />
+            <TrendingUp className="h-6 w-6 text-success" />
             Engagement Analytics
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -328,7 +323,7 @@ export default function EngagementAnalytics() {
                   {/* Hour labels */}
                   <div className="text-xs text-muted-foreground h-4" />
                   {[...Array(24)].map((_, hour) => (
-                    <div key={hour} className="text-[10px] text-muted-foreground text-center">
+                    <div key={hour} className="text-xs text-muted-foreground text-center">
                       {hour % 4 === 0 ? `${hour}` : ''}
                     </div>
                   ))}
@@ -401,7 +396,7 @@ export default function EngagementAnalytics() {
                   >
                     <div className={cn(
                       'w-6 h-6 rounded flex items-center justify-center text-xs font-bold',
-                      index < 3 ? 'bg-accent/20 text-accent' : 'bg-muted text-muted-foreground'
+                      index < 3 ? 'bg-accent/20 text-[hsl(var(--theme-text-accent))]' : 'bg-muted text-muted-foreground'
                     )}>
                       {index + 1}
                     </div>

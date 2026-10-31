@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
-import { X, Hash, Volume2, Plus, AlertCircle, Radio } from "lucide-react";
+import { Hash, Plus, AlertCircle, Radio } from "lucide-react";
 import { channelService } from "@/services/channelService";
 import { socketService } from "@/services/socketService";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -147,7 +147,7 @@ export default function CreateChannelModal({
         <div className="px-6 pt-5 pb-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-[hsl(var(--theme-accent-primary)/0.12)]">
-              <Plus className="w-4.5 h-4.5 text-[hsl(var(--theme-accent-primary))]" />
+              <Plus className="w-4.5 h-4.5 text-[hsl(var(--theme-text-accent))]" />
             </div>
             <div>
               <h2 className="text-lg font-bold text-[hsl(var(--theme-text-primary))] leading-tight">
@@ -165,7 +165,7 @@ export default function CreateChannelModal({
         <form onSubmit={handleSubmit} className="px-6 pb-6 space-y-5">
           {/* Channel Type Selection — Card-style */}
           <fieldset className="space-y-2">
-            <legend className="text-[13px] font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider mb-2.5">
+            <legend className="text-sm font-semibold text-[hsl(var(--theme-text-secondary))] mb-2.5">
               Channel Type
             </legend>
             <div className="grid grid-cols-2 gap-2.5">
@@ -186,7 +186,7 @@ export default function CreateChannelModal({
                     aria-pressed={selected}
                     className={`relative p-3.5 rounded-xl border-2 transition-all duration-150 flex flex-col items-center gap-2 text-center cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--theme-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--theme-bg-elevated))] ${
                       selected
-                        ? "border-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-accent-primary)/0.08)] shadow-[0_0_0_1px_hsl(var(--theme-accent-primary)/0.15)]"
+                        ? "border-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-accent-primary)/0.08)]"
                         : "border-[hsl(var(--theme-border-default)/0.6)] bg-[hsl(var(--theme-bg-secondary)/0.5)] hover:border-[hsl(var(--theme-text-muted)/0.4)] hover:bg-[hsl(var(--theme-bg-secondary))]"
                     }`}
                   >
@@ -194,7 +194,7 @@ export default function CreateChannelModal({
                     <div
                       className={`absolute top-2.5 right-2.5 w-2 h-2 rounded-full transition-all duration-150 ${
                         selected
-                          ? "bg-[hsl(var(--theme-accent-primary))] shadow-[0_0_6px_hsl(var(--theme-accent-primary)/0.5)]"
+                          ? "bg-[hsl(var(--theme-accent-primary))]"
                           : "bg-[hsl(var(--theme-text-muted)/0.2)]"
                       }`}
                     />
@@ -202,7 +202,7 @@ export default function CreateChannelModal({
                     <div
                       className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors duration-150 ${
                         selected
-                          ? "bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-accent-primary))]"
+                          ? "bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-text-accent))]"
                           : "bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))]"
                       }`}
                     >
@@ -210,15 +210,15 @@ export default function CreateChannelModal({
                     </div>
                     <div>
                       <p
-                        className={`text-[13px] font-semibold leading-tight transition-colors duration-150 ${
+                        className={`text-sm font-semibold leading-tight transition-colors duration-150 ${
                           selected
-                            ? "text-[hsl(var(--theme-accent-primary))]"
+                            ? "text-[hsl(var(--theme-text-accent))]"
                             : "text-[hsl(var(--theme-text-primary))]"
                         }`}
                       >
                         {ct.label}
                       </p>
-                      <p className="text-[10px] mt-0.5 text-[hsl(var(--theme-text-muted))] leading-snug">
+                      <p className="text-xs mt-0.5 text-[hsl(var(--theme-text-muted))] leading-snug">
                         {ct.description}
                       </p>
                     </div>
@@ -232,13 +232,13 @@ export default function CreateChannelModal({
           <div className="space-y-1.5">
             <label
               htmlFor="channel-name"
-              className="text-[13px] font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider flex items-center justify-between"
+              className="text-sm font-semibold text-[hsl(var(--theme-text-secondary))] flex items-center justify-between"
             >
               <span>
                 Channel Name <span className="text-red-400">*</span>
               </span>
               <span
-                className={`text-[10px] font-normal normal-case tracking-normal ${
+                className={`text-xs font-normal normal-case tracking-normal ${
                   formData.name.length > 45
                     ? "text-amber-400"
                     : "text-[hsl(var(--theme-text-muted))]"
@@ -278,7 +278,7 @@ export default function CreateChannelModal({
               />
             </div>
             {errors.name && (
-              <p className="flex items-center gap-1 text-[11px] text-red-400">
+              <p className="flex items-center gap-1 text-xs text-red-400">
                 <AlertCircle className="w-3 h-3 flex-shrink-0" />
                 {errors.name}
               </p>
@@ -289,7 +289,7 @@ export default function CreateChannelModal({
           <div className="space-y-1.5">
             <label
               htmlFor="channel-desc"
-              className="text-[13px] font-semibold text-[hsl(var(--theme-text-secondary))] uppercase tracking-wider flex items-center justify-between"
+              className="text-sm font-semibold text-[hsl(var(--theme-text-secondary))] flex items-center justify-between"
             >
               <span>
                 Description{" "}
@@ -299,7 +299,7 @@ export default function CreateChannelModal({
               </span>
               {formData.description.length > 0 && (
                 <span
-                  className={`text-[10px] font-normal normal-case tracking-normal ${
+                  className={`text-xs font-normal normal-case tracking-normal ${
                     formData.description.length > 180
                       ? "text-amber-400"
                       : "text-[hsl(var(--theme-text-muted))]"
@@ -327,7 +327,7 @@ export default function CreateChannelModal({
               }`}
             />
             {errors.description && (
-              <p className="flex items-center gap-1 text-[11px] text-red-400">
+              <p className="flex items-center gap-1 text-xs text-red-400">
                 <AlertCircle className="w-3 h-3 flex-shrink-0" />
                 {errors.description}
               </p>

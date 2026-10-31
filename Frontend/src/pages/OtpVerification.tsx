@@ -129,18 +129,18 @@ export default function OtpVerification() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
+        <div className="bg-card text-card-foreground border border-border rounded-lg p-8">
           {/* Header */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">
+            <h1 className="text-3xl font-bold text-foreground mb-2">
               Enter OTP
             </h1>
-            <p className="text-gray-600">
+            <p className="text-muted-foreground">
               We've sent a 6-digit code to
             </p>
-            <p className="text-purple-600 font-medium mt-1">{email}</p>
+            <p className="text-[hsl(var(--theme-text-accent))] font-medium mt-1">{email}</p>
           </div>
 
           {/* OTP Inputs */}
@@ -157,16 +157,16 @@ export default function OtpVerification() {
                 onKeyDown={(e) => handleKeyDown(index, e)}
                 onPaste={handlePaste}
                 disabled={loading}
-                className="w-12 h-14 text-center text-2xl font-bold border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition disabled:bg-gray-100"
+                className="w-12 h-14 text-center text-2xl font-bold border-2 border-border rounded-lg focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition disabled:bg-background"
               />
             ))}
           </div>
 
           {/* Timer */}
           <div className="text-center mb-6">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               Time remaining:{' '}
-              <span className={`font-bold ${timeLeft < 60 ? 'text-red-500' : 'text-purple-600'}`}>
+              <span className={`font-bold ${timeLeft < 60 ? 'text-destructive' : 'text-[hsl(var(--theme-text-accent))]'}`}>
                 {formatTime(timeLeft)}
               </span>
             </p>
@@ -183,7 +183,7 @@ export default function OtpVerification() {
           <button
             onClick={handleVerifyOtp}
             disabled={loading || otp.join('').length !== 6}
-            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed mb-4"
+            className="w-full bg-primary text-primary-foreground hover:opacity-90 font-semibold py-3 rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed mb-4"
           >
             {loading ? 'Verifying...' : 'Verify OTP'}
           </button>
@@ -194,12 +194,12 @@ export default function OtpVerification() {
               <button
                 onClick={handleResendOtp}
                 disabled={loading}
-                className="text-sm text-purple-600 hover:text-purple-800 font-medium disabled:opacity-50"
+                className="text-sm text-[hsl(var(--theme-text-accent))] hover:opacity-80 font-medium disabled:opacity-50"
               >
                 Resend OTP
               </button>
             ) : (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Didn't receive the code? Wait until timer expires
               </p>
             )}
@@ -209,7 +209,7 @@ export default function OtpVerification() {
           <div className="text-center mt-6">
             <button
               onClick={() => navigate('/forgot-password')}
-              className="text-sm text-gray-600 hover:text-gray-800"
+              className="text-sm text-muted-foreground hover:text-foreground"
             >
               ← Change email address
             </button>

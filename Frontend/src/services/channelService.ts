@@ -4,7 +4,6 @@ import type {
   Community, 
   Channel, 
   Friend, 
-  User, 
   CommunityMember, 
   CreateCommunityPayload 
 } from '@/types';

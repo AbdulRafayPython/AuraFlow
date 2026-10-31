@@ -4,7 +4,7 @@ import { socketService } from '@/services/socketService';
 import { messageService } from '@/services/messageService';
 import { channelService } from '@/services/channelService';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Message, TypingUser, Community, Channel, Friend, User, SendMessageResponse } from '@/types';
+import type { Message, TypingUser, ThinkingAgent, Community, Channel, Friend, User, SendMessageResponse } from '@/types';
 import authService from '@/services/authService';
 
 interface RealtimeContextType {
@@ -26,6 +26,7 @@ interface RealtimeContextType {
   updateMessageField: (messageId: number, fields: Partial<Message>) => void;
   loadMoreMessages: () => Promise<void>;
   typingUsers: TypingUser[];
+  thinkingAgents: ThinkingAgent[];
   sendTyping: () => void;
   userStatuses: Map<string, 'online' | 'idle' | 'dnd' | 'offline'>;
   isLoadingMessages: boolean;
@@ -54,6 +55,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const [currentFriend, setCurrentFriend] = useState<Friend | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
+  const [thinkingAgents, setThinkingAgents] = useState<ThinkingAgent[]>([]);
   const [userStatuses, setUserStatuses] = useState<Map<string, 'online' | 'idle' | 'dnd' | 'offline'>>(new Map());
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingCommunities, setIsLoadingCommunities] = useState(() => {
@@ -85,7 +87,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       const user = await authService.getMe();           // calls /api/me
       setCurrentUser(user);
       currentUserRef.current = user;
-      console.log('[REALTIME] Current user loaded:', user);
     } catch (error) {
       console.error('[REALTIME] Failed to load current user:', error);
       setCurrentUser(null);
@@ -112,8 +113,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       const data = await channelService.getCommunities();
-      console.log('[REALTIME] Loaded communities:', data);
-      console.log('[REALTIME] Community roles:', data.map(c => ({ id: c.id, name: c.name, role: c.role })));
       setCommunities(data);
       localStorage.setItem('cached_communities', JSON.stringify(data));
     } catch (error) {
@@ -127,7 +126,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const loadChannels = useCallback(async (communityId: number) => {
     try {
       const data = await channelService.getCommunityChannels(communityId);
-      console.log('[REALTIME] Loaded channels:', data);
       setChannels(data);
       if (data.length > 0 && !currentChannel) {
         // Set the loading flag in the same tick as the channel so React never
@@ -146,7 +144,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     setIsLoadingFriends(true);
     try {
       const data = await channelService.getFriends();
-      console.log('[REALTIME] Loaded friends:', data);
       setFriends(data);
 
       const statusMap = new Map<string, 'online' | 'idle' | 'dnd' | 'offline'>();
@@ -170,23 +167,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       // was in flight, discard the response so it doesn't overwrite the
       // correct channel's messages.
       if (currentChannelRef.current?.id !== channelId) {
-        console.log(`[REALTIME] Discarding stale messages for channel ${channelId} (current: ${currentChannelRef.current?.id})`);
         return;
       }
 
-      console.log('[REALTIME] Loaded messages:', data.length);
-      
-      // Debug: Check for blocked users
-      const blockedMessages = data.filter(m => m.is_blocked);
-      if (blockedMessages.length > 0) {
-        console.log('[REALTIME] Messages from blocked users:', blockedMessages.map(m => ({
-          id: m.id,
-          author: m.author,
-          is_blocked: m.is_blocked
-        })));
-      } else {
-        console.log('[REALTIME] No blocked users found in messages');
-      }
 
       if (offset === 0) {
         messageIdsRef.current.clear();
@@ -210,7 +193,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   // Socket connection setup - wait for auth to be ready
   useEffect(() => {
     if (!isAuthenticated || !user) {
-      console.log('[REALTIME] User not authenticated, skipping socket connection');
       socketService.disconnect();
       setIsConnected(false);
       return;
@@ -218,11 +200,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
     const token = localStorage.getItem('token');
     if (!token) {
-      console.log('[REALTIME] No token found, skipping socket connection');
       return;
     }
 
-    console.log('[REALTIME] Initializing socket connection for user:', user.username);
     socketService.connect(token);
     
     // Wait for connection to be established
@@ -231,30 +211,21 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       setIsConnected(connected);
       if (connected) {
         setHasConnectedOnce(true);
-        console.log('[REALTIME] Socket connected, ready to load data');
         clearInterval(checkConnection);
       }
     }, 100);
 
     // Setup event listeners
     const unsubscribeMessage = socketService.onMessage((incomingMessage: Message) => {
-      console.log('[REALTIME] Received new message:', {
-        id: incomingMessage.id,
-        channel_id: incomingMessage.channel_id,
-        currentChannel: currentChannelRef.current?.id,
-        author: incomingMessage.author,
-      });
 
       // Only add message if it's for the current channel
       if (currentChannelRef.current && incomingMessage.channel_id !== currentChannelRef.current.id) {
-        console.log('[REALTIME] Message for different channel, ignoring');
         return;
       }
 
       const messageId = String(incomingMessage.id);
 
       if (messageIdsRef.current.has(messageId)) {
-        console.log('[REALTIME] Duplicate message ignored:', messageId);
         return;
       }
 
@@ -265,7 +236,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     // No cleanup needed for updateMessageField – it's defined below
 
     const unsubscribeStatus = socketService.onUserStatus((status) => {
-      console.log('[REALTIME] User status update:', status);
       setUserStatuses((prev) => {
         const newMap = new Map(prev);
         newMap.set(status.username, status.status);
@@ -281,8 +251,22 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       );
     });
 
+    // An agent run is in flight until agent_run_finished arrives; the timeout is a safety net
+    // so a lost event can never leave "thinking" on screen.
+    const unsubscribeAgentRun = socketService.onAgentRun((phase, data) => {
+      const key = `${data.agent.id}:${data.message_id ?? ''}`;
+      if (phase === 'started') {
+        setThinkingAgents((prev) => prev.some((a) => a.key === key) ? prev : [
+          ...prev,
+          { key, name: data.agent.name, avatar: data.agent.avatar, channelId: data.channel_id, since: Date.now() },
+        ]);
+        window.setTimeout(() => setThinkingAgents((prev) => prev.filter((a) => a.key !== key)), 90_000);
+      } else {
+        setThinkingAgents((prev) => prev.filter((a) => a.key !== key));
+      }
+    });
+
     const unsubscribeTyping = socketService.onTyping((data) => {
-      console.log('[REALTIME] Typing indicator:', data);
 
       // Use functional update to get current channel
       setTypingUsers((prev) => {
@@ -329,7 +313,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     });
 
     const unsubscribeCommunity = socketService.onCommunityCreated((communityData) => {
-      console.log('[REALTIME] Community created event received:', communityData);
       setCommunities((prev) => {
         // Check if community already exists
         const exists = prev.some(c => c.id === communityData.id);
@@ -342,7 +325,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
     // Handle community deletion (owner deleted the community)
     const unsubscribeCommunityDeleted = socketService.onCommunityDeleted((data) => {
-      console.log('[REALTIME] Community deleted:', data);
       
       const deletedCommunityId = data.community_id;
       const deletedCommunityPublicId = data.community_public_id;
@@ -352,7 +334,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
       // If this was the current community, navigate to Home
       if (currentCommunity?.id === deletedCommunityPublicId) {
-        console.log('[REALTIME] Current community was deleted, navigating to Home');
         setCurrentCommunity(null);
         setCurrentChannel(null);
         setChannels([]);
@@ -369,7 +350,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
     // Handle community left (current user left the community)
     const unsubscribeCommunityLeft = socketService.onCommunityLeft((data) => {
-      console.log('[REALTIME] User left community:', data);
       
       // Only process if it's the current user who left
       if (currentUserRef.current && data.user_id === currentUserRef.current.id) {
@@ -381,7 +361,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
         // If this was the current community, navigate to Home
         if (currentCommunityRef.current?.id === leftCommunityPublicId) {
-          console.log('[REALTIME] Left current community, navigating to Home');
           setCurrentCommunity(null);
           setCurrentChannel(null);
           setChannels([]);
@@ -399,7 +378,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
     // Handle community removal (user removed/blocked)
     const unsubscribeCommunityRemoved = socketService.onCommunityRemoved((data) => {
-      console.log('[REALTIME] Removed from community:', data);
       
       // Create notification for removal
       if (data.notification) {
@@ -447,7 +425,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     // Channel operation event handler
     const unsubscribeChannel = socketService.onChannel((eventData) => {
       const { type, data } = eventData;
-      console.log(`[REALTIME] Channel ${type} event received:`, data);
 
       if (type === 'created') {
         // Check if this is for the current community
@@ -484,15 +461,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
           setMessages([]);
           messageIdsRef.current.clear();
         }
-      } else if (type === 'member_added') {
-        // Optionally reload communities to update member lists
-        console.log('[REALTIME] Member added to community:', data.community_id);
       }
     });
 
     // Listen for user blocking events to update message UI
     const unsubscribeUserBlocked = socketService.onUserBlocked((data) => {
-      console.log('[REALTIME] User blocked from community:', data);
       
       // Update all messages from this user to show is_blocked: true
       setMessages((prevMessages) => 
@@ -506,40 +479,32 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
     // Listen for AI command results (e.g., /summarize)
     const unsubscribeCommandResult = socketService.onCommandResult((data) => {
-      console.log('[REALTIME] ✅ AI Command result received from socket:', data);
-      console.log('[REALTIME] ✅ Dispatching custom event ai_command_result');
       
       // Dispatch custom event for UI components to handle
       const event = new CustomEvent('ai_command_result', { detail: data });
       window.dispatchEvent(event);
-      console.log('[REALTIME] ✅ Custom event dispatched');
     });
 
     // Listen for ephemeral summary events (private to sender)
     const unsubscribeSummaryGenerating = socketService.onSummaryGenerating((data) => {
-      console.log('[REALTIME] 🤖 Summary generating for channel:', data.channel_id);
       window.dispatchEvent(new CustomEvent('summary_generating', { detail: data }));
     });
 
     const unsubscribeSummaryResult = socketService.onSummaryResult((data) => {
-      console.log('[REALTIME] 📋 Summary result for channel:', data.channel_id);
       window.dispatchEvent(new CustomEvent('summary_result', { detail: data }));
     });
 
     // Listen for ephemeral KB events (private to sender)
     const unsubscribeKBGenerating = socketService.onKBGenerating((data) => {
-      console.log('[REALTIME] 📚 KB generating for channel:', data.channel_id);
       window.dispatchEvent(new CustomEvent('kb_generating', { detail: data }));
     });
 
     const unsubscribeKBResult = socketService.onKBResult((data) => {
-      console.log('[REALTIME] 📚 KB result for channel:', data.channel_id);
       window.dispatchEvent(new CustomEvent('kb_result', { detail: data }));
     });
 
     // Moderation retroactive — Gemini reviewed a message async and found a violation
     const unsubscribeModerationRetroactive = socketService.onModerationRetroactive((data) => {
-      console.log('[REALTIME] 🤖 Gemini retroactive moderation for msg:', data.message_id, data.action);
       setMessages(prev => prev.map(m => 
         m.id === data.message_id 
           ? { 
@@ -559,17 +524,17 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       ));
     });
 
-    // NEW — v2: Retroactive scan progress — forward to FlaggedContent via window event
-    const unsubscribeScanProgress = socketService.onModerationScanProgress((data) => { // NEW — v2
-      window.dispatchEvent(new CustomEvent('moderation_scan_progress', { detail: data })); // NEW — v2
-    }); // NEW — v2
+    // Retroactive scan progress — forward to FlaggedContent via window event
+    const unsubscribeScanProgress = socketService.onModerationScanProgress((data) => {
+      window.dispatchEvent(new CustomEvent('moderation_scan_progress', { detail: data }));
+    });
 
     return () => {
-      console.log('[REALTIME] Cleaning up socket connection');
       clearInterval(checkConnection);
       unsubscribeMessage();
       unsubscribeStatus();
       unsubscribeTyping();
+      unsubscribeAgentRun();
       unsubscribeError();
       unsubscribeCommunity();
       unsubscribeCommunityDeleted();
@@ -583,7 +548,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       unsubscribeKBGenerating();
       unsubscribeKBResult();
       unsubscribeModerationRetroactive();
-      unsubscribeScanProgress(); // NEW — v2
+      unsubscribeScanProgress();
 
       typingTimeoutRefs.current.forEach(timeout => clearTimeout(timeout));
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -614,11 +579,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
-      console.log('[REALTIME] Skipping data load - no token');
       return;
     }
 
-    console.log('[REALTIME] Loading initial data (user, friends)');
     loadCurrentUser();
     loadFriends();
   }, [loadCurrentUser, loadFriends]);
@@ -630,14 +593,12 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    console.log('[REALTIME] Loading communities immediately after token detected');
     loadCommunities();
   }, [loadCommunities]);
 
   // Reload communities when user completes onboarding
   useEffect(() => {
     if (isAuthenticated && user && !user.is_first_login) {
-      console.log('[REALTIME] User completed onboarding, reloading communities');
       loadCommunities();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -664,11 +625,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       currentChannelRef.current = currentChannel;
       
       if (previousChannelRef.current && previousChannelRef.current !== currentChannel.id) {
-        console.log(`[REALTIME] Leaving previous channel ${previousChannelRef.current}`);
         socketService.leaveChannel();
       }
 
-      console.log(`[REALTIME] Joining channel ${currentChannel.id}`);
 
       messageIdsRef.current.clear();
 
@@ -692,14 +651,12 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
   const loadMoreMessages = useCallback(async () => {
     if (currentChannel && !isLoadingMessages && messageOffset > 0) {
-      console.log('[REALTIME] Loading more messages, offset:', messageOffset);
       await loadMessages(currentChannel.id, messageOffset);
     }
   }, [currentChannel, isLoadingMessages, messageOffset, loadMessages]);
 
   const selectCommunity = useCallback((communityId: string | null) => {
     if (communityId === null) {
-      console.log('[REALTIME] Clearing community selection');
       setCurrentCommunity(null);
       currentCommunityRef.current = null;
       setCurrentChannel(null);
@@ -712,7 +669,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
     const community = communities.find((c) => c.id === communityId);
     if (community) {
-      console.log('[REALTIME SOCKET EVENT] Selected community:', community.name);
       setCurrentCommunity(community);
       currentCommunityRef.current = community;
       setCurrentChannel(null);
@@ -726,7 +682,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const selectChannel = useCallback((channelId: number) => {
     const channel = channels.find((c) => c.id === channelId);
     if (channel) {
-      console.log('[REALTIME] Selected channel:', channel.name);
       // See loadChannels' auto-select branch for why this is set here,
       // synchronously with setCurrentChannel/setMessages([]), rather than
       // waiting for the loadMessages effect to fire.
@@ -743,7 +698,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const selectFriend = useCallback((friendId: number) => {
     const friend = friends.find((f) => f.id === friendId);
     if (friend) {
-      console.log('[REALTIME] Selected friend:', friend.display_name);
       setCurrentFriend(friend);
       setCurrentChannel(null);
       setMessages([]);
@@ -753,7 +707,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   }, [friends]);
 
   const reloadCommunities = useCallback(async () => {
-    console.log('[REALTIME] Reloading communities...');
     await loadCommunities();
   }, [loadCommunities]);
 
@@ -790,7 +743,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      console.log('[REALTIME] Sending message to channel:', channelId);
 
       const response = await messageService.sendChannelMessage({
         channel_id: channelId,
@@ -828,11 +780,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
           }
           return [...withoutEcho, messageToAdd];
         });
-        // Server now broadcasts message_received; no client rebroadcast needed
-        console.log('[REALTIME] Message sent successfully (server will broadcast):', response.message.id);
-        if (response.moderation) {
-          console.log('[REALTIME] Message has moderation data:', response.moderation);
-        }
       } else {
         // No persisted message (ephemeral command result, or moderation block)
         // — drop the optimistic placeholder if we rendered one.
@@ -857,7 +804,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   }, [currentChannel, isConnected]);
 
   const addChannel = useCallback((channel: Channel) => {
-    console.log('[REALTIME] Adding channel to list:', channel.name);
     setChannels((prev) => {
       const exists = prev.some(ch => ch.id === channel.id);
       if (exists) return prev;
@@ -902,6 +848,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     updateMessageField,
     loadMoreMessages,
     typingUsers,
+    thinkingAgents,
     sendTyping,
     userStatuses,
     isLoadingMessages,
@@ -914,7 +861,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     isConnected, hasConnectedOnce, communities, currentCommunity, channels, currentChannel,
     selectCommunity, selectChannel, addChannel, friends, currentFriend,
     selectFriend, messages, sendMessage, addLocalMessage, updateMessageField, loadMoreMessages,
-    typingUsers, sendTyping, userStatuses, isLoadingMessages,
+    typingUsers, thinkingAgents, sendTyping, userStatuses, isLoadingMessages,
     isLoadingCommunities, isLoadingFriends, currentUser, isLoadingCurrentUser,
     reloadCommunities,
   ]);

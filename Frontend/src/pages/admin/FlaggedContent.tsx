@@ -5,12 +5,12 @@
  * Admins can approve, warn, delete, or ban based on severity.
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useCommunityDashboard } from '@/contexts/CommunityDashboardContext';
 import adminService, { FlaggedMessage, PaginationInfo, FlaggedContext } from '@/services/adminService';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -63,7 +63,6 @@ import {
   Ban,
   Trash2,
   MoreHorizontal,
-  Filter,
   RefreshCw,
   ChevronLeft,
   ChevronRight,
@@ -120,7 +119,7 @@ export default function FlaggedContent() {
   });
   const [actionNote, setActionNote] = useState('');
 
-  // ─── Phase 2.1: thread-context side panel ────────────────────────────────
+  // ─── thread-context side panel ────────────────────────────────
   // Clicking a flagged row opens a sheet showing the message in conversation
   // context (±5 surrounding messages). State holds the open flag + which log
   // we're viewing, the fetched payload, and load/error status.
@@ -134,9 +133,9 @@ export default function FlaggedContent() {
   // user (either from a flagged row or from inside the context panel).
   const [detailUserId, setDetailUserId] = useState<number | null>(null);
 
-  // NEW — v2: retroactive scan state
-  const [scanRunning, setScanRunning] = useState(false); // NEW — v2
-  const [scanProgress, setScanProgress] = useState<{ scanned: number; total: number; flagged: number; percent: number } | null>(null); // NEW — v2
+  // retroactive scan state
+  const [scanRunning, setScanRunning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<{ scanned: number; total: number; flagged: number; percent: number } | null>(null);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -175,34 +174,33 @@ export default function FlaggedContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCommunity?.id, currentPage, severity, flagType, status]);
 
-  // NEW — v2: listen for scan progress events forwarded by RealtimeContext
-  useEffect(() => { // NEW — v2
-    const handler = (e: Event) => { // NEW — v2
-      const d = (e as CustomEvent).detail; // NEW — v2
-      if (!selectedCommunity || d.community_id !== selectedCommunity.id) return; // NEW — v2
-      setScanProgress({ scanned: d.scanned, total: d.total, flagged: d.flagged, percent: d.percent }); // NEW — v2
-      if (d.status === 'done' || d.status === 'error') { // NEW — v2
-        setScanRunning(false); // NEW — v2
-        if (d.status === 'done') fetchFlaggedMessages(); // refresh list when done  // NEW — v2
-      } // NEW — v2
-    }; // NEW — v2
-    window.addEventListener('moderation_scan_progress', handler); // NEW — v2
-    return () => window.removeEventListener('moderation_scan_progress', handler); // NEW — v2
+  // listen for scan progress events forwarded by RealtimeContext
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (!selectedCommunity || d.community_id !== selectedCommunity.id) return;
+      setScanProgress({ scanned: d.scanned, total: d.total, flagged: d.flagged, percent: d.percent });
+      if (d.status === 'done' || d.status === 'error') {
+        setScanRunning(false);
+        if (d.status === 'done') fetchFlaggedMessages(); // refresh list when done
+      }
+    };
+    window.addEventListener('moderation_scan_progress', handler);
+    return () => window.removeEventListener('moderation_scan_progress', handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCommunity?.id]); // NEW — v2
+  }, [selectedCommunity?.id]);
 
-  // NEW — v2
-  const triggerScan = async () => { // NEW — v2
-    if (!selectedCommunity || scanRunning) return; // NEW — v2
-    setScanRunning(true); // NEW — v2
-    setScanProgress(null); // NEW — v2
-    try { // NEW — v2
-      await adminService.triggerModerationScan(selectedCommunity.id, { hours_back: 48 }); // NEW — v2
-    } catch (err: any) { // NEW — v2
-      toast({ title: 'Scan Failed', description: err.message, variant: 'destructive' }); // NEW — v2
-      setScanRunning(false); // NEW — v2
-    } // NEW — v2
-  }; // NEW — v2
+  const triggerScan = async () => {
+    if (!selectedCommunity || scanRunning) return;
+    setScanRunning(true);
+    setScanProgress(null);
+    try {
+      await adminService.triggerModerationScan(selectedCommunity.id, { hours_back: 48 });
+    } catch (err: any) {
+      toast({ title: 'Scan Failed', description: err.message, variant: 'destructive' });
+      setScanRunning(false);
+    }
+  };
 
   const handleAction = async () => {
     if (!actionDialog.action || !actionDialog.flagId || !selectedCommunity) return;
@@ -240,7 +238,7 @@ export default function FlaggedContent() {
     setActionDialog({ isOpen: true, action, flagId, username });
   };
 
-  // ─── Phase 2.1: open the thread-context panel for a flagged row ──────────
+  // ─── open the thread-context panel for a flagged row ──────────
   // Opens the sheet immediately (with the row data we already have for the
   // header), then fetches the surrounding messages. Errors surface inline in
   // the panel with a retry button rather than a toast — the panel is the
@@ -269,9 +267,9 @@ export default function FlaggedContent() {
   const getSeverityBadge = (severity: string) => {
     const colors: Record<string, string> = {
       low: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-      medium: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
-      high: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
-      critical: 'bg-red-500/10 text-red-500 border-red-500/20',
+      medium: 'bg-warning/10 text-warning border-yellow-500/20',
+      high: 'bg-warning/10 text-warning border-orange-500/20',
+      critical: 'bg-destructive/10 text-destructive border-red-500/20',
     };
     return (
       <Badge variant="outline" className={cn('text-xs', colors[severity] || colors.medium)}>
@@ -319,7 +317,7 @@ export default function FlaggedContent() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <AlertTriangle className="h-6 w-6 text-orange-500" />
+            <AlertTriangle className="h-6 w-6 text-warning" />
             Flagged Content
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -332,35 +330,35 @@ export default function FlaggedContent() {
         </Button>
       </div>
 
-      {/* NEW — v2: Retroactive Scan Card */}
-      <Card className="border-dashed border-indigo-500/30 bg-indigo-500/5"> {/* NEW — v2 */}
-        <CardContent className="py-4"> {/* NEW — v2 */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"> {/* NEW — v2 */}
-            <div className="flex items-center gap-2"> {/* NEW — v2 */}
-              <ScanLine className="h-5 w-5 text-indigo-400" /> {/* NEW — v2 */}
-              <div> {/* NEW — v2 */}
-                <p className="text-sm font-medium">Retroactive AI Scan</p> {/* NEW — v2 */}
-                <p className="text-xs text-muted-foreground">Re-scan the last 48 h of messages with Gemini AI</p> {/* NEW — v2 */}
-              </div> {/* NEW — v2 */}
-            </div> {/* NEW — v2 */}
-            <Button size="sm" variant="outline" onClick={triggerScan} disabled={scanRunning || !selectedCommunity}> {/* NEW — v2 */}
-              {scanRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanLine className="h-4 w-4 mr-2" />} {/* NEW — v2 */}
-              {scanRunning ? 'Scanning…' : 'Start Scan'} {/* NEW — v2 */}
-            </Button> {/* NEW — v2 */}
-          </div> {/* NEW — v2 */}
-          {scanProgress && ( // NEW — v2
-            <div className="mt-3"> {/* NEW — v2 */}
-              <div className="flex items-center justify-between text-xs text-muted-foreground mb-1"> {/* NEW — v2 */}
-                <span>{scanProgress.scanned} / {scanProgress.total} messages scanned</span> {/* NEW — v2 */}
-                <span className="text-orange-400">{scanProgress.flagged} flagged</span> {/* NEW — v2 */}
-              </div> {/* NEW — v2 */}
-              <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden"> {/* NEW — v2 */}
-                <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${scanProgress.percent}%` }} /> {/* NEW — v2 */}
-              </div> {/* NEW — v2 */}
-            </div> // NEW — v2
-          )} {/* NEW — v2 */}
-        </CardContent> {/* NEW — v2 */}
-      </Card> {/* NEW — v2 */}
+      {/* Retroactive Scan Card */}
+      <Card className="border-dashed border-indigo-500/30 bg-indigo-500/5">
+        <CardContent className="py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <ScanLine className="h-5 w-5 text-indigo-400" />
+              <div>
+                <p className="text-sm font-medium">Retroactive AI Scan</p>
+                <p className="text-xs text-muted-foreground">Re-scan the last 48 h of messages with Gemini AI</p>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={triggerScan} disabled={scanRunning || !selectedCommunity}>
+              {scanRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanLine className="h-4 w-4 mr-2" />}
+              {scanRunning ? 'Scanning…' : 'Start Scan'}
+            </Button>
+          </div>
+          {scanProgress && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                <span>{scanProgress.scanned} / {scanProgress.total} messages scanned</span>
+                <span className="text-warning">{scanProgress.flagged} flagged</span>
+              </div>
+              <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${scanProgress.percent}%` }} />
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Filters */}
       <Card>
@@ -447,7 +445,7 @@ export default function FlaggedContent() {
                   <TableRow>
                     <TableCell colSpan={7} className="h-32 text-center">
                       <div className="flex flex-col items-center gap-2">
-                        <Check className="h-8 w-8 text-green-500" />
+                        <Check className="h-8 w-8 text-success" />
                         <span className="font-medium">No flagged content</span>
                         <span className="text-sm text-muted-foreground">
                           All caught up! Check back later.
@@ -535,13 +533,13 @@ export default function FlaggedContent() {
                             <DropdownMenuItem
                               onClick={() => openActionDialog('approve', message.id, message.user.username)}
                             >
-                              <Check className="h-4 w-4 mr-2 text-green-500" />
+                              <Check className="h-4 w-4 mr-2 text-success" />
                               Approve
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => openActionDialog('warn', message.id, message.user.username)}
                             >
-                              <AlertCircle className="h-4 w-4 mr-2 text-yellow-500" />
+                              <AlertCircle className="h-4 w-4 mr-2 text-warning" />
                               Warn User
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
@@ -555,7 +553,7 @@ export default function FlaggedContent() {
                             <DropdownMenuItem
                               onClick={() => openActionDialog('mute', message.id, message.user.username)}
                             >
-                              <X className="h-4 w-4 mr-2 text-orange-500" />
+                              <X className="h-4 w-4 mr-2 text-warning" />
                               Mute User
                             </DropdownMenuItem>
                             <DropdownMenuItem
@@ -643,12 +641,12 @@ export default function FlaggedContent() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── Phase 2.1: thread-context side panel ─────────────────────────── */}
+      {/* ─── thread-context side panel ─────────────────────────── */}
       <Sheet open={contextOpen} onOpenChange={setContextOpen}>
         <SheetContent side="right" className="w-full sm:max-w-lg p-0 flex flex-col">
           <SheetHeader className="px-6 pt-6 pb-4 border-b text-left">
             <SheetTitle className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-orange-500" />
+              <MessageSquare className="h-5 w-5 text-warning" />
               Conversation context
             </SheetTitle>
             <SheetDescription>
@@ -700,7 +698,7 @@ export default function FlaggedContent() {
                 </p>
               )}
               {contextData?.log.message_deleted && (
-                <p className="text-xs text-orange-500 flex items-center gap-1">
+                <p className="text-xs text-warning flex items-center gap-1">
                   <AlertTriangle className="h-3 w-3" />
                   The flagged message was deleted — showing nearby messages by time.
                 </p>
@@ -739,7 +737,7 @@ export default function FlaggedContent() {
                       key={m.id}
                       className={cn(
                         'flex gap-3 rounded-lg px-3 py-2 -mx-3',
-                        m.is_flagged_anchor && 'bg-orange-500/10 ring-1 ring-orange-500/30'
+                        m.is_flagged_anchor && 'bg-warning/10 ring-1 ring-orange-500/30'
                       )}
                     >
                       <Avatar className="h-8 w-8 shrink-0">
@@ -753,16 +751,16 @@ export default function FlaggedContent() {
                           <span className="text-sm font-medium truncate">
                             {m.sender?.display_name || m.sender?.username || 'Unknown user'}
                           </span>
-                          <span className="text-[11px] text-muted-foreground shrink-0">
+                          <span className="text-xs text-muted-foreground shrink-0">
                             {m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                           </span>
                           {m.is_flagged_anchor && (
-                            <Badge variant="outline" className="text-[10px] border-orange-500/40 text-orange-500 shrink-0">
+                            <Badge variant="outline" className="text-xs border-orange-500/40 text-warning shrink-0">
                               flagged
                             </Badge>
                           )}
                           {m.edited_at && (
-                            <span className="text-[10px] text-muted-foreground shrink-0">(edited)</span>
+                            <span className="text-xs text-muted-foreground shrink-0">(edited)</span>
                           )}
                         </div>
                         <p className={cn(

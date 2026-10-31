@@ -29,8 +29,8 @@ const TYPE_ICON: Record<SystemNotification['type'], React.ElementType> = {
 };
 
 const SEVERITY_STYLE: Record<SystemNotification['severity'], string> = {
-  critical: 'bg-red-500/15 text-red-400',
-  high: 'bg-amber-500/15 text-amber-400',
+  critical: 'bg-destructive/15 text-destructive',
+  high: 'bg-warning/15 text-warning',
   info: 'bg-sky-500/15 text-sky-400',
 };
 
@@ -101,7 +101,7 @@ export default function NotificationsBell() {
         >
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
-            <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full">
+            <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 flex items-center justify-center text-xs font-bold text-white bg-red-500 rounded-full">
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
@@ -119,7 +119,7 @@ export default function NotificationsBell() {
           {unreadCount > 0 && (
             <button
               onClick={markAllRead}
-              className="flex items-center gap-1 text-xs text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))] transition-colors"
+              className="flex items-center gap-1 text-xs text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-accent))] transition-colors"
             >
               <CheckCheck className="w-3.5 h-3.5" />
               Mark all read
@@ -131,7 +131,7 @@ export default function NotificationsBell() {
         <div className="max-h-96 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-10">
-              <Loader2 className="w-5 h-5 animate-spin text-[hsl(var(--theme-accent-primary))]" />
+              <Loader2 className="w-5 h-5 animate-spin text-[hsl(var(--theme-text-accent))]" />
             </div>
           ) : notifications.length === 0 ? (
             <div className="text-center py-10 px-4">
@@ -162,7 +162,7 @@ export default function NotificationsBell() {
                           {isUnread && <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-[hsl(var(--theme-accent-primary))]" />}
                         </span>
                         <span className="block text-xs text-[hsl(var(--theme-text-secondary))] line-clamp-2 mt-0.5">{n.message}</span>
-                        <span className="block text-[11px] text-[hsl(var(--theme-text-muted))] mt-1">{relativeTime(n.created_at)}</span>
+                        <span className="block text-xs text-[hsl(var(--theme-text-muted))] mt-1">{relativeTime(n.created_at)}</span>
                       </span>
                     </button>
                   </li>

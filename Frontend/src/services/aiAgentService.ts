@@ -1,3 +1,4 @@
+// REWRITE: ~1.4k lines; contains several API wrappers with no UI caller (see docs/CODEBASE_AUDIT.md).
 import api from './appService';
 
 export interface SummaryResult {
@@ -19,7 +20,7 @@ export interface DMSummaryResult {
   action_items?: string[];
   message_count: number;
   participants: string[];
-  method?: 'extractive' | 'gemini-ai';
+  method?: 'extractive' | 'deepseek-ai' | 'gemini-ai';
   summary_length?: 'brief' | 'standard' | 'detailed';
   peer_user_id: number;
   time_range?: { start: string; end: string } | string;
@@ -110,7 +111,7 @@ export interface FocusSession {
 export interface AssistantReply {
   success: boolean;
   reply: string;
-  source: 'gemini' | 'lexicon' | 'fallback' | 'empty' | string;
+  source: 'deepseek' | 'lexicon' | 'fallback' | 'empty' | string;
   tag?: string;
 }
 
@@ -381,7 +382,6 @@ class AIAgentService {
   async getMoodHistoryByUser(userId: number, limit: number = 10): Promise<any[]> {
     try {
       const response: any = await api.get(`/api/agents/mood/history/${userId}?limit=${limit}`);
-      console.log('[MOOD] History response:', response);
       return response.mood_history || [];
     } catch (error: any) {
       console.error('[MOOD] History error:', error.data || error.message);
@@ -402,7 +402,6 @@ class AIAgentService {
   async analyzeMessage(text: string): Promise<MoodAnalysis> {
     try {
       const response: any = await api.post('/api/agents/mood/analyze-message', { text });
-      console.log('[MOOD] Analyze response:', response);
       return response.analysis;
     } catch (error: any) {
       console.error('[MOOD] Analyze error:', error.data || error.message);

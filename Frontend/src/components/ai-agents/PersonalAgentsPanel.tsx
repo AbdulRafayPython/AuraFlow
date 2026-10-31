@@ -1,3 +1,4 @@
+// REWRITE: ~1.6k lines; share structure with CommunityAgentsTab.tsx and replace per-agent hard-coding with a data-driven agent catalog.
 // Frontend/src/components/ai-agents/PersonalAgentsPanel.tsx
 //
 // F3 of the autonomous-agent frontend redesign
@@ -282,7 +283,7 @@ export default function PersonalAgentsPanel() {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 px-1 py-8 text-[12px] text-[hsl(var(--theme-text-muted))]">
+      <div className="flex items-center gap-2 px-1 py-8 text-xs text-[hsl(var(--theme-text-muted))]">
         <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
         Loading your personal AI…
       </div>
@@ -294,10 +295,10 @@ export default function PersonalAgentsPanel() {
 
       {/* Top intro — quiet, warmer than channel surfaces (§10.7) */}
       <header className="space-y-1">
-        <h2 className="text-[15px] font-semibold text-[hsl(var(--theme-text-primary))]">
+        <h2 className="text-base font-semibold text-[hsl(var(--theme-text-primary))]">
           Personal AI
         </h2>
-        <p className="text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+        <p className="text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
           Your assistant and personal automations are private to you. They
           never surface in channels without your explicit action.
         </p>
@@ -337,10 +338,10 @@ export default function PersonalAgentsPanel() {
       {/* ─── Personal Automations ─────────────────────────────────── */}
       <section className="space-y-3">
         <div className="flex items-baseline justify-between gap-3">
-          <h3 className="text-[12px] font-semibold uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+          <h3 className="text-xs font-semibold  text-[hsl(var(--theme-text-muted))]">
             Personal Automations
           </h3>
-          <span className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+          <span className="text-xs text-[hsl(var(--theme-text-muted))]">
             Capabilities that work under your assistant.
           </span>
         </div>
@@ -447,7 +448,7 @@ function ActivityFeedToggle() {
   return (
     <section className="space-y-3">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-[12px] font-semibold uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+        <h3 className="text-xs font-semibold  text-[hsl(var(--theme-text-muted))]">
           Activity panel
         </h3>
       </div>
@@ -466,10 +467,10 @@ function ActivityFeedToggle() {
             aria-hidden
           />
           <span className="min-w-0">
-            <span className="block text-[13px] font-medium text-[hsl(var(--theme-text-primary))]">
+            <span className="block text-sm font-medium text-[hsl(var(--theme-text-primary))]">
               Show the activity panel
             </span>
-            <span className="mt-0.5 block text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+            <span className="mt-0.5 block text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
               A small panel in the bottom corner that shows, in plain words, what
               the AI assistants are doing as it happens. Off by default — turn it
               on if you like to keep an eye on things.
@@ -540,20 +541,20 @@ function MyAssistantCard({
         />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-[14px] font-semibold text-[hsl(var(--theme-text-primary))]">
+            <h3 className="text-ui font-semibold text-[hsl(var(--theme-text-primary))]">
               {agentLabel('assistant')}
             </h3>
             <StatusPill enabled={enabled} />
             <VisibilityChip visibility="you-only" />
           </div>
-          <p className="mt-1 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+          <p className="mt-1 text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
             Your private assistant for /ask, @assistant, and the channel Ask popover.
           </p>
         </div>
       </header>
 
       {/* Last action */}
-      <div className="border-t border-[hsl(var(--theme-border-default))] px-4 py-2.5 mt-3 text-[12px] leading-5 text-[hsl(var(--theme-text-muted))]">
+      <div className="border-t border-[hsl(var(--theme-border-default))] px-4 py-2.5 mt-3 text-xs leading-5 text-[hsl(var(--theme-text-muted))]">
         <span className="font-medium text-[hsl(var(--theme-text-secondary))]">Last reply </span>
         {relativeTime(agent.last_used)}
         <span className="px-1.5 text-[hsl(var(--theme-border-default))]">·</span>
@@ -587,7 +588,7 @@ function MyAssistantCard({
             onChange={(e) => onPatch({ language: e.target.value })}
             className={
               'h-7 min-w-[10rem] rounded border border-[hsl(var(--theme-border-default))] ' +
-              'bg-[hsl(var(--theme-bg-secondary))] px-2 text-[12px] ' +
+              'bg-[hsl(var(--theme-bg-secondary))] px-2 text-xs ' +
               'text-[hsl(var(--theme-text-primary))] ' +
               'transition-colors [transition-duration:140ms] hover:bg-[hsl(var(--theme-bg-hover))] ' +
               'focus:outline-none focus:ring-1 focus:ring-[hsl(var(--theme-border-focus))]'
@@ -632,10 +633,10 @@ function MyAssistantCard({
                     {selected && <Check className="h-2 w-2 text-white" aria-hidden />}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[12px] font-medium text-[hsl(var(--theme-text-primary))]">
+                    <p className="text-xs font-medium text-[hsl(var(--theme-text-primary))]">
                       {mode.title}
                     </p>
-                    <p className="mt-0.5 text-[11px] leading-4 text-[hsl(var(--theme-text-muted))]">
+                    <p className="mt-0.5 text-xs leading-4 text-[hsl(var(--theme-text-muted))]">
                       {mode.hint}
                     </p>
                   </div>
@@ -660,7 +661,7 @@ function MyAssistantCard({
               style={{ color: 'hsl(var(--agent-accent-wellness))' }}
               aria-hidden
             />
-            <p className="text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+            <p className="text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
               The assistant remembers your last 5 turns in a Redis list keyed
               to your user id. It is private to you and kept until you clear
               it. We use it for follow-up questions and to keep your tone
@@ -685,10 +686,10 @@ function MyAssistantCard({
                 aria-hidden
               />
               <span className="min-w-0">
-                <span className="block text-[12px] font-medium text-[hsl(var(--theme-text-primary))]">
+                <span className="block text-xs font-medium text-[hsl(var(--theme-text-primary))]">
                   Pause conversation memory
                 </span>
-                <span className="mt-0.5 block text-[11px] leading-4 text-[hsl(var(--theme-text-muted))]">
+                <span className="mt-0.5 block text-xs leading-4 text-[hsl(var(--theme-text-muted))]">
                   Stops reading and writing the rolling 5-turn context. Tone,
                   language, and proactivity stay as you set them.
                 </span>
@@ -714,7 +715,7 @@ function MyAssistantCard({
               disabled={clearing}
               className={
                 'inline-flex items-center gap-1.5 rounded border border-[hsl(var(--theme-border-default))] ' +
-                'bg-[hsl(var(--theme-bg-elevated))] px-2.5 py-1 text-[12px] font-medium ' +
+                'bg-[hsl(var(--theme-bg-elevated))] px-2.5 py-1 text-xs font-medium ' +
                 'text-[hsl(var(--theme-text-primary))] ' +
                 'transition-colors [transition-duration:140ms] hover:bg-[hsl(var(--theme-bg-hover))] ' +
                 'disabled:opacity-60 disabled:cursor-not-allowed'
@@ -731,7 +732,7 @@ function MyAssistantCard({
               onClick={onResetPreferences}
               className={
                 'inline-flex items-center gap-1.5 rounded border border-[hsl(var(--theme-border-default))] ' +
-                'bg-[hsl(var(--theme-bg-elevated))] px-2.5 py-1 text-[12px] font-medium ' +
+                'bg-[hsl(var(--theme-bg-elevated))] px-2.5 py-1 text-xs font-medium ' +
                 'text-[hsl(var(--theme-text-primary))] ' +
                 'transition-colors [transition-duration:140ms] hover:bg-[hsl(var(--theme-bg-hover))]'
               }
@@ -769,10 +770,10 @@ function AssistantActivationCard({ onActivate }: { onActivate: () => void | Prom
       <div className="flex items-start gap-3">
         <Sparkles className="mt-0.5 h-4 w-4 shrink-0" style={{ color: accent }} aria-hidden />
         <div className="min-w-0 flex-1">
-          <h3 className="text-[14px] font-semibold text-[hsl(var(--theme-text-primary))]">
+          <h3 className="text-ui font-semibold text-[hsl(var(--theme-text-primary))]">
             Activate your AI Assistant
           </h3>
-          <p className="mt-1 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+          <p className="mt-1 text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
             One private layer across channels. You’ll be able to set
             tone, language, and how proactive it can be.
           </p>
@@ -782,7 +783,7 @@ function AssistantActivationCard({ onActivate }: { onActivate: () => void | Prom
           onClick={() => void onActivate()}
           className={
             'shrink-0 rounded border border-[hsl(var(--theme-border-default))] ' +
-            'bg-[hsl(var(--theme-bg-secondary))] px-3 py-1.5 text-[12px] font-medium ' +
+            'bg-[hsl(var(--theme-bg-secondary))] px-3 py-1.5 text-xs font-medium ' +
             'text-[hsl(var(--theme-text-primary))] ' +
             'transition-colors [transition-duration:140ms] hover:bg-[hsl(var(--theme-bg-hover))]'
           }
@@ -825,10 +826,10 @@ function AutomationCard({ spec, agent, onToggle, onActivate, onSaveSettings }: A
           style={{ backgroundColor: accent }}
         />
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-[hsl(var(--theme-text-primary))]">
+          <p className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
             {agentLabel(spec.agentType)}
           </p>
-          <p className="mt-0.5 text-[11px] leading-4 text-[hsl(var(--theme-text-muted))]">
+          <p className="mt-0.5 text-xs leading-4 text-[hsl(var(--theme-text-muted))]">
             {spec.description}
           </p>
         </div>
@@ -837,7 +838,7 @@ function AutomationCard({ spec, agent, onToggle, onActivate, onSaveSettings }: A
           onClick={() => void onActivate()}
           className={
             'shrink-0 rounded border border-[hsl(var(--theme-border-default))] ' +
-            'bg-[hsl(var(--theme-bg-secondary))] px-2.5 py-1 text-[12px] font-medium ' +
+            'bg-[hsl(var(--theme-bg-secondary))] px-2.5 py-1 text-xs font-medium ' +
             'text-[hsl(var(--theme-text-primary))] ' +
             'transition-colors [transition-duration:140ms] hover:bg-[hsl(var(--theme-bg-hover))]'
           }
@@ -864,16 +865,16 @@ function AutomationCard({ spec, agent, onToggle, onActivate, onSaveSettings }: A
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[13px] font-medium text-[hsl(var(--theme-text-primary))]">
+            <p className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
               {agentLabel(spec.agentType)}
             </p>
             <StatusPill enabled={agent.enabled} />
             <VisibilityChip visibility={spec.visibility} />
           </div>
-          <p className="mt-0.5 text-[12px] leading-5 text-[hsl(var(--theme-text-secondary))]">
+          <p className="mt-0.5 text-xs leading-5 text-[hsl(var(--theme-text-secondary))]">
             {spec.description}
           </p>
-          <p className="mt-1 flex items-center gap-1.5 text-[11px] leading-4 text-[hsl(var(--theme-text-muted))]">
+          <p className="mt-1 flex items-center gap-1.5 text-xs leading-4 text-[hsl(var(--theme-text-muted))]">
             <Activity className="h-3 w-3" aria-hidden />
             <span className="font-medium text-[hsl(var(--theme-text-secondary))]">Last action</span>
             <span>{relativeTime(agent.last_used)}</span>
@@ -893,7 +894,7 @@ function AutomationCard({ spec, agent, onToggle, onActivate, onSaveSettings }: A
             type="button"
             onClick={() => setOpen((v) => !v)}
             className={
-              'inline-flex items-center gap-0.5 text-[11px] font-medium ' +
+              'inline-flex items-center gap-0.5 text-xs font-medium ' +
               'text-[hsl(var(--theme-text-muted))] ' +
               'transition-colors [transition-duration:140ms] hover:text-[hsl(var(--theme-text-primary))]'
             }
@@ -912,7 +913,7 @@ function AutomationCard({ spec, agent, onToggle, onActivate, onSaveSettings }: A
         <div
           className={
             'border-t border-[hsl(var(--theme-border-default))] ' +
-            'bg-[hsl(var(--theme-bg-secondary))] px-3 py-2.5 text-[12px] leading-5'
+            'bg-[hsl(var(--theme-bg-secondary))] px-3 py-2.5 text-xs leading-5'
           }
         >
           <p className="text-[hsl(var(--theme-text-secondary))]">
@@ -1101,28 +1102,28 @@ function SummarySchedulePanel({ accent }: { accent: string }) {
 
   const inputCls =
     'h-8 w-full rounded border border-[hsl(var(--theme-border-default))] ' +
-    'bg-[hsl(var(--theme-bg-elevated))] px-2 text-[12px] text-[hsl(var(--theme-text-primary))] ' +
+    'bg-[hsl(var(--theme-bg-elevated))] px-2 text-xs text-[hsl(var(--theme-text-primary))] ' +
     'focus:outline-none focus:ring-1 focus:ring-[hsl(var(--theme-border-focus))]';
 
   return (
     <div className="mt-3">
       <div className="mb-2 flex items-center gap-1.5">
         <CalendarClock className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+        <p className="text-xs font-semibold  text-[hsl(var(--theme-text-muted))]">
           Daily summary schedules
         </p>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-[hsl(var(--theme-border-default))]">
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-5 text-[12px] text-[hsl(var(--theme-text-muted))]">
+          <div className="flex items-center justify-center gap-2 py-5 text-xs text-[hsl(var(--theme-text-muted))]">
             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
             Loading your schedules…
           </div>
         ) : (
           <>
             {schedules.length === 0 && !showAdd && (
-              <p className="px-3 py-4 text-center text-[12px] leading-5 text-[hsl(var(--theme-text-muted))]">
+              <p className="px-3 py-4 text-center text-xs leading-5 text-[hsl(var(--theme-text-muted))]">
                 No schedules yet. Add one to get a private recap delivered at your preferred time each day.
               </p>
             )}
@@ -1138,7 +1139,7 @@ function SummarySchedulePanel({ accent }: { accent: string }) {
                 }
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12px] font-medium text-[hsl(var(--theme-text-primary))]">
+                  <p className="truncate text-xs font-medium text-[hsl(var(--theme-text-primary))]">
                     #{s.channel_name || `channel ${s.channel_id}`}
                     {s.community_name && (
                       <span className="ml-1.5 font-normal text-[hsl(var(--theme-text-muted))]">
@@ -1146,7 +1147,7 @@ function SummarySchedulePanel({ accent }: { accent: string }) {
                       </span>
                     )}
                   </p>
-                  <p className="mt-0.5 flex items-center gap-1 text-[11px] text-[hsl(var(--theme-text-muted))]">
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-[hsl(var(--theme-text-muted))]">
                     <Clock className="h-3 w-3" aria-hidden />
                     <span className="tabular-nums">{(s.schedule_time || '').slice(0, 5)}</span>
                     <span className="opacity-70">({s.timezone || 'UTC'})</span>
@@ -1166,7 +1167,7 @@ function SummarySchedulePanel({ accent }: { accent: string }) {
                     className={
                       'rounded p-1 text-[hsl(var(--theme-text-muted))] ' +
                       'transition-colors [transition-duration:140ms] ' +
-                      'hover:bg-red-500/10 hover:text-red-400'
+                      'hover:bg-destructive/10 hover:text-destructive'
                     }
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden />
@@ -1179,7 +1180,7 @@ function SummarySchedulePanel({ accent }: { accent: string }) {
             {showAdd ? (
               <div className="space-y-2.5 bg-[hsl(var(--theme-bg-secondary))] px-3 py-3">
                 <div>
-                  <label className="mb-1 block text-[11px] font-medium text-[hsl(var(--theme-text-muted))]">
+                  <label className="mb-1 block text-xs font-medium text-[hsl(var(--theme-text-muted))]">
                     Community
                   </label>
                   <select
@@ -1195,7 +1196,7 @@ function SummarySchedulePanel({ accent }: { accent: string }) {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-[11px] font-medium text-[hsl(var(--theme-text-muted))]">
+                  <label className="mb-1 block text-xs font-medium text-[hsl(var(--theme-text-muted))]">
                     Channel
                   </label>
                   <select
@@ -1220,7 +1221,7 @@ function SummarySchedulePanel({ accent }: { accent: string }) {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-[11px] font-medium text-[hsl(var(--theme-text-muted))]">
+                  <label className="mb-1 block text-xs font-medium text-[hsl(var(--theme-text-muted))]">
                     Time (your local time · {localTz})
                   </label>
                   <input
@@ -1237,7 +1238,7 @@ function SummarySchedulePanel({ accent }: { accent: string }) {
                     onClick={resetForm}
                     className={
                       'inline-flex items-center gap-1 rounded border border-[hsl(var(--theme-border-default))] ' +
-                      'bg-[hsl(var(--theme-bg-elevated))] px-2.5 py-1 text-[12px] font-medium ' +
+                      'bg-[hsl(var(--theme-bg-elevated))] px-2.5 py-1 text-xs font-medium ' +
                       'text-[hsl(var(--theme-text-secondary))] ' +
                       'transition-colors [transition-duration:140ms] hover:bg-[hsl(var(--theme-bg-hover))]'
                     }
@@ -1251,7 +1252,7 @@ function SummarySchedulePanel({ accent }: { accent: string }) {
                     disabled={!selChannel || saving}
                     className={
                       'inline-flex items-center gap-1.5 rounded border border-transparent px-3 py-1 ' +
-                      'text-[12px] font-medium text-white disabled:opacity-60 disabled:cursor-not-allowed'
+                      'text-xs font-medium text-white disabled:opacity-60 disabled:cursor-not-allowed'
                     }
                     style={{ backgroundColor: accent }}
                   >
@@ -1267,7 +1268,7 @@ function SummarySchedulePanel({ accent }: { accent: string }) {
                 type="button"
                 onClick={() => setShowAdd(true)}
                 className={
-                  'flex w-full items-center justify-center gap-1.5 px-3 py-2.5 text-[12px] font-medium ' +
+                  'flex w-full items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium ' +
                   'text-[hsl(var(--theme-text-secondary))] ' +
                   'transition-colors [transition-duration:140ms] hover:bg-[hsl(var(--theme-bg-hover))]'
                 }
@@ -1325,7 +1326,7 @@ function AutomationSettingsControls({
 
   if (keys.length === 0) {
     return (
-      <p className="mt-2 text-[11px] text-[hsl(var(--theme-text-muted))]">
+      <p className="mt-2 text-xs text-[hsl(var(--theme-text-muted))]">
         Nothing to configure here — this one just works quietly in the background.
       </p>
     );
@@ -1350,9 +1351,9 @@ function AutomationSettingsControls({
         return (
           <div key={k} className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <p className="text-[12px] font-medium text-[hsl(var(--theme-text-primary))]">{meta.label}</p>
+              <p className="text-xs font-medium text-[hsl(var(--theme-text-primary))]">{meta.label}</p>
               {meta.help && (
-                <p className="mt-0.5 text-[11px] leading-4 text-[hsl(var(--theme-text-muted))]">{meta.help}</p>
+                <p className="mt-0.5 text-xs leading-4 text-[hsl(var(--theme-text-muted))]">{meta.help}</p>
               )}
             </div>
             <div className="shrink-0 pt-0.5">
@@ -1371,7 +1372,7 @@ function AutomationSettingsControls({
                   onChange={(e) => set(k, e.target.value)}
                   className={
                     'h-7 w-40 rounded border border-[hsl(var(--theme-border-default))] ' +
-                    'bg-[hsl(var(--theme-bg-elevated))] px-2 text-[12px] text-[hsl(var(--theme-text-primary))] ' +
+                    'bg-[hsl(var(--theme-bg-elevated))] px-2 text-xs text-[hsl(var(--theme-text-primary))] ' +
                     'focus:outline-none focus:ring-1 focus:ring-[hsl(var(--theme-border-focus))]'
                   }
                 />
@@ -1389,7 +1390,7 @@ function AutomationSettingsControls({
             disabled={saving}
             className={
               'inline-flex items-center gap-1.5 rounded border border-transparent px-3 py-1 ' +
-              'text-[12px] font-medium text-white disabled:opacity-60'
+              'text-xs font-medium text-white disabled:opacity-60'
             }
             style={{ backgroundColor: accent }}
           >
@@ -1430,7 +1431,7 @@ function NumberControl({
           className="h-1 w-28 cursor-pointer appearance-none rounded-full bg-[hsl(var(--theme-bg-secondary))]"
           style={{ accentColor: accent }}
         />
-        <span className="w-9 text-right font-mono text-[12px] tabular-nums text-[hsl(var(--theme-text-secondary))]">
+        <span className="w-9 text-right font-mono text-xs tabular-nums text-[hsl(var(--theme-text-secondary))]">
           {value}
         </span>
       </div>
@@ -1445,7 +1446,7 @@ function NumberControl({
       onChange={(e) => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
       className={
         'h-7 w-24 rounded border border-[hsl(var(--theme-border-default))] ' +
-        'bg-[hsl(var(--theme-bg-elevated))] px-2 text-right text-[12px] text-[hsl(var(--theme-text-primary))] ' +
+        'bg-[hsl(var(--theme-bg-elevated))] px-2 text-right text-xs text-[hsl(var(--theme-text-primary))] ' +
         'focus:outline-none focus:ring-1 focus:ring-[hsl(var(--theme-border-focus))]'
       }
     />
@@ -1469,7 +1470,7 @@ function SettingSelect({
       onChange={(e) => onChange(e.target.value)}
       className={
         'h-7 min-w-[9rem] rounded border border-[hsl(var(--theme-border-default))] ' +
-        'bg-[hsl(var(--theme-bg-elevated))] px-2 text-[12px] text-[hsl(var(--theme-text-primary))] ' +
+        'bg-[hsl(var(--theme-bg-elevated))] px-2 text-xs text-[hsl(var(--theme-text-primary))] ' +
         'focus:outline-none focus:ring-1 focus:ring-[hsl(var(--theme-border-focus))]'
       }
     >
@@ -1498,11 +1499,11 @@ function Subsection({
   return (
     <div className="border-t border-[hsl(var(--theme-border-default))] px-4 py-3">
       <div className="flex items-baseline justify-between gap-3 pb-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+        <p className="text-xs font-semibold  text-[hsl(var(--theme-text-muted))]">
           {title}
         </p>
         {hint && (
-          <p className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+          <p className="text-xs text-[hsl(var(--theme-text-muted))]">
             {hint}
           </p>
         )}
@@ -1516,7 +1517,7 @@ function StatusPill({ enabled }: { enabled: boolean }) {
   return (
     <span
       className={
-        'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium ' +
+        'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs font-medium ' +
         (enabled
           ? 'border-[hsl(var(--agent-accent-support)_/_0.4)] text-[hsl(var(--agent-accent-support))]'
           : 'border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-muted))]')
@@ -1553,7 +1554,7 @@ function ChipRadio({
       onClick={onSelect}
       aria-pressed={selected}
       className={
-        'rounded-full border px-2.5 py-1 text-[12px] font-medium ' +
+        'rounded-full border px-2.5 py-1 text-xs font-medium ' +
         'transition-colors [transition-duration:140ms] ' +
         (selected
           ? 'border-transparent text-white'

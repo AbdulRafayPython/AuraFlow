@@ -227,13 +227,10 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addPendingRequest = useCallback((request: FriendRequest) => {
-    console.log('[FriendsContext] addPendingRequest called with:', request);
     setPendingRequests(prev => {
       if (prev.some(r => r.id === request.id)) {
-        console.log('[FriendsContext] ⚠️ Request already exists, skipping:', request.id);
         return prev;
       }
-      console.log('[FriendsContext] ✅ Adding new request to state:', request.id);
       return [...prev, request];
     });
   }, []);
@@ -252,13 +249,11 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
     
     const loadInitialData = async () => {
       try {
-        console.log('[FriendsContext] Loading initial data...');
         await Promise.all([
           getFriends(),
           getPendingRequests(),
           getSentRequests()
         ]);
-        console.log('[FriendsContext] Initial data loaded successfully');
       } catch (error) {
         console.error('[FriendsContext] Error loading initial data:', error);
       }
@@ -270,10 +265,8 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
   // Setup socket listeners - register handlers immediately
   // (handlers are just array pushes that work regardless of connection state)
   useEffect(() => {
-    console.log('[FriendsContext] 🔌 Setting up socket listeners...');
     // Friend request received (receiver side)
     const unsubscribeFriendRequest = socketService.onFriendRequest((request) => {
-      console.log('[FriendsContext] 🔔 Friend request received via socket:', JSON.stringify(request));
       
       setPendingRequests(prev => {
         const isDuplicate = prev.some(r => r.id === request.id);
@@ -304,7 +297,6 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
 
     // Friend status changed (online/offline/accepted/rejected/removed/blocked/cancelled)
     const unsubscribeFriendStatus = socketService.onFriendStatus((data) => {
-      console.log('[FriendsContext] Friend status changed:', data);
       if (data.status === "online" || data.status === "offline" || data.status === "idle" || data.status === "dnd") {
         setFriends(prev => prev.map(f => 
           f.id === data.friend_id ? { ...f, status: data.status as any } : f
@@ -317,14 +309,12 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
       } else if (data.status === "unblocked") {
         getBlockedUsers();
       } else if (data.status === "accepted") {
-        console.log('[FriendsContext] Friend request accepted, reloading friends & sentRequests');
         getFriends();
         // Remove from sentRequests (sender side) — by friend_id (the acceptor)
         setSentRequests(prev => prev.filter(r => r.receiver_id !== data.friend_id));
         // Remove from pendingRequests (receiver side) — by friend_id (the sender)
         setPendingRequests(prev => prev.filter(r => r.sender_id !== data.friend_id));
       } else if (data.status === "rejected") {
-        console.log('[FriendsContext] Friend request rejected, removing from sentRequests');
         // Sender sees their sent request disappear in real-time
         if (data.request_id) {
           setSentRequests(prev => prev.filter(r => r.id !== data.request_id));
@@ -333,7 +323,6 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
           setSentRequests(prev => prev.filter(r => r.receiver_id !== data.friend_id));
         }
       } else if (data.status === "cancelled") {
-        console.log('[FriendsContext] Friend request cancelled, removing from pendingRequests');
         // Receiver sees the incoming request disappear in real-time
         if (data.request_id) {
           setPendingRequests(prev => prev.filter(r => r.id !== data.request_id));

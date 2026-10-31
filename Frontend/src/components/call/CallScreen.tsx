@@ -2,7 +2,7 @@
 // Handles connected + ended + failed states
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Maximize2, Minimize2 } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-react';
 import { useCall } from '@/contexts/CallContext';
 import { getAvatarUrl } from '@/lib/utils';
 
@@ -89,11 +89,11 @@ const CallScreen: React.FC = () => {
         }`}
       >
         {/* Gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900" />
+        <div className="absolute inset-0 bg-slate-900" />
 
         {/* Subtle radial glow behind avatar */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl" />
+          
         </div>
 
         {/* Content */}
@@ -121,8 +121,8 @@ const CallScreen: React.FC = () => {
           <div className="flex items-center gap-2">
             {isActive ? (
               <>
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-white/80 text-lg font-mono tracking-wider">
+                <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-white/80 text-lg font-mono">
                   {formatDuration(callDuration)}
                 </span>
               </>
@@ -217,7 +217,7 @@ const CallScreen: React.FC = () => {
 
       {/* Top bar — name & duration */}
       <div
-        className={`absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/60 to-transparent flex items-center justify-between transition-opacity duration-300 ${
+        className={`absolute top-0 left-0 right-0 p-4 bg-black/60 flex items-center justify-between transition-opacity duration-300 ${
           showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
@@ -236,7 +236,7 @@ const CallScreen: React.FC = () => {
 
       {/* Bottom control bar */}
       <div
-        className={`absolute bottom-0 left-0 right-0 pb-8 pt-6 bg-gradient-to-t from-black/70 to-transparent flex items-center justify-center transition-opacity duration-300 ${
+        className={`absolute bottom-0 left-0 right-0 pb-8 pt-6 bg-black/70 flex items-center justify-center transition-opacity duration-300 ${
           showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
@@ -246,7 +246,7 @@ const CallScreen: React.FC = () => {
             onClick={toggleMic}
             className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 ${
               isMicOn
-                ? 'bg-white/15 hover:bg-white/25 text-white backdrop-blur-sm'
+                ? 'bg-white/15 hover:bg-white/25 text-white'
                 : 'bg-red-500/90 hover:bg-red-400 text-white'
             }`}
             title={isMicOn ? 'Mute' : 'Unmute'}
@@ -259,7 +259,7 @@ const CallScreen: React.FC = () => {
             onClick={toggleCamera}
             className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 ${
               isCameraOn
-                ? 'bg-white/15 hover:bg-white/25 text-white backdrop-blur-sm'
+                ? 'bg-white/15 hover:bg-white/25 text-white'
                 : 'bg-red-500/90 hover:bg-red-400 text-white'
             }`}
             title={isCameraOn ? 'Camera Off' : 'Camera On'}

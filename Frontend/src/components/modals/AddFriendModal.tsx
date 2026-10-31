@@ -1,8 +1,8 @@
 // components/modals/AddFriendModal.tsx
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { getAvatarUrl } from "@/lib/utils";
-import { X, Search, User, UserPlus, Loader, CheckCircle } from "lucide-react";
+import { Search, User, UserPlus, Loader, CheckCircle } from "lucide-react";
 import { channelService } from "@/services/channelService";
 import type { User as UserType } from "@/types";
 import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
@@ -90,14 +90,14 @@ export default function AddFriendModal({
         <div className="px-5 py-4 border-b border-[hsl(var(--theme-border-subtle))]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] rounded-xl flex items-center justify-center shadow-md">
+              <div className="w-10 h-10 bg-[hsl(var(--theme-accent-primary))] rounded-xl flex items-center justify-center shadow-md">
                 <UserPlus className="w-[18px] h-[18px] text-white" />
               </div>
               <div>
                 <h2 className="text-base font-semibold text-[hsl(var(--theme-text-primary))]">
                   Add Friend
                 </h2>
-                <p className="text-[11px] text-[hsl(var(--theme-text-muted))] mt-0.5">
+                <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
                   Search and connect with people
                 </p>
               </div>
@@ -125,9 +125,9 @@ export default function AddFriendModal({
           {error && (
             <div className="m-4 p-3 bg-red-500/8 border border-red-500/20 rounded-xl flex items-start gap-2.5">
               <div className="w-4 h-4 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span className="text-red-400 text-[10px] font-bold">!</span>
+                <span className="text-red-400 text-xs font-bold">!</span>
               </div>
-              <p className="text-red-400 text-[13px] leading-relaxed">{error}</p>
+              <p className="text-red-400 text-sm leading-relaxed">{error}</p>
             </div>
           )}
 
@@ -149,16 +149,16 @@ export default function AddFriendModal({
                         className="w-10 h-10 rounded-xl object-cover flex-shrink-0"
                       />
                     ) : (
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center font-semibold text-sm text-white flex-shrink-0 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))]">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center font-semibold text-sm text-white flex-shrink-0 bg-[hsl(var(--theme-accent-primary))]">
                         {user.display_name?.[0]?.toUpperCase() || user.username[0].toUpperCase()}
                       </div>
                     )}
 
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-[13px] font-medium truncate text-[hsl(var(--theme-text-primary))]">
+                      <h3 className="text-sm font-medium truncate text-[hsl(var(--theme-text-primary))]">
                         {user.display_name || user.username}
                       </h3>
-                      <p className="text-[11px] text-[hsl(var(--theme-text-muted))]">
+                      <p className="text-xs text-[hsl(var(--theme-text-muted))]">
                         @{user.username}
                       </p>
                     </div>
@@ -168,10 +168,10 @@ export default function AddFriendModal({
                   <button
                     onClick={() => handleSendRequest(user)}
                     disabled={sendingId === user.id || user.sent_request}
-                    className={`ml-3 flex-shrink-0 py-2 px-3.5 rounded-lg text-[12px] font-medium transition-all duration-150 flex items-center gap-1.5 ${
+                    className={`ml-3 flex-shrink-0 py-2 px-3.5 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 ${
                       user.sent_request
                         ? "bg-green-500/15 text-green-400 cursor-default border border-green-500/20"
-                        : "text-white bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-sm hover:shadow-md hover:shadow-[hsl(var(--theme-accent-primary))/0.25] disabled:opacity-50 active:scale-[0.98]"
+                        : "text-white bg-[hsl(var(--theme-accent-primary))] shadow-sm hover:shadow-md hover:shadow-[hsl(var(--theme-accent-primary))/0.25] disabled:opacity-50 active:scale-[0.98]"
                     }`}
                   >
                     {sendingId === user.id ? (
@@ -197,17 +197,17 @@ export default function AddFriendModal({
           ) : isSearching ? (
             <div className="flex flex-col items-center justify-center py-16">
               <div className="w-8 h-8 border-2 border-[hsl(var(--theme-accent-primary))/0.3] border-t-[hsl(var(--theme-accent-primary))] rounded-full animate-spin" />
-              <p className="text-[12px] text-[hsl(var(--theme-text-muted))] mt-3">Searching...</p>
+              <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-3">Searching...</p>
             </div>
           ) : searchTerm ? (
             <div className="flex flex-col items-center justify-center py-16 px-6">
               <div className="w-12 h-12 rounded-xl bg-[hsl(var(--theme-bg-secondary))] flex items-center justify-center mb-3">
                 <User className="w-6 h-6 text-[hsl(var(--theme-text-muted))]" />
               </div>
-              <p className="text-[13px] text-center text-[hsl(var(--theme-text-secondary))]">
+              <p className="text-sm text-center text-[hsl(var(--theme-text-secondary))]">
                 No users found
               </p>
-              <p className="text-[11px] text-center mt-1 text-[hsl(var(--theme-text-muted))]">
+              <p className="text-xs text-center mt-1 text-[hsl(var(--theme-text-muted))]">
                 Try a different username or email
               </p>
             </div>
@@ -216,10 +216,10 @@ export default function AddFriendModal({
               <div className="w-12 h-12 rounded-xl bg-[hsl(var(--theme-bg-secondary))] flex items-center justify-center mb-3">
                 <Search className="w-6 h-6 text-[hsl(var(--theme-text-muted))]" />
               </div>
-              <p className="text-[13px] text-center text-[hsl(var(--theme-text-secondary))]">
+              <p className="text-sm text-center text-[hsl(var(--theme-text-secondary))]">
                 Search for people
               </p>
-              <p className="text-[11px] text-center mt-1 text-[hsl(var(--theme-text-muted))]">
+              <p className="text-xs text-center mt-1 text-[hsl(var(--theme-text-muted))]">
                 Enter a username or email to find friends
               </p>
             </div>

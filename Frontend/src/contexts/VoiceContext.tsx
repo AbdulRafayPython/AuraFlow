@@ -101,36 +101,22 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
       setIsLoading(true);
       setError(null);
       try {
-        console.log(`[VOICE] Attempting to join voice channel ${channelId}`);
         
-        // Request microphone access first
-        console.log("[VOICE] Requesting microphone access");
         const stream = await voiceService.requestMicrophoneAccess();
         
-        console.log("[VOICE] Microphone access granted");
         console.log("[VOICE] Audio tracks:", stream.getAudioTracks().length);
         
         // Log audio track status
         stream.getAudioTracks().forEach((track, idx) => {
-          console.log(`[VOICE] 🎤 Track ${idx}:`, {
-            id: track.id,
-            label: track.label,
-            enabled: track.enabled,
-            readyState: track.readyState,
-            muted: track.muted,
-          });
         });
         
         localStreamRef.current = stream;
         setLocalStream(stream);
 
-        // Join via service
-        console.log("[VOICE] Calling voiceService.joinVoiceChannel");
         await voiceService.joinVoiceChannel(channelId);
 
         // Fetch members and set up WebRTC connections
         const members = await voiceService.getChannelMembers(channelId);
-        console.log(`[VOICE] Got ${members.length} members, setting up WebRTC`);
         
         // Get current user info from AuthContext
         const currentUsername = user?.username;
@@ -146,7 +132,6 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
             const shouldSendOffer = currentUserId > member.id;
             
             if (!webrtcService.hasPeerConnection(peerUsername)) {
-              console.log(`[VOICE] 🔗 Creating peer connection for ${peerUsername} (shouldSendOffer=${shouldSendOffer}, me=${currentUserId} vs them=${member.id})`);
               const pc = webrtcService.createPeerConnection(peerUsername, (candidate) => {
                 // Send ICE candidate to remote peer
                 voiceService.sendIceCandidate(channelId, peerUsername, candidate);
@@ -155,29 +140,20 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
               // Add local stream to peer connection
               if (localStreamRef.current) {
                 const audioTracks = localStreamRef.current.getAudioTracks();
-                console.log(`[VOICE] 🎵 Adding ${audioTracks.length} audio tracks to ${peerUsername}`);
                 
                 audioTracks.forEach((track, idx) => {
                   const sender = pc.addTrack(track, localStreamRef.current!);
-                  console.log(`[VOICE] ✅ Track ${idx} added to ${peerUsername}`, {
-                    enabled: track.enabled,
-                    readyState: track.readyState,
-                  });
                 });
               }
 
               // Only create offer if our ID is higher (collision avoidance)
               if (shouldSendOffer) {
                 try {
-                  console.log(`[VOICE] 📤 Creating offer for ${peerUsername}`);
                   const offer = await webrtcService.createOffer(peerUsername);
-                  console.log(`[VOICE] 📤 Sending offer to ${peerUsername}`);
                   voiceService.sendOffer(channelId, peerUsername, offer);
                 } catch (error) {
                   console.error(`[VOICE] ❌ Error creating offer for ${peerUsername}:`, error);
                 }
-              } else {
-                console.log(`[VOICE] ⏳ Waiting for offer from ${peerUsername} (they have higher ID: ${member.id} > ${currentUserId})`);
               }
             }
           }
@@ -192,7 +168,6 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
         // Start speaking detection
         startSpeakingDetection(stream, channelId);
 
-        console.log(`[VOICE] ✅ Successfully joined channel ${channelId}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : "Failed to join voice channel";
         console.error("[VOICE] ❌ Join error:", errorMsg);
@@ -219,7 +194,6 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
   const leaveVoiceChannel = useCallback(async () => {
     try {
       if (currentVoiceChannel) {
-        console.log(`[VOICE] Leaving voice channel ${currentVoiceChannel}`);
         
         // Stop speaking detection
         stopSpeakingDetection();
@@ -245,7 +219,6 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
         setError(null);
         setVoiceRoomModalOpen(false);
 
-        console.log("[VOICE] ✅ Left voice channel");
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Failed to leave voice channel";
@@ -263,13 +236,11 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
 
         audioTracks.forEach((track) => {
           track.enabled = newState;
-          console.log(`[VOICE] 🎤 Track ${track.id} enabled:`, newState);
         });
 
         setIsAudioEnabled(newState);
         voiceService.toggleMicrophone(currentVoiceChannel, !newState);
 
-        console.log(`[VOICE] Audio ${newState ? "enabled" : "disabled"}`);
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Failed to toggle audio";
@@ -285,7 +256,6 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
         setIsDeafened(newDeafState);
         voiceService.toggleDeafen(currentVoiceChannel, newDeafState, !isAudioEnabled);
 
-        console.log(`[VOICE] Deafened: ${newDeafState}`);
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Failed to toggle deafen";
@@ -392,12 +362,10 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
     const currentUsername = user?.username || null;
     const currentUserId = user?.id || 0;
 
-    console.log("[VOICE] Setting up socket listeners (socketReady=true)");
 
     // ── Presence events ──
 
     const onMembersUpdate = (data: any) => {
-      console.log("[VOICE] 👥 Members updated:", data.members?.length);
       const members = (data.members || []).map((m: any) => ({
         ...m,
         is_muted: m.is_muted || false,
@@ -408,7 +376,6 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
 
     const onUserJoined = (data: any) => {
       const channelId = currentVoiceChannelRef.current;
-      console.log("[VOICE] 🆕 User joined:", data.username, "ID:", data.user_id, "| my channel:", channelId);
 
       // Only set up WebRTC if WE are currently in a voice channel
       if (channelId && data.username !== currentUsername) {
@@ -417,10 +384,8 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
 
         // Collision detection: only the user with HIGHER ID sends offer
         const shouldSendOffer = currentUserId > newUserId;
-        console.log(`[VOICE] Should send offer: ${shouldSendOffer} (${currentUserId} > ${newUserId})`);
 
         if (!webrtcService.hasPeerConnection(peerUsername)) {
-          console.log(`[VOICE] 🔗 Creating peer for new user ${peerUsername}`);
 
           const pc = webrtcService.createPeerConnection(peerUsername, (candidate) => {
             const ch = currentVoiceChannelRef.current;
@@ -432,7 +397,6 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
             localStreamRef.current.getAudioTracks().forEach((track) => {
               pc.addTrack(track, localStreamRef.current!);
             });
-            console.log(`[VOICE] 🎵 Added audio tracks to ${peerUsername}`);
           }
 
           if (shouldSendOffer) {
@@ -445,8 +409,6 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
                 console.error(`[VOICE] ❌ Error creating offer for ${peerUsername}:`, error);
               }
             })();
-          } else {
-            console.log(`[VOICE] ⏳ Waiting for offer from ${peerUsername} (they have higher ID)`);
           }
         }
       }
@@ -467,13 +429,11 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
     };
 
     const onUserLeft = (data: any) => {
-      console.log("[VOICE] 👋 User left:", data.username);
       setVoiceUsers((prev) => prev.filter((u) => u.username !== data.username));
       webrtcService.closePeerConnection(data.username);
     };
 
     const onVoiceStateUpdate = (data: any) => {
-      console.log("[VOICE] 🔄 State update:", data.username);
       setVoiceUsers((prev) =>
         prev.map((user) =>
           user.username === data.username
@@ -506,12 +466,10 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
       const channelId = currentVoiceChannelRef.current;
       if (!channelId) return;
 
-      console.log("[VOICE] 📥 Received offer from:", data.from);
       try {
         const peerUsername = data.from;
 
         if (!webrtcService.hasPeerConnection(peerUsername)) {
-          console.log(`[VOICE] 🔗 Creating peer for offer from ${peerUsername}`);
           const pc = webrtcService.createPeerConnection(peerUsername, (candidate) => {
             const ch = currentVoiceChannelRef.current;
             if (ch) voiceService.sendIceCandidate(ch, peerUsername, candidate);
@@ -521,12 +479,10 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
             localStreamRef.current.getAudioTracks().forEach((track) => {
               pc.addTrack(track, localStreamRef.current!);
             });
-            console.log(`[VOICE] 🎵 Added audio tracks for ${peerUsername}`);
           }
         }
 
         const answer = await webrtcService.handleOffer(peerUsername, data.offer);
-        console.log(`[VOICE] 📤 Sending answer to ${peerUsername}`);
         voiceService.sendAnswer(channelId, peerUsername, answer);
       } catch (error) {
         console.error("[VOICE] ❌ Error handling offer:", error);
@@ -535,10 +491,8 @@ export const VoiceProvider: React.FC<VoiceProviderProps> = ({ children }) => {
 
     const onReceiveAnswer = async (data: { from: string; answer: RTCSessionDescriptionInit; target?: string }) => {
       if (data.target && data.target !== currentUsername) return;
-      console.log("[VOICE] 📥 Received answer from:", data.from);
       try {
         await webrtcService.handleAnswer(data.from, data.answer);
-        console.log(`[VOICE] ✅ Answer handled from ${data.from}`);
       } catch (error) {
         console.error("[VOICE] ❌ Error handling answer:", error);
       }

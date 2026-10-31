@@ -41,7 +41,7 @@ const OutgoingCallOverlay: React.FC = () => {
       }`}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-xl" />
+      <div className="absolute inset-0 bg-black/70" />
 
       {/* Content */}
       <div
@@ -51,7 +51,7 @@ const OutgoingCallOverlay: React.FC = () => {
       >
         {/* Avatar with subtle pulse */}
         <div className="relative">
-          <div className="absolute inset-0 -m-4 rounded-full bg-blue-500/15 animate-ping" style={{ animationDuration: '2s' }} />
+          <div className="absolute inset-0 -m-4 rounded-full bg-blue-500/15" style={{ animationDuration: '2s' }} />
 
           <div className="relative w-28 h-28 rounded-full ring-4 ring-white/15 shadow-2xl overflow-hidden">
             <img

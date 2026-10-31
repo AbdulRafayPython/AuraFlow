@@ -22,7 +22,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Users,
   MessageSquare,
-  Building2,
   AlertTriangle,
   TrendingUp,
   TrendingDown,
@@ -54,7 +53,7 @@ interface StatCardProps {
   loading?: boolean;
 }
 
-function StatCard({ title, value, subtitle, trend, icon: Icon, iconColor = 'text-accent', loading }: StatCardProps) {
+function StatCard({ title, value, subtitle, trend, icon: Icon, iconColor = 'text-[hsl(var(--theme-text-accent))]', loading }: StatCardProps) {
   if (loading) {
     return (
       <Card className="relative overflow-hidden">
@@ -71,7 +70,7 @@ function StatCard({ title, value, subtitle, trend, icon: Icon, iconColor = 'text
 
   return (
     <Card className="relative overflow-hidden group hover:shadow-lg transition-all duration-300 hover:border-accent/30">
-      <div className="absolute inset-0 bg-gradient-to-br from-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+      <div className="absolute inset-0 bg-accent/5 opacity-0 group-hover:opacity-100 transition-opacity" />
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
         <div className={cn('p-2 rounded-lg bg-accent/10', iconColor)}>
@@ -84,7 +83,7 @@ function StatCard({ title, value, subtitle, trend, icon: Icon, iconColor = 'text
           {trend !== undefined && (
             <span className={cn(
               'flex items-center text-xs font-medium',
-              trend >= 0 ? 'text-green-500' : 'text-red-500'
+              trend >= 0 ? 'text-success' : 'text-destructive'
             )}>
               {trend >= 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
               {Math.abs(trend)}%
@@ -119,14 +118,14 @@ function AgentStatusCard({ name, status, activityCount, lastActivity, icon: Icon
     )}>
       <div className={cn(
         'p-2 rounded-lg',
-        isActive ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'
+        isActive ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'
       )}>
         <Icon className="h-5 w-5" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium text-sm">{name}</span>
-          <Badge variant={isActive ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">
+          <Badge variant={isActive ? 'default' : 'secondary'} className="text-xs px-1.5 py-0">
             {isActive ? 'Active' : 'Inactive'}
           </Badge>
         </div>
@@ -146,15 +145,15 @@ interface AlertItemProps {
 function AlertItem({ alert }: AlertItemProps) {
   const severityColors = {
     low: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-    medium: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
-    high: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
-    critical: 'bg-red-500/10 text-red-500 border-red-500/20',
+    medium: 'bg-warning/10 text-warning border-yellow-500/20',
+    high: 'bg-warning/10 text-warning border-orange-500/20',
+    critical: 'bg-destructive/10 text-destructive border-red-500/20',
   };
 
   return (
     <div className="flex items-start gap-3 p-3 rounded-lg border border-border/50 hover:bg-accent/5 transition-all">
       <Avatar className="h-8 w-8">
-        <AvatarImage src={alert.user.avatar_url || undefined} />
+        <AvatarImage src={alert.user.avatar_url || undefined} alt="" />
         <AvatarFallback className="text-xs">
           {alert.user.username[0].toUpperCase()}
         </AvatarFallback>
@@ -162,17 +161,17 @@ function AlertItem({ alert }: AlertItemProps) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium text-sm">{alert.user.username}</span>
-          <Badge variant="outline" className={cn('text-[10px]', severityColors[alert.severity])}>
+          <Badge variant="outline" className={cn('text-xs', severityColors[alert.severity])}>
             {alert.severity}
           </Badge>
-          <Badge variant="outline" className="text-[10px]">
+          <Badge variant="outline" className="text-xs">
             {alert.flag_type}
           </Badge>
         </div>
         <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
           {alert.message_preview}
         </p>
-        <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
           <span>#{alert.channel.name}</span>
           <span>•</span>
           <span>{new Date(alert.created_at).toLocaleTimeString()}</span>
@@ -310,7 +309,7 @@ export default function AdminOverview() {
           trend={stats?.messages.trend_percent}
           subtitle="from yesterday"
           icon={MessageSquare}
-          iconColor="text-green-500"
+          iconColor="text-success"
           loading={loading}
         />
         <StatCard
@@ -326,7 +325,7 @@ export default function AdminOverview() {
           value={stats?.moderation.flagged_today || 0}
           subtitle={`${stats?.moderation.high_severity || 0} high severity`}
           icon={AlertTriangle}
-          iconColor="text-orange-500"
+          iconColor="text-warning"
           loading={loading}
         />
       </div>
@@ -362,7 +361,7 @@ export default function AdminOverview() {
               </div>
             ) : alerts.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
-                <CheckCircle2 className="h-12 w-12 text-green-500 mb-3" />
+                <CheckCircle2 className="h-12 w-12 text-success mb-3" />
                 <p className="font-medium">All Clear!</p>
                 <p className="text-sm text-muted-foreground">No recent alerts requiring attention</p>
               </div>
@@ -407,7 +406,7 @@ export default function AdminOverview() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="text-lg flex items-center gap-2">
-              <Brain className="h-5 w-5 text-accent" />
+              <Brain className="h-5 w-5 text-[hsl(var(--theme-text-accent))]" />
               AI Agents Status
             </CardTitle>
             <CardDescription>
@@ -456,12 +455,12 @@ export default function AdminOverview() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <UserCheck className="h-4 w-4 text-green-500" />
+              <UserCheck className="h-4 w-4 text-success" />
               Active Users
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-green-500">
+            <div className="text-3xl font-bold text-success">
               {stats?.users.active_today.toLocaleString() || 0}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -490,12 +489,12 @@ export default function AdminOverview() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <XCircle className="h-4 w-4 text-red-500" />
+              <XCircle className="h-4 w-4 text-destructive" />
               Blocked Users
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-red-500">
+            <div className="text-3xl font-bold text-destructive">
               {stats?.moderation.blocked_users || 0}
             </div>
             <p className="text-xs text-muted-foreground mt-1">

@@ -62,7 +62,6 @@ class CallWebRTCService {
       }
     };
 
-    console.log('[CALL-RTC] Peer connection created');
     return this.pc;
   }
 
@@ -103,7 +102,6 @@ class CallWebRTCService {
         // For video calls: if camera fails, fall back to audio-only
         if (type === 'video' && (err.name === 'NotReadableError' || err.name === 'NotFoundError' || err.name === 'OverconstrainedError')) {
           if (attempt < maxRetries) {
-            console.log(`[CALL-RTC] Camera busy/unavailable, retrying in ${attempt * 500}ms...`);
             await new Promise(r => setTimeout(r, attempt * 500));
             continue;
           }
@@ -118,7 +116,6 @@ class CallWebRTCService {
               },
               video: false,
             });
-            console.log('[CALL-RTC] Fallback: got audio-only stream');
             return this.localStream;
           } catch (audioErr: any) {
             console.error('[CALL-RTC] Audio fallback also failed:', audioErr);
@@ -128,7 +125,6 @@ class CallWebRTCService {
 
         // NotReadableError on audio = device busy; retry
         if (err.name === 'NotReadableError' && attempt < maxRetries) {
-          console.log(`[CALL-RTC] Device busy, retrying in ${attempt * 500}ms...`);
           await new Promise(r => setTimeout(r, attempt * 500));
           continue;
         }
@@ -144,7 +140,6 @@ class CallWebRTCService {
     this.localStream.getTracks().forEach(track => {
       this.pc!.addTrack(track, this.localStream!);
     });
-    console.log('[CALL-RTC] Added local tracks');
   }
 
   /** Create SDP offer (caller) */
@@ -155,7 +150,6 @@ class CallWebRTCService {
       offerToReceiveVideo: true,
     });
     await this.pc.setLocalDescription(offer);
-    console.log('[CALL-RTC] Created offer');
     return offer;
   }
 
@@ -166,7 +160,6 @@ class CallWebRTCService {
     await this.flushPendingCandidates();
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
-    console.log('[CALL-RTC] Created answer');
     return answer;
   }
 
@@ -175,7 +168,6 @@ class CallWebRTCService {
     if (!this.pc) throw new Error('No peer connection');
     await this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
     await this.flushPendingCandidates();
-    console.log('[CALL-RTC] Set remote answer');
   }
 
   /** Add ICE candidate (queue if remote description not set yet) */
@@ -229,7 +221,6 @@ class CallWebRTCService {
       this.pc = null;
     }
     this.pendingCandidates = [];
-    console.log('[CALL-RTC] Connection closed');
   }
 
   /** Full cleanup */
@@ -238,7 +229,6 @@ class CallWebRTCService {
     this.onRemoteStream = null;
     this.onIceCandidate = null;
     this.onConnectionStateChange = null;
-    console.log('[CALL-RTC] Full cleanup done');
   }
 }
 

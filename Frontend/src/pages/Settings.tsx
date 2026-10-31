@@ -1,16 +1,17 @@
+// REWRITE: ~1.3k-line page; split per settings section.
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTheme, THEMES, ThemeId } from "@/contexts/ThemeContext";
+import { useTheme, ThemeId } from "@/contexts/ThemeContext";
 import { useFriends } from "@/contexts/FriendsContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { getAvatarUrl } from "@/lib/utils";
 import { 
-  Settings as SettingsIcon, Shield, Lock, Bell, Palette, Moon, Sun, Volume2, 
+  Settings as SettingsIcon, Shield, Bell, Palette, Moon, Sun, Volume2, 
   Download, Ban, Trash2, AlertCircle, User as UserIcon, Camera, X, Save, Mail, 
   Check, Sparkles, ChevronRight, Edit3, Globe, Eye, EyeOff, Key, Smartphone,
-  MessageSquare, Users, Zap, Monitor, VolumeX, Volume1, ArrowRight, RefreshCw, Bot,
-  Crown, BarChart3, Building2, ShieldCheck, ExternalLink
+  MessageSquare, Users, Zap, Monitor, VolumeX, RefreshCw, Bot,
+  Crown, BarChart3, ShieldCheck, ExternalLink
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 import PersonalAgentsPanel from "@/components/ai-agents/PersonalAgentsPanel";
@@ -189,7 +190,7 @@ export default function Settings() {
           enabled 
             ? isBasicTheme 
               ? 'bg-[hsl(var(--theme-accent-primary))]'
-              : 'bg-gradient-to-r from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))] shadow-[var(--theme-glow-secondary)]' 
+              : 'bg-[hsl(var(--theme-accent-primary))] ' 
             : 'bg-[hsl(var(--theme-bg-tertiary))]'
         }`}
       >
@@ -198,7 +199,7 @@ export default function Settings() {
             enabled ? s.translate : "translate-x-1"
           }`}
         >
-          {enabled && size === "default" && <Check className="w-3 h-3 text-[hsl(var(--theme-accent-primary))]" />}
+          {enabled && size === "default" && <Check className="w-3 h-3 text-[hsl(var(--theme-text-accent))]" />}
         </span>
       </button>
     );
@@ -230,7 +231,7 @@ export default function Settings() {
         <div className={`p-2.5 rounded-xl transition-all duration-300 ${
           danger 
             ? 'bg-red-500/10 text-red-500 group-hover:bg-red-500/20' 
-            : 'bg-[hsl(var(--theme-accent-primary)/0.1)] text-[hsl(var(--theme-accent-primary))] group-hover:bg-[hsl(var(--theme-accent-primary)/0.15)]'
+            : 'bg-[hsl(var(--theme-accent-primary)/0.1)] text-[hsl(var(--theme-text-accent))] group-hover:bg-[hsl(var(--theme-accent-primary)/0.15)]'
         }`}>
           <Icon className="w-5 h-5" />
         </div>
@@ -262,7 +263,7 @@ export default function Settings() {
     description?: string;
     children: React.ReactNode 
   }) => (
-    <div className="rounded-2xl border bg-[hsl(var(--theme-bg-secondary)/0.5)] border-[hsl(var(--theme-border-default)/0.5)] backdrop-blur-sm overflow-hidden">
+    <div className="rounded-2xl border bg-[hsl(var(--theme-bg-secondary)/0.5)] border-[hsl(var(--theme-border-default)/0.5)] overflow-hidden">
       {title && (
         <div className="px-5 py-4 border-b border-[hsl(var(--theme-border-default)/0.5)]">
           <h3 className="font-semibold text-[hsl(var(--theme-text-primary))]">{title}</h3>
@@ -361,7 +362,7 @@ export default function Settings() {
             ) : (
               <form onSubmit={handleProfileUpdate} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-medium text-[hsl(var(--theme-text-muted))] mb-1.5 uppercase tracking-wider">
+                  <label className="block text-xs font-medium text-[hsl(var(--theme-text-muted))] mb-1.5">
                     Display name
                   </label>
                   <input
@@ -375,7 +376,7 @@ export default function Settings() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-[hsl(var(--theme-text-muted))] mb-1.5 uppercase tracking-wider">
+                  <label className="block text-xs font-medium text-[hsl(var(--theme-text-muted))] mb-1.5">
                     Bio
                   </label>
                   <textarea
@@ -386,7 +387,7 @@ export default function Settings() {
                     placeholder="Tell others about yourself…"
                     className="w-full px-3 py-2 rounded-md text-sm border bg-[hsl(var(--theme-bg-tertiary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder:text-[hsl(var(--theme-text-muted))] focus:outline-none focus:border-[hsl(var(--theme-accent-primary))] resize-none transition-colors"
                   />
-                  <p className="text-[11px] mt-1.5 text-[hsl(var(--theme-text-muted))]">
+                  <p className="text-xs mt-1.5 text-[hsl(var(--theme-text-muted))]">
                     {bio.length}/500
                   </p>
                 </div>
@@ -439,7 +440,7 @@ export default function Settings() {
             <div className="flex items-center gap-3 min-w-0">
               <Mail className="w-4 h-4 text-[hsl(var(--theme-text-muted))] flex-shrink-0" />
               <div className="min-w-0">
-                <dt className="text-[11px] font-medium uppercase tracking-wider text-[hsl(var(--theme-text-muted))]">
+                <dt className="text-xs font-medium text-[hsl(var(--theme-text-muted))]">
                   Email address
                 </dt>
                 <dd className="text-sm text-[hsl(var(--theme-text-primary))] truncate mt-0.5">
@@ -452,7 +453,7 @@ export default function Settings() {
             <div className="flex items-center gap-3 min-w-0">
               <UserIcon className="w-4 h-4 text-[hsl(var(--theme-text-muted))] flex-shrink-0" />
               <div className="min-w-0">
-                <dt className="text-[11px] font-medium uppercase tracking-wider text-[hsl(var(--theme-text-muted))]">
+                <dt className="text-xs font-medium text-[hsl(var(--theme-text-muted))]">
                   Username
                 </dt>
                 <dd className="text-sm text-[hsl(var(--theme-text-primary))] truncate mt-0.5">
@@ -472,15 +473,13 @@ export default function Settings() {
   // Theme Preview Card Component  
   const ThemePreviewCard = ({ themeId, theme }: { themeId: ThemeId; theme: typeof themes[ThemeId] }) => {
     const isSelected = currentTheme === themeId;
-    const isSpecialTheme = ['neon', 'hologram', 'plasma', 'galaxy', 'frost', 'ember'].includes(themeId);
-    
     return (
       <button
         onClick={() => setTheme(themeId)}
-        className={`relative group rounded-2xl overflow-hidden transition-all duration-500 ${
+        className={`relative group rounded-lg overflow-hidden transition-colors duration-150 ${
           isSelected 
-            ? 'ring-2 ring-[hsl(var(--theme-accent-primary))] scale-[1.02] shadow-xl shadow-[hsl(var(--theme-accent-primary)/0.2)]' 
-            : 'hover:scale-[1.02] hover:shadow-lg border border-[hsl(var(--theme-border-default)/0.5)]'
+            ? 'ring-2 ring-[hsl(var(--theme-accent-primary))]' 
+            : 'hover:border-[hsl(var(--theme-border-hover))] border border-[hsl(var(--theme-border-default))]'
         }`}
       >
         {/* Theme Preview */}
@@ -502,40 +501,18 @@ export default function Settings() {
               <div className="flex-1 rounded-lg opacity-20" style={{ backgroundColor: theme.preview.accent }} />
               <div 
                 className="h-6 w-20 rounded-full ml-auto"
-                style={{ background: `linear-gradient(135deg, ${theme.preview.accent} 0%, ${theme.preview.secondary} 100%)` }}
+                style={{ backgroundColor: theme.preview.accent }}
               />
             </div>
           </div>
           
-          {/* Glow effect for special themes */}
-          {isSpecialTheme && (
-            <div 
-              className="absolute inset-0 opacity-30"
-              style={{ 
-                background: `radial-gradient(circle at 70% 70%, ${theme.preview.accent}60 0%, transparent 50%)` 
-              }}
-            />
-          )}
-          
           {/* Selected indicator */}
           {isSelected && (
-            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-lg">
+            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white flex items-center justify-center ">
               <Check className="w-4 h-4" style={{ color: theme.preview.accent }} />
             </div>
           )}
           
-          {/* Special badge */}
-          {isSpecialTheme && (
-            <div 
-              className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider"
-              style={{ 
-                background: `linear-gradient(135deg, ${theme.preview.accent} 0%, ${theme.preview.secondary} 100%)`,
-                color: '#fff'
-              }}
-            >
-              New
-            </div>
-          )}
         </div>
         
         {/* Theme Info */}
@@ -566,18 +543,13 @@ export default function Settings() {
   const AppearanceSettings = () => (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Current Theme Highlight */}
-      <div className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-[hsl(var(--theme-bg-secondary)/0.8)] to-[hsl(var(--theme-bg-tertiary)/0.5)] border-[hsl(var(--theme-border-default)/0.5)] backdrop-blur-sm p-6">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-[hsl(var(--theme-accent-primary)/0.1)] to-transparent rounded-full blur-3xl" />
-        
+      <div className="relative overflow-hidden rounded-xl border bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] p-6">
         <div className="relative flex items-center gap-5">
           <div 
-            className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-xl relative overflow-hidden"
-            style={{ 
-              background: `linear-gradient(135deg, ${themes[currentTheme].preview.accent} 0%, ${themes[currentTheme].preview.secondary} 100%)` 
-            }}
+            className="w-20 h-20 rounded-xl flex items-center justify-center relative overflow-hidden"
+            style={{ backgroundColor: themes[currentTheme].preview.accent }}
           >
-            <Sparkles className="w-8 h-8 text-white drop-shadow-lg" />
-            <div className="absolute inset-0 bg-white/10 animate-pulse" />
+            <Sparkles className="w-8 h-8 text-white" />
           </div>
           <div className="flex-1">
             <p className="text-sm text-[hsl(var(--theme-text-muted))] mb-1">Active Theme</p>
@@ -593,7 +565,7 @@ export default function Settings() {
             className="p-4 rounded-2xl bg-[hsl(var(--theme-bg-tertiary))] hover:bg-[hsl(var(--theme-bg-hover))] transition-all duration-300 group"
           >
             {isDarkMode ? (
-              <Moon className="w-6 h-6 text-[hsl(var(--theme-accent-primary))] group-hover:scale-110 transition-transform" />
+              <Moon className="w-6 h-6 text-[hsl(var(--theme-text-accent))] group-hover:scale-110 transition-transform" />
             ) : (
               <Sun className="w-6 h-6 text-amber-500 group-hover:scale-110 transition-transform" />
             )}
@@ -938,7 +910,7 @@ export default function Settings() {
 
       {isLoadingBlocked ? (
         <div className="flex items-center justify-center py-16">
-          <RefreshCw className="w-8 h-8 text-[hsl(var(--theme-accent-primary))] animate-spin" />
+          <RefreshCw className="w-8 h-8 text-[hsl(var(--theme-text-accent))] animate-spin" />
         </div>
       ) : blockedUsers.length === 0 ? (
         <div className="text-center py-16 rounded-3xl border border-dashed bg-[hsl(var(--theme-bg-secondary)/0.3)] border-[hsl(var(--theme-border-default)/0.5)]">
@@ -1003,10 +975,10 @@ export default function Settings() {
     return (
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
         {/* Header Card */}
-        <div className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent border-amber-500/20">
+        <div className="relative overflow-hidden rounded-3xl border bg-amber-500/10 border-amber-500/20">
           <div className="p-6">
             <div className="flex items-center gap-4 mb-4">
-              <div className="p-3 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 shadow-lg shadow-amber-500/25">
+              <div className="p-3 rounded-2xl bg-amber-500 shadow-lg shadow-amber-500/25">
                 <Crown className="w-6 h-6 text-white" />
               </div>
               <div>
@@ -1049,7 +1021,7 @@ export default function Settings() {
                   <div className="flex-1 text-left min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="font-semibold text-[hsl(var(--theme-text-primary))] truncate">{community.name}</p>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex-shrink-0">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex-shrink-0">
                         <Crown className="w-2.5 h-2.5" />
                         Owner
                       </span>
@@ -1066,8 +1038,8 @@ export default function Settings() {
 
                   {/* Arrow */}
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="text-xs text-[hsl(var(--theme-text-muted))] hidden sm:block group-hover:text-[hsl(var(--theme-accent-primary))] transition-colors">Open Dashboard</span>
-                    <ExternalLink className="w-4 h-4 text-[hsl(var(--theme-text-muted))] group-hover:text-[hsl(var(--theme-accent-primary))] transition-colors" />
+                    <span className="text-xs text-[hsl(var(--theme-text-muted))] hidden sm:block group-hover:text-[hsl(var(--theme-text-accent))] transition-colors">Open Dashboard</span>
+                    <ExternalLink className="w-4 h-4 text-[hsl(var(--theme-text-muted))] group-hover:text-[hsl(var(--theme-text-accent))] transition-colors" />
                   </div>
                 </button>
               );
@@ -1077,7 +1049,7 @@ export default function Settings() {
 
         {/* Quick Info */}
         <div className="flex items-start gap-3 p-4 rounded-2xl bg-[hsl(var(--theme-accent-primary)/0.05)] border border-[hsl(var(--theme-accent-primary)/0.15)]">
-          <BarChart3 className="w-5 h-5 flex-shrink-0 mt-0.5 text-[hsl(var(--theme-accent-primary))]" />
+          <BarChart3 className="w-5 h-5 flex-shrink-0 mt-0.5 text-[hsl(var(--theme-text-accent))]" />
           <div>
             <p className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">Dashboard Features</p>
             <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-1">
@@ -1093,14 +1065,14 @@ export default function Settings() {
               onClick={() => navigate('/system-admin')}
               className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-[hsl(var(--theme-bg-hover))] transition-all duration-300 group"
             >
-              <div className="p-3 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 shadow-lg shadow-red-500/25">
+              <div className="p-3 rounded-xl bg-red-500 shadow-lg shadow-red-500/25">
                 <ShieldCheck className="w-5 h-5 text-white" />
               </div>
               <div className="flex-1 text-left">
                 <p className="font-semibold text-[hsl(var(--theme-text-primary))]">System Admin Panel</p>
                 <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">Platform-wide user management, moderation, and analytics</p>
               </div>
-              <ExternalLink className="w-5 h-5 text-[hsl(var(--theme-text-muted))] group-hover:text-[hsl(var(--theme-accent-primary))] transition-colors" />
+              <ExternalLink className="w-5 h-5 text-[hsl(var(--theme-text-muted))] group-hover:text-[hsl(var(--theme-text-accent))] transition-colors" />
             </button>
           </SettingsCard>
         )}
@@ -1153,7 +1125,7 @@ export default function Settings() {
           open animation never re-rasterizes the blur over the live page. */}
       <div
         aria-hidden
-        className="absolute inset-0 backdrop-blur-sm transform-gpu pointer-events-none"
+        className="absolute inset-0 transform-gpu pointer-events-none"
       />
       {/* Dark tint — only the opacity fades, which the compositor handles cheaply. */}
       <div
@@ -1170,7 +1142,7 @@ export default function Settings() {
           <div className="flex h-12 items-center px-5">
             <span
               id="settings-title"
-              className="text-[11px] font-semibold uppercase tracking-wider text-[hsl(var(--theme-text-muted))]"
+              className="text-xs font-semibold text-[hsl(var(--theme-text-muted))]"
             >
               Settings
             </span>
@@ -1179,7 +1151,7 @@ export default function Settings() {
           <nav className="flex-1 overflow-y-auto overscroll-contain px-2 pb-4">
             {tabGroups.map((group, gi) => (
               <div key={group.label} className={gi === 0 ? '' : 'mt-4'}>
-                <div className="px-2.5 mb-1 text-[11px] font-semibold uppercase tracking-wider text-[hsl(var(--theme-text-muted))]">
+                <div className="px-2.5 mb-1 text-xs font-semibold text-[hsl(var(--theme-text-muted))]">
                   {group.label}
                 </div>
                 <div className="space-y-0.5">
@@ -1199,7 +1171,7 @@ export default function Settings() {
                         <Icon className="w-4 h-4 flex-shrink-0 opacity-80" />
                         <span className="flex-1 text-left truncate">{tab.label}</span>
                         {tab.count !== undefined && tab.count > 0 && (
-                          <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full text-[10px] font-semibold bg-red-500 text-white">
+                          <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full text-xs font-semibold bg-red-500 text-white">
                             {tab.count}
                           </span>
                         )}
@@ -1222,8 +1194,8 @@ export default function Settings() {
                 <ExternalLink className="w-3 h-3 ml-auto" />
               </button>
             )}
-            <p className="text-[11px] text-[hsl(var(--theme-text-muted))]">
-              AuraFlow · v1.0.0
+            <p className="text-xs text-[hsl(var(--theme-text-muted))]">
+              Auraflow · v1.0.0
             </p>
           </div>
         </aside>
@@ -1272,7 +1244,7 @@ export default function Settings() {
             <span className="w-9 h-9 flex items-center justify-center rounded-full border border-[hsl(var(--theme-border-default))] group-hover:border-[hsl(var(--theme-text-primary))] transition-colors">
               <X className="w-4 h-4" />
             </span>
-            <span className="text-[11px] font-semibold">ESC</span>
+            <span className="text-xs font-semibold">ESC</span>
           </button>
 
           <div className="max-w-2xl px-6 md:px-10 pt-20 md:pt-14 pb-16">

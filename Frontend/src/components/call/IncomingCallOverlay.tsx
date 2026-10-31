@@ -53,7 +53,7 @@ const IncomingCallOverlay: React.FC = () => {
       }`}
     >
       {/* Blurred backdrop */}
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-xl" />
+      <div className="absolute inset-0 bg-black/70" />
 
       {/* Content */}
       <div
@@ -94,7 +94,7 @@ const IncomingCallOverlay: React.FC = () => {
           <p className="text-white/60 text-sm font-medium">
             @{remotePeer.username}
           </p>
-          <p className="text-white/80 text-base font-medium animate-pulse">
+          <p className="text-white/80 text-base font-medium">
             Incoming {isVideo ? 'Video' : 'Audio'} Call…
           </p>
         </div>

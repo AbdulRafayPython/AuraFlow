@@ -134,7 +134,7 @@ export default function SysAgentMetrics() {
       {/* ── Top KPI tiles ────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <KpiTile
-          icon={<Activity className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />}
+          icon={<Activity className="h-5 w-5 text-success dark:text-success" />}
           title="Acting on their own"
           hint="When an agent notices something (a tense message, a quiet channel, a question), it can act, hold off, or skip. This is the share that chose to act."
           primary={data ? fmtPct(data.autonomy.autonomy_ratio) : '—'}
@@ -180,7 +180,7 @@ export default function SysAgentMetrics() {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-[hsl(var(--theme-bg-secondary))] text-xs uppercase text-[hsl(var(--theme-text-secondary))]">
+            <thead className="bg-[hsl(var(--theme-bg-secondary))] text-xs text-[hsl(var(--theme-text-secondary))]">
               <tr>
                 <th className="px-4 py-2 text-left">Agent</th>
                 <th className="px-4 py-2 text-right" title="Times the agent stepped in.">Stepped in</th>
@@ -203,8 +203,8 @@ export default function SysAgentMetrics() {
                     <td className="px-4 py-2 text-[hsl(var(--theme-text-primary))]" title={r.agent_name}>
                       {agentLabel(r.agent_name)}
                     </td>
-                    <td className="px-4 py-2 text-right font-medium text-emerald-600 dark:text-emerald-400">{r.acts}</td>
-                    <td className="px-4 py-2 text-right text-amber-600 dark:text-amber-400">{r.defers}</td>
+                    <td className="px-4 py-2 text-right font-medium text-success dark:text-success">{r.acts}</td>
+                    <td className="px-4 py-2 text-right text-warning dark:text-warning">{r.defers}</td>
                     <td className="px-4 py-2 text-right text-[hsl(var(--theme-text-muted))]">{r.skips}</td>
                     <td className="px-4 py-2 text-right text-[hsl(var(--theme-text-secondary))]">{r.total}</td>
                     <td className="px-4 py-2 text-right text-[hsl(var(--theme-text-primary))]">{fmtPct(r.autonomy_ratio)}</td>
@@ -236,7 +236,7 @@ interface KpiTileProps {
 function KpiTile({ icon, title, hint, primary, subline, tail }: KpiTileProps) {
   return (
     <div className="rounded-lg border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] p-4">
-      <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[hsl(var(--theme-text-secondary))]">
+      <div className="flex items-center gap-2 text-xs text-[hsl(var(--theme-text-secondary))]">
         {icon}
         <span>{title}</span>
         {hint && (

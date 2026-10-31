@@ -3,13 +3,12 @@
  * Displays health metrics for the selected community with visual indicators.
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useCommunityDashboard } from '@/contexts/CommunityDashboardContext';
 import adminService from '@/services/adminService';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -23,7 +22,6 @@ import {
   Heart,
   RefreshCw,
   Users,
-  MessageSquare,
   TrendingUp,
   TrendingDown,
   Minus,
@@ -53,9 +51,9 @@ function HealthIndicator({ score }: { score: number }) {
   
   const level = getLevel(score);
   const configs = {
-    healthy: { color: 'text-green-500', bg: 'bg-green-500', icon: CheckCircle2, label: 'Healthy' },
-    moderate: { color: 'text-yellow-500', bg: 'bg-yellow-500', icon: AlertCircle, label: 'Moderate' },
-    needs_attention: { color: 'text-red-500', bg: 'bg-red-500', icon: XCircle, label: 'Needs Attention' },
+    healthy: { color: 'text-success', bg: 'bg-green-500', icon: CheckCircle2, label: 'Healthy' },
+    moderate: { color: 'text-warning', bg: 'bg-yellow-500', icon: AlertCircle, label: 'Moderate' },
+    needs_attention: { color: 'text-destructive', bg: 'bg-red-500', icon: XCircle, label: 'Needs Attention' },
   };
   
   const config = configs[level as keyof typeof configs];
@@ -78,8 +76,8 @@ function HealthIndicator({ score }: { score: number }) {
 }
 
 function TrendIcon({ trend }: { trend: 'up' | 'down' | 'stable' }) {
-  if (trend === 'up') return <TrendingUp className="h-4 w-4 text-green-500" />;
-  if (trend === 'down') return <TrendingDown className="h-4 w-4 text-red-500" />;
+  if (trend === 'up') return <TrendingUp className="h-4 w-4 text-success" />;
+  if (trend === 'down') return <TrendingDown className="h-4 w-4 text-destructive" />;
   return <Minus className="h-4 w-4 text-muted-foreground" />;
 }
 
@@ -120,7 +118,7 @@ export default function CommunityHealthPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Heart className="h-6 w-6 text-red-500" />
+            <Heart className="h-6 w-6 text-destructive" />
             Community Health
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -177,8 +175,8 @@ export default function CommunityHealthPage() {
                   <TrendIcon trend={healthData.activity_trend} />
                   <span className={cn(
                     'text-sm font-medium',
-                    healthData.activity_trend === 'up' && 'text-green-500',
-                    healthData.activity_trend === 'down' && 'text-red-500'
+                    healthData.activity_trend === 'up' && 'text-success',
+                    healthData.activity_trend === 'down' && 'text-destructive'
                   )}>
                     Activity {healthData.activity_trend === 'up' ? 'Increasing' : 
                              healthData.activity_trend === 'down' ? 'Decreasing' : 'Stable'}
@@ -210,7 +208,7 @@ export default function CommunityHealthPage() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Users className="h-4 w-4 text-green-500" />
+                  <Users className="h-4 w-4 text-success" />
                   Retention Rate
                 </CardTitle>
               </CardHeader>
@@ -233,8 +231,8 @@ export default function CommunityHealthPage() {
               <CardContent>
                 <div className={cn(
                   'text-3xl font-bold',
-                  healthData.metrics.growth_rate > 0 && 'text-green-500',
-                  healthData.metrics.growth_rate < 0 && 'text-red-500'
+                  healthData.metrics.growth_rate > 0 && 'text-success',
+                  healthData.metrics.growth_rate < 0 && 'text-destructive'
                 )}>
                   {healthData.metrics.growth_rate > 0 ? '+' : ''}{healthData.metrics.growth_rate}%
                 </div>
@@ -256,10 +254,10 @@ export default function CommunityHealthPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {healthData.health_score < 70 && (
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                  <AlertCircle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-warning/10 border border-yellow-500/20">
+                  <AlertCircle className="h-5 w-5 text-warning flex-shrink-0 mt-0.5" />
                   <div>
-                    <div className="font-medium text-yellow-500">Increase Engagement</div>
+                    <div className="font-medium text-warning">Increase Engagement</div>
                     <p className="text-sm text-muted-foreground">
                       Try hosting events, starting discussions, or creating channels for specific interests.
                     </p>
@@ -278,10 +276,10 @@ export default function CommunityHealthPage() {
                 </div>
               )}
               {healthData.health_score >= 70 && (
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                  <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-success/10 border border-green-500/20">
+                  <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
                   <div>
-                    <div className="font-medium text-green-500">Community is Thriving!</div>
+                    <div className="font-medium text-success">Community is Thriving!</div>
                     <p className="text-sm text-muted-foreground">
                       Great job! Your community health score is strong. Keep up the good work!
                     </p>

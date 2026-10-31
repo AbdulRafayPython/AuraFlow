@@ -179,7 +179,7 @@ export function useBrowserNotifications() {
       if (handledTypes.has(d.type)) return;
       const icon = resolveUrl(d.icon_url) || APP_ICON;
       show(
-        d.title || 'AuroFlow',
+        d.title || 'Auraflow',
         d.body || '',
         `server-${d.id}`,
         icon,

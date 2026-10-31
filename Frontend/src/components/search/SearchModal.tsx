@@ -1,9 +1,9 @@
 // components/search/SearchModal.tsx — Ctrl+K spotlight search modal
 // Production-grade: debounce, keyboard nav, scope filters, result highlights, recent searches
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, X, Hash, MessageSquare, Clock, ArrowRight, Loader2, Filter } from 'lucide-react';
+import { Search, X, Hash, MessageSquare, Clock, ArrowRight, Loader2 } from 'lucide-react';
 import { searchService, type SearchResult } from '@/services/searchService';
 import { getAvatarUrl } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -166,7 +166,7 @@ const SearchModal: React.FC<SearchModalProps> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh] bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+      className="fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh] bg-black/60 animate-in fade-in duration-150"
       onClick={handleBackdrop}
     >
       <div className="w-full max-w-2xl mx-4 bg-[hsl(var(--theme-bg-elevated))] rounded-xl shadow-2xl border border-[hsl(var(--theme-border-subtle))] overflow-hidden animate-in slide-in-from-top-4 duration-200">
@@ -186,7 +186,7 @@ const SearchModal: React.FC<SearchModalProps> = ({
             autoComplete="off"
             spellCheck={false}
           />
-          {isLoading && <Loader2 className="w-4 h-4 text-[hsl(var(--theme-accent-primary))] animate-spin flex-shrink-0" />}
+          {isLoading && <Loader2 className="w-4 h-4 text-[hsl(var(--theme-text-accent))] animate-spin flex-shrink-0" />}
           {query && (
             <button
               onClick={() => { setQuery(''); inputRef.current?.focus(); }}
@@ -229,7 +229,7 @@ const SearchModal: React.FC<SearchModalProps> = ({
           {showRecent && (
             <div className="p-2">
               <div className="flex items-center justify-between px-2 py-1">
-                <span className="text-xs font-medium text-[hsl(var(--theme-text-muted))] uppercase tracking-wider">Recent</span>
+                <span className="text-xs font-medium text-[hsl(var(--theme-text-muted))]">Recent</span>
                 <button
                   onClick={() => { searchService.clearRecentSearches(); setRecentSearches([]); }}
                   className="text-xs text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-secondary))] transition-colors"
@@ -343,18 +343,18 @@ const SearchModal: React.FC<SearchModalProps> = ({
         <div className="flex items-center justify-between px-4 py-2 border-t border-[hsl(var(--theme-border-subtle))] bg-[hsl(var(--theme-bg-surface))]">
           <div className="flex items-center gap-3 text-xs text-[hsl(var(--theme-text-muted))]">
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-[hsl(var(--theme-bg-elevated))] rounded border border-[hsl(var(--theme-border-subtle))] text-[10px]">↑↓</kbd>
+              <kbd className="px-1.5 py-0.5 bg-[hsl(var(--theme-bg-elevated))] rounded border border-[hsl(var(--theme-border-subtle))] text-xs">↑↓</kbd>
               Navigate
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-[hsl(var(--theme-bg-elevated))] rounded border border-[hsl(var(--theme-border-subtle))] text-[10px]">↵</kbd>
+              <kbd className="px-1.5 py-0.5 bg-[hsl(var(--theme-bg-elevated))] rounded border border-[hsl(var(--theme-border-subtle))] text-xs">↵</kbd>
               Open
             </span>
           </div>
           <span className="text-xs text-[hsl(var(--theme-text-muted))]">
-            <kbd className="px-1.5 py-0.5 bg-[hsl(var(--theme-bg-elevated))] rounded border border-[hsl(var(--theme-border-subtle))] text-[10px]">Ctrl</kbd>
+            <kbd className="px-1.5 py-0.5 bg-[hsl(var(--theme-bg-elevated))] rounded border border-[hsl(var(--theme-border-subtle))] text-xs">Ctrl</kbd>
             +
-            <kbd className="px-1.5 py-0.5 bg-[hsl(var(--theme-bg-elevated))] rounded border border-[hsl(var(--theme-border-subtle))] text-[10px]">K</kbd>
+            <kbd className="px-1.5 py-0.5 bg-[hsl(var(--theme-bg-elevated))] rounded border border-[hsl(var(--theme-border-subtle))] text-xs">K</kbd>
           </span>
         </div>
       </div>

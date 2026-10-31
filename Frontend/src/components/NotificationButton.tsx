@@ -1,6 +1,6 @@
 // components/NotificationButton.tsx - Professional notification button for navbar or sidebar
-import React, { useState, useRef, useEffect } from 'react';
-import { Bell, X, Check, MessageSquare, UserPlus, Users, CheckCheck, Trash2, Hash, FileText } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Bell, X, MessageSquare, UserPlus, Users, CheckCheck, Trash2, Hash, FileText } from 'lucide-react';
 import { useNotificationsContext, type Notification } from '@/contexts/NotificationsContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getAvatarUrl } from '@/lib/utils';
@@ -114,26 +114,28 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
         className={isSidebar
-          ? `relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 ${
+          ? `relative w-10 h-10 rounded-lg flex items-center justify-center transition-colors duration-150 ${
               isOpen
-                ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/40 scale-105'
-                : 'bg-[hsl(var(--theme-bg-secondary))] hover:bg-gradient-to-br hover:from-amber-500 hover:to-orange-600 text-[hsl(var(--theme-text-muted))] hover:text-white hover:scale-105 hover:shadow-lg'
+                ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
+                : 'text-[hsl(var(--theme-text-muted))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]'
             }`
           : `relative p-2 rounded-lg transition-all duration-200 hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))] ${isOpen ? 'bg-[hsl(var(--theme-bg-hover))]' : ''}`
         }
         title="Notifications"
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
       >
-        <Bell className={isSidebar
-          ? `w-5 h-5 transition-all duration-300 ${isOpen ? 'scale-110' : ''}`
-          : `w-4 h-4 transition-transform ${isOpen ? 'scale-110' : ''}`
-        } />
+        <Bell
+          strokeWidth={1.75}
+          fill={isSidebar && isOpen ? 'currentColor' : 'none'}
+          className={isSidebar ? 'w-5 h-5' : 'w-4 h-4'}
+        />
         
         {/* Unread Badge */}
         {unreadCount > 0 && (
-          <span className={`absolute flex items-center justify-center rounded-full bg-red-500 text-white font-bold animate-pulse ${
+          <span className={`absolute flex items-center justify-center rounded-full bg-[hsl(0_68%_46%)] text-white font-semibold ${
             isSidebar
-              ? '-top-1 -right-1 min-w-[20px] h-5 px-1 text-[10px] border-2 border-[hsl(var(--theme-sidebar-bg))]'
-              : '-top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 text-[10px] ring-2 ring-white dark:ring-slate-800'
+              ? '-top-1 -right-1 min-w-[18px] h-[18px] px-1 text-xs border-2 border-[hsl(var(--theme-sidebar-bg))]'
+              : '-top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 text-xs ring-2 ring-[hsl(var(--theme-bg-primary))]'
           }`}>
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
@@ -142,7 +144,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
 
       {/* Tooltip – sidebar only, when panel is closed */}
       {isSidebar && !isOpen && (
-        <div className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-3 py-2 text-xs font-medium rounded-xl whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 z-[9999] bg-[hsl(var(--theme-bg-elevated))] text-[hsl(var(--theme-text-primary))] border border-[hsl(var(--theme-border-default))] shadow-xl backdrop-blur-xl">
+        <div className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 px-2 py-1 text-xs font-medium rounded-md whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-[9999] bg-[hsl(var(--theme-bg-elevated))] text-[hsl(var(--theme-text-primary))] shadow-popover">
           Notifications{unreadCount > 0 ? ` (${unreadCount})` : ''}
         </div>
       )}
@@ -152,7 +154,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-[9998] bg-black/20"
+            className="fixed inset-0 z-[9998]"
             onClick={() => setIsOpen(false)}
           />
 
@@ -163,7 +165,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
               isSidebar
                 ? 'left-[calc(100%+12px)] top-0 w-80 sm:w-96 origin-top-left'
                 : 'right-0 mt-2 w-80 sm:w-96 origin-top-right'
-            } max-h-[480px] overflow-hidden rounded-xl shadow-2xl z-[9999] border transform transition-all duration-200 bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]`}
+            } max-h-[480px] overflow-hidden rounded-lg shadow-popover z-[9999] border bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]`}
             style={{
               animation: isSidebar ? 'slideRight 0.2s ease-out' : 'slideDown 0.2s ease-out',
             }}
@@ -176,7 +178,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
                     Notifications
                   </h3>
                   {unreadCount > 0 && (
-                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-accent-primary))]">
+                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-text-accent))]">
                       {unreadCount} new
                     </span>
                   )}
@@ -189,7 +191,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
                         e.stopPropagation();
                         markAllAsRead();
                       }}
-                      className="p-1.5 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-accent-primary))]"
+                      className="p-1.5 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-accent))]"
                       title="Mark all as read"
                     >
                       <CheckCheck className="w-4 h-4" />
@@ -288,7 +290,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
                               {notification.data.community_icon}
                             </div>
                           ) : notification.type === 'summary_ready' ? (
-                            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-cyan-500 ring-2 ring-cyan-400/40">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-[hsl(var(--theme-accent-primary))]">
                               <FileText className="w-5 h-5 text-white" />
                             </div>
                           ) : notification.from?.avatar_url ? (
@@ -317,7 +319,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
                           <p className="text-xs mt-0.5 line-clamp-2 leading-relaxed text-[hsl(var(--theme-text-muted))]">
                             {notification.message}
                           </p>
-                          <p className="text-[10px] mt-1.5 font-medium uppercase tracking-wide text-[hsl(var(--theme-text-muted))]">
+                          <p className="text-xs mt-1 text-[hsl(var(--theme-text-muted))]">
                             {formatTimestamp(notification.timestamp)}
                           </p>
                         </div>
@@ -326,7 +328,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
                         <div className="flex-shrink-0 flex items-start gap-1">
                           {/* Unread indicator */}
                           {!notification.read && (
-                            <div className="w-2 h-2 mt-2 rounded-full bg-blue-500 animate-pulse" />
+                            <div className="w-2 h-2 mt-2 rounded-full bg-[hsl(var(--theme-accent-primary))]" />
                           )}
 
                           {/* Clear button */}
@@ -355,7 +357,7 @@ export function NotificationButton({ onNavigate, placement = 'header' }: Notific
                     // Could navigate to a full notifications page
                     setIsOpen(false);
                   }}
-                  className="text-xs font-medium transition-colors text-[hsl(var(--theme-accent-primary))] hover:text-[hsl(var(--theme-accent-primary)/0.8)]"
+                  className="text-xs font-medium transition-colors text-[hsl(var(--theme-text-accent))] hover:text-[hsl(var(--theme-accent-primary)/0.8)]"
                 >
                   View all notifications
                 </button>

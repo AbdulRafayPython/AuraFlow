@@ -58,7 +58,6 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
   const currentConversationRef = useRef<Conversation | null>(null);
   const currentUserIdRef = useRef<number | null>(null);
   const messagesRef = useRef<DirectMessage[]>([]);
-  const addMessageRef = useRef<any>(null);
 
   // Initialize conversations from friends list — preserve existing last_message
   useEffect(() => {
@@ -226,9 +225,7 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
       setLoading(true);
       setError(null);
       try {
-        console.log('[DirectMessagesContext] Fetching messages for user:', userId);
         const msgs = await directMessageService.getDirectMessages(userId, limit, offset);
-        console.log('[DirectMessagesContext] Received messages from API:', msgs);
         if (offset === 0) {
           setMessages(msgs);
           messagesRef.current = msgs;
@@ -236,7 +233,6 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
           setMessages(prev => [...msgs, ...prev]);
           messagesRef.current = [...msgs, ...messagesRef.current];
         }
-        console.log('[DirectMessagesContext] Messages state updated:', msgs);
       } catch (err: any) {
         console.error('[DirectMessagesContext] Error fetching messages:', err);
         setError(err.response?.data?.message || "Failed to fetch messages");

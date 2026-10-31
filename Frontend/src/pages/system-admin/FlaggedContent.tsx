@@ -9,8 +9,8 @@ import { cn } from '@/lib/utils';
 import adminService, { FlaggedMessage, PaginationInfo } from '@/services/adminService';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
-  AlertTriangle, Check, X, Ban, Trash2, RefreshCw,
-  ChevronLeft, ChevronRight, Search, Shield, CheckCircle, Clock, Flag,
+  AlertTriangle, Check, Ban, Trash2, 
+  ChevronLeft, ChevronRight, CheckCircle, Flag,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -25,14 +25,14 @@ interface ActionDialogState {
 
 const severityColors: Record<string, string> = {
   low: 'bg-blue-500/10 text-blue-500 border border-blue-500/20',
-  medium: 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20',
-  high: 'bg-orange-500/10 text-orange-500 border border-orange-500/20',
-  critical: 'bg-red-500/10 text-red-500 border border-red-500/20',
+  medium: 'bg-warning/10 text-warning border border-yellow-500/20',
+  high: 'bg-warning/10 text-warning border border-orange-500/20',
+  critical: 'bg-destructive/10 text-destructive border border-red-500/20',
 };
 
 const actionInfo: Record<string, { dot: string; text: string }> = {
-  pending: { dot: 'bg-orange-500 animate-pulse', text: 'Pending' },
-  none: { dot: 'bg-orange-500 animate-pulse', text: 'Pending' },
+  pending: { dot: 'bg-orange-500', text: 'Pending' },
+  none: { dot: 'bg-orange-500', text: 'Pending' },
   resolved: { dot: 'bg-emerald-500', text: 'Resolved' },
   approve: { dot: 'bg-emerald-500', text: 'Resolved' },
   warn: { dot: 'bg-sky-500', text: 'Warned' },
@@ -106,10 +106,10 @@ export default function SysFlaggedContent() {
   const pendingCount = messages.filter(m => !m.action_taken || m.action_taken === 'none' || m.action_taken === 'pending').length;
 
   const kpiCards = [
-    { label: 'Flagged Today', value: totalFlagged, icon: Flag, iconColor: 'text-red-400', iconBg: 'bg-red-400/10', trend: '+15%', trendColor: 'text-emerald-500' },
-    { label: 'Resolved Today', value: resolvedCount, icon: CheckCircle, iconColor: 'text-emerald-400', iconBg: 'bg-emerald-400/10', trend: '-5%', trendColor: 'text-orange-500' },
-    { label: 'Active Violations', value: highSeverity, icon: AlertTriangle, iconColor: 'text-orange-400', iconBg: 'bg-orange-400/10', trend: '+2%', trendColor: 'text-emerald-500' },
-    { label: 'Auto-Blocked', value: pendingCount, icon: Ban, iconColor: 'text-[hsl(var(--theme-accent-primary))]', iconBg: 'bg-[hsl(var(--theme-accent-primary)/0.1)]', trend: '-10%', trendColor: 'text-orange-500' },
+    { label: 'Flagged Today', value: totalFlagged, icon: Flag, iconColor: 'text-destructive', iconBg: 'bg-red-400/10', trend: '+15%', trendColor: 'text-success' },
+    { label: 'Resolved Today', value: resolvedCount, icon: CheckCircle, iconColor: 'text-success', iconBg: 'bg-emerald-400/10', trend: '-5%', trendColor: 'text-warning' },
+    { label: 'Active Violations', value: highSeverity, icon: AlertTriangle, iconColor: 'text-warning', iconBg: 'bg-orange-400/10', trend: '+2%', trendColor: 'text-success' },
+    { label: 'Auto-Blocked', value: pendingCount, icon: Ban, iconColor: 'text-[hsl(var(--theme-text-accent))]', iconBg: 'bg-[hsl(var(--theme-accent-primary)/0.1)]', trend: '-10%', trendColor: 'text-warning' },
   ];
 
   return (
@@ -119,7 +119,7 @@ export default function SysFlaggedContent() {
         {kpiCards.map((card) => {
           const Icon = card.icon;
           return (
-            <div key={card.label} className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] p-6 rounded-xl hover:border-[hsl(var(--theme-accent-primary)/0.3)] transition-all shadow-sm">
+            <div key={card.label} className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.1)] p-6 rounded-xl hover:border-[hsl(var(--theme-accent-primary)/0.3)] transition-all shadow-sm">
               <div className="flex justify-between items-start mb-4">
                 <div className={cn('p-2 rounded-lg', card.iconBg)}>
                   <Icon className={cn('h-5 w-5', card.iconColor)} />
@@ -143,13 +143,13 @@ export default function SysFlaggedContent() {
               className={cn(
                 'pb-3 text-sm font-bold transition-colors flex items-center gap-2',
                 status === tab.value
-                  ? 'border-b-2 border-[hsl(var(--theme-accent-primary))] text-[hsl(var(--theme-accent-primary))]'
-                  : 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-accent-primary))]'
+                  ? 'border-b-2 border-[hsl(var(--theme-accent-primary))] text-[hsl(var(--theme-text-accent))]'
+                  : 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-accent))]'
               )}
             >
               {tab.label}
               {tab.value === 'pending' && (
-                <span className="bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-accent-primary))] text-[10px] px-1.5 py-0.5 rounded-full">{totalFlagged}</span>
+                <span className="bg-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-text-accent))] text-xs px-1.5 py-0.5 rounded-full">{totalFlagged}</span>
               )}
             </button>
           ))}
@@ -162,7 +162,7 @@ export default function SysFlaggedContent() {
               className={cn(
                 'flex items-center gap-2 px-3 py-1.5 border rounded-lg text-xs font-medium transition-colors capitalize',
                 severity === sev
-                  ? 'bg-[hsl(var(--theme-accent-primary)/0.1)] border-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-accent-primary))]'
+                  ? 'bg-[hsl(var(--theme-accent-primary)/0.1)] border-[hsl(var(--theme-accent-primary)/0.2)] text-[hsl(var(--theme-text-accent))]'
                   : 'bg-[hsl(var(--theme-accent-primary)/0.05)] hover:bg-[hsl(var(--theme-accent-primary)/0.1)] border-[hsl(var(--theme-accent-primary)/0.1)]'
               )}
             >
@@ -173,29 +173,29 @@ export default function SysFlaggedContent() {
       </div>
 
       {/* Data Table */}
-      <div className="overflow-hidden rounded-xl border border-[hsl(var(--theme-accent-primary)/0.1)] bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl">
+      <div className="overflow-hidden rounded-xl border border-[hsl(var(--theme-accent-primary)/0.1)] bg-[hsl(var(--theme-bg-secondary)/0.7)]">
         <table className="w-full text-left text-sm">
           <thead className="bg-[hsl(var(--theme-accent-primary)/0.1)] border-b border-[hsl(var(--theme-accent-primary)/0.1)]">
             <tr>
-              <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Severity</th>
-              <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider">User</th>
-              <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Community</th>
-              <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Message Preview</th>
-              <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Type</th>
-              <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider">AI Confidence</th>
-              <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Timestamp</th>
-              <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider text-right">Actions</th>
+              <th className="px-6 py-4 font-semibold text-xs">Severity</th>
+              <th className="px-6 py-4 font-semibold text-xs">User</th>
+              <th className="px-6 py-4 font-semibold text-xs">Community</th>
+              <th className="px-6 py-4 font-semibold text-xs">Message Preview</th>
+              <th className="px-6 py-4 font-semibold text-xs">Type</th>
+              <th className="px-6 py-4 font-semibold text-xs">AI Confidence</th>
+              <th className="px-6 py-4 font-semibold text-xs">Timestamp</th>
+              <th className="px-6 py-4 font-semibold text-xs text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[hsl(var(--theme-accent-primary)/0.05)]">
             {loading ? (
               [...Array(5)].map((_, i) => (
-                <tr key={i}><td className="px-6 py-4" colSpan={8}><div className="h-5 bg-[hsl(var(--theme-bg-tertiary)/0.5)] rounded animate-pulse" /></td></tr>
+                <tr key={i}><td className="px-6 py-4" colSpan={8}><div className="h-5 bg-[hsl(var(--theme-bg-tertiary)/0.5)] rounded animate-skeleton" /></td></tr>
               ))
             ) : messages.length === 0 ? (
               <tr>
                 <td className="px-6 py-12 text-center text-[hsl(var(--theme-text-secondary))]" colSpan={8}>
-                  <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
+                  <CheckCircle className="h-8 w-8 text-success mx-auto mb-2" />
                   No flagged messages found
                 </td>
               </tr>
@@ -216,7 +216,7 @@ export default function SysFlaggedContent() {
                       onClick={() => setExpandedRow(isExpanded ? null : msg.id)}
                     >
                       <td className="px-6 py-4">
-                        <span className={cn('px-2.5 py-1 rounded-full text-[11px] font-bold capitalize', severityColors[sev])}>
+                        <span className={cn('px-2.5 py-1 rounded-full text-xs font-bold capitalize', severityColors[sev])}>
                           {sev}
                         </span>
                       </td>
@@ -230,14 +230,14 @@ export default function SysFlaggedContent() {
                           </Avatar>
                           <div>
                             <p className="font-medium">{msg.user.display_name || msg.user.username}</p>
-                            <p className="text-[10px] text-[hsl(var(--theme-text-muted))]">ID: {msg.user.id}</p>
+                            <p className="text-xs text-[hsl(var(--theme-text-muted))]">ID: {msg.user.id}</p>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-[hsl(var(--theme-text-secondary))]">#{msg.channel.name}</td>
                       <td className="px-6 py-4 text-[hsl(var(--theme-text-secondary))] max-w-xs truncate italic">"{msg.message_text}"</td>
                       <td className="px-6 py-4">
-                        <span className="px-2 py-0.5 bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-primary))] rounded text-[11px]">{msg.flag_type}</span>
+                        <span className="px-2 py-0.5 bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-primary))] rounded text-xs">{msg.flag_type}</span>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
@@ -253,7 +253,7 @@ export default function SysFlaggedContent() {
                           onClick={(e) => { e.stopPropagation(); setExpandedRow(isExpanded ? null : msg.id); }}
                           className={cn(
                             'font-bold hover:underline transition-colors',
-                            isExpanded ? 'text-[hsl(var(--theme-accent-primary))]' : 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-accent-primary))]'
+                            isExpanded ? 'text-[hsl(var(--theme-text-accent))]' : 'text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-accent))]'
                           )}
                         >
                           Review
@@ -267,29 +267,29 @@ export default function SysFlaggedContent() {
                           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             <div className="lg:col-span-2 space-y-6">
                               <div className="bg-[hsl(var(--theme-bg-secondary)/0.4)] p-5 rounded-xl border border-[hsl(var(--theme-accent-primary)/0.2)]">
-                                <h4 className="text-xs font-bold text-[hsl(var(--theme-accent-primary))] uppercase mb-3">Full Message Content</h4>
+                                <h4 className="text-xs font-bold text-[hsl(var(--theme-text-accent))] mb-3">Full Message Content</h4>
                                 <p className="text-lg leading-relaxed">{msg.message_text}</p>
                               </div>
                               <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] p-4 rounded-xl">
-                                  <h4 className="text-xs font-bold text-[hsl(var(--theme-accent-primary))] uppercase mb-3">AI Analysis</h4>
+                                <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.1)] p-4 rounded-xl">
+                                  <h4 className="text-xs font-bold text-[hsl(var(--theme-text-accent))] mb-3">AI Analysis</h4>
                                   <div className="space-y-2">
                                     <div className="flex justify-between items-center text-xs">
                                       <span>Confidence Score</span>
-                                      <span className="text-red-400 font-bold">{confidencePercent}%</span>
+                                      <span className="text-destructive font-bold">{confidencePercent}%</span>
                                     </div>
                                     <div className="flex justify-between items-center text-xs">
                                       <span>Flag Type</span>
-                                      <span className="text-orange-400 font-bold">{msg.flag_type}</span>
+                                      <span className="text-warning font-bold">{msg.flag_type}</span>
                                     </div>
                                     <div className="flex justify-between items-center text-xs">
                                       <span>Severity Level</span>
-                                      <span className={cn('font-bold capitalize', sev === 'critical' || sev === 'high' ? 'text-red-400' : sev === 'medium' ? 'text-orange-400' : 'text-blue-400')}>{sev}</span>
+                                      <span className={cn('font-bold capitalize', sev === 'critical' || sev === 'high' ? 'text-destructive' : sev === 'medium' ? 'text-warning' : 'text-blue-400')}>{sev}</span>
                                     </div>
                                   </div>
                                 </div>
-                                <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] p-4 rounded-xl">
-                                  <h4 className="text-xs font-bold text-[hsl(var(--theme-accent-primary))] uppercase mb-3">Details</h4>
+                                <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.1)] p-4 rounded-xl">
+                                  <h4 className="text-xs font-bold text-[hsl(var(--theme-text-accent))] mb-3">Details</h4>
                                   <div className="space-y-2">
                                     <div className="flex justify-between items-center text-xs">
                                       <span>Channel</span>
@@ -297,7 +297,7 @@ export default function SysFlaggedContent() {
                                     </div>
                                     <div className="flex justify-between items-center text-xs">
                                       <span>Violations</span>
-                                      <span className="font-bold text-orange-400">{msg.user.violation_count || 0}</span>
+                                      <span className="font-bold text-warning">{msg.user.violation_count || 0}</span>
                                     </div>
                                     <div className="flex justify-between items-center text-xs">
                                       <span>Timestamp</span>
@@ -308,8 +308,8 @@ export default function SysFlaggedContent() {
                               </div>
                             </div>
                             <div className="space-y-6">
-                              <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] backdrop-blur-xl border border-[hsl(var(--theme-accent-primary)/0.1)] p-5 rounded-xl">
-                                <h4 className="text-xs font-bold text-[hsl(var(--theme-accent-primary))] uppercase mb-4">User Info</h4>
+                              <div className="bg-[hsl(var(--theme-bg-secondary)/0.7)] border border-[hsl(var(--theme-accent-primary)/0.1)] p-5 rounded-xl">
+                                <h4 className="text-xs font-bold text-[hsl(var(--theme-text-accent))] mb-4">User Info</h4>
                                 <div className="flex items-center gap-3 mb-4">
                                   <Avatar className="h-10 w-10">
                                     <AvatarImage src={msg.user.avatar_url || undefined} />
@@ -317,29 +317,29 @@ export default function SysFlaggedContent() {
                                   </Avatar>
                                   <div>
                                     <p className="text-sm font-bold">{msg.user.display_name || msg.user.username}</p>
-                                    <p className="text-[10px] text-[hsl(var(--theme-text-muted))]">@{msg.user.username}</p>
+                                    <p className="text-xs text-[hsl(var(--theme-text-muted))]">@{msg.user.username}</p>
                                   </div>
                                 </div>
                                 <div className="text-xs text-[hsl(var(--theme-text-secondary))]">
-                                  Violation count: <span className="text-orange-400 font-bold">{msg.user.violation_count || 0}</span>
+                                  Violation count: <span className="text-warning font-bold">{msg.user.violation_count || 0}</span>
                                 </div>
                               </div>
                               <div className="flex flex-col gap-2">
                                 <button
                                   onClick={() => setActionDialog({ isOpen: true, action: 'approve', flagId: msg.id, username: msg.user.username })}
-                                  className="w-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2"
+                                  className="w-full bg-success/10 hover:bg-success/20 text-success py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2"
                                 >
                                   <Check className="h-3.5 w-3.5" /> Approve Message
                                 </button>
                                 <button
                                   onClick={() => setActionDialog({ isOpen: true, action: 'warn', flagId: msg.id, username: msg.user.username })}
-                                  className="w-full bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2"
+                                  className="w-full bg-warning/10 hover:bg-warning/20 text-warning py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2"
                                 >
                                   <AlertTriangle className="h-3.5 w-3.5" /> Warn User
                                 </button>
                                 <button
                                   onClick={() => setActionDialog({ isOpen: true, action: 'delete', flagId: msg.id, username: msg.user.username })}
-                                  className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2"
+                                  className="w-full bg-destructive/10 hover:bg-destructive/20 text-destructive py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" /> Delete Message
                                 </button>

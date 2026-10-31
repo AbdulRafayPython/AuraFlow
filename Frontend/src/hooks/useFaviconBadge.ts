@@ -9,7 +9,7 @@ const FAVICON_SIZE = 64;
 /**
  * Draws the current favicon onto an off-screen canvas and overlays a rounded-rect
  * badge with the unread count (top-right). When count drops to 0 the original favicon
- * is restored.  Also updates `document.title` with a prefix like `(3) AuroFlow`.
+ * is restored.  Also updates `document.title` with a prefix like `(3) Auraflow`.
  *
  * Call once at the top of the component tree – it only manipulates DOM globals.
  */

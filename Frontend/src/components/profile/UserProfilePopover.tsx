@@ -2,7 +2,7 @@
 // Shows avatar, status, bio, mutual friends, shared communities, actions
 
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquare, UserPlus, Clock, Users, Shield, X, Loader2 } from 'lucide-react';
+import { MessageSquare, UserPlus, Clock, Users, X, Loader2 } from 'lucide-react';
 import { statusService, type UserProfile } from '@/services/statusService';
 import { cn, getAvatarUrl } from '@/lib/utils';
 
@@ -112,7 +112,7 @@ const UserProfilePopover: React.FC<UserProfilePopoverProps> = ({
       >
         {loading ? (
           <div className="flex items-center justify-center h-48">
-            <Loader2 className="w-6 h-6 text-[hsl(var(--theme-accent-primary))] animate-spin" />
+            <Loader2 className="w-6 h-6 text-[hsl(var(--theme-text-accent))] animate-spin" />
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center h-48 text-sm text-[hsl(var(--theme-text-muted))]">
@@ -121,7 +121,7 @@ const UserProfilePopover: React.FC<UserProfilePopoverProps> = ({
         ) : profile ? (
           <>
             {/* Banner / Gradient Header */}
-            <div className="relative h-20 bg-gradient-to-br from-[hsl(var(--theme-accent-primary))] to-[hsl(var(--theme-accent-secondary))]">
+            <div className="relative h-20 bg-[hsl(var(--theme-accent-primary))]">
               <button
                 onClick={onClose}
                 className="absolute top-2 right-2 p-1 rounded-full bg-black/20 hover:bg-black/40 text-white/80 transition-colors"
@@ -178,7 +178,7 @@ const UserProfilePopover: React.FC<UserProfilePopoverProps> = ({
             {/* Bio */}
             {profile.bio && (
               <div className="px-4 py-3">
-                <h4 className="text-xs font-semibold text-[hsl(var(--theme-text-muted))] uppercase tracking-wider mb-1">About Me</h4>
+                <h4 className="text-xs font-semibold text-[hsl(var(--theme-text-muted))] mb-1">About Me</h4>
                 <p className="text-sm text-[hsl(var(--theme-text-secondary))] leading-relaxed line-clamp-3">
                   {profile.bio}
                 </p>
@@ -202,7 +202,7 @@ const UserProfilePopover: React.FC<UserProfilePopoverProps> = ({
             {/* Shared Communities */}
             {profile.shared_communities.length > 0 && (
               <div className="px-4 py-2">
-                <h4 className="text-xs font-semibold text-[hsl(var(--theme-text-muted))] uppercase tracking-wider mb-1.5">
+                <h4 className="text-xs font-semibold text-[hsl(var(--theme-text-muted))] mb-1.5">
                   Shared Communities
                 </h4>
                 <div className="flex flex-wrap gap-1.5">
@@ -214,7 +214,7 @@ const UserProfilePopover: React.FC<UserProfilePopoverProps> = ({
                       {c.logo_url ? (
                         <img src={c.logo_url} alt="" className="w-3.5 h-3.5 rounded-full" />
                       ) : (
-                        <span className="w-3.5 h-3.5 rounded-full text-[8px] font-bold flex items-center justify-center text-white" style={{ backgroundColor: c.color }}>
+                        <span className="w-4 h-4 rounded-full text-xs font-bold flex items-center justify-center text-white" style={{ backgroundColor: c.color }}>
                           {c.icon}
                         </span>
                       )}

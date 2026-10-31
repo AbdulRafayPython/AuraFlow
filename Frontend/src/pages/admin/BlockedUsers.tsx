@@ -3,11 +3,11 @@
  * Displays all blocked users in the selected community with unblock functionality.
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useCommunityDashboard } from '@/contexts/CommunityDashboardContext';
 import adminService, { BlockedUser, PaginationInfo } from '@/services/adminService';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -21,14 +21,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,7 +44,6 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-  MessageSquare,
   Gavel,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
@@ -164,7 +155,7 @@ function AppealsPanel() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="text-green-600 border-green-300 hover:bg-green-50"
+                        className="text-success border-green-300 hover:bg-green-50"
                         onClick={() => handleResolve(a.id, 'approve')}
                         disabled={resolving === a.id}
                       >
@@ -174,7 +165,7 @@ function AppealsPanel() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="text-red-600 border-red-300 hover:bg-red-50"
+                        className="text-destructive border-red-300 hover:bg-red-50"
                         onClick={() => handleResolve(a.id, 'reject')}
                         disabled={resolving === a.id}
                       >
@@ -270,7 +261,7 @@ export default function BlockedUsers() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <UserX className="h-6 w-6 text-red-500" />
+            <UserX className="h-6 w-6 text-destructive" />
             Blocked Users
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -298,7 +289,7 @@ export default function BlockedUsers() {
             <CardTitle className="text-sm font-medium text-muted-foreground">High Violators</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-500">
+            <div className="text-2xl font-bold text-warning">
               {users.filter(u => u.total_violations >= 5).length}
             </div>
           </CardContent>
@@ -360,7 +351,7 @@ export default function BlockedUsers() {
                   <TableRow>
                     <TableCell colSpan={5} className="h-32 text-center">
                       <div className="flex flex-col items-center gap-2">
-                        <UserCheck className="h-8 w-8 text-green-500" />
+                        <UserCheck className="h-8 w-8 text-success" />
                         <span className="font-medium">No blocked users</span>
                         <span className="text-sm text-muted-foreground">
                           {search ? 'No users match your search' : 'All users are in good standing'}
@@ -375,7 +366,7 @@ export default function BlockedUsers() {
                         <div className="flex items-center gap-3">
                           <Avatar className="h-10 w-10">
                             <AvatarImage src={blocked.user.avatar_url || undefined} />
-                            <AvatarFallback className="bg-red-500/10 text-red-500">
+                            <AvatarFallback className="bg-destructive/10 text-destructive">
                               {blocked.user.username[0].toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
