@@ -306,7 +306,7 @@ export interface AgentAction {
 
 class AIAgentService {
   // =====================================================
-  // SUMMARIZER AGENT
+  // SUMMARIES AND MOOD
   // =====================================================
   async summarizeChannel(channelId: number, messageCount: number = 100): Promise<SummaryResult> {
     try {
@@ -343,64 +343,6 @@ class AIAgentService {
     }
   }
 
-  async getSummarizerSchedule(communityId: number): Promise<{
-    auto_summarize_enabled: boolean;
-    schedule_time: string;
-    auto_summarize_message_count: number;
-    last_auto_summary_date: string;
-    agent_enabled: boolean;
-  }> {
-    try {
-      const response: any = await api.get(`/api/agents/summarizer/schedule/${communityId}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to get schedule');
-    }
-  }
-
-  async triggerAutoSummarize(communityId: number): Promise<any> {
-    try {
-      const response = await api.post(`/api/agents/summarizer/trigger/${communityId}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to trigger auto-summarize');
-    }
-  }
-
-  // =====================================================
-  // MOOD TRACKER AGENT
-  // =====================================================
-  async trackUserMood(userId: number, timePeriodHours: number = 24): Promise<MoodTrackingResult> {
-    try {
-      const response: any = await api.post(`/api/agents/mood/track/${userId}`, {
-        time_period_hours: timePeriodHours
-      });
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to track mood');
-    }
-  }
-
-  async getMoodHistoryByUser(userId: number, limit: number = 10): Promise<any[]> {
-    try {
-      const response: any = await api.get(`/api/agents/mood/history/${userId}?limit=${limit}`);
-      return response.mood_history || [];
-    } catch (error: any) {
-      console.error('[MOOD] History error:', error.data || error.message);
-      throw new Error(error.data?.error || 'Failed to fetch mood history');
-    }
-  }
-
-  // Aliased methods for components
-  async getMoodHistory(limit: number = 10): Promise<any[]> {
-    // This will need user context - for now return empty
-    return [];
-  }
-
-  async analyzeMessageSentiment(text: string): Promise<any> {
-    return this.analyzeMessage(text);
-  }
-
   async analyzeMessage(text: string): Promise<MoodAnalysis> {
     try {
       const response: any = await api.post('/api/agents/mood/analyze-message', { text });
@@ -420,17 +362,8 @@ class AIAgentService {
     }
   }
 
-  async reanalyzeMoodHistory(userId: number, days: number = 30): Promise<any> {
-    try {
-      const response: any = await api.post(`/api/agents/mood/reanalyze/${userId}?days=${days}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to reanalyze mood history');
-    }
-  }
-
   // =====================================================
-  // MODERATION AGENT
+  // MODERATION CHECK, ENGAGEMENT POSTS AND POLLS
   // =====================================================
   async moderateMessage(text: string, channelId?: number): Promise<ModerationResult> {
     try {
@@ -441,74 +374,6 @@ class AIAgentService {
       return response.moderation;
     } catch (error: any) {
       throw new Error(error.data?.error || error.message || 'Failed to moderate message');
-    }
-  }
-
-  async getModerationLog(channelId: number, limit: number = 20): Promise<any[]> {
-    try {
-      const response: any = await api.get(`/api/agents/moderation/log/${channelId}?limit=${limit}`);
-      return response.data.log || [];
-    } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Failed to fetch moderation log');
-    }
-  }
-
-  async getModerationHistory(communityId: number, channelId?: number, limit: number = 10): Promise<any[]> {
-    try {
-      let url = `/api/agents/moderation/history?community_id=${communityId}&limit=${limit}`;
-      if (channelId) {
-        url += `&channel_id=${channelId}`;
-      }
-      const response: any = await api.get(url);
-      return response.history || [];
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch moderation history');
-    }
-  }
-
-  async getModerationStats(communityId: number, days: number = 7, channelId?: number): Promise<any> {
-    try {
-      let url = `/api/agents/moderation/stats?community_id=${communityId}&days=${days}`;
-      if (channelId) {
-        url += `&channel_id=${channelId}`;
-      }
-      const response: any = await api.get(url);
-      return response.stats;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch moderation stats');
-    }
-  }
-
-  // =====================================================
-  // ENGAGEMENT AGENT
-  // =====================================================
-  async analyzeEngagement(timePeriodHours: number, channelId?: string): Promise<any> {
-    try {
-      const response = await api.post('/api/agents/engagement/analyze', {
-        time_period_hours: timePeriodHours,
-        channel_id: channelId
-      });
-      return response;  // appService returns data directly
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to analyze engagement');
-    }
-  }
-
-  async getEngagementMetrics(channelId: number, hours: number = 24): Promise<any> {
-    try {
-      const response = await api.get(`/api/agents/engagement/metrics/${channelId}?hours=${hours}`);
-      return response;  // appService returns data directly
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch engagement metrics');
-    }
-  }
-
-  async getEngagementHistory(channelId: number, limit: number = 10): Promise<any[]> {
-    try {
-      const response: any = await api.get(`/api/agents/engagement/trends/${channelId}?limit=${limit}`);
-      return response.trends || [];
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch engagement history');
     }
   }
 
@@ -548,136 +413,9 @@ class AIAgentService {
   }
 
   // =====================================================
-  // WELLNESS AGENT
+  // KNOWLEDGE BASE AND FOCUS
   // =====================================================
   
-  /**
-   * Check current wellness status
-   */
-  async checkWellness(): Promise<any> {
-    try {
-      const response: any = await api.get('/api/agents/wellness/check');
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to check wellness');
-    }
-  }
-
-  /**
-   * Comprehensive wellness analysis
-   */
-  async analyzeWellness(timePeriodHours: number = 24): Promise<any> {
-    try {
-      const response: any = await api.post('/api/agents/wellness/analyze', {
-        time_period_hours: timePeriodHours
-      });
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to analyze wellness');
-    }
-  }
-
-  /**
-   * Get wellness insights for a user
-   */
-  async getWellnessInsights(userId: number, days: number = 7): Promise<any> {
-    try {
-      const response: any = await api.get(`/api/agents/wellness/insights/${userId}?days=${days}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch wellness insights');
-    }
-  }
-
-  /**
-   * Get wellness recommendations
-   */
-  async getWellnessRecommendations(): Promise<any> {
-    try {
-      const response: any = await api.get('/api/agents/wellness/recommendations');
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch wellness recommendations');
-    }
-  }
-
-  /**
-   * Get wellness history
-   */
-  async getWellnessHistory(limit: number = 10): Promise<any[]> {
-    try {
-      const response: any = await api.get(`/api/agents/wellness/history?limit=${limit}`);
-      return response.history || [];
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch wellness history');
-    }
-  }
-
-  /**
-   * Get wellness trends for charts
-   */
-  async getWellnessTrends(days: number = 7): Promise<any> {
-    try {
-      const response: any = await api.get(`/api/agents/wellness/trends?days=${days}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to fetch wellness trends');
-    }
-  }
-
-  async extractKnowledgeByTime(timePeriodHours: number, topic: string | undefined, communityId: number): Promise<any> {
-    try {
-      const response: any = await api.post('/api/agents/knowledge/extract', {
-        time_period_hours: timePeriodHours,
-        topic,
-        community_id: communityId
-      });
-      // API returns { success, total_items, faqs, definitions, decisions, channels_processed, message }
-      return response.data || response;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.error || error.data?.error || error.message || 'Failed to extract knowledge');
-    }
-  }
-
-  async getKnowledgeInsights(timePeriodHours: number, communityId: number): Promise<any> {
-    try {
-      const response: any = await api.get(`/api/agents/knowledge/insights?time_period_hours=${timePeriodHours}&community_id=${communityId}`);
-      // API returns { success: true, insights: {...} }
-      return response.insights || response.data?.insights || response;
-    } catch (error: any) {
-      console.error('[KB Service] Insights error:', error);
-      throw new Error(error.data?.error || error.message || 'Failed to fetch knowledge insights');
-    }
-  }
-
-  async getKnowledgeTopics(limit: number = 20, communityId: number): Promise<any[]> {
-    try {
-      const response: any = await api.get(`/api/agents/knowledge/topics?limit=${limit}&community_id=${communityId}`);
-      // API returns { success: true, topics: [...] }
-      return response.topics || response.data?.topics || [];
-    } catch (error: any) {
-      console.error('[KB Service] Topics error:', error);
-      throw new Error(error.data?.error || error.message || 'Failed to fetch knowledge topics');
-    }
-  }
-
-  // Main extractKnowledge method for components
-  async extractKnowledge(timePeriodHours: number, topic: string | undefined, communityId: number): Promise<any> {
-    return this.extractKnowledgeByTime(timePeriodHours, topic, communityId);
-  }
-
-  async searchKnowledge(query: string, communityId?: number, channelId?: number): Promise<KnowledgeEntry[]> {
-    try {
-      const params = new URLSearchParams({ query });
-      if (channelId) params.append('channel_id', channelId.toString());
-      if (communityId) params.append('community_id', communityId.toString());
-      const response: any = await api.get(`/api/agents/knowledge/search?${params}`);
-      // API returns { success: true, results: [...] }
-      return response.results || response.data?.results || [];
-    } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Failed to search knowledge');
-    }
-  }
 
   async getKnowledgeBase(channelId: number, limit: number = 20): Promise<KnowledgeEntry[]> {
     try {
@@ -688,50 +426,6 @@ class AIAgentService {
       console.error('[KB Service] getKnowledgeBase error:', error);
       // Return empty array instead of throwing - better UX
       return [];
-    }
-  }
-
-  async getKnowledgeStats(communityId: number): Promise<any> {
-    try {
-      const response: any = await api.get(`/api/agents/knowledge/stats?community_id=${communityId}`);
-      // API returns { success: true, total_items, by_type: {...} }
-      return response.data || response;
-    } catch (error: any) {
-      console.error('[KB Service] Stats error:', error);
-      throw new Error(error.data?.error || error.message || 'Failed to fetch knowledge stats');
-    }
-  }
-
-  // =====================================================
-  // FOCUS AGENT
-  // =====================================================
-  async startFocusSession(sessionType: 'work' | 'break' | 'meeting', durationMinutes: number): Promise<FocusSession> {
-    try {
-      const response: any = await api.post('/api/agents/focus/session/start', {
-        session_type: sessionType,
-        duration_minutes: durationMinutes
-      });
-      return response.data.session;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Failed to start focus session');
-    }
-  }
-
-  async endFocusSession(sessionId: number): Promise<FocusSession> {
-    try {
-      const response: any = await api.post(`/api/agents/focus/session/${sessionId}/end`);
-      return response.data.session;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Failed to end focus session');
-    }
-  }
-
-  async getFocusStats(userId: number, days: number = 7): Promise<any> {
-    try {
-      const response: any = await api.get(`/api/agents/focus/stats/${userId}?days=${days}`);
-      return response.data.stats;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Failed to fetch focus stats');
     }
   }
 
@@ -746,39 +440,6 @@ class AIAgentService {
     } catch (error: any) {
       console.error('[Focus Service] Analyze error:', error);
       throw new Error(error.data?.error || error.message || 'Failed to analyze focus');
-    }
-  }
-
-  async getFocusMetrics(days: number = 7): Promise<any> {
-    try {
-      const response = await api.get(`/api/agents/focus/metrics?days=${days}`);
-      // appService returns data directly
-      return response;
-    } catch (error: any) {
-      console.error('[Focus Service] Metrics error:', error);
-      throw new Error(error.data?.error || error.message || 'Failed to fetch focus metrics');
-    }
-  }
-
-  async getFocusRecommendations(): Promise<any[]> {
-    try {
-      const response = await api.get('/api/agents/focus/recommendations');
-      // appService returns data directly - backend returns array
-      return Array.isArray(response) ? response : [];
-    } catch (error: any) {
-      console.error('[Focus Service] Recommendations error:', error);
-      throw new Error(error.data?.error || error.message || 'Failed to fetch focus recommendations');
-    }
-  }
-
-  async setFocusGoal(goal: any): Promise<any> {
-    try {
-      const response = await api.post('/api/agents/focus/goal', { description: goal });
-      // appService returns data directly
-      return response;
-    } catch (error: any) {
-      console.error('[Focus Service] Goal error:', error);
-      throw new Error(error.data?.error || error.message || 'Failed to set focus goal');
     }
   }
 
@@ -1127,24 +788,8 @@ class AIAgentService {
     }
   }
 
-  async getJoke(): Promise<AssistantReply> {
-    try {
-      return (await api.get('/api/agents/assistant/joke')) as any;
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to fetch joke');
-    }
-  }
-
-  async getMotivation(): Promise<AssistantReply> {
-    try {
-      return (await api.get('/api/agents/assistant/motivation')) as any;
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to fetch motivation');
-    }
-  }
-
   // =====================================================
-  // TRANSLATOR AGENT
+  // TRANSLATOR AND QUICK REPLIES
   // =====================================================
   async translateText(
     text: string,
@@ -1171,77 +816,6 @@ class AIAgentService {
       return response;
     } catch (error: any) {
       throw new Error(error.data?.error || error.message || 'Failed to translate message');
-    }
-  }
-
-  async getSupportedLanguages(): Promise<Record<string, string>> {
-    try {
-      const response: any = await api.get('/api/agents/translator/languages');
-      return response.languages || {};
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to fetch languages');
-    }
-  }
-
-  async detectLanguage(text: string): Promise<{ language: string; confidence: number }> {
-    try {
-      const response: any = await api.post('/api/agents/translator/detect', { text });
-      return { language: response.language, confidence: response.confidence };
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to detect language');
-    }
-  }
-
-  // =====================================================
-  // CONTEXT-AWARE SUPPORT AGENT
-  // =====================================================
-  async askSupport(
-    question: string,
-    communityId: number,
-    opts: { channelId?: number; polish?: boolean } = {},
-  ): Promise<SupportAnswer> {
-    try {
-      const response: any = await api.post('/api/agents/support/ask', {
-        question,
-        community_id: communityId,
-        channel_id: opts.channelId,
-        polish: opts.polish ?? true,
-      });
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to ask support');
-    }
-  }
-
-  async refreshSupportIndex(communityId: number): Promise<void> {
-    try {
-      await api.post(`/api/agents/support/refresh/${communityId}`);
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to refresh support index');
-    }
-  }
-
-  // =====================================================
-  // AUTO MESSAGE AGENT
-  // =====================================================
-  async previewWelcome(params: {
-    communityName: string;
-    username: string;
-    communityDescription?: string;
-    communityId?: number;
-    channelId?: number;
-  }): Promise<WelcomePreview> {
-    try {
-      const response: any = await api.post('/api/agents/automessage/welcome/preview', {
-        community_name: params.communityName,
-        username: params.username,
-        community_description: params.communityDescription,
-        community_id: params.communityId,
-        channel_id: params.channelId,
-      });
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || 'Failed to preview welcome');
     }
   }
 

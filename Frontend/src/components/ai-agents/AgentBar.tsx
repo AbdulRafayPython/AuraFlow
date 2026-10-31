@@ -8,7 +8,7 @@
 //
 //   • Ask              → opens an inline assistant popover (assistant agent)
 //   • Translate        → opens an inline translator popover (translator agent)
-//   • Catch me up      → generateSummary on this channel (summarizer)
+//   • Catch me up      → summarizeChannel on this channel (summarizer)
 //   • Search knowledge → opens the rail's Knowledge tab (support / KB)
 //
 // Autonomous interventions (support_suggestion, summary_checkpoint,
@@ -36,7 +36,6 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useAIAgents } from '@/contexts/AIAgentContext';
 import { useRealtime } from '@/hooks/useRealtime';
 import { useToast } from '@/hooks/use-toast';
 import { accentFor } from './AgentAccent';
@@ -112,13 +111,6 @@ export default function AgentBar({
   onOpenPanel,
   onResultUpdated,
 }: AgentBarProps) {
-  const {
-    getCommunityAgentStatus,
-    getPersonalAgentStatus,
-    generateSummary,
-    askAssistant,
-    translateText,
-  } = useAIAgents() as any;
   const { addLocalMessage } = useRealtime();
   const { toast } = useToast();
 
@@ -132,7 +124,7 @@ export default function AgentBar({
     (async () => {
       try {
         if (communityId) {
-          const installed = await getCommunityAgentStatus(communityId);
+          const installed = await aiAgentService.getCommunityAgentStatus(communityId);
           if (cancelled) return;
           setCommunityActive(
             new Set(
@@ -149,7 +141,7 @@ export default function AgentBar({
       }
 
       try {
-        const personal = await getPersonalAgentStatus();
+        const personal = await aiAgentService.getPersonalAgentStatus();
         if (cancelled) return;
         setPersonalActive(
           new Set(
@@ -165,7 +157,7 @@ export default function AgentBar({
     return () => {
       cancelled = true;
     };
-  }, [communityId, getCommunityAgentStatus, getPersonalAgentStatus]);
+  }, [communityId]);
 
   const isActionReady = (def: ActionDef): boolean => {
     return def.requires.every((req) => {
@@ -188,7 +180,7 @@ export default function AgentBar({
     if (!channelId) return;
     try {
       setBusy('catchup');
-      const r = await generateSummary(channelId, 100);
+      const r = await aiAgentService.summarizeChannel(channelId, 100);
       if (r?.success) {
         toast({ title: 'Caught you up', description: 'See the Recap tab.' });
         onOpenPanel?.('recap');
@@ -249,7 +241,7 @@ export default function AgentBar({
               accent={accent}
               icon={<Icon className="h-4 w-4" />}
               label={def.label}
-              onAsk={(q) => askAssistant(q, { channelId, communityId })}
+              onAsk={(q) => aiAgentService.askAssistant(q, { channelId, communityId })}
             />
           );
         }
@@ -260,7 +252,7 @@ export default function AgentBar({
               accent={accent}
               icon={<Icon className="h-4 w-4" />}
               label={def.label}
-              onTranslate={(text, target) => translateText(text, target)}
+              onTranslate={(text, target) => aiAgentService.translateText(text, target)}
             />
           );
         }
