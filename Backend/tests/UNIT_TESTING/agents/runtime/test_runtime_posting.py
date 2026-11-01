@@ -131,3 +131,16 @@ def test_thread_walk_is_bounded_and_cycle_safe(make_db):
 
 def test_no_parent_means_no_history():
     assert threads.thread_history(None, 500) == []
+
+
+def test_a_caller_can_take_the_message_without_it_being_broadcast(make_db, emitter):
+    db(make_db)
+    out = posting.post_as_agent(DEFN, 11, "held back", broadcast=False)
+    assert out["id"] == 901 and out["content"] == "held back"
+    emitter.emit.assert_not_called()
+
+
+def test_by_default_the_message_is_broadcast(make_db, emitter):
+    db(make_db)
+    posting.post_as_agent(DEFN, 11, "out loud")
+    assert emitter.emit.call_count == 1

@@ -40,6 +40,7 @@ import { useRealtime } from '@/hooks/useRealtime';
 import { useToast } from '@/hooks/use-toast';
 import { accentFor } from './AgentAccent';
 import { aiAgentService } from '@/services/aiAgentService';
+import agentBuilderService from '@/services/agentBuilderService';
 import type { Message } from '@/types';
 
 export interface AgentBarProps {
@@ -70,7 +71,7 @@ const ACTIONS: ActionDef[] = [
     label: 'Ask',
     Icon: Sparkles,
     agent: 'assistant',
-    requires: [{ scope: 'personal', types: ['assistant'] }],
+    requires: [],                      // Aura is built in for everyone
   },
   {
     key: 'translate',
@@ -241,7 +242,7 @@ export default function AgentBar({
               accent={accent}
               icon={<Icon className="h-4 w-4" />}
               label={def.label}
-              onAsk={(q) => aiAgentService.askAssistant(q, { channelId, communityId })}
+              onAsk={(q) => agentBuilderService.askAura(q, channelId)}
             />
           );
         }
@@ -429,7 +430,7 @@ function AskPopover({
         <div className="space-y-3">
           <h4 className="flex items-center gap-1.5 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
             <Sparkles className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
-            Ask the assistant
+            Ask Aura
           </h4>
           <div className="flex gap-2">
             <Input

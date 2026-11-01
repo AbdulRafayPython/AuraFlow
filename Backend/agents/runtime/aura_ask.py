@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 from agents.runtime import permissions
 from agents.runtime.definitions import ensure_aura
 from agents.runtime.loop import STATUS_UNAVAILABLE, run_agent
+from agents.runtime.posting import post_as_agent
 from agents.runtime.specs import AURA
 from agents.runtime.store import get_default_store
 from agents.runtime.tools import RISK_READ, TOOL_REGISTRY, ToolContext
@@ -168,3 +169,23 @@ def ask(user_id: int, question: str, *, channel_id: Optional[int] = None, userna
         raise AskError("Aura could not answer that. Please try again in a moment.", 502)
     remember(user_id, question, reply)
     return {"reply": reply, "run_id": result.run_uuid, "tool_calls": result.tool_calls, "source": "aura"}
+
+
+# ── slash commands: the answer goes to the channel, from Aura ───────────
+
+JOKE_PROMPT = "Tell me one short, clean joke. Reply with only the joke."
+MOTIVATION_PROMPT = "Give me one short, genuine motivational line for a student. Reply with only the line."
+
+
+def reply_in_channel(user_id: int, question: str, channel_id: int, *, username: Optional[str] = None,
+                     broadcast: bool = True) -> Optional[Dict[str, Any]]:
+    """Answer ``question`` and post the answer in ``channel_id`` as Aura (the /ask command).
+
+    Returns the message payload, or None when it could not be stored. Raises :class:`AskError`
+    for the same problems as :func:`ask`.
+    """
+    out = ask(user_id, question, channel_id=channel_id, username=username)
+    defn = ensure_aura()
+    if defn is None:
+        raise AskError("Aura is not set up on this server yet.", 503)
+    return post_as_agent(defn, channel_id, out["reply"], broadcast=broadcast)

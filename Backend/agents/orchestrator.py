@@ -36,7 +36,6 @@ log = logging.getLogger(__name__)
 _REGISTRY: Dict[str, str] = {
     # On-demand agents with autonomous hooks.
     "translator":   "agents.translator:TranslatorAgent",
-    "assistant":    "agents.assistant:AssistantAgent",
     "auto_message": "agents.auto_message:AutoMessageAgent",
     "support":      "agents.support:SupportAgent",
     # Perception agents that run on every message.

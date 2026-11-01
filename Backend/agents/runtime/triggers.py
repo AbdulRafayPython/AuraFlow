@@ -36,6 +36,18 @@ def mentioned_usernames(content: str) -> Set[str]:
     return {m.lower() for m in _MENTION_RE.findall(content or "")}
 
 
+# The old Assistant is gone; people who still write @assistant get Aura.
+BUILTIN_ALIASES = ("assistant",)
+
+
+def mention_names(defn: AgentDefinition) -> List[str]:
+    """The names that call this agent: its handle, and for Aura the old @assistant."""
+    names = [defn.bot_username.lower()]
+    if defn.is_builtin:
+        names.extend(BUILTIN_ALIASES)
+    return names
+
+
 def strip_mentions(content: str, username: str) -> str:
     """Remove ``@username`` tokens and tidy the leftover whitespace."""
     cleaned = re.sub(rf"(?<![\w@])@{re.escape(username)}\b[,:]?", "", content or "", flags=re.I)
@@ -94,7 +106,7 @@ def match_message(event: Dict[str, Any], definitions: Iterable[AgentDefinition],
             if not trig.enabled or not _in_scope(defn, trig, channel_id, community_id, user_id):
                 continue
             if trig.type == "mention":
-                if defn.bot_username.lower() in mentioned:
+                if mentioned & set(mention_names(defn)):
                     found.append(TriggerMatch(defn, trig, "mention"))
                 elif reply_parent_bot_id and reply_parent_bot_id == defn.bot_user_id:
                     found.append(TriggerMatch(defn, trig, "reply"))

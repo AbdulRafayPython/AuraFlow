@@ -216,17 +216,11 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
             if not question:
                 return {'type': 'assistant', 'success': False,
                         'error': 'Usage: /ask <your question>'}
-            from agents.assistant import AssistantAgent
-            assistant = AssistantAgent()
-            r = assistant.ask(
-                question=question,
-                user_id=user_id,
-                channel_id=channel_id,
-                community_id=community_id,
-            )
-            reply_text = r.get('reply') or "I'm not sure."
-            _post_ai_bot_message(channel_id, user_id, reply_text,
-                                 author='AI Assistant')
+            from agents.runtime import aura_ask
+            try:
+                aura_ask.reply_in_channel(user_id, question, channel_id, username=username)
+            except aura_ask.AskError as err:
+                return {'type': 'assistant', 'success': False, 'error': err.message}
             return {'type': 'assistant', 'success': True, 'posted_as_bot': True}
 
         elif command == '/translate':

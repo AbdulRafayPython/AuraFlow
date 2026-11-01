@@ -26,7 +26,7 @@ _STANDALONE_KINDS = ("member_joined", "schedule", "api", "channel_silent", "focu
 
 def build_user_message(defn: Any, trigger: Dict[str, Any]) -> str:
     """The text the agent should respond to."""
-    from agents.runtime.triggers import strip_mentions
+    from agents.runtime.triggers import mention_names, strip_mentions
     kind = trigger.get("type")
     if kind == "schedule":
         return trigger.get("prompt") or "Run your scheduled task now."
@@ -49,7 +49,9 @@ def build_user_message(defn: Any, trigger: Dict[str, Any]) -> str:
                 "Reply with only the message itself.")
     if kind == "api":
         return (trigger.get("content") or "").strip() or "Hello"
-    text = strip_mentions(trigger.get("content") or "", defn.bot_username)
+    text = trigger.get("content") or ""
+    for name in mention_names(defn):
+        text = strip_mentions(text, name)
     return text or "Hello"
 
 

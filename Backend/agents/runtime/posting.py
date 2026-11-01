@@ -87,8 +87,12 @@ def _reply_preview(cur: Any, reply_to: int) -> Optional[Dict[str, Any]]:
 def post_as_agent(defn: AgentDefinition, channel_id: int, content: str, *,
                   reply_to: Optional[int] = None,
                   run_id: Optional[int] = None,
-                  card: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+                  card: Optional[Dict[str, Any]] = None,
+                  broadcast: bool = True) -> Optional[Dict[str, Any]]:
     """Insert and broadcast the agent's message. Returns the payload, or None on failure.
+
+    ``broadcast=False`` only stores it: the caller sends the payload itself (a slash command
+    posts the reply after the command's own message, so the answer does not appear first).
 
     ``card`` (``{'kind': 'poll', ...}``) is stored in ``engagement_cards`` so the
     client renders an interactive card; ``content`` stays as the readable fallback."""
@@ -147,5 +151,6 @@ def post_as_agent(defn: AgentDefinition, channel_id: int, content: str, *,
         payload["reply_to_preview"] = preview
     if card:
         payload["card"] = card
-    emit_to_channel(channel_id, "message_received", payload)
+    if broadcast:
+        emit_to_channel(channel_id, "message_received", payload)
     return payload
