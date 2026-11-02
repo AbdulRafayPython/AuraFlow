@@ -55,6 +55,7 @@ export const TRIGGER_LABELS: Record<TriggerType, { label: string; hint: string }
   member_joined: { label: 'When someone joins', hint: 'Welcomes new members of the community.' },
   channel_silent: { label: 'When a channel goes quiet', hint: 'Posts a message to get the conversation going again. At most once every 30 minutes per channel.' },
   focus_drift: { label: 'When the topic changes', hint: 'Speaks up when a conversation moves to a new subject. At most once every 30 minutes per channel.' },
+  mood_escalation: { label: 'When my mood dips', hint: 'Checks in with you by DM when your messages suggest a hard time. Needs Mood Tracker on; at most once every 6 hours. Only you see it.' },
 };
 
 /** How long a channel must be quiet. The server reports quiet spells of 15 minutes, 1 hour and 4 hours. */
@@ -85,6 +86,8 @@ export const TOOL_LABELS: Record<string, string> = {
   summarize_channel: 'Summarize a channel',
   translate_text: 'Translate text',
   search_knowledge: 'Search its knowledge',
+  get_my_mood: 'Check how you have been feeling',
+  summarize_dm: 'Summarize your DMs with a friend',
   get_member_info: 'Look up a member',
   post_message: 'Post a message',
   create_poll: 'Create a poll',
@@ -120,16 +123,24 @@ export function cronLabel(cron: string | undefined): string {
 
 export const COMMON_TIME_ZONES = ['UTC', 'Asia/Dubai', 'Asia/Karachi', 'Asia/Riyadh', 'Europe/London', 'America/New_York'];
 
+/** Who gets a private (DM) answer for this kind of trigger. */
+export function privateRecipient(type: TriggerType): string {
+  if (type === 'member_joined') return 'the new member';
+  if (type === 'schedule' || type === 'channel_silent' || type === 'focus_drift' || type === 'mood_escalation') return 'you';
+  return 'the person who wrote';
+}
+
 /** One-line summary of a trigger for lists, e.g. "On a schedule: Every Friday at 17:00 (UTC) in #general". */
 export function describeTrigger(t: Pick<AgentTrigger, 'type' | 'channel_id' | 'config'>,
                                 channelName?: (id: number) => string | undefined): string {
   const base = TRIGGER_LABELS[t.type].label;
   const where = t.channel_id != null ? ` in #${channelName?.(t.channel_id) ?? t.channel_id}` : '';
   const c: TriggerConfig = t.config ?? {};
-  if (t.type === 'keyword') return `${base}: ${(c.keywords ?? []).join(', ') || 'no words yet'}${where}`;
-  if (t.type === 'schedule') return `${base}: ${cronLabel(c.cron)} (${c.tz || 'UTC'})${where}`;
-  if (t.type === 'channel_silent') return `${base} for ${silenceLabel(c.min_minutes)}${where}`;
-  return `${base}${where}`;
+  const dm = c.delivery === 'private' ? ` · answers ${privateRecipient(t.type)} by DM` : '';
+  if (t.type === 'keyword') return `${base}: ${(c.keywords ?? []).join(', ') || 'no words yet'}${where}${dm}`;
+  if (t.type === 'schedule') return `${base}: ${cronLabel(c.cron)} (${c.tz || 'UTC'})${where}${dm}`;
+  if (t.type === 'channel_silent') return `${base} for ${silenceLabel(c.min_minutes)}${where}${dm}`;
+  return `${base}${where}${dm}`;
 }
 
 /** What is still missing before a trigger can be saved. */

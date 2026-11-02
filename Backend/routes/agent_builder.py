@@ -163,6 +163,8 @@ def create_agent():
     with _db() as (conn, cur):
         user_id = _user_id(cur)
         community_id = _community_param(data.get("community_id"))
+        if tpl.personal_only and community_id is not None:
+            raise BuilderError(f"{tpl.name} is a personal agent: create it without a community.", 400)
         if not builder.can_create(cur, user_id, community_id):
             raise BuilderError("Only a community owner or admin can create agents for it.", 403)
         builder.check_quota(cur, user_id, community_id)

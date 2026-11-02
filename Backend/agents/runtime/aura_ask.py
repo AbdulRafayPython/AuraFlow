@@ -158,7 +158,7 @@ def ask(user_id: int, question: str, *, channel_id: Optional[int] = None, userna
         raise AskError("Aura is not set up on this server yet.", 503)
 
     ctx = ToolContext(invoked_by=user_id, community_id=community_id, channel_id=channel_id, is_dry_run=True,
-                      extra={"invoker_username": username, "agent_id": defn.id, "builtin": True})
+                      extra={"invoker_username": username, "agent_id": defn.id, "builtin": True, "private": True})
     result = run_agent(_private_spec(), question, ctx=ctx, history=recall(user_id),
                        store=get_default_store(), trigger_type="ask", agent_id=defn.id)
     if result.status == STATUS_UNAVAILABLE:

@@ -6,7 +6,7 @@ network access here (the router passes in everything it needs), which keeps
 them cheap enough to run on every message and easy to test.
 
 Trigger types handled here: ``mention``, ``keyword``, ``channel_message``,
-``member_joined``, ``channel_silent`` and ``focus_drift``. (``schedule`` is fired by
+``member_joined``, ``channel_silent``, ``focus_drift`` and ``mood_escalation``. (``schedule`` is fired by
 ``agents.runtime.schedules``.)
 """
 
@@ -22,14 +22,14 @@ _MENTION_RE = re.compile(r"(?<![\w@])@([A-Za-z0-9_]{1,64})")
 
 # Higher wins when one message matches an agent through several triggers.
 PRIORITY = {"mention": 4, "reply": 3, "keyword": 2, "channel_message": 1, "member_joined": 1,
-            "channel_silent": 1, "focus_drift": 1}
+            "channel_silent": 1, "focus_drift": 1, "mood_escalation": 1}
 
 
 @dataclass(frozen=True)
 class TriggerMatch:
     definition: AgentDefinition
     trigger: TriggerDef
-    kind: str            # 'mention' | 'reply' | 'keyword' | 'channel_message' | 'member_joined' | 'channel_silent' | 'focus_drift'
+    kind: str            # 'mention' | 'reply' | 'keyword' | 'channel_message' | 'member_joined' | 'channel_silent' | 'focus_drift' | 'mood_escalation'
 
 
 def mentioned_usernames(content: str) -> Set[str]:
@@ -160,4 +160,24 @@ def match_channel_event(kind: str, event: Dict[str, Any],
             if kind == "channel_silent" and silent < int((trig.config or {}).get("min_minutes") or 0):
                 continue
             found.append(TriggerMatch(defn, trig, kind))
+    return _best(found)
+
+
+def match_mood_escalation(event: Dict[str, Any],
+                          definitions: Iterable[AgentDefinition]) -> List[TriggerMatch]:
+    """Personal agents whose owner is the person whose mood dipped.
+
+    Never anyone else's mood: a community agent, Aura, or another person's agent never matches.
+    (Whether that person tracks their mood at all is checked by the router.)
+    """
+    user_id = event.get("user_id")
+    if not user_id:
+        return []
+    found: List[TriggerMatch] = []
+    for defn in definitions:
+        if defn.community_id is not None or defn.is_builtin or defn.owner_user_id != user_id:
+            continue
+        for trig in defn.triggers:
+            if trig.enabled and trig.type == "mood_escalation":
+                found.append(TriggerMatch(defn, trig, "mood_escalation"))
     return _best(found)

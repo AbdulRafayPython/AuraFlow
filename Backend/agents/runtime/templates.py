@@ -27,6 +27,8 @@ class AgentTemplate:
     triggers: Tuple[Dict[str, Any], ...]
     needs_channel: bool = False
     model_tier: str = "fast"
+    # Only for one person's own agent (it reads their private data), never a community's.
+    personal_only: bool = False
 
 
 _LANGUAGE = ("Reply in the language the person used (English, Urdu, Roman Urdu or Arabic). "
@@ -143,6 +145,23 @@ TEMPLATES["knowledge"] = AgentTemplate(
     tools=("search_community_knowledge", "extract_knowledge", "get_channel_history"),
     triggers=({"type": "mention"},))
 
+TEMPLATES["wellbeing"] = AgentTemplate(
+    key="wellbeing", name="Wellbeing Buddy", suggested_name="Wellbeing Buddy", personal_only=True,
+    description="Checks in with you by DM when your mood dips, and talks it through when you write to it.",
+    instructions=(
+        "You are a warm, calm wellbeing buddy for one person. Everything you write is a private "
+        "direct message that only they see.\n"
+        "- When their mood seems to have dipped, write one short check-in: ask how they are, offer "
+        "one small, practical idea (a break, a walk, talking to someone), and say you are there if "
+        "they want to talk. Do not quote their messages or mention scores.\n"
+        "- When they write to you, listen first and answer kindly and briefly. Call get_my_mood if "
+        "they ask how they have been, and describe the trend in plain words.\n"
+        "- You are not a therapist and do not diagnose. If they mention self-harm or being in danger, "
+        "tell them gently to contact someone they trust or local emergency services right away.\n"
+        f"- {_LANGUAGE}"),
+    tools=("get_my_mood",),
+    triggers=({"type": "mood_escalation"},))
+
 BLANK = AgentTemplate(
     key="blank", name="Blank agent", suggested_name="My Agent",
     description="Start from scratch.",
@@ -160,6 +179,6 @@ def list_templates() -> List[Dict[str, Any]]:
     return [{"key": t.key, "name": t.name, "description": t.description,
              "suggested_name": t.suggested_name, "instructions": t.instructions,
              "tools": list(t.tools), "model_tier": t.model_tier,
-             "needs_channel": t.needs_channel,
+             "needs_channel": t.needs_channel, "personal_only": t.personal_only,
              "triggers": [dict(tr) for tr in t.triggers]}
             for t in list(TEMPLATES.values()) + [BLANK]]

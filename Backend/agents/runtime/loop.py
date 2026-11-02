@@ -34,12 +34,12 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from agents.runtime import builtin_tools, legacy_tools, write_tools  # noqa: F401  (registers the tools)
+from agents.runtime import builtin_tools, legacy_tools, private_tools, write_tools  # noqa: F401  (registers the tools)
 from agents.runtime.context import build_system_prompt, wrap_tool_result
 from agents.runtime.specs import AgentSpec
 from agents.runtime.store import RunStore, get_default_store
 from agents.runtime.tools import (
-    RISK_READ, RISK_WRITE, Tool, ToolContext, ToolError, resolve_tools, validate_arguments,
+    RISK_READ, RISK_WRITE, Tool, ToolContext, ToolError, is_private_run, resolve_tools, validate_arguments,
 )
 
 log = logging.getLogger(__name__)
@@ -140,7 +140,8 @@ def run_agent(
     if not model_choice.available:
         return finish(STATUS_UNAVAILABLE, error="No LLM is configured.")
 
-    tools: Dict[str, Tool] = {t.name: t for t in resolve_tools(spec.tools)}
+    tools: Dict[str, Tool] = {t.name: t for t in resolve_tools(spec.tools)
+                              if not t.private_only or is_private_run(ctx)}
     tool_schemas = [t.to_openai() for t in tools.values()]
     system = build_system_prompt(spec, ctx)
     messages: List[Dict[str, Any]] = list(history or [])

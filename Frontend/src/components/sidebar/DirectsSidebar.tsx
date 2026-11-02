@@ -11,6 +11,7 @@ import { socketService } from "@/services/socketService";
 import FriendProfileModal from "@/components/modals/FriendProfileModal";
 import { Icon } from "@/components/app/Icon";
 import { SidebarListSkeleton } from "@/components/chat/MessageListSkeleton";
+import AgentLogo from "@/components/ai-agents/AgentLogo";
 
 export interface CommunityFormData {
   name: string;
@@ -190,10 +191,17 @@ export default function DirectsSidebar({ frozen = false, fluid = false }: Direct
                             : "text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground",
                         )}
                       >
-                        <PersonAvatar name={name} username={conv.user.username} url={conv.user.avatar_url} presence={presence} />
+                        {conv.user.is_bot ? (
+                          <AgentLogo size="sm" avatarUrl={conv.user.avatar_url} username={conv.user.username} name={name} />
+                        ) : (
+                          <PersonAvatar name={name} username={conv.user.username} url={conv.user.avatar_url} presence={presence} />
+                        )}
                         <div className="min-w-0 flex-1">
-                          <div className={cn("truncate text-sm", unread > 0 ? "font-semibold text-foreground" : "font-medium")}>
-                            {name}
+                          <div className={cn("flex items-center gap-1 truncate text-sm", unread > 0 ? "font-semibold text-foreground" : "font-medium")}>
+                            <span className="truncate">{name}</span>
+                            {conv.user.is_bot && (
+                              <span className="shrink-0 rounded bg-[hsl(var(--theme-bg-tertiary))] px-1 text-xs font-semibold text-muted-foreground">APP</span>
+                            )}
                           </div>
                           {conv.last_message && (
                             <div className={cn("truncate text-xs", unread > 0 ? "text-foreground" : "text-muted-foreground")}>

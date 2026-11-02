@@ -38,6 +38,7 @@ import { useToast } from '@/hooks/use-toast';
 import UserProfilePopover from '@/components/profile/UserProfilePopover';
 import { friendService } from '@/services/friendService';
 import type { DirectMessage } from '@/types';
+import AgentLogo from '@/components/ai-agents/AgentLogo';
 
 interface DirectMessageViewProps {
   userId: number;
@@ -51,6 +52,8 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const { conversations, messages, sendMessage, deleteMessage, editMessage, markAsRead, deliverUploadedMessage } = useDirectMessages();
   const { friends } = useFriends();
   const { user: currentUser } = useAuth();
+  // An agent's bot user: no presence and no calls; it answers what you write by DM.
+  const isBot = !!conversations.find((c) => c.user_id === userId)?.user.is_bot;
   const { isDarkMode } = useTheme();
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -726,6 +729,9 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
           </button>
         )}
         <div className="flex items-center gap-3 flex-1">
+          {isBot ? (
+            <AgentLogo size="sm" avatarUrl={avatar} username={username} name={displayName} />
+          ) : (
           <div className="relative">
             <img
               src={getAvatarUrl(avatar, username)}
@@ -736,13 +742,23 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             {/* Online status dot */}
             <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-success rounded-full border-2 border-[hsl(var(--theme-bg-primary))]" />
           </div>
+          )}
           <div className="flex-1 min-w-0">
-            <h2 className="text-base font-semibold truncate text-[hsl(var(--theme-text-primary))] leading-tight">
+            <h2 className="flex items-center gap-1.5 text-base font-semibold truncate text-[hsl(var(--theme-text-primary))] leading-tight">
               {displayName || username}
+              {isBot && (
+                <span className="rounded bg-[hsl(var(--theme-bg-tertiary))] px-1 py-px text-xs font-semibold tracking-wide text-muted-foreground">
+                  APP
+                </span>
+              )}
             </h2>
+            {isBot ? (
+              <p className="text-xs text-muted-foreground">Agent · messages only you can see</p>
+            ) : (
             <p className="text-xs text-success">
               Online
             </p>
+            )}
           </div>
 
           {/* Header actions: Catch-me-up + call buttons */}
@@ -756,6 +772,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             >
               <Sparkles className="w-[18px] h-[18px]" />
             </button>
+            {!isBot && (<>
             <button
               onClick={handleAudioCall}
               disabled={callState !== 'idle'}
@@ -772,6 +789,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             >
               <Video className="w-[18px] h-[18px]" />
             </button>
+            </>)}
           </div>
         </div>
       </header>
@@ -1036,7 +1054,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             canSend={message.trim().length > 0 || !!pendingFile}
             placeholder={`Message @${displayName || username}`}
             disabled={isSending}
-            onAttach={() => fileInputRef.current?.click()}
+            onAttach={isBot ? undefined : () => fileInputRef.current?.click()}
             inputProps={{
               onKeyPress: (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -1052,13 +1070,20 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                   pickerPosition="top"
                   disabled={isSending}
                 />
-                <VoiceRecorder
-                  onSend={handleVoiceSend}
-                  disabled={isSending}
-                />
+                {!isBot && (
+                  <VoiceRecorder
+                    onSend={handleVoiceSend}
+                    disabled={isSending}
+                  />
+                )}
               </>
             }
           />
+          {isBot && (
+            <p className="mt-1 px-1 text-xs text-muted-foreground">
+              Only you see this conversation. {displayName || username} can look things up here but can't post for you.
+            </p>
+          )}
         </div>
       </footer>
 

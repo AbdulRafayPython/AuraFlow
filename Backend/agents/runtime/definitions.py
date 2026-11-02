@@ -32,8 +32,12 @@ log = logging.getLogger(__name__)
 CACHE_TTL = 10.0
 AURA_TEMPLATE = "aura"
 
+# Where a trigger's answer goes: the channel (default) or a DM to the one person it is for.
+DELIVERY_CHANNEL = "channel"
+DELIVERY_PRIVATE = "private"
+
 TRIGGER_TYPES = ("mention", "keyword", "channel_message", "schedule", "member_joined",
-                 "channel_silent", "focus_drift")
+                 "channel_silent", "focus_drift", "mood_escalation")
 
 
 @dataclass(frozen=True)

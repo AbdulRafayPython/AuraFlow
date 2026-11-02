@@ -102,9 +102,11 @@ export interface DirectMessage {
   attachment?: Attachment;
   sender?: {
     id: number;
+    public_id?: string;
     username: string;
     display_name: string;
     avatar_url?: string;
+    is_bot?: boolean;
   };
   receiver?: {
     id: number;
@@ -207,6 +209,8 @@ export interface User {
   email: string;
   display_name?: string;
   avatar_url?: string;
+  /** An agent's bot user: no presence, no calls. */
+  is_bot?: boolean;
 }
 
 export interface CommunityMember extends User {

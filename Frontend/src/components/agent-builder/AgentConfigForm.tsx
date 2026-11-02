@@ -91,6 +91,12 @@ const AgentConfigForm: React.FC<Props> = ({ agent, tools, channels, onSaved, onD
                   {t.risk === 'write' && (
                     <span className="rounded bg-warning/15 px-1.5 text-xs font-semibold text-warning">Needs approval</span>
                   )}
+                  {t.private_only && (
+                    <span className="rounded bg-[hsl(var(--theme-bg-tertiary))] px-1.5 text-xs font-semibold text-muted-foreground"
+                          title="Reads the person's own mood or DMs, so it only works when the agent answers them by DM">
+                      Private chats only
+                    </span>
+                  )}
                 </span>
                 <span className="block text-xs text-[hsl(var(--theme-text-muted))]">{t.description.split('.')[0]}.</span>
               </span>

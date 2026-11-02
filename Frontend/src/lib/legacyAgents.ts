@@ -38,7 +38,7 @@ export function legacyStatus(entry: AgentCatalogEntry, communityName?: string): 
 
 export interface UpgradePath {
   /** The agent template that does the same job the new way. */
-  template: 'faq' | 'welcome' | 'booster' | 'recap' | 'translator' | 'knowledge';
+  template: 'faq' | 'welcome' | 'booster' | 'recap' | 'translator' | 'knowledge' | 'wellbeing';
   name: string;
   button: string;
   title: string;
@@ -50,6 +50,8 @@ export interface UpgradePath {
   pauses: 'none' | 'agent' | 'nudges';
   /** True when the old agent must already be installed in the community (the Summarizer is a personal agent, so it is not). */
   needsInstall: boolean;
+  /** The twin is the person's own agent, not a community's (it reads their private data). */
+  personal?: boolean;
 }
 
 // Only the built-in agents with a new-style twin. Support and Summarizer keep part of their own job:
@@ -85,6 +87,12 @@ const UPGRADE_PATHS: Record<string, UpgradePath> = {
     title: 'Add a knowledge keeper?',
     description: 'A new agent will answer what the community knows when someone @mentions it, and save what a channel decided when asked (you approve each save). The Knowledge Builder keeps collecting on its own.',
   },
+  wellness: {
+    template: 'wellbeing', name: 'Wellbeing Buddy', pauses: 'none', needsInstall: false, personal: true,
+    button: 'Switch to the new Wellbeing Buddy',
+    title: 'Switch to the new Wellbeing Buddy?',
+    description: "A Wellbeing Buddy of your own will check in with you by DM when your mood dips, and you can write back to it. Only you see it. While it is on, the old Wellness agent stops its pop-up check-ins; its other screens keep working. It needs Mood Tracker on.",
+  },
   summarizer: {
     template: 'recap', name: 'Recap Bot', pauses: 'none', needsInstall: false,
     button: 'Add a topic recap agent',
@@ -93,9 +101,10 @@ const UPGRADE_PATHS: Record<string, UpgradePath> = {
   },
 };
 
-/** The new-style twin for a built-in agent, if it has one. It is made for a community, so one must be picked. */
+/** The new-style twin for a built-in agent, if it has one. Most are made for a community, so one must be picked. */
 export function upgradePath(entry: AgentCatalogEntry, hasCommunity = true): UpgradePath | undefined {
   const path = UPGRADE_PATHS[entry.agent_type];
+  if (path?.personal) return path;
   if (!path || !hasCommunity) return undefined;
   const installed = entry.category === 'community' && !!entry.community_status?.installed;
   return path.needsInstall && !installed ? undefined : path;

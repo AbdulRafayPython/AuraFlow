@@ -571,6 +571,13 @@ class WellnessAgent(AutonomousAgent):
                 return None
         except Exception:
             pass
+
+        # Their own Wellbeing Buddy (a personal agent with a mood trigger) checks in instead;
+        # the moderation path stays here, the buddy does not cover it.
+        if trigger == "mood_escalation":
+            from agents.runtime.private import has_mood_twin
+            if has_mood_twin(int(user_id)):
+                return None
         return {
             "user_id":      int(user_id),
             "channel_id":   event.get("channel_id"),

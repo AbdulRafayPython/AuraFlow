@@ -1665,6 +1665,7 @@ def get_dm_conversations():
                     p.display_name AS partner_display_name,
                     p.avatar_url AS partner_avatar,
                     p.status     AS partner_status,
+                    p.is_bot     AS partner_is_bot,
                     COALESCE(uc.unread_count, 0) AS unread_count
                 FROM direct_messages dm
                 INNER JOIN (
@@ -1704,6 +1705,7 @@ def get_dm_conversations():
                     'display_name': m['partner_display_name'] or m['partner_username'],
                     'avatar_url': m['partner_avatar'],
                     'status': m['partner_status'] or 'offline',
+                    'is_bot': bool(m.get('partner_is_bot')),
                 },
                 'unread_count': int(m['unread_count'] or 0),
                 'last_message': {
@@ -1755,12 +1757,13 @@ def send_direct_message():
             # One query serves both the existence check AND the receiver info
             # we need for the response (was previously two separate round-trips).
             cur.execute(
-                "SELECT id, username, display_name, avatar_url FROM users WHERE id = %s",
+                "SELECT id, username, display_name, avatar_url, is_bot FROM users WHERE id = %s",
                 (receiver_id,)
             )
             receiver_row = cur.fetchone()
             if not receiver_row:
                 return jsonify({'error': 'Receiver not found'}), 404
+            to_agent = bool(receiver_row.get('is_bot'))
 
             cur.execute("""
                 INSERT INTO direct_messages (sender_id, receiver_id, content, message_type, reply_to)
@@ -1809,6 +1812,18 @@ def send_direct_message():
         notif_icon = msg['avatar_url']
 
         def _persist_dm_side_effects():
+            if to_agent:
+                # Writing to an agent: no bell or email for a bot; the agent answers by DM.
+                try:
+                    from agents.runtime.private import on_direct_message
+                    skipped = on_direct_message(sender_id, int(receiver_id), message_id,
+                                                content if message_type == 'text' else '',
+                                                username=msg['username'])
+                    if skipped:
+                        log.info(f"[DM] agent {receiver_id} not run for message {message_id}: {skipped}")
+                except Exception as agent_err:
+                    log.warning(f"[DM] agent dispatch failed: {agent_err}")
+                return
             try:
                 create_notification(
                     user_id=receiver_id,

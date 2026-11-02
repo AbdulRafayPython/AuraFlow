@@ -26,8 +26,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
-from agents.runtime import builtin_tools, legacy_tools, write_tools  # noqa: F401  (registers the tools)
-from agents.runtime.definitions import AgentDefinition, create_bot_user, invalidate_cache
+from agents.runtime import builtin_tools, legacy_tools, private_tools, write_tools  # noqa: F401  (registers the tools)
+from agents.runtime.definitions import (
+    DELIVERY_CHANNEL, DELIVERY_PRIVATE, AgentDefinition, create_bot_user, invalidate_cache)
 from agents.runtime.schedules import next_run_utc, validate_schedule
 from agents.runtime.templates import AgentTemplate
 from agents.runtime.tools import RISK_ADMIN, TOOL_REGISTRY
@@ -40,7 +41,7 @@ MAX_TRIGGERS = 10
 MAX_KEYWORDS, MAX_KEYWORD_CHARS = 20, 40
 MAX_ALLOWED_CHANNELS = 50
 TRIGGER_TYPES = ("mention", "keyword", "channel_message", "schedule", "member_joined",
-                 "channel_silent", "focus_drift")
+                 "channel_silent", "focus_drift", "mood_escalation")
 
 # channel_silent: the quietest a channel must be before the agent wakes (minutes).
 MIN_SILENT_MINUTES, MAX_SILENT_MINUTES = 10, 1440
@@ -65,7 +66,8 @@ def _int_env(name: str, default: int) -> int:
 
 def tool_catalog() -> List[Dict[str, Any]]:
     """Tools a user may attach to an agent (read and write; write ones need approval)."""
-    return [{"name": t.name, "description": t.description, "risk": t.risk, "parameters": t.parameters}
+    return [{"name": t.name, "description": t.description, "risk": t.risk, "parameters": t.parameters,
+             "private_only": t.private_only}
             for t in TOOL_REGISTRY.values() if t.risk != RISK_ADMIN and not t.name.startswith("mcp_")]
 
 
@@ -181,6 +183,15 @@ def validate_triggers(triggers: Any, *, community_id: Optional[int],
             if channel_id is None:
                 errors.append(f"{label}: channel_message must be limited to one channel")
                 continue
+        elif ttype == "mood_escalation":
+            # The owner's own mood, told to them alone: a personal agent, no channel, always a DM.
+            if community_id is not None:
+                errors.append(f"{label}: mood_escalation only works for personal agents")
+                continue
+            if channel_id is not None:
+                errors.append(f"{label}: mood_escalation is not tied to a channel")
+                continue
+            config = {"delivery": DELIVERY_PRIVATE}
         elif ttype == "member_joined" and community_id is None:
             errors.append(f"{label}: member_joined only works for community agents")
             continue
@@ -195,6 +206,13 @@ def validate_triggers(triggers: Any, *, community_id: Optional[int],
                     errors.append(f"{label}: min_minutes must be a whole number from {MIN_SILENT_MINUTES} to {MAX_SILENT_MINUTES}")
                     continue
                 config = {"min_minutes": minutes}
+
+        delivery = (t.get("config") or {}).get("delivery")
+        if delivery not in (None, DELIVERY_CHANNEL, DELIVERY_PRIVATE):
+            errors.append(f"{label}: delivery must be '{DELIVERY_CHANNEL}' or '{DELIVERY_PRIVATE}'")
+            continue
+        if delivery == DELIVERY_PRIVATE or ttype == "mood_escalation":
+            config = {**config, "delivery": DELIVERY_PRIVATE}
 
         out.append({"type": ttype, "channel_id": channel_id, "config": config, "next_run_at": next_run,
                     "enabled": bool(t.get("enabled", True))})

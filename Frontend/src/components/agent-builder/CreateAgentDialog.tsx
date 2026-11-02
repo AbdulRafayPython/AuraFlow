@@ -37,7 +37,9 @@ const CreateAgentDialog: React.FC<Props> = ({ open, onOpenChange, communities, d
   const [generating, setGenerating] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const template = templates.find((t) => t.key === templateKey);
+  // Templates that read one person's private data (Wellbeing Buddy) are personal agents only.
+  const visibleTemplates = templates.filter((t) => !(where && t.personal_only));
+  const template = visibleTemplates.find((t) => t.key === templateKey);
 
   useEffect(() => {
     if (!open) return;
@@ -50,6 +52,10 @@ const CreateAgentDialog: React.FC<Props> = ({ open, onOpenChange, communities, d
   useEffect(() => {
     if (template) setName(template.suggested_name);
   }, [template]);
+
+  useEffect(() => {
+    if (!template && visibleTemplates.length > 0) setTemplateKey(visibleTemplates[0].key);
+  }, [template, visibleTemplates]);
 
   useEffect(() => {
     setChannelId('');
@@ -133,7 +139,7 @@ const CreateAgentDialog: React.FC<Props> = ({ open, onOpenChange, communities, d
         {tab === 'template' && (
           <div className="space-y-4">
             <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Template">
-              {templates.map((t) => (
+              {visibleTemplates.map((t) => (
                 <button key={t.key} type="button" role="radio" aria-checked={templateKey === t.key} aria-label={`${t.name}: ${t.description}`}
                         onClick={() => setTemplateKey(t.key)}
                         className={`rounded-lg border p-3 text-left transition-colors ${

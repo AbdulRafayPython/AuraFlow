@@ -1,7 +1,8 @@
 // Types for the Agent Builder API (/api/agent-builder). Community ids are the public (uuid) ids.
 
 export type AgentStatus = 'draft' | 'active' | 'paused' | 'archived';
-export type TriggerType = 'mention' | 'keyword' | 'channel_message' | 'schedule' | 'member_joined' | 'channel_silent' | 'focus_drift';
+export type TriggerType = 'mention' | 'keyword' | 'channel_message' | 'schedule' | 'member_joined' | 'channel_silent' | 'focus_drift'
+  | 'mood_escalation';
 export type ModelTier = 'fast' | 'smart';
 
 export interface TriggerConfig {
@@ -11,6 +12,8 @@ export interface TriggerConfig {
   prompt?: string;
   /** channel_silent: how long the channel must have been quiet, in minutes. */
   min_minutes?: number;
+  /** Where the answer goes: the channel (default) or a DM to one person. */
+  delivery?: 'channel' | 'private';
 }
 
 export interface AgentTrigger {
@@ -35,6 +38,8 @@ export interface AgentTemplate {
   tools: string[];
   model_tier: ModelTier;
   needs_channel: boolean;
+  /** Reads one person's private data, so it can only be a personal agent. */
+  personal_only?: boolean;
   triggers: TemplateTrigger[];
 }
 
@@ -42,6 +47,8 @@ export interface BuilderTool {
   name: string;
   description: string;
   risk: 'read' | 'write' | 'admin';
+  /** Reads the asker's own mood or DMs: used only when the agent answers them by DM. */
+  private_only?: boolean;
 }
 
 export interface KnowledgeSource {

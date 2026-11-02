@@ -5,9 +5,8 @@ The first eleven agents (translator, focus, engagement, moderation...) keep doin
 the work; these tools let any runtime agent, including user-made ones, use that
 work.  Each tool checks access exactly like the matching REST route.
 
-Not here on purpose: tools that would hand private data (a person's DMs or mood)
-to an agent whose answer is posted in a channel.  They wait for a private-reply
-mode.
+Not here on purpose: tools that read a person's own DMs or mood. They live in
+``private_tools`` and are offered only when the answer is a DM to that person.
 
 Importing this module registers the tools in ``TOOL_REGISTRY``.
 """
