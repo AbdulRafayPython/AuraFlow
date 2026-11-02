@@ -23,6 +23,8 @@ interface QuickReplyChipsProps {
   onPick: (suggestion: string) => void;
   /** Hide the strip without removing it (parent might toggle visibility) */
   visible?: boolean;
+  /** Flat row inside the composer box instead of a floating card. */
+  attached?: boolean;
 }
 
 /**
@@ -50,6 +52,7 @@ export default function QuickReplyChips({
   enabled = true,
   onPick,
   visible = true,
+  attached = false,
 }: QuickReplyChipsProps) {
   const [chips, setChips] = useState<string[]>([]);
   const [intent, setIntent] = useState<string>('general');
@@ -101,7 +104,7 @@ export default function QuickReplyChips({
   const IntentIcon = meta.Icon;
 
   return (
-    <div className="px-3 pt-2 pb-1" role="group" aria-label="Assistant reply suggestions">
+    <div className={attached ? undefined : "px-3 pt-2 pb-1"} role="group" aria-label="Assistant reply suggestions">
       <div
         key={refreshKey}
         // `--acc` lets the accent drive both static styles and Tailwind hover
@@ -109,18 +112,22 @@ export default function QuickReplyChips({
         // define the agent-accent vars (only aura-calm-ops does).
         style={{ ['--acc' as string]: 'var(--agent-accent-community, 229 56% 65%)' } as React.CSSProperties}
         className={
-          'group/card relative flex items-center gap-2.5 overflow-hidden ' +
-          'rounded-xl border border-[hsl(var(--acc)/0.28)] ' +
-          'bg-[hsl(var(--theme-bg-elevated))] py-1.5 pl-3 pr-2 ' +
-          'shadow-[0_1px_2px_hsl(var(--acc)/0.06),0_8px_24px_-12px_hsl(var(--acc)/0.35)] ' +
-          'animate-in fade-in slide-in-from-bottom-1 duration-300 motion-reduce:animate-none'
+          attached
+            ? 'group/card relative flex items-center gap-2.5 py-1.5 pl-3 pr-2'
+            : 'group/card relative flex items-center gap-2.5 overflow-hidden ' +
+              'rounded-xl border border-[hsl(var(--acc)/0.28)] ' +
+              'bg-[hsl(var(--theme-bg-elevated))] py-1.5 pl-3 pr-2 ' +
+              'shadow-[0_1px_2px_hsl(var(--acc)/0.06),0_8px_24px_-12px_hsl(var(--acc)/0.35)] ' +
+              'animate-in fade-in slide-in-from-bottom-1 duration-300 motion-reduce:animate-none'
         }
       >
         {/* Accent identity rail */}
-        <span
-          aria-hidden
-          className="absolute inset-y-0 left-0 w-[3px] bg-[hsl(var(--acc))]"
-        />
+        {!attached && (
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 w-[3px] bg-[hsl(var(--acc))]"
+          />
+        )}
 
         {/* Live agent presence badge — the pulse signals the assistant is
             watching and just refreshed. */}

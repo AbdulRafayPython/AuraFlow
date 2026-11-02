@@ -1824,15 +1824,6 @@ export default function Dashboard() {
             accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.zip,.rar,.7z"
           />
 
-          {/* Reply Bar */}
-          {replyingTo && (
-            <ReplyBar
-              message={replyingTo}
-              authorName={replyingTo.author || 'Unknown'}
-              onCancel={() => setReplyingTo(null)}
-            />
-          )}
-
           {/* File Upload Preview */}
           {pendingFile && (
             <FileUploadPreview
@@ -1915,26 +1906,6 @@ export default function Dashboard() {
             />
           )}
 
-          {/* Quick reply chips — last inbound message in the channel */}
-          {currentChannel && (
-            <QuickReplyChips
-              lastMessage={(() => {
-                for (let i = messages.length - 1; i >= 0; i--) {
-                  const m: any = messages[i];
-                  if (m && m.sender_id !== authUser?.id && m.message_type !== 'ai' && m.content) {
-                    return String(m.content).slice(0, 300);
-                  }
-                }
-                return null;
-              })()}
-              enabled={!!currentChannel}
-              onPick={(text) => {
-                setMessage(prev => (prev ? `${prev} ${text}` : text));
-                inputRef.current?.focus();
-              }}
-            />
-          )}
-
           {/* Sending/uploading go over plain HTTP, not the socket, so none of the
               compose controls wait on isConnected: that only gates real-time
               delivery to OTHER users, not your own ability to type and send. */}
@@ -1958,6 +1929,39 @@ export default function Dashboard() {
             }
             disabled={!currentChannel || isSending}
             commandMode={message.startsWith('/')}
+            attached={
+              <>
+                {/* Reply Bar */}
+                {replyingTo && (
+                  <ReplyBar
+                    message={replyingTo}
+                    authorName={replyingTo.author || 'Unknown'}
+                    onCancel={() => setReplyingTo(null)}
+                    attached
+                  />
+                )}
+                {/* Quick reply chips — last inbound message in the channel */}
+                {currentChannel && (
+                  <QuickReplyChips
+                    attached
+                    lastMessage={(() => {
+                      for (let i = messages.length - 1; i >= 0; i--) {
+                        const m: any = messages[i];
+                        if (m && m.sender_id !== authUser?.id && m.message_type !== 'ai' && m.content) {
+                          return String(m.content).slice(0, 300);
+                        }
+                      }
+                      return null;
+                    })()}
+                    enabled={!!currentChannel}
+                    onPick={(text) => {
+                      setMessage(prev => (prev ? `${prev} ${text}` : text));
+                      inputRef.current?.focus();
+                    }}
+                  />
+                )}
+              </>
+            }
             onAttach={() => fileInputRef.current?.click()}
             trailing={
               <>

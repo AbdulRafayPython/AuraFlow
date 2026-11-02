@@ -1050,19 +1050,6 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
       {/* Input Area */}
       <footer className="flex-shrink-0 bg-[hsl(var(--theme-bg-primary))]">
-        {/* Reply Bar */}
-        {replyingTo && (
-          <ReplyBar
-            message={replyingTo}
-            authorName={
-              replyingTo.sender_id === currentUserId
-                ? (currentUser?.display_name || currentUser?.username || 'You')
-                : (replyingTo.sender?.display_name || replyingTo.sender?.username || displayName || username)
-            }
-            onCancel={() => setReplyingTo(null)}
-          />
-        )}
-
         {/* Hidden file input */}
         <input
           type="file"
@@ -1096,6 +1083,20 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             placeholder={`Message @${displayName || username}`}
             disabled={isSending}
             onAttach={isBot ? undefined : () => fileInputRef.current?.click()}
+            attached={
+              replyingTo && (
+                <ReplyBar
+                  message={replyingTo}
+                  authorName={
+                    replyingTo.sender_id === currentUserId
+                      ? (currentUser?.display_name || currentUser?.username || 'You')
+                      : (replyingTo.sender?.display_name || replyingTo.sender?.username || displayName || username)
+                  }
+                  onCancel={() => setReplyingTo(null)}
+                  attached
+                />
+              )
+            }
             inputProps={{
               onKeyPress: (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {

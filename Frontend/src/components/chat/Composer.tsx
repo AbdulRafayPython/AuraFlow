@@ -22,8 +22,10 @@ export interface ComposerProps {
   onAttach?: () => void;
   /** Right-side controls: emoji, voice, attach... */
   trailing?: React.ReactNode;
-  /** Rendered above the box: reply bar, upload preview, popups. */
+  /** Rendered above the box: upload preview, popups. */
   above?: React.ReactNode;
+  /** Rendered inside the box, on top of the input (Discord-style): reply bar, suggested replies. */
+  attached?: React.ReactNode;
   /** Slash-command mode: tints the box and input. */
   commandMode?: boolean;
   className?: string;
@@ -47,6 +49,7 @@ export function Composer({
   onAttach,
   trailing,
   above,
+  attached,
   commandMode = false,
   className,
 }: ComposerProps) {
@@ -130,12 +133,14 @@ export function Composer({
 
       <div
         className={cn(
-          "flex items-center gap-1 rounded-lg border px-1.5 transition-colors duration-100",
+          "overflow-hidden rounded-lg border transition-colors duration-100",
           commandMode
             ? "border-[hsl(var(--theme-accent-primary)/0.6)] bg-[hsl(var(--theme-accent-primary)/0.08)]"
             : "border-border bg-[hsl(var(--theme-input-bg))] focus-within:border-[hsl(var(--theme-border-hover))]",
         )}
       >
+        {attached && <div className="divide-y divide-border border-b border-border empty:hidden">{attached}</div>}
+        <div className="flex items-center gap-1 px-1.5">
         {onAttach && (
           <button
             type="button"
@@ -187,6 +192,7 @@ export function Composer({
         >
           <Icon icon={SendHorizontal} size="md" />
         </button>
+        </div>
       </div>
 
       <p

@@ -1098,9 +1098,12 @@ export default function Settings() {
     };
   }, [navigate]);
 
-  // Group tabs into logical sections so the sidebar reads like Discord.
+  // Group tabs into logical sections so the sidebar reads like Discord;
+  // the search box above them filters by label.
+  const [navQuery, setNavQuery] = useState('');
   const tabGroups = useMemo(() => {
-    const ids = new Set(tabs.map((t) => t.id));
+    const q = navQuery.trim().toLowerCase();
+    const ids = new Set(tabs.filter((t) => !q || t.label.toLowerCase().includes(q)).map((t) => t.id));
     const pick = (...wanted: typeof activeTab[]) =>
       wanted.filter((id) => ids.has(id)).map((id) => tabs.find((t) => t.id === id)!);
     return [
@@ -1109,7 +1112,7 @@ export default function Settings() {
       { label: 'Agents',        items: pick('agents') },
       { label: 'Administration', items: pick('community-admin') },
     ].filter((g) => g.items.length > 0);
-  }, [tabs]);
+  }, [tabs, navQuery]);
 
   return (
     <div
@@ -1148,7 +1151,21 @@ export default function Settings() {
             </span>
           </div>
 
+          <div className="px-2 pb-3">
+            <input
+              type="search"
+              value={navQuery}
+              onChange={(e) => setNavQuery(e.target.value)}
+              placeholder="Search"
+              aria-label="Search settings"
+              className="h-7 w-full rounded-md bg-[hsl(var(--theme-input-bg))] px-2.5 text-sm text-[hsl(var(--theme-text-primary))] placeholder:text-[hsl(var(--theme-text-muted))] outline-none focus:ring-1 focus:ring-[hsl(var(--theme-border-focus))]"
+            />
+          </div>
+
           <nav className="flex-1 overflow-y-auto overscroll-contain px-2 pb-4">
+            {tabGroups.length === 0 && (
+              <p className="px-2.5 text-sm text-[hsl(var(--theme-text-muted))]">No settings match.</p>
+            )}
             {tabGroups.map((group, gi) => (
               <div key={group.label} className={gi === 0 ? '' : 'mt-4'}>
                 <div className="px-2.5 mb-1 text-xs font-semibold text-[hsl(var(--theme-text-muted))]">
@@ -1247,7 +1264,7 @@ export default function Settings() {
             <span className="text-xs font-semibold">ESC</span>
           </button>
 
-          <div className="max-w-2xl px-6 md:px-10 pt-20 md:pt-14 pb-16">
+          <div className="max-w-[740px] px-6 md:px-10 pt-20 md:pt-14 pb-16">
             <header className="mb-6">
               <h2 className="text-xl font-semibold tracking-tight text-[hsl(var(--theme-text-primary))]">
                 {activeTabMeta?.label}
