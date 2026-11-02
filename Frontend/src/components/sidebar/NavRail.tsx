@@ -31,6 +31,8 @@ interface NavRailProps {
 interface RailButtonProps {
   label: string;
   active?: boolean;
+  /** Has unread activity: shows the small pill dot (Discord-style). */
+  unread?: boolean;
   onClick: () => void;
   badge?: React.ReactNode;
   testId?: string;
@@ -38,13 +40,21 @@ interface RailButtonProps {
   className?: string;
 }
 
-/** 40px rail button with tooltip, active indicator and aria-label. */
-function RailButton({ label, active, onClick, badge, testId, children, className }: RailButtonProps) {
+/**
+ * 40px rail button with tooltip and aria-label. The pill on the left edge
+ * says its state, like Discord's server list: 8px dot = unread, 20px on hover,
+ * 36px = you are here.
+ */
+function RailButton({ label, active, unread, onClick, badge, testId, children, className }: RailButtonProps) {
   return (
-    <div className="relative flex w-full justify-center">
-      {active && (
-        <span aria-hidden className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-foreground" />
-      )}
+    <div className="group relative flex w-full justify-center">
+      <span
+        aria-hidden
+        className={cn(
+          "absolute left-0 top-1/2 w-1 -translate-y-1/2 rounded-r-full bg-foreground transition-[height,opacity] duration-150 motion-reduce:transition-none",
+          active ? "h-9" : unread ? "h-2 group-hover:h-5" : "h-0 opacity-0 group-hover:h-5 group-hover:opacity-100",
+        )}
+      />
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -95,8 +105,9 @@ const initialsOf = (name: string) =>
     .slice(0, 2);
 
 /**
- * 56px workspace rail: Home, Friends & DMs, Discover, Agents, Notifications,
- * then the user's communities, "add community" and the profile menu.
+ * 56px workspace rail: Home, Friends & DMs, Agents, Notifications, then the
+ * user's communities, then "add community", Discover and (pages without a
+ * sidebar) the profile menu.
  * The contextual 260px panel (channels or DMs) lives next to it.
  */
 export default function NavRail({ currentView, selectedCommunity, alerts = true, frozen = false, showAccount = true, className }: NavRailProps) {
@@ -143,10 +154,6 @@ export default function NavRail({ currentView, selectedCommunity, alerts = true,
           <Icon icon={MessageSquare} size="lg" filled={currentView === "friends" || currentView === "direct-message"} />
         </RailButton>
 
-        <RailButton label="Discover communities" active={isDiscoverPage} onClick={() => navigate("/discover")}>
-          <Icon icon={Compass} size="lg" />
-        </RailButton>
-
         <RailButton
           label="Agents"
           active={isAgentsPage}
@@ -183,17 +190,18 @@ export default function NavRail({ currentView, selectedCommunity, alerts = true,
             return (
               <RailButton
                 key={community.id}
-                label={community.name}
+                label={unread > 0 ? `${community.name} (${unread} unread)` : community.name}
                 active={isSelected}
+                unread={unread > 0}
                 onClick={() => navigate(`/community/${communityId}`)}
                 badge={!isSelected ? <CountBadge count={unread} /> : null}
-                className="overflow-hidden text-sm font-semibold text-white"
+                className="text-sm font-semibold text-white"
               >
                 {logoUrl ? (
-                  <img src={logoUrl} alt="" className="h-full w-full object-cover" />
+                  <img src={logoUrl} alt="" className="h-full w-full rounded-lg object-cover" />
                 ) : (
                   <span
-                    className="flex h-full w-full items-center justify-center bg-[hsl(var(--theme-bg-tertiary))] text-foreground"
+                    className="flex h-full w-full items-center justify-center rounded-lg bg-[hsl(var(--theme-bg-tertiary))] text-foreground"
                     style={community.color ? { backgroundColor: community.color, color: readableTextOn(community.color) } : undefined}
                   >
                     {community.icon || initialsOf(community.name)}
@@ -204,8 +212,14 @@ export default function NavRail({ currentView, selectedCommunity, alerts = true,
           })}
         </div>
 
+        <div aria-hidden className="my-1 h-px w-8 bg-border" />
+
         <RailButton label="Create community" onClick={() => setShowCreateCommunityModal(true)}>
           <Icon icon={Plus} size="lg" />
+        </RailButton>
+
+        <RailButton label="Discover communities" active={isDiscoverPage} onClick={() => navigate("/discover")}>
+          <Icon icon={Compass} size="lg" filled={isDiscoverPage} />
         </RailButton>
 
         {showAccount && <AccountMenu variant="rail" />}
