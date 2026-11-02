@@ -104,7 +104,7 @@ def run_agent_task(self, agent_id: int, trigger: Dict[str, Any]) -> Dict[str, An
             channel_id=channel_id, approver_id=trigger.get("user_id") or defn.owner_user_id,
             is_dry_run=is_private,
             extra={"invoker_username": trigger.get("username"), "agent_id": defn.id,
-                   "builtin": defn.is_builtin})
+                   "builtin": defn.is_builtin, "private": is_private})
         spec = private.private_spec(to_spec(defn)) if is_private else to_spec(defn)
 
         if any(t.startswith("mcp_") for t in defn.tools):

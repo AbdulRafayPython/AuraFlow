@@ -86,6 +86,8 @@ export const TOOL_LABELS: Record<string, string> = {
   summarize_channel: 'Summarize a channel',
   translate_text: 'Translate text',
   search_knowledge: 'Search its knowledge',
+  get_my_mood: 'Check how you have been feeling',
+  summarize_dm: 'Summarize your DMs with a friend',
   get_member_info: 'Look up a member',
   post_message: 'Post a message',
   create_poll: 'Create a poll',

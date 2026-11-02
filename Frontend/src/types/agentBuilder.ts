@@ -45,6 +45,8 @@ export interface BuilderTool {
   name: string;
   description: string;
   risk: 'read' | 'write' | 'admin';
+  /** Reads the asker's own mood or DMs: used only when the agent answers them by DM. */
+  private_only?: boolean;
 }
 
 export interface KnowledgeSource {

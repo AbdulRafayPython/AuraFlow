@@ -58,6 +58,8 @@ AURA = AgentSpec(
         "post_message",
         "create_poll",
         "schedule_reminder",
+        "get_my_mood",            # private runs only (the Ask box, DMs): see Tool.private_only
+        "summarize_dm",
     ),
     model_tier="fast",
     max_steps=6,

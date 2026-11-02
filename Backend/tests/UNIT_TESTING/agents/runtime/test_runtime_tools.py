@@ -74,7 +74,8 @@ def test_constraint_errors(args, fragment):
 def test_builtin_tools_are_registered_and_only_posting_tools_write():
     expected = set(AURA.tools)
     assert expected <= set(TOOL_REGISTRY)
-    assert len(expected) == 9
+    assert len(expected) == 11
+    assert {n for n in expected if TOOL_REGISTRY[n].private_only} == {"get_my_mood", "summarize_dm"}
     assert {n for n in expected if TOOL_REGISTRY[n].risk != RISK_READ} == {
         "post_message", "create_poll", "schedule_reminder"}
 

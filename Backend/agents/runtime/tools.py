@@ -60,6 +60,9 @@ class Tool:
     # ("Post a message in #general: ..."). It may raise ToolError for a request that
     # could never be approved (no access, unknown channel).
     summarize: Optional[Callable[[ToolContext, Dict[str, Any]], str]] = None
+    # Reads the asker's private data (their mood, their DMs): offered only when the answer is
+    # a DM to that same person, never in a run that posts in a channel.
+    private_only: bool = False
 
     def describe(self, ctx: ToolContext, args: Dict[str, Any]) -> str:
         return self.summarize(ctx, args) if self.summarize else f"Run {self.name}"
@@ -82,6 +85,7 @@ def tool(name: str, description: str,
          parameters: Optional[Dict[str, Any]] = None,
          risk: str = RISK_READ,
          summarize: Optional[Callable[[ToolContext, Dict[str, Any]], str]] = None,
+         private_only: bool = False,
          ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register ``func`` as a tool. Usable as a decorator."""
     if risk not in RISKS:
@@ -91,10 +95,15 @@ def tool(name: str, description: str,
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         TOOL_REGISTRY[name] = Tool(name=name, description=description,
                                    parameters=schema, risk=risk, func=func,
-                                   summarize=summarize)
+                                   summarize=summarize, private_only=private_only)
         return func
 
     return decorator
+
+
+def is_private_run(ctx: Optional["ToolContext"]) -> bool:
+    """The answer of this run goes only to the person who asked (a DM or the Ask box)."""
+    return bool(ctx and ctx.extra.get("private"))
 
 
 def resolve_tools(names: Iterable[str]) -> List[Tool]:

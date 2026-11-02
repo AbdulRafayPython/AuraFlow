@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
-from agents.runtime import builtin_tools, legacy_tools, write_tools  # noqa: F401  (registers the tools)
+from agents.runtime import builtin_tools, legacy_tools, private_tools, write_tools  # noqa: F401  (registers the tools)
 from agents.runtime.definitions import (
     DELIVERY_CHANNEL, DELIVERY_PRIVATE, AgentDefinition, create_bot_user, invalidate_cache)
 from agents.runtime.schedules import next_run_utc, validate_schedule
@@ -66,7 +66,8 @@ def _int_env(name: str, default: int) -> int:
 
 def tool_catalog() -> List[Dict[str, Any]]:
     """Tools a user may attach to an agent (read and write; write ones need approval)."""
-    return [{"name": t.name, "description": t.description, "risk": t.risk, "parameters": t.parameters}
+    return [{"name": t.name, "description": t.description, "risk": t.risk, "parameters": t.parameters,
+             "private_only": t.private_only}
             for t in TOOL_REGISTRY.values() if t.risk != RISK_ADMIN and not t.name.startswith("mcp_")]
 
 
