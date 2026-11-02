@@ -48,10 +48,14 @@ const BuiltInAgentList: React.FC<Props> = ({ communityId, communityName }) => {
   useEffect(() => { void load(); }, [load]);
 
   const loadExisting = useCallback(async () => {
-    if (!communityId) return setHaveTemplates(new Set());
     try {
-      const list = await agentBuilderService.list({ communityId });
-      setHaveTemplates(new Set(list.filter((a) => a.status !== 'archived' && a.template_key).map((a) => a.template_key as string)));
+      // Twins already made: the community's, plus your own (a Wellbeing Buddy is personal).
+      const [shared, mine] = await Promise.all([
+        communityId ? agentBuilderService.list({ communityId }) : Promise.resolve([]),
+        agentBuilderService.list(),
+      ]);
+      const made = [...shared, ...mine.filter((a) => a.community_id == null)];
+      setHaveTemplates(new Set(made.filter((a) => a.status !== 'archived' && a.template_key).map((a) => a.template_key as string)));
     } catch {
       setHaveTemplates(new Set());
     }
@@ -60,11 +64,13 @@ const BuiltInAgentList: React.FC<Props> = ({ communityId, communityName }) => {
   useEffect(() => { void loadExisting(); }, [loadExisting]);
 
   const upgrade = async () => {
-    if (!upgrading || !communityId) return;
+    if (!upgrading) return;
     const { entry, path } = upgrading;
+    if (!path.personal && !communityId) return;
     setBusy(entry.agent_type);
     try {
-      const agent = await agentBuilderService.create({ template: path.template, community_id: communityId, name: path.name });
+      const agent = await agentBuilderService.create({ template: path.template, community_id: path.personal ? null : communityId,
+                                                       name: path.name });
       await agentBuilderService.publish(agent.id);
       if (path.pauses === 'agent') await aiAgentService.configureCommunityAgent(communityId, entry.agent_type, {}, false);
       // The kill-switch for its own automatic posts: reports and charts keep working.

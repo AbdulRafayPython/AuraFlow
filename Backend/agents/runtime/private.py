@@ -19,6 +19,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 from agents.runtime.definitions import DELIVERY_PRIVATE, AgentDefinition
@@ -38,6 +39,14 @@ PRIVATE_NOTE = (
     "nobody else sees it. You cannot post in a channel, start a poll or set a reminder from here; "
     "if they want that, tell them to mention you in the channel."
 )
+
+
+# "@aura dm me the summary", "@aura tell me privately": the person asks for the answer in a DM.
+_DM_ME = re.compile(r"\b(?:dm|message|text) me\b|\bprivately\b|\bin (?:a |my )?dms?\b", re.I)
+
+
+def wants_dm(text: Optional[str]) -> bool:
+    return bool(_DM_ME.search(text or ""))
 
 
 def is_private(trigger: Dict[str, Any]) -> bool:
@@ -138,6 +147,28 @@ def _announce(defn: AgentDefinition, user_id: int, payload: Dict[str, Any], text
             link=f"/dm/{bot_public_id or defn.bot_user_id}", related_id=payload["id"])
     except Exception as exc:  # noqa: BLE001
         log.debug("[RUNTIME] private DM notification failed: %s", exc)
+
+
+# ── the old Wellness agent's twin ───────────────────────────────────────
+
+def has_mood_twin(user_id: int) -> bool:
+    """The person has their own agent on with a "when my mood dips" trigger. While it is on, the
+    old Wellness agent stops sending its own mood check-ins, so they never get two."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM agent_definitions d JOIN agent_triggers t ON t.agent_id = d.id "
+                "WHERE d.owner_user_id = %s AND d.community_id IS NULL AND d.status = 'active' "
+                "AND t.type = 'mood_escalation' AND t.enabled = 1 LIMIT 1", (user_id,))
+            return cur.fetchone() is not None
+    except Exception as exc:  # noqa: BLE001
+        log.debug("[RUNTIME] has_mood_twin failed: %s", exc)
+        return False
+    finally:
+        if conn:
+            conn.close()
 
 
 # ── someone writes to the agent ─────────────────────────────────────────

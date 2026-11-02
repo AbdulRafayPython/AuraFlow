@@ -38,6 +38,8 @@ export interface AgentTemplate {
   tools: string[];
   model_tier: ModelTier;
   needs_channel: boolean;
+  /** Reads one person's private data, so it can only be a personal agent. */
+  personal_only?: boolean;
   triggers: TemplateTrigger[];
 }
 

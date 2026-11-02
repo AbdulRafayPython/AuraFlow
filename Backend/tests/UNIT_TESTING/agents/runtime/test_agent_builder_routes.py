@@ -79,7 +79,8 @@ def test_every_endpoint_needs_a_token(api):
 
 def test_templates_and_tools(api):
     keys = {t["key"] for t in api.call("get", "/templates").get_json()["templates"]}
-    assert keys == {"faq", "welcome", "digest", "standup", "booster", "recap", "translator", "knowledge", "blank"}
+    assert keys == {"faq", "welcome", "digest", "standup", "booster", "recap", "translator", "knowledge", "wellbeing",
+                    "blank"}
     tools = api.call("get", "/tools").get_json()["tools"]
     assert "search_knowledge" in {t["name"] for t in tools} and {t["name"]: t["risk"] for t in tools}["post_message"] == "write"
 
@@ -151,6 +152,21 @@ def test_scheduled_template_with_a_channel_gets_its_schedule(api, monkeypatch):
     api.call("post", "/agents", json={"template": "digest", "channel_id": 11})
     [t] = seen["triggers"]
     assert t["type"] == "schedule" and t["channel_id"] == 11 and t["next_run_at"] is not None
+
+
+def test_wellbeing_buddy_is_a_personal_agent_with_a_private_mood_trigger(api, monkeypatch):
+    seen = capture_create(monkeypatch, api)
+    r = api.call("post", "/agents", json={"template": "wellbeing"})
+    assert r.status_code == 201 and seen["community_id"] is None and seen["template_key"] == "wellbeing"
+    assert seen["fields"]["tools"] == ["get_my_mood"]
+    assert seen["triggers"][0]["type"] == "mood_escalation" and seen["triggers"][0]["config"] == {"delivery": "private"}
+
+
+def test_wellbeing_buddy_cannot_be_made_for_a_community(api, monkeypatch):
+    seen = capture_create(monkeypatch, api)
+    monkeypatch.setattr(ab, "get_community_id_from_public_id", lambda p: 3)
+    r = api.call("post", "/agents", json={"template": "wellbeing", "community_id": "comm-uuid"})
+    assert r.status_code == 400 and "personal agent" in r.get_json()["error"] and seen == {}
 
 
 def test_welcome_template_is_not_available_for_personal_agents(api, monkeypatch):

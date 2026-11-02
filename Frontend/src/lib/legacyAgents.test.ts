@@ -51,7 +51,8 @@ describe('upgradePath', () => {
     expect(upgradePath(personalAgent('summarizer'))).toMatchObject({ template: 'recap', pauses: 'none' });
     expect(upgradePath(personalAgent('translator'))).toMatchObject({ template: 'translator', pauses: 'none' });
     expect(upgradePath(personalAgent('summarizer'), false)).toBeUndefined();
-    expect(upgradePath(personalAgent('wellness'))).toBeUndefined();            // private data: no twin
+    expect(upgradePath(personalAgent('wellness'))).toMatchObject({ template: 'wellbeing', personal: true });
+    expect(upgradePath(personalAgent('wellness'), false)).toMatchObject({ template: 'wellbeing' });   // personal: no community needed
   });
 
   it('offers nothing for the others, or when the agent is not in the community', () => {

@@ -40,6 +40,7 @@ from agents.base import AutonomousAgent
 from agents.runtime.definitions import (
     AgentDefinition, ensure_builtin_agents_once, load_active_definitions)
 from agents.runtime.definitions import DELIVERY_PRIVATE
+from agents.runtime.private import wants_dm
 from agents.runtime.triggers import (
     TriggerMatch, match_channel_event, match_member_joined, match_message, match_mood_escalation)
 from database import get_db_connection
@@ -101,6 +102,14 @@ def _reply_parent_sender(message_id: int) -> Optional[int]:
     finally:
         if conn:
             conn.close()
+
+
+def _delivery(match: TriggerMatch, content: Optional[str]) -> Optional[str]:
+    """The trigger's own setting, or a DM when someone talking to the agent asks for one."""
+    configured = (match.trigger.config or {}).get("delivery")
+    if configured is None and match.kind in DIRECT_KINDS and wants_dm(content):
+        return DELIVERY_PRIVATE
+    return configured
 
 
 def _tracks_mood(user_id: int) -> bool:
@@ -193,7 +202,7 @@ class CustomAgentRouter(AutonomousAgent):
             "event_key": f"{topic}-{channel_id}-{event.get('bucket') or event.get('message_id') or ''}",
             "matches": [{"agent_id": m.definition.id, "trigger_id": m.trigger.id, "kind": m.kind,
                          "cap": m.definition.daily_run_cap, "owner_user_id": m.definition.owner_user_id,
-                         "delivery": (m.trigger.config or {}).get("delivery")}
+                         "delivery": _delivery(m, event.get("content"))}
                         for m in matches],
             "scope_type": _agent_memory.SCOPE_CHANNEL,
             "scope_id": channel_id,

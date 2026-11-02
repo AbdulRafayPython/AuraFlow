@@ -176,3 +176,46 @@ def test_dm_history_is_oldest_first_and_names_the_agent(make_db, monkeypatch):
             ["agents.runtime.private"])
     assert private.dm_history(500, 7, before_id=6) == [
         {"role": "user", "content": "A"}, {"role": "assistant", "content": "B"}]
+
+
+# ── "@aura dm me ..." ───────────────────────────────────────────────────
+
+@pytest.mark.parametrize("text,wanted", [
+    ("@aura dm me the summary", True), ("@aura tell me privately", True), ("send it in my DMs", True),
+    ("@aura message me when done", True), ("@aura summarize", False), ("admin me", False), ("dms are fun", False)])
+def test_asking_for_a_dm(text, wanted):
+    assert private.wants_dm(text) is wanted
+
+
+def test_a_mention_asking_for_a_dm_is_answered_privately():
+    from agents.runtime.router_agent import _delivery
+    from agents.runtime.triggers import TriggerMatch
+    mention = TriggerMatch(DEFN, TriggerDef(id=1, type="mention"), "mention")
+    keyword = TriggerMatch(DEFN, TriggerDef(id=2, type="keyword"), "keyword")
+    assert _delivery(mention, "@buddy dm me the plan") == "private"
+    assert _delivery(mention, "@buddy the plan") is None
+    assert _delivery(keyword, "dm me the plan") is None                      # only when talking to the agent
+
+
+# ── the old Wellness agent steps aside for its twin ─────────────────────
+
+def test_has_mood_twin_looks_for_an_active_personal_agent_with_the_trigger(make_db):
+    _, cur = make_db([("FROM agent_definitions", {"1": 1})], ["agents.runtime.private"])
+    assert private.has_mood_twin(7) is True
+    sql, params = cur.sql_containing("mood_escalation")[0]
+    assert params == (7,) and "community_id IS NULL" in sql and "status = 'active'" in sql
+
+
+def test_wellness_sends_no_mood_toast_while_the_twin_is_on(monkeypatch):
+    from agents import event_bus as bus
+    from agents import wellness
+    agent = wellness.WellnessAgent.__new__(wellness.WellnessAgent)
+    monkeypatch.setattr(agent, "_user_opted_in", lambda uid: True, raising=False)
+    monkeypatch.setattr(wellness, "get_personal_settings", lambda *a: {"auto_check": True})
+    monkeypatch.setattr(private, "has_mood_twin", lambda uid: True)
+    assert agent.sense({"topic": bus.TOPIC_MOOD_ESCALATION, "user_id": 7}) is None
+    # moderation check-ins are not the twin's job
+    obs = agent.sense({"topic": bus.TOPIC_MOD_VIOLATION, "user_id": 7, "severity_score": 0.9})
+    assert obs is not None and obs["trigger"] == "mod_violation"
+    monkeypatch.setattr(private, "has_mood_twin", lambda uid: False)
+    assert agent.sense({"topic": bus.TOPIC_MOOD_ESCALATION, "user_id": 7})["trigger"] == "mood_escalation"

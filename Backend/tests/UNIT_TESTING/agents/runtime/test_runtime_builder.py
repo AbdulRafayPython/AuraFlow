@@ -323,7 +323,7 @@ def test_every_template_produces_a_valid_agent(tpl):
 @pytest.mark.parametrize("tpl", list(TEMPLATES.values()) + [BLANK], ids=lambda t: t.key)
 def test_every_template_trigger_is_valid_once_a_channel_is_given(tpl):
     triggers = [dict(t, channel_id=11) if t["type"] == "schedule" else dict(t) for t in tpl.triggers]
-    out, errors = trig(triggers)
+    out, errors = trig(triggers, community_id=None if tpl.personal_only else 3)
     assert errors == [] and out
 
 
@@ -336,7 +336,8 @@ def test_scheduled_templates_declare_that_they_need_a_channel():
 def test_template_listing_is_json_serialisable_and_complete():
     items = list_templates()
     json.dumps(items)
-    assert {i["key"] for i in items} == {"faq", "welcome", "digest", "standup", "booster", "recap", "translator", "knowledge", "blank"}
+    assert {i["key"] for i in items} == {"faq", "welcome", "digest", "standup", "booster", "recap", "translator", "knowledge", "wellbeing",
+                    "blank"}
     assert get_template("blank") is BLANK
 
 
