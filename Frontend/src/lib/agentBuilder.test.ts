@@ -78,6 +78,10 @@ describe('applyMention', () => {
 describe('triggers', () => {
   it('describes triggers in plain words', () => {
     expect(describeTrigger({ type: 'mention', channel_id: null, config: {} })).toBe('When mentioned');
+    expect(describeTrigger({ type: 'mention', channel_id: null, config: { delivery: 'private' } }))
+      .toBe('When mentioned · answers the person who wrote by DM');
+    expect(describeTrigger({ type: 'channel_silent', channel_id: null, config: { min_minutes: 60, delivery: 'private' } }))
+      .toMatch(/answers you by DM$/);
     expect(describeTrigger({ type: 'keyword', channel_id: null, config: { keywords: ['fees', 'exam'] } }))
       .toBe('On keywords: fees, exam');
     expect(describeTrigger({ type: 'schedule', channel_id: 11, config: { cron: '0 17 * * 5', tz: 'Asia/Dubai' } },

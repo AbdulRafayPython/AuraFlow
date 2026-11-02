@@ -120,16 +120,24 @@ export function cronLabel(cron: string | undefined): string {
 
 export const COMMON_TIME_ZONES = ['UTC', 'Asia/Dubai', 'Asia/Karachi', 'Asia/Riyadh', 'Europe/London', 'America/New_York'];
 
+/** Who gets a private (DM) answer for this kind of trigger. */
+export function privateRecipient(type: TriggerType): string {
+  if (type === 'member_joined') return 'the new member';
+  if (type === 'schedule' || type === 'channel_silent' || type === 'focus_drift') return 'you';
+  return 'the person who wrote';
+}
+
 /** One-line summary of a trigger for lists, e.g. "On a schedule: Every Friday at 17:00 (UTC) in #general". */
 export function describeTrigger(t: Pick<AgentTrigger, 'type' | 'channel_id' | 'config'>,
                                 channelName?: (id: number) => string | undefined): string {
   const base = TRIGGER_LABELS[t.type].label;
   const where = t.channel_id != null ? ` in #${channelName?.(t.channel_id) ?? t.channel_id}` : '';
   const c: TriggerConfig = t.config ?? {};
-  if (t.type === 'keyword') return `${base}: ${(c.keywords ?? []).join(', ') || 'no words yet'}${where}`;
-  if (t.type === 'schedule') return `${base}: ${cronLabel(c.cron)} (${c.tz || 'UTC'})${where}`;
-  if (t.type === 'channel_silent') return `${base} for ${silenceLabel(c.min_minutes)}${where}`;
-  return `${base}${where}`;
+  const dm = c.delivery === 'private' ? ` · answers ${privateRecipient(t.type)} by DM` : '';
+  if (t.type === 'keyword') return `${base}: ${(c.keywords ?? []).join(', ') || 'no words yet'}${where}${dm}`;
+  if (t.type === 'schedule') return `${base}: ${cronLabel(c.cron)} (${c.tz || 'UTC'})${where}${dm}`;
+  if (t.type === 'channel_silent') return `${base} for ${silenceLabel(c.min_minutes)}${where}${dm}`;
+  return `${base}${where}${dm}`;
 }
 
 /** What is still missing before a trigger can be saved. */

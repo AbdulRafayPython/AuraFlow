@@ -11,6 +11,8 @@ export interface TriggerConfig {
   prompt?: string;
   /** channel_silent: how long the channel must have been quiet, in minutes. */
   min_minutes?: number;
+  /** Where the answer goes: the channel (default) or a DM to one person. */
+  delivery?: 'channel' | 'private';
 }
 
 export interface AgentTrigger {

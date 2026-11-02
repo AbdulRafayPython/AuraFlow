@@ -159,7 +159,8 @@ class CustomAgentRouter(AutonomousAgent):
             "new_topics": _topics(event.get("new_topics")),
             "event_key": f"{topic}-{channel_id}-{event.get('bucket') or event.get('message_id') or ''}",
             "matches": [{"agent_id": m.definition.id, "trigger_id": m.trigger.id, "kind": m.kind,
-                         "cap": m.definition.daily_run_cap, "owner_user_id": m.definition.owner_user_id}
+                         "cap": m.definition.daily_run_cap, "owner_user_id": m.definition.owner_user_id,
+                         "delivery": (m.trigger.config or {}).get("delivery")}
                         for m in matches],
             "scope_type": _agent_memory.SCOPE_CHANNEL,
             "scope_id": channel_id,
@@ -225,7 +226,7 @@ class CustomAgentRouter(AutonomousAgent):
         queued = 0
         for m in payload["matches"]:
             queue = "high_priority" if m["kind"] in DIRECT_KINDS else "default"
-            run_trigger = {**trigger, "type": m["kind"], "trigger_id": m["trigger_id"]}
+            run_trigger = {**trigger, "type": m["kind"], "trigger_id": m["trigger_id"], "delivery": m.get("delivery")}
             if m["kind"] in CHANNEL_EVENT_KINDS.values():
                 run_trigger.update(user_id=m.get("owner_user_id"), username=None, content=None, reply_to=None,
                                    silent_minutes=payload.get("silent_minutes"),

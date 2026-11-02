@@ -74,7 +74,8 @@ def test_sense_ignores_messages_nobody_wants(env):
 def test_sense_builds_an_observation_for_a_mention(env):
     obs = CustomAgentRouter().sense(msg())
     assert obs["channel_id"] == 11 and obs["user_id"] == 7 and obs["message_id"] == 77
-    assert obs["matches"] == [{"agent_id": 1, "trigger_id": 10, "kind": "mention", "cap": 5, "owner_user_id": None}]
+    assert obs["matches"] == [{"agent_id": 1, "trigger_id": 10, "kind": "mention", "cap": 5, "owner_user_id": None,
+                              "delivery": None}]
     assert obs["scope_type"] == "channel" and obs["scope_id"] == 11
 
 

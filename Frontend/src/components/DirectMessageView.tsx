@@ -52,7 +52,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const { conversations, messages, sendMessage, deleteMessage, editMessage, markAsRead, deliverUploadedMessage } = useDirectMessages();
   const { friends } = useFriends();
   const { user: currentUser } = useAuth();
-  // An agent's bot user: no presence, no calls, and nothing reads replies yet.
+  // An agent's bot user: no presence and no calls; it answers what you write by DM.
   const isBot = !!conversations.find((c) => c.user_id === userId)?.user.is_bot;
   const { isDarkMode } = useTheme();
   const [message, setMessage] = useState('');
@@ -1042,11 +1042,6 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
           </div>
         )}
 
-        {isBot ? (
-          <p className="px-4 pb-4 pt-2 text-center text-xs text-muted-foreground">
-            {displayName || username} can't read replies yet. To ask it something, use /ask in a channel.
-          </p>
-        ) : (
         <div className="px-4 pb-4 pt-1">
           <Composer
             value={message}
@@ -1059,7 +1054,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             canSend={message.trim().length > 0 || !!pendingFile}
             placeholder={`Message @${displayName || username}`}
             disabled={isSending}
-            onAttach={() => fileInputRef.current?.click()}
+            onAttach={isBot ? undefined : () => fileInputRef.current?.click()}
             inputProps={{
               onKeyPress: (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -1075,15 +1070,21 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                   pickerPosition="top"
                   disabled={isSending}
                 />
-                <VoiceRecorder
-                  onSend={handleVoiceSend}
-                  disabled={isSending}
-                />
+                {!isBot && (
+                  <VoiceRecorder
+                    onSend={handleVoiceSend}
+                    disabled={isSending}
+                  />
+                )}
               </>
             }
           />
+          {isBot && (
+            <p className="mt-1 px-1 text-xs text-muted-foreground">
+              Only you see this conversation. {displayName || username} can look things up here but can't post for you.
+            </p>
+          )}
         </div>
-        )}
       </footer>
 
       {/* Profile Popover */}

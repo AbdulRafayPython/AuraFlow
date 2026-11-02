@@ -97,7 +97,8 @@ def test_due_schedule_is_claimed_then_enqueued(make_db):
     agent_id, trig = sent[0]
     assert agent_id == 2
     assert trig == {"type": "schedule", "trigger_id": 5, "user_id": 4, "username": None, "channel_id": 11,
-                    "community_id": 3, "message_id": None, "content": None, "reply_to": None, "prompt": "digest"}
+                    "community_id": 3, "message_id": None, "content": None, "reply_to": None, "prompt": "digest",
+                    "delivery": None}
     sql, params = cur.sql_containing("UPDATE agent_triggers SET next_run_at")[0]
     assert "AND next_run_at = %s" in sql                       # compare-and-swap
     assert params == (datetime(2026, 11, 6, 17, 0), 5, datetime(2026, 10, 30, 17, 0))

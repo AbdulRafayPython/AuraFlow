@@ -4,7 +4,8 @@ import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import agentBuilderService, { errorMessage } from '@/services/agentBuilderService';
 import {
-  COMMON_TIME_ZONES, CRON_PRESETS, CUSTOM_CRON, SILENCE_CHOICES, TRIGGER_LABELS, describeTrigger, splitKeywords, triggerProblems,
+  COMMON_TIME_ZONES, CRON_PRESETS, CUSTOM_CRON, SILENCE_CHOICES, TRIGGER_LABELS, describeTrigger, privateRecipient,
+  splitKeywords, triggerProblems,
 } from '@/lib/agentBuilder';
 import type { AgentTrigger, BuilderAgent, TriggerType } from '@/types/agentBuilder';
 import type { Channel } from '@/types';
@@ -157,7 +158,9 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
                   <label className={labelCls}>What should it do each time?</label>
                   <textarea className={`${inputCls} min-h-[70px]`} maxLength={500} value={d.config.prompt ?? ''}
                             onChange={(e) => patchConfig(d.key, { prompt: e.target.value })} />
-                  <p className={hintCls}>Runs at most every 15 minutes. It posts a new message in the channel.</p>
+                  <p className={hintCls}>
+                    Runs at most every 15 minutes. {d.config.delivery === 'private' ? 'It sends you a DM.' : 'It posts a new message in the channel.'}
+                  </p>
                 </div>
               </>
             )}
@@ -177,6 +180,17 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
             )}
             {d.type === 'focus_drift' && textChannels.length > 0 && channelSelect(d, false)}
             {(d.type === 'mention' || d.type === 'keyword') && textChannels.length > 0 && channelSelect(d, false)}
+            <div>
+              <label className={labelCls}>Answer</label>
+              <select className={inputCls} value={d.config.delivery ?? 'channel'}
+                      onChange={(e) => patchConfig(d.key, { delivery: e.target.value === 'private' ? 'private' : undefined })}>
+                <option value="channel">In the channel</option>
+                <option value="private">Privately, as a DM to {privateRecipient(d.type)}</option>
+              </select>
+              {d.config.delivery === 'private' && (
+                <p className={hintCls}>Only reads in private: it cannot post, start polls or set reminders.</p>
+              )}
+            </div>
           </div>
 
           {problems[i].length > 0 && (

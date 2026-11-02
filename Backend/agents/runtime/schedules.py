@@ -126,7 +126,8 @@ def run_due_schedules(now: Optional[datetime] = None, limit: int = 50,
                     "type": "schedule", "trigger_id": row["id"], "user_id": row["owner_user_id"],
                     "username": None, "channel_id": row["channel_id"],
                     "community_id": channel["community_id"], "message_id": None, "content": None,
-                    "reply_to": None, "prompt": config.get("prompt") or DEFAULT_PROMPT})
+                    "reply_to": None, "prompt": config.get("prompt") or DEFAULT_PROMPT,
+                    "delivery": config.get("delivery")})
                 started += 1
     finally:
         conn.close()

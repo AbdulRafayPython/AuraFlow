@@ -27,7 +27,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from agents.runtime import builtin_tools, legacy_tools, write_tools  # noqa: F401  (registers the tools)
-from agents.runtime.definitions import AgentDefinition, create_bot_user, invalidate_cache
+from agents.runtime.definitions import (
+    DELIVERY_CHANNEL, DELIVERY_PRIVATE, AgentDefinition, create_bot_user, invalidate_cache)
 from agents.runtime.schedules import next_run_utc, validate_schedule
 from agents.runtime.templates import AgentTemplate
 from agents.runtime.tools import RISK_ADMIN, TOOL_REGISTRY
@@ -195,6 +196,13 @@ def validate_triggers(triggers: Any, *, community_id: Optional[int],
                     errors.append(f"{label}: min_minutes must be a whole number from {MIN_SILENT_MINUTES} to {MAX_SILENT_MINUTES}")
                     continue
                 config = {"min_minutes": minutes}
+
+        delivery = (t.get("config") or {}).get("delivery")
+        if delivery not in (None, DELIVERY_CHANNEL, DELIVERY_PRIVATE):
+            errors.append(f"{label}: delivery must be '{DELIVERY_CHANNEL}' or '{DELIVERY_PRIVATE}'")
+            continue
+        if delivery == DELIVERY_PRIVATE:
+            config = {**config, "delivery": DELIVERY_PRIVATE}
 
         out.append({"type": ttype, "channel_id": channel_id, "config": config, "next_run_at": next_run,
                     "enabled": bool(t.get("enabled", True))})
