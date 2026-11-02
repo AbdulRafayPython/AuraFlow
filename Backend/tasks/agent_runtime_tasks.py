@@ -21,7 +21,7 @@ _UNAVAILABLE_TEXT = "I can't answer right now because the AI service is not conf
 # (schedules, welcomes, keyword/channel triggers) stay silent when they fail.
 _DIRECT_KINDS = ("mention", "reply", "dm")
 # Triggers whose output is a fresh message rather than a reply to someone's message.
-_STANDALONE_KINDS = ("member_joined", "schedule", "api", "channel_silent", "focus_drift")
+_STANDALONE_KINDS = ("member_joined", "schedule", "api", "channel_silent", "focus_drift", "mood_escalation")
 
 
 def build_user_message(defn: Any, trigger: Dict[str, Any]) -> str:
@@ -46,6 +46,14 @@ def build_user_message(defn: Any, trigger: Dict[str, Any]) -> str:
         return (f"The conversation in this channel just moved from {old} to {new}. Do what your "
                 "instructions say for this moment. If they do not cover it, write one short, neutral "
                 "message that notes the shift and asks whether to carry on with the earlier topic. "
+                "Reply with only the message itself.")
+    if kind == "mood_escalation":
+        mood = trigger.get("primary_mood")
+        felt = f" (it reads as {mood})" if mood else ""
+        return ("Your owner's recent messages suggest they may be having a hard time" + felt + ". They "
+                "turned on mood tracking, and only they will see what you write. Do what your instructions "
+                "say for this moment. If they do not cover it, write a short, warm check-in: ask how they "
+                "are, offer one small idea, and do not quote their messages or mention scores. "
                 "Reply with only the message itself.")
     if kind in ("api", "dm"):
         return (trigger.get("content") or "").strip() or "Hello"
@@ -79,7 +87,7 @@ def run_agent_task(self, agent_id: int, trigger: Dict[str, Any]) -> Dict[str, An
     to_user = private.recipient(defn, trigger) if is_private else None
     if is_private and not to_user:
         return {"status": "skipped", "reason": "no_recipient"}
-    if not channel_id and kind != private.DM_KIND:
+    if not channel_id and not is_private:
         return {"status": "skipped", "reason": "no_channel"}
 
     if not is_private:

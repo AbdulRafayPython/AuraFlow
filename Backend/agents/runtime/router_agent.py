@@ -3,7 +3,8 @@ CustomAgentRouter
 =================
 The bridge between the event bus and the agent runtime. It is a normal
 autonomous agent (registered in ``agents/orchestrator.py``) that subscribes to
-``msg.created``, ``user.joined_community``, ``channel.silent`` and ``focus.drift``
+``msg.created``, ``user.joined_community``, ``channel.silent``, ``focus.drift`` and
+``mood.escalation``
 and answers one question: *does any agent want this event?*
 
 It never calls an LLM. ``sense`` matches triggers (pure, cheap), ``decide``
@@ -21,7 +22,10 @@ Guards:
 * every agent has a ``daily_run_cap``;
 * channel events (silent channel, topic drift) wake an agent at most once per
   ``EVENT_COOLDOWN_SECONDS`` per channel, and not at all when Redis is down
-  (without it the limit cannot be kept).
+  (without it the limit cannot be kept);
+* a mood dip wakes only the person's own personal agents, only while they track their
+  mood (Mood Tracker on), always answers by DM, and at most once per
+  ``MOOD_COOLDOWN_SECONDS`` per agent (again not at all without Redis).
 """
 
 from __future__ import annotations
@@ -35,7 +39,9 @@ from agents import memory as _agent_memory
 from agents.base import AutonomousAgent
 from agents.runtime.definitions import (
     AgentDefinition, ensure_builtin_agents_once, load_active_definitions)
-from agents.runtime.triggers import TriggerMatch, match_channel_event, match_member_joined, match_message
+from agents.runtime.definitions import DELIVERY_PRIVATE
+from agents.runtime.triggers import (
+    TriggerMatch, match_channel_event, match_member_joined, match_message, match_mood_escalation)
 from database import get_db_connection
 
 log = logging.getLogger(__name__)
@@ -46,6 +52,8 @@ EVENT_COOLDOWN_SECONDS = 30 * 60
 # Channel-level events: bus topic -> trigger type. Nobody spoke to the agent, so these runs act for its owner.
 CHANNEL_EVENT_KINDS = {_bus.TOPIC_CHANNEL_SILENT: "channel_silent", _bus.TOPIC_FOCUS_DRIFT: "focus_drift"}
 MAX_TOPICS = 5
+MOOD_KIND = "mood_escalation"
+MOOD_COOLDOWN_SECONDS = 6 * 60 * 60
 
 
 def _user_rate_limit() -> int:
@@ -95,6 +103,23 @@ def _reply_parent_sender(message_id: int) -> Optional[int]:
             conn.close()
 
 
+def _tracks_mood(user_id: int) -> bool:
+    """The person has Mood Tracker on. Fails closed: no answer means no."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM user_agents WHERE user_id = %s AND agent_type = 'mood' "
+                        "AND enabled = TRUE", (user_id,))
+            return cur.fetchone() is not None
+    except Exception as exc:  # noqa: BLE001
+        log.debug("[router] mood opt-in lookup failed: %s", exc)
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+
 def _topics(value: Any) -> List[str]:
     """A short, plain list of topic words from an event (they come from chat, so keep them small)."""
     if not isinstance(value, (list, tuple)):
@@ -105,7 +130,8 @@ def _topics(value: Any) -> List[str]:
 class CustomAgentRouter(AutonomousAgent):
     NAME = "custom_router"
     GOAL = {"route_events_to_agents": True}
-    SUBSCRIBES = [_bus.TOPIC_MSG_CREATED, _bus.TOPIC_USER_JOINED, _bus.TOPIC_CHANNEL_SILENT, _bus.TOPIC_FOCUS_DRIFT]
+    SUBSCRIBES = [_bus.TOPIC_MSG_CREATED, _bus.TOPIC_USER_JOINED, _bus.TOPIC_CHANNEL_SILENT, _bus.TOPIC_FOCUS_DRIFT,
+                  _bus.TOPIC_MOOD_ESCALATION]
     COOLDOWN_SECONDS = 0                      # one user may mention an agent repeatedly
     SCOPE_TYPE = _agent_memory.SCOPE_CHANNEL
 
@@ -140,10 +166,16 @@ class CustomAgentRouter(AutonomousAgent):
             matches = match_channel_event(CHANNEL_EVENT_KINDS[topic], event, defs)
             channel_id = event.get("channel_id")
             message_id = None
+        elif topic == _bus.TOPIC_MOOD_ESCALATION:
+            matches = match_mood_escalation(event, defs)
+            if matches and not _tracks_mood(int(event["user_id"])):
+                return None                    # stopped tracking their mood: nothing reads it
+            channel_id = event.get("channel_id")
+            message_id = None                  # the message already had its own run; keep the claims apart
         else:
             return None
 
-        if not matches or not channel_id:
+        if not matches or (not channel_id and topic != _bus.TOPIC_MOOD_ESCALATION):
             return None
         return {
             "topic": topic,
@@ -157,6 +189,7 @@ class CustomAgentRouter(AutonomousAgent):
             "silent_minutes": event.get("silent_minutes"),
             "old_topics": _topics(event.get("old_topics")),
             "new_topics": _topics(event.get("new_topics")),
+            "primary_mood": str(event.get("primary_mood") or "")[:30] or None,
             "event_key": f"{topic}-{channel_id}-{event.get('bucket') or event.get('message_id') or ''}",
             "matches": [{"agent_id": m.definition.id, "trigger_id": m.trigger.id, "kind": m.kind,
                          "cap": m.definition.daily_run_cap, "owner_user_id": m.definition.owner_user_id,
@@ -187,6 +220,14 @@ class CustomAgentRouter(AutonomousAgent):
                     continue
                 if not r.set(f"agent_router:evt:{m['kind']}:{m['agent_id']}:{obs.get('channel_id')}", "1",
                              nx=True, ex=EVENT_COOLDOWN_SECONDS):
+                    reasons.append("cooldown")
+                    continue
+            if m["kind"] == MOOD_KIND:
+                if r is None:
+                    reasons.append("no_redis")
+                    continue
+                if not r.set(f"agent_router:mood:{m['agent_id']}:{obs.get('user_id')}", "1",
+                             nx=True, ex=MOOD_COOLDOWN_SECONDS):
                     reasons.append("cooldown")
                     continue
             if r is not None and not r.set(f"agent_router:claim:{key}:{m['agent_id']}", "1",
@@ -231,6 +272,10 @@ class CustomAgentRouter(AutonomousAgent):
                 run_trigger.update(user_id=m.get("owner_user_id"), username=None, content=None, reply_to=None,
                                    silent_minutes=payload.get("silent_minutes"),
                                    old_topics=payload.get("old_topics"), new_topics=payload.get("new_topics"))
+            elif m["kind"] == MOOD_KIND:
+                run_trigger.update(user_id=m.get("owner_user_id"), username=None, content=None, reply_to=None,
+                                   message_id=None, delivery=DELIVERY_PRIVATE,
+                                   primary_mood=payload.get("primary_mood"))
             run_agent_task.apply_async(kwargs={"agent_id": m["agent_id"], "trigger": run_trigger}, queue=queue)
             queued += 1
         return {"enqueued": queued}

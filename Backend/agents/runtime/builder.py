@@ -41,7 +41,7 @@ MAX_TRIGGERS = 10
 MAX_KEYWORDS, MAX_KEYWORD_CHARS = 20, 40
 MAX_ALLOWED_CHANNELS = 50
 TRIGGER_TYPES = ("mention", "keyword", "channel_message", "schedule", "member_joined",
-                 "channel_silent", "focus_drift")
+                 "channel_silent", "focus_drift", "mood_escalation")
 
 # channel_silent: the quietest a channel must be before the agent wakes (minutes).
 MIN_SILENT_MINUTES, MAX_SILENT_MINUTES = 10, 1440
@@ -182,6 +182,15 @@ def validate_triggers(triggers: Any, *, community_id: Optional[int],
             if channel_id is None:
                 errors.append(f"{label}: channel_message must be limited to one channel")
                 continue
+        elif ttype == "mood_escalation":
+            # The owner's own mood, told to them alone: a personal agent, no channel, always a DM.
+            if community_id is not None:
+                errors.append(f"{label}: mood_escalation only works for personal agents")
+                continue
+            if channel_id is not None:
+                errors.append(f"{label}: mood_escalation is not tied to a channel")
+                continue
+            config = {"delivery": DELIVERY_PRIVATE}
         elif ttype == "member_joined" and community_id is None:
             errors.append(f"{label}: member_joined only works for community agents")
             continue
@@ -201,7 +210,7 @@ def validate_triggers(triggers: Any, *, community_id: Optional[int],
         if delivery not in (None, DELIVERY_CHANNEL, DELIVERY_PRIVATE):
             errors.append(f"{label}: delivery must be '{DELIVERY_CHANNEL}' or '{DELIVERY_PRIVATE}'")
             continue
-        if delivery == DELIVERY_PRIVATE:
+        if delivery == DELIVERY_PRIVATE or ttype == "mood_escalation":
             config = {**config, "delivery": DELIVERY_PRIVATE}
 
         out.append({"type": ttype, "channel_id": channel_id, "config": config, "next_run_at": next_run,

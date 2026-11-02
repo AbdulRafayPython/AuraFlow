@@ -37,7 +37,7 @@ DELIVERY_CHANNEL = "channel"
 DELIVERY_PRIVATE = "private"
 
 TRIGGER_TYPES = ("mention", "keyword", "channel_message", "schedule", "member_joined",
-                 "channel_silent", "focus_drift")
+                 "channel_silent", "focus_drift", "mood_escalation")
 
 
 @dataclass(frozen=True)

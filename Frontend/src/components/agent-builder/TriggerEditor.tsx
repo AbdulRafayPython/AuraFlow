@@ -25,7 +25,8 @@ function toDraft(t: AgentTrigger): Draft {
 
 function emptyTrigger(type: TriggerType, defaultChannel: number | null): Draft {
   const config = type === 'schedule' ? { cron: CRON_PRESETS[0].cron, tz: 'UTC', prompt: 'Post the scheduled update.' }
-    : type === 'channel_silent' ? { min_minutes: 60 } : {};
+    : type === 'channel_silent' ? { min_minutes: 60 }
+    : type === 'mood_escalation' ? { delivery: 'private' as const } : {};
   return toDraft({ type, channel_id: type === 'schedule' || type === 'channel_message' ? defaultChannel : null, config, enabled: true });
 }
 
@@ -52,6 +53,7 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
 
   const available = (Object.keys(TRIGGER_LABELS) as TriggerType[]).filter((t) => {
     if ((t === 'member_joined' || t === 'channel_silent' || t === 'focus_drift') && !isCommunityAgent) return false;
+    if (t === 'mood_escalation' && isCommunityAgent) return false;      // only ever your own mood
     if ((t === 'schedule' || t === 'channel_message') && textChannels.length === 0) return false;
     return true;
   });
@@ -180,6 +182,7 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
             )}
             {d.type === 'focus_drift' && textChannels.length > 0 && channelSelect(d, false)}
             {(d.type === 'mention' || d.type === 'keyword') && textChannels.length > 0 && channelSelect(d, false)}
+            {d.type !== 'mood_escalation' && (
             <div>
               <label className={labelCls}>Answer</label>
               <select className={inputCls} value={d.config.delivery ?? 'channel'}
@@ -191,6 +194,7 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
                 <p className={hintCls}>Only reads in private: it cannot post, start polls or set reminders.</p>
               )}
             </div>
+            )}
           </div>
 
           {problems[i].length > 0 && (

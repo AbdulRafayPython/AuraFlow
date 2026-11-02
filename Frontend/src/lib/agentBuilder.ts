@@ -55,6 +55,7 @@ export const TRIGGER_LABELS: Record<TriggerType, { label: string; hint: string }
   member_joined: { label: 'When someone joins', hint: 'Welcomes new members of the community.' },
   channel_silent: { label: 'When a channel goes quiet', hint: 'Posts a message to get the conversation going again. At most once every 30 minutes per channel.' },
   focus_drift: { label: 'When the topic changes', hint: 'Speaks up when a conversation moves to a new subject. At most once every 30 minutes per channel.' },
+  mood_escalation: { label: 'When my mood dips', hint: 'Checks in with you by DM when your messages suggest a hard time. Needs Mood Tracker on; at most once every 6 hours. Only you see it.' },
 };
 
 /** How long a channel must be quiet. The server reports quiet spells of 15 minutes, 1 hour and 4 hours. */
@@ -123,7 +124,7 @@ export const COMMON_TIME_ZONES = ['UTC', 'Asia/Dubai', 'Asia/Karachi', 'Asia/Riy
 /** Who gets a private (DM) answer for this kind of trigger. */
 export function privateRecipient(type: TriggerType): string {
   if (type === 'member_joined') return 'the new member';
-  if (type === 'schedule' || type === 'channel_silent' || type === 'focus_drift') return 'you';
+  if (type === 'schedule' || type === 'channel_silent' || type === 'focus_drift' || type === 'mood_escalation') return 'you';
   return 'the person who wrote';
 }
 
