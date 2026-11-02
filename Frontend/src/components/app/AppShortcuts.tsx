@@ -2,7 +2,7 @@ import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { useRealtime } from "@/hooks/useRealtime";
 import { adjacentChannel, isTypingTarget } from "@/lib/shortcuts";
-import { CommandPalette, OPEN_SHORTCUTS_EVENT } from "./CommandPalette";
+import { CommandPalette, OPEN_PALETTE_EVENT, OPEN_SHORTCUTS_EVENT } from "./CommandPalette";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 
 /**
@@ -38,11 +38,14 @@ export default function AppShortcuts() {
       }
     };
     const openHelp = () => setHelpOpen(true);
+    const openPalette = () => setPaletteOpen(true);
     window.addEventListener("keydown", onKey);
     window.addEventListener(OPEN_SHORTCUTS_EVENT, openHelp);
+    window.addEventListener(OPEN_PALETTE_EVENT, openPalette);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener(OPEN_SHORTCUTS_EVENT, openHelp);
+      window.removeEventListener(OPEN_PALETTE_EVENT, openPalette);
     };
   }, [navigate, currentCommunity, channels, currentChannel?.id]);
 

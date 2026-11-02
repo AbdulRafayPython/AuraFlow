@@ -5,11 +5,14 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Bot, Compass, Hash, Home, Keyboard, MessageSquare, Moon, Search, Settings, Sun, Users } from "lucide-react";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useFriends } from "@/contexts/FriendsContext";
+import { useDirectMessages } from "@/contexts/DirectMessagesContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Icon } from "./Icon";
 
 export const OPEN_SEARCH_EVENT = "auraflow:open-search";
 export const OPEN_SHORTCUTS_EVENT = "auraflow:open-shortcuts";
+/** Open the palette from a button (e.g. "Find or start a conversation"). */
+export const OPEN_PALETTE_EVENT = "auraflow:open-palette";
 
 const itemClass =
   "flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-[hsl(var(--theme-text-secondary))] data-[selected=true]:bg-[hsl(var(--theme-bg-active))] data-[selected=true]:text-foreground";
@@ -24,6 +27,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const navigate = useNavigate();
   const { communities, currentCommunity, channels } = useRealtime();
   const { friends = [] } = useFriends();
+  const { conversations } = useDirectMessages();
   const { isDarkMode, toggleTheme } = useTheme();
 
   const run = (fn: () => void) => () => {
@@ -78,6 +82,24 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                       <Icon icon={Users} size="md" /> {c.name}
                     </Command.Item>
                   ))}
+                </Command.Group>
+              )}
+
+              {conversations.some((c) => c.user?.public_id && !friends.some((f) => f.id === c.user_id)) && (
+                <Command.Group heading="Conversations" className={headingClass}>
+                  {conversations
+                    .filter((c) => c.user?.public_id && !friends.some((f) => f.id === c.user_id))
+                    .map((c) => (
+                      <Command.Item
+                        key={c.user_id}
+                        value={`message ${c.user.display_name} ${c.user.username}`}
+                        onSelect={run(() => navigate(`/dm/${c.user.public_id}`))}
+                        className={itemClass}
+                      >
+                        <Icon icon={c.user.is_bot ? Bot : MessageSquare} size="md" /> {c.user.display_name || c.user.username}
+                        {c.user.is_bot && <span className="ml-auto text-xs text-muted-foreground">APP</span>}
+                      </Command.Item>
+                    ))}
                 </Command.Group>
               )}
 

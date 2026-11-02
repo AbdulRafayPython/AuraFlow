@@ -1,14 +1,12 @@
 import * as React from "react";
 import { cn, getAvatarUrl } from "@/lib/utils";
-import { useRealtime } from "@/hooks/useRealtime";
+import { usePresence, type Presence } from "@/hooks/usePresence";
 import { useCommunityMembers } from "@/hooks/useCommunityMembers";
 import { useMentionableAgents } from "@/hooks/useMentionableAgents";
 import { useOpenAgent } from "@/components/ai-agents/AgentDetailPane";
 import AgentLogo from "@/components/ai-agents/AgentLogo";
 import { SidebarListSkeleton } from "@/components/chat/MessageListSkeleton";
 import type { CommunityMember } from "@/types";
-
-type Presence = "online" | "idle" | "dnd" | "offline";
 
 export const PRESENCE_DOT: Record<Presence, string> = {
   online: "bg-success",
@@ -93,13 +91,13 @@ function MemberRow({
  */
 export function MemberList({ communityId, onSelectMember, className }: MemberListProps) {
   const { members, loading } = useCommunityMembers(communityId);
-  const { userStatuses } = useRealtime();
+  const presence = usePresence();
   const agents = useMentionableAgents(communityId);
   const openAgent = useOpenAgent();
 
   const presenceOf = React.useCallback(
-    (m: CommunityMember): Presence => (userStatuses.get(m.username) || m.status || "offline") as Presence,
-    [userStatuses],
+    (m: CommunityMember): Presence => presence(m.username, m.id, m.status),
+    [presence],
   );
 
   const groups = React.useMemo(() => {
