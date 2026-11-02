@@ -59,7 +59,10 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const { friends } = useFriends();
   const { user: currentUser } = useAuth();
   // An agent's bot user: no presence and no calls; it answers what you write by DM.
-  const isBot = !!conversations.find((c) => c.user_id === userId)?.user.is_bot;
+  const conversationUser = conversations.find((c) => c.user_id === userId)?.user;
+  const isBot = !!conversationUser?.is_bot;
+  // The `avatar` prop may be a generated person avatar; an agent's logo uses only its own upload.
+  const agentAvatar = conversationUser?.avatar_url ?? null;
   const { isDarkMode } = useTheme();
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -750,7 +753,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
         )}
         <div className="flex items-center gap-3 flex-1">
           {isBot ? (
-            <AgentLogo size="sm" avatarUrl={avatar} username={username} name={displayName} />
+            <AgentLogo size="sm" avatarUrl={agentAvatar} username={username} name={displayName} />
           ) : (
           <div className="relative">
             <img
@@ -887,10 +890,17 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                     authorName={authorName}
                     avatarUrl={authorAvatar}
                     username={authorUsername}
+                    // The agent's side of an agent DM: its app logo and APP label, as in the header and DM list.
+                    avatar={!isSent && isBot ? (
+                      <AgentLogo size="md" avatarUrl={agentAvatar} username={username} name={displayName || username} />
+                    ) : undefined}
+                    badge={!isSent && isBot ? (
+                      <span className="rounded bg-[hsl(var(--theme-bg-tertiary))] px-1 text-xs font-semibold text-muted-foreground">APP</span>
+                    ) : undefined}
                     timeLabel={formatTime(msg.created_at)}
                     shortTimeLabel={new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
                     grouped={grouped}
-                    onAuthorClick={isSent ? undefined : (e) => handleProfileClick(authorUsername, e)}
+                    onAuthorClick={isSent ? undefined : isBot ? (agentForDm ? () => openAgent(agentForDm) : undefined) : (e) => handleProfileClick(authorUsername, e)}
                     reactions={
                       dmReactions[msg.id] && dmReactions[msg.id].length > 0 ? (
                         <MessageReactions

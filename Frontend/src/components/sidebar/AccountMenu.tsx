@@ -88,7 +88,9 @@ export function AccountMenu({ variant }: { variant: "panel" | "rail" }) {
       .getMe()
       .then((me: any) => {
         setCurrentUser(me);
-        if (me?.status && me.status in STATUS_DOT) setUserStatus(me.status);
+        // Keep an explicit Idle / Do not disturb; a stored "offline" just means
+        // not connected yet, so it starts as Online like the rail always did.
+        if (me?.status === "idle" || me?.status === "dnd") setUserStatus(me.status);
       })
       .catch((error) => console.error("Failed to load user data:", error));
   }, []);
