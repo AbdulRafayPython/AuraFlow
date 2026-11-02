@@ -38,6 +38,7 @@ import { useToast } from '@/hooks/use-toast';
 import UserProfilePopover from '@/components/profile/UserProfilePopover';
 import { friendService } from '@/services/friendService';
 import type { DirectMessage } from '@/types';
+import AgentLogo from '@/components/ai-agents/AgentLogo';
 
 interface DirectMessageViewProps {
   userId: number;
@@ -51,6 +52,8 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const { conversations, messages, sendMessage, deleteMessage, editMessage, markAsRead, deliverUploadedMessage } = useDirectMessages();
   const { friends } = useFriends();
   const { user: currentUser } = useAuth();
+  // An agent's bot user: no presence, no calls, and nothing reads replies yet.
+  const isBot = !!conversations.find((c) => c.user_id === userId)?.user.is_bot;
   const { isDarkMode } = useTheme();
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -726,6 +729,9 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
           </button>
         )}
         <div className="flex items-center gap-3 flex-1">
+          {isBot ? (
+            <AgentLogo size="sm" avatarUrl={avatar} username={username} name={displayName} />
+          ) : (
           <div className="relative">
             <img
               src={getAvatarUrl(avatar, username)}
@@ -736,13 +742,23 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             {/* Online status dot */}
             <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-success rounded-full border-2 border-[hsl(var(--theme-bg-primary))]" />
           </div>
+          )}
           <div className="flex-1 min-w-0">
-            <h2 className="text-base font-semibold truncate text-[hsl(var(--theme-text-primary))] leading-tight">
+            <h2 className="flex items-center gap-1.5 text-base font-semibold truncate text-[hsl(var(--theme-text-primary))] leading-tight">
               {displayName || username}
+              {isBot && (
+                <span className="rounded bg-[hsl(var(--theme-bg-tertiary))] px-1 py-px text-xs font-semibold tracking-wide text-muted-foreground">
+                  APP
+                </span>
+              )}
             </h2>
+            {isBot ? (
+              <p className="text-xs text-muted-foreground">Agent · messages only you can see</p>
+            ) : (
             <p className="text-xs text-success">
               Online
             </p>
+            )}
           </div>
 
           {/* Header actions: Catch-me-up + call buttons */}
@@ -756,6 +772,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             >
               <Sparkles className="w-[18px] h-[18px]" />
             </button>
+            {!isBot && (<>
             <button
               onClick={handleAudioCall}
               disabled={callState !== 'idle'}
@@ -772,6 +789,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             >
               <Video className="w-[18px] h-[18px]" />
             </button>
+            </>)}
           </div>
         </div>
       </header>
@@ -1024,6 +1042,11 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
           </div>
         )}
 
+        {isBot ? (
+          <p className="px-4 pb-4 pt-2 text-center text-xs text-muted-foreground">
+            {displayName || username} can't read replies yet. To ask it something, use /ask in a channel.
+          </p>
+        ) : (
         <div className="px-4 pb-4 pt-1">
           <Composer
             value={message}
@@ -1060,6 +1083,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             }
           />
         </div>
+        )}
       </footer>
 
       {/* Profile Popover */}

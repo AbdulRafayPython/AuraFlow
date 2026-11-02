@@ -5,14 +5,7 @@ import { directMessageService } from "@/services/directMessageService";
 import { socketService } from "@/services/socketService";
 import { useAuth } from "./AuthContext";
 import { useFriends } from "./FriendsContext";
-
-interface Conversation {
-  user_id: number;
-  user: User;
-  last_message?: DirectMessage;
-  unread_count: number;
-  last_message_time: string;
-}
+import { conversationFromMessage, mergeConversations, withFriends, type Conversation } from "@/lib/dmConversations";
 
 interface DirectMessagesContextType {
   conversations: Conversation[];
@@ -62,26 +55,7 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
   // Initialize conversations from friends list — preserve existing last_message
   useEffect(() => {
     if (friends && friends.length > 0) {
-      setConversations(prev => {
-        const existingMap = new Map(prev.map(c => [c.user_id, c]));
-        return friends.map(friend => {
-          const existing = existingMap.get(friend.id);
-          return {
-            user_id: friend.id,
-            user: {
-              id: friend.id,
-              public_id: friend.public_id,
-              username: friend.username,
-              display_name: friend.display_name,
-              avatar_url: friend.avatar_url,
-              email: ''
-            } as User,
-            unread_count: existing?.unread_count ?? 0,
-            last_message_time: existing?.last_message_time ?? new Date().toISOString(),
-            last_message: existing?.last_message
-          };
-        });
-      });
+      setConversations(prev => withFriends(prev, friends));
     }
   }, [friends]);
 
@@ -106,18 +80,8 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     if (!authUser?.id) return;
     directMessageService.getConversations().then(data => {
       if (!data.length) return;
-      setConversations(prev => {
-        const updates = new Map(data.map(d => [d.partner_id, d.last_message]));
-        return prev.map(c => {
-          const lastMsg = updates.get(c.user_id);
-          if (lastMsg && (!c.last_message || lastMsg.id > (c.last_message.id ?? 0))) {
-            return { ...c, last_message: lastMsg, last_message_time: lastMsg.created_at };
-          }
-          return c;
-        });
-      });
+      setConversations(prev => mergeConversations(prev, data));
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser?.id]);
 
   // Fetch conversations
@@ -127,16 +91,7 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
     try {
       const data = await directMessageService.getConversations();
       if (data.length) {
-        setConversations(prev => {
-          const updates = new Map(data.map(d => [d.partner_id, d.last_message]));
-          return prev.map(c => {
-            const lastMsg = updates.get(c.user_id);
-            if (lastMsg) {
-              return { ...c, last_message: lastMsg, last_message_time: lastMsg.created_at };
-            }
-            return c;
-          });
-        });
+        setConversations(prev => mergeConversations(prev, data));
       }
     } catch (err: any) {
       setError(err.response?.data?.message || "Failed to fetch conversations");
@@ -410,8 +365,10 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
             : conv
         );
       }
-      
-      return prev;
+
+      // First message from someone not in the list yet (e.g. an agent writing to you)
+      const started = conversationFromMessage(message, currentUserIdRef.current);
+      return started ? [...prev, started] : prev;
     });
   }, []);
 

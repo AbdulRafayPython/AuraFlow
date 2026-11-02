@@ -1665,6 +1665,7 @@ def get_dm_conversations():
                     p.display_name AS partner_display_name,
                     p.avatar_url AS partner_avatar,
                     p.status     AS partner_status,
+                    p.is_bot     AS partner_is_bot,
                     COALESCE(uc.unread_count, 0) AS unread_count
                 FROM direct_messages dm
                 INNER JOIN (
@@ -1704,6 +1705,7 @@ def get_dm_conversations():
                     'display_name': m['partner_display_name'] or m['partner_username'],
                     'avatar_url': m['partner_avatar'],
                     'status': m['partner_status'] or 'offline',
+                    'is_bot': bool(m.get('partner_is_bot')),
                 },
                 'unread_count': int(m['unread_count'] or 0),
                 'last_message': {

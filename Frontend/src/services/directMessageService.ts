@@ -1,6 +1,7 @@
 // services/directMessageService.ts - Direct messaging service
 import axios from 'axios';
 import type { DirectMessage } from '@/types';
+import type { ConversationRow } from '@/lib/dmConversations';
 import { API_SERVER } from '@/config/api';
 
 const API_BASE = `${API_SERVER}/api`;
@@ -16,9 +17,9 @@ class DirectMessageService {
   }
 
   // Get last message per conversation partner
-  async getConversations(): Promise<Array<{ partner_id: number; last_message: DirectMessage }>> {
+  async getConversations(): Promise<ConversationRow[]> {
     try {
-      const response = await axios.get<Array<{ partner_id: number; last_message: DirectMessage }>>(
+      const response = await axios.get<ConversationRow[]>(
         `${API_BASE}/messages/direct/conversations`,
         this.getAuthHeaders()
       );
