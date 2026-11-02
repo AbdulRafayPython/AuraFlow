@@ -55,6 +55,10 @@ export interface AgentMessageShellProps {
   onDismiss?: () => void;
   /** Open the agent's detail pane (name and avatar become clickable). */
   onOpenAgent?: () => void;
+  /** Continues the same agent's previous message: no avatar or header. */
+  grouped?: boolean;
+  /** Short time shown in the gutter of a grouped row on hover. */
+  shortTimeLabel?: string;
 }
 
 const ICONS: Record<string, typeof Bot> = {
@@ -132,6 +136,8 @@ export default function AgentMessageShell({
   children,
   onDismiss,
   onOpenAgent,
+  grouped = false,
+  shortTimeLabel,
 }: AgentMessageShellProps) {
   const label = displayName ?? agentLabel(agentName as AgentName);
 
@@ -140,6 +146,8 @@ export default function AgentMessageShell({
       className="cv-auto"
       authorName={label}
       timeLabel={timestamp ?? ''}
+      grouped={grouped}
+      shortTimeLabel={shortTimeLabel}
       onAuthorClick={onOpenAgent ? () => onOpenAgent() : undefined}
       avatar={
         onOpenAgent ? (

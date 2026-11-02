@@ -180,6 +180,24 @@ export function RepliesLink({ count, onClick }: { count: number; onClick: () => 
 }
 
 /** "New messages" marker placed before the first message you had not read. */
+/**
+ * Discord-style bar above the message list while the first unread message is
+ * scrolled out of view: "12 new messages since 7:48 PM", click to jump to it,
+ * "Mark as read" to dismiss.
+ */
+export function NewMessagesBar({ count, since, onJump, onMarkRead }: { count: number; since: string; onJump: () => void; onMarkRead: () => void }) {
+  return (
+    <div role="status" className="mx-4 mt-2 flex h-8 shrink-0 items-center overflow-hidden rounded-md bg-[hsl(var(--theme-accent-primary))] text-sm text-white">
+      <button type="button" onClick={onJump} className="min-w-0 flex-1 truncate px-3 text-left font-medium hover:underline">
+        {count > 50 ? "50+" : count} new message{count === 1 ? "" : "s"} since {since}
+      </button>
+      <button type="button" onClick={onMarkRead} className="h-full shrink-0 px-3 font-semibold transition-colors hover:bg-black/15">
+        Mark as read
+      </button>
+    </div>
+  );
+}
+
 export function NewMessagesLine() {
   return (
     <div role="separator" aria-label="New messages" className="relative mx-4 my-3 flex items-center">

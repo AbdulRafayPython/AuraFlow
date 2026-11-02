@@ -11,7 +11,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import EmojiPickerButton from "@/components/EmojiPickerButton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import ReactionPicker from "@/components/ReactionPicker";
-import { MessageRow, DayDivider, RepliesLink, NewMessagesLine } from "@/components/chat/MessageRow";
+import { MessageRow, DayDivider, RepliesLink, NewMessagesLine, NewMessagesBar } from "@/components/chat/MessageRow";
 import { MessageListSkeleton } from "@/components/chat/MessageListSkeleton";
 import { MessageToolbar } from "@/components/chat/MessageToolbar";
 import { Composer } from "@/components/chat/Composer";
@@ -802,6 +802,7 @@ export default function Dashboard() {
   // Handle scroll to load more messages
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const element = e.currentTarget;
+    checkUnreadAbove();
     if (element.scrollTop === 0 && !isLoadingMessages) {
       loadMoreMessages();
     }
@@ -1162,6 +1163,24 @@ export default function Dashboard() {
   }
   const quickEmoji = useMemo(() => getRecentEmoji(3), [recentEmojiVersion]);
 
+  // "N new messages" bar: shown while the first unread message is above the viewport,
+  // until it is scrolled into view or marked read.
+  const [unreadAbove, setUnreadAbove] = useState(false);
+  const [newBarDismissed, setNewBarDismissed] = useState<number | null>(null);
+  const checkUnreadAbove = useCallback(() => {
+    const id = entryUnreadRef.current?.firstId;
+    const container = messagesContainerRef.current;
+    const el = id != null ? document.getElementById(`msg-${id}`) : null;
+    setUnreadAbove(!!el && !!container && el.getBoundingClientRect().top < container.getBoundingClientRect().top);
+  }, []);
+  useEffect(() => {
+    // After the list renders and auto-scrolls to the bottom.
+    const t = setTimeout(checkUnreadAbove, 300);
+    return () => clearTimeout(t);
+  }, [visibleMessages.length, currentChannel?.id, checkUnreadAbove]);
+  const firstUnreadMsg = entry?.firstId != null ? visibleMessages.find((m) => m.id === entry.firstId) : undefined;
+  const showNewBar = !!currentChannel && !!firstUnreadMsg && unreadAbove && newBarDismissed !== currentChannel.id;
+
   const openThread = (id: number) => {
     if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
       setThreadParentId(id);
@@ -1401,6 +1420,15 @@ export default function Dashboard() {
         onJumpToMessage={scrollToMessage}
       />
 
+      {showNewBar && firstUnreadMsg && entry && (
+        <NewMessagesBar
+          count={entry.count}
+          since={new Date(firstUnreadMsg.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+          onJump={() => scrollToMessage(firstUnreadMsg.id)}
+          onMarkRead={() => setNewBarDismissed(currentChannel!.id)}
+        />
+      )}
+
       {/* Messages */}
       <main
         ref={messagesContainerRef}
@@ -1466,7 +1494,8 @@ export default function Dashboard() {
               {visibleMessages.map((msg, index) => {
                 const prevMsg = visibleMessages[index - 1];
                 const showDateDivider = index !== 0 && startsNewDay(prevMsg, msg);
-                const grouped = !startsGroup(prevMsg, msg);
+                // The "New" line starts a fresh group, so the first unread message has its header.
+                const grouped = !startsGroup(prevMsg, msg) && entryUnreadRef.current?.firstId !== msg.id;
                 const authorName = msg.author || "Unknown User";
                 const replyCount = replyIndex.get(msg.id)?.length ?? 0;
 
@@ -1491,6 +1520,8 @@ export default function Dashboard() {
                             return a ? () => openAgent(a) : undefined;
                           })()}
                           timestamp={formatMessageTime(msg.created_at)}
+                          grouped={grouped}
+                          shortTimeLabel={new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
                         >
                           {msg.reply_to_preview && (
                             <ReplyPreview

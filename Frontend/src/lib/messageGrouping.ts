@@ -8,6 +8,8 @@ export interface GroupableMessage {
   sender_id?: number | string | null;
   created_at: string | number | Date;
   message_type?: string;
+  /** Display author; agent ("ai") messages group by it, since their sender id is shared. */
+  author?: string | null;
 }
 
 /** Message kinds that are not a person talking: they always break a group. */
@@ -36,8 +38,13 @@ export function startsGroup(
   windowMs: number = GROUP_WINDOW_MS,
 ): boolean {
   if (!prev) return true;
-  if (GROUP_BREAKERS.has(prev.message_type ?? "") || GROUP_BREAKERS.has(cur.message_type ?? "")) return true;
   if (startsNewDay(prev, cur)) return true;
+  // Consecutive messages from the same agent share one header, like a bot on Discord.
+  if (prev.message_type === "ai" && cur.message_type === "ai") {
+    if (!prev.author || prev.author !== cur.author) return true;
+    return toDate(cur.created_at).getTime() - toDate(prev.created_at).getTime() > windowMs;
+  }
+  if (GROUP_BREAKERS.has(prev.message_type ?? "") || GROUP_BREAKERS.has(cur.message_type ?? "")) return true;
   if (prev.sender_id == null || prev.sender_id !== cur.sender_id) return true;
   return toDate(cur.created_at).getTime() - toDate(prev.created_at).getTime() > windowMs;
 }

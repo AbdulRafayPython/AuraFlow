@@ -36,6 +36,14 @@ describe("startsGroup", () => {
     expect(startsGroup(at("2026-10-29T10:00:00", 1, "call"), at("2026-10-29T10:00:10"))).toBe(true);
   });
 
+  it("groups consecutive messages from the same agent, not different agents", () => {
+    const ai = (ts: string, author: string) => ({ ...at(ts, 0, "ai"), author });
+    expect(startsGroup(ai("2026-10-29T10:00:00", "Engagement Agent"), ai("2026-10-29T10:00:10", "Engagement Agent"))).toBe(false);
+    expect(startsGroup(ai("2026-10-29T10:00:00", "Engagement Agent"), ai("2026-10-29T10:00:10", "Aura"))).toBe(true);
+    expect(startsGroup(ai("2026-10-29T10:00:00", "Aura"), ai("2026-10-29T10:06:00", "Aura"))).toBe(true);
+    expect(startsGroup(at("2026-10-29T10:00:00", 0, "ai"), at("2026-10-29T10:00:10", 0, "ai"))).toBe(true);
+  });
+
   it("never groups a message with unknown sender", () => {
     expect(startsGroup(at("2026-10-29T10:00:00", null), at("2026-10-29T10:00:10", null))).toBe(true);
   });
