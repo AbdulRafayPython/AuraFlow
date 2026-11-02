@@ -307,18 +307,34 @@ def _emit_unread_tracking(socketio, channel_id, community_id, sender_id, message
     log.info("[UNREAD-TRACK] _emit_unread_tracking done")
 
 def _aura_command(question: str, user_id: int, channel_id: int, username: str):
-    """/ask, /joke and /motivation: Aura answers in the channel. The payload is sent after the
-    command's own message is saved, so the answer appears under the question."""
+    """/ask, /joke and /motivation: Aura's answer. It is posted only after the command's own
+    message is saved (see ``_post_aura_answer``), as a reply to it, so it stays under the question."""
     from agents.runtime import aura_ask
     if not channel_id:
         return {'type': 'assistant', 'success': False, 'error': 'Aura answers in a channel. Use the Ask box here.'}
     try:
-        payload = aura_ask.reply_in_channel(user_id, question, channel_id, username=username, broadcast=False)
+        out = aura_ask.ask(user_id, question, channel_id=channel_id, username=username)
     except aura_ask.AskError as err:
         return {'type': 'assistant', 'success': False, 'error': err.message}
+    return {'type': 'assistant', 'success': True, 'aura_reply': out['reply']}
+
+
+def _post_aura_answer(command_result: dict, channel_id: int, command_message_id: int) -> None:
+    """Store Aura's answer as a reply to the saved command message and hand the payload to the
+    caller's usual "posted as bot" broadcast."""
+    text = command_result.pop('aura_reply', None)
+    if not text:
+        return
+    from agents.runtime import aura_ask
+    try:
+        payload = aura_ask.post_answer(channel_id, text, reply_to=command_message_id, broadcast=False)
+    except aura_ask.AskError as err:
+        command_result.update(success=False, error=err.message)
+        return
     if payload is None:
-        return {'type': 'assistant', 'success': False, 'error': 'The answer could not be posted.'}
-    return {'type': 'assistant', 'success': True, 'posted_as_bot': True, 'bot_payload': payload}
+        command_result.update(success=False, error='The answer could not be posted.')
+        return
+    command_result.update(posted_as_bot=True, bot_payload=payload)
 
 
 def _insert_ai_bot_message(channel_id: int, user_id: int, content: str, author: str = 'AI Bot'):
@@ -1300,6 +1316,7 @@ def send_message():
                         message_id = cur.lastrowid
                         conn.commit()
                         log.info(f"[HTTP] ✅ Command message saved with ID {message_id}")
+                        _post_aura_answer(command_result, channel_id, message_id)
 
                         if socketio:
                             msg_payload = {

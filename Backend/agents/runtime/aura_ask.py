@@ -177,15 +177,23 @@ JOKE_PROMPT = "Tell me one short, clean joke. Reply with only the joke."
 MOTIVATION_PROMPT = "Give me one short, genuine motivational line for a student. Reply with only the line."
 
 
-def reply_in_channel(user_id: int, question: str, channel_id: int, *, username: Optional[str] = None,
-                     broadcast: bool = True) -> Optional[Dict[str, Any]]:
-    """Answer ``question`` and post the answer in ``channel_id`` as Aura (the /ask command).
+def post_answer(channel_id: int, text: str, *, reply_to: Optional[int] = None,
+                broadcast: bool = True) -> Optional[Dict[str, Any]]:
+    """Post ``text`` in ``channel_id`` as Aura, as a reply to ``reply_to`` when given.
 
-    Returns the message payload, or None when it could not be stored. Raises :class:`AskError`
-    for the same problems as :func:`ask`.
+    Returns the message payload, or None when it could not be stored.
     """
-    out = ask(user_id, question, channel_id=channel_id, username=username)
     defn = ensure_aura()
     if defn is None:
         raise AskError("Aura is not set up on this server yet.", 503)
-    return post_as_agent(defn, channel_id, out["reply"], broadcast=broadcast)
+    return post_as_agent(defn, channel_id, text, reply_to=reply_to, broadcast=broadcast)
+
+
+def reply_in_channel(user_id: int, question: str, channel_id: int, *, username: Optional[str] = None,
+                     reply_to: Optional[int] = None, broadcast: bool = True) -> Optional[Dict[str, Any]]:
+    """Answer ``question`` and post the answer in ``channel_id`` as Aura (the /ask command).
+
+    Raises :class:`AskError` for the same problems as :func:`ask`.
+    """
+    out = ask(user_id, question, channel_id=channel_id, username=username)
+    return post_answer(channel_id, out["reply"], reply_to=reply_to, broadcast=broadcast)

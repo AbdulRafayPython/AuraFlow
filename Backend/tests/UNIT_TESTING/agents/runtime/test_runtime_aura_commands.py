@@ -67,12 +67,12 @@ def test_the_answer_is_posted_as_aura(posted):
     out = aura_ask.reply_in_channel(7, "what is a deadlock?", 11, username="sarah")
     assert out == {"id": 5, "content": "The answer."}
     assert posted["ask"] == (7, "what is a deadlock?", {"channel_id": 11, "username": "sarah"})
-    assert posted["post"] == (11, "The answer.", {"broadcast": True})
+    assert posted["post"] == (11, "The answer.", {"reply_to": None, "broadcast": True})
 
 
 def test_the_caller_can_ask_to_broadcast_later(posted):
     aura_ask.reply_in_channel(7, "q", 11, broadcast=False)
-    assert posted["post"][2] == {"broadcast": False}
+    assert posted["post"][2] == {"reply_to": None, "broadcast": False}
 
 
 def test_a_problem_is_passed_on_and_nothing_is_posted(monkeypatch):
@@ -90,14 +90,16 @@ def test_the_one_liner_prompts_ask_for_only_the_text():
     assert "motivational" in aura_ask.MOTIVATION_PROMPT and "only the line" in aura_ask.MOTIVATION_PROMPT
 
 
-# ── the slash command wrapper (REST path) ───────────────────────────────
+# ── the slash command on the REST path ──────────────────────────────────
 
-def test_the_rest_command_returns_the_payload_for_the_handler_to_send(monkeypatch):
+def test_the_rest_command_only_gets_the_answer(monkeypatch):
     from routes import messages
-    monkeypatch.setattr(aura_ask, "reply_in_channel", lambda *a, **k: {"id": 5, "kw": k})
+    seen = {}
+    monkeypatch.setattr(aura_ask, "ask", lambda uid, q, **kw: seen.update(ask=(uid, q, kw)) or {"reply": "The answer."})
+    monkeypatch.setattr(aura_ask, "post_as_agent", lambda *a, **k: pytest.fail("posted before the question was saved"))
     out = messages._aura_command("hello", 7, 11, "sarah")
-    assert out["success"] is True and out["posted_as_bot"] is True
-    assert out["bot_payload"]["kw"] == {"username": "sarah", "broadcast": False}      # sent after the command's own message
+    assert out == {"type": "assistant", "success": True, "aura_reply": "The answer."}
+    assert seen["ask"] == (7, "hello", {"channel_id": 11, "username": "sarah"})
 
 
 def test_the_rest_command_reports_a_problem_to_the_person(monkeypatch):
@@ -106,7 +108,7 @@ def test_the_rest_command_reports_a_problem_to_the_person(monkeypatch):
     def refuse(*a, **k):
         raise aura_ask.AskError("You are asking too fast. Wait a minute.", 429)
 
-    monkeypatch.setattr(aura_ask, "reply_in_channel", refuse)
+    monkeypatch.setattr(aura_ask, "ask", refuse)
     assert messages._aura_command("hi", 7, 11, "sarah") == {
         "type": "assistant", "success": False, "error": "You are asking too fast. Wait a minute."}
 
@@ -117,7 +119,25 @@ def test_the_rest_command_needs_a_channel():
     assert out["success"] is False and "channel" in out["error"]
 
 
-def test_a_payload_that_could_not_be_stored_is_an_error(monkeypatch):
+def test_the_answer_is_posted_as_a_reply_to_the_saved_question(posted):
     from routes import messages
-    monkeypatch.setattr(aura_ask, "reply_in_channel", lambda *a, **k: None)
-    assert messages._aura_command("hi", 7, 11, "sarah")["success"] is False
+    result = {"type": "assistant", "success": True, "aura_reply": "The answer."}
+    messages._post_aura_answer(result, 11, 214)
+    assert posted["post"] == (11, "The answer.", {"reply_to": 214, "broadcast": False})
+    assert result["posted_as_bot"] is True and result["bot_payload"] == {"id": 5, "content": "The answer."}
+    assert "aura_reply" not in result                                    # the client never sees the raw field
+
+
+def test_nothing_happens_for_other_commands(posted):
+    from routes import messages
+    result = {"type": "mood", "success": True}
+    messages._post_aura_answer(result, 11, 214)
+    assert "post" not in posted and result == {"type": "mood", "success": True}
+
+
+def test_an_answer_that_could_not_be_stored_is_an_error(monkeypatch):
+    from routes import messages
+    monkeypatch.setattr(aura_ask, "post_answer", lambda *a, **k: None)
+    result = {"type": "assistant", "success": True, "aura_reply": "x"}
+    messages._post_aura_answer(result, 11, 214)
+    assert result["success"] is False and "posted_as_bot" not in result
