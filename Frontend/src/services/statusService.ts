@@ -17,7 +17,7 @@ export interface UserProfile {
   member_since: string | null;
   friendship_status: 'none' | 'friends' | 'pending_sent' | 'pending_received';
   mutual_friends_count: number;
-  shared_communities: { id: number; name: string; icon: string; color: string; logo_url: string | null }[];
+  shared_communities: { id: number; public_id?: string; name: string; icon: string; color: string; logo_url: string | null }[];
   is_self: boolean;
 }
 

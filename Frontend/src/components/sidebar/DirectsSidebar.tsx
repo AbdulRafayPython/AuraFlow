@@ -142,10 +142,10 @@ export default function DirectsSidebar({ frozen = false, fluid = false }: Direct
         <button
           type="button"
           onClick={openPalette}
+          title="Find or start a conversation (Ctrl+K)"
           className="flex h-7 w-full items-center rounded-md bg-[hsl(var(--theme-input-bg))] px-2 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <span className="flex-1 truncate">Find or start a conversation</span>
-          <kbd className="ml-2 hidden rounded border border-border px-1 text-xs text-muted-foreground lg:inline">Ctrl K</kbd>
         </button>
       </div>
 

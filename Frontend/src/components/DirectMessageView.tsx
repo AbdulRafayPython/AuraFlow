@@ -1,7 +1,7 @@
 // REWRITE: ~1.3k lines; duplicates much of the channel chat view in pages/Dashboard.tsx.
 // components/DirectMessageView.tsx - DM conversation view
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video, Sparkles } from 'lucide-react';
+import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video, Sparkles, CircleUser } from 'lucide-react';
 import AgentMessageShell from '@/components/ai-agents/AgentMessageShell';
 import { methodLabel } from '@/components/ai-agents/humanize';
 import { aiAgentService, type DMSummaryResult } from '@/services/aiAgentService';
@@ -39,6 +39,12 @@ import UserProfilePopover from '@/components/profile/UserProfilePopover';
 import { friendService } from '@/services/friendService';
 import type { DirectMessage } from '@/types';
 import AgentLogo from '@/components/ai-agents/AgentLogo';
+import { usePresence } from '@/hooks/usePresence';
+import { useMentionableAgents } from '@/hooks/useMentionableAgents';
+import { useOpenAgent } from '@/components/ai-agents/AgentDetailPane';
+import ProfilePane from '@/components/profile/ProfilePane';
+import { PRESENCE_DOT } from '@/components/members/MemberList';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface DirectMessageViewProps {
   userId: number;
@@ -59,7 +65,21 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const [isSending, setIsSending] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
-  const { open: openRightPane, close: closeRightPane } = useRightPane();
+  const { open: openRightPane, close: closeRightPane, content: rightPaneContent } = useRightPane();
+  const presence = usePresence()(username, userId);
+  // Agent DMs open the agent's detail pane when it is one of the agents you can reach.
+  const agentForDm = useMentionableAgents().find((a) => a.username === username);
+  const openAgent = useOpenAgent();
+  const profileKey = `profile-${userId}`;
+  const profileOpen = rightPaneContent?.key === profileKey || (!!agentForDm && rightPaneContent?.key === `agent-${agentForDm.id}`);
+  const toggleProfile = () => {
+    if (profileOpen) return closeRightPane();
+    if (isBot) {
+      if (agentForDm) openAgent(agentForDm);
+      return;
+    }
+    openRightPane({ key: profileKey, title: displayName || username, body: <ProfilePane username={username} userId={userId} /> });
+  };
   const [threadParentId, setThreadParentId] = useState<number | null>(null);
   const [recentEmojiVersion, setRecentEmojiVersion] = useState(0);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
@@ -736,11 +756,13 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             <img
               src={getAvatarUrl(avatar, username)}
               alt={displayName || username}
-              className="w-8 h-8 rounded-lg object-cover cursor-pointer"
+              className="w-8 h-8 rounded-full object-cover cursor-pointer"
               onClick={(e) => handleProfileClick(username, e)}
             />
-            {/* Online status dot */}
-            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-success rounded-full border-2 border-[hsl(var(--theme-bg-primary))]" />
+            <span
+              aria-label={presence}
+              className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-[3px] border-[hsl(var(--theme-header-bg))] ${PRESENCE_DOT[presence]}`}
+            />
           </div>
           )}
           <div className="flex-1 min-w-0">
@@ -755,8 +777,8 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             {isBot ? (
               <p className="text-xs text-muted-foreground">Agent · messages only you can see</p>
             ) : (
-            <p className="text-xs text-success">
-              Online
+            <p className={`text-xs ${presence === 'online' ? 'text-success' : 'text-muted-foreground'}`}>
+              {{ online: 'Online', idle: 'Idle', dnd: 'Do not disturb', offline: 'Offline' }[presence]}
             </p>
             )}
           </div>
@@ -790,6 +812,25 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
               <Video className="w-[18px] h-[18px]" />
             </button>
             </>)}
+            {(!isBot || agentForDm) && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={toggleProfile}
+                    aria-pressed={profileOpen}
+                    aria-label={profileOpen ? 'Hide profile' : 'Show profile'}
+                    className={`hidden lg:flex p-2 rounded-md transition-colors duration-150 ${
+                      profileOpen
+                        ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
+                        : 'text-[hsl(var(--theme-text-muted))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]'
+                    }`}
+                  >
+                    <CircleUser className="w-[18px] h-[18px]" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{profileOpen ? 'Hide profile' : 'Show profile'}</TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </div>
       </header>
