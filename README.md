@@ -74,7 +74,7 @@ registry stays free of heavy ML dependencies.
 | Agent | Responsibility |
 | --- | --- |
 | **Moderation** | Detects and flags harmful or policy-violating content. |
-| **Wellness** | Sends private check-ins when a user shows signs of distress (cross-process deduplicated). |
+| **Wellness** | Sends private check-ins when a user shows signs of distress (cross-process deduplicated). Steps aside for mood check-ins while the user has a Wellbeing Buddy on. |
 | **Mood Tracker** | Analyzes sentiment to surface community mood trends. |
 | **Translator** | Per-viewer inline translation with Roman-Urdu transliteration support. |
 | **Engagement** | Nudges quiet channels and encourages participation. |
@@ -94,6 +94,25 @@ act(payload)                       # only when the agent chooses to act
     ↓
 learn(action_id, signal)           # feedback adjusts thresholds over time
 ```
+
+### Private replies
+
+Agents built in the Agent Builder (and Aura) can answer one person by direct message instead of
+posting in a channel. The code is in [`Backend/agents/runtime/private.py`](Backend/agents/runtime/private.py).
+
+- **Per trigger:** a trigger's *Answer* setting (`config.delivery: "private"`) sends the answer as a
+  DM from the agent's bot user: to the person who wrote, to a new member, or to the owner for
+  schedules and channel events. Writing "@aura dm me ..." or "privately" asks for the same.
+- **Writing to an agent:** a DM to an agent's bot user runs it with the recent DMs as context.
+  Anyone can write to Aura; other agents accept DMs from their owner or from someone they wrote to.
+- **Read only:** a private run gets only read tools in test mode, so it never posts, polls or sets
+  reminders. Tools that read the asker's own data (`get_my_mood`, `summarize_dm`) are offered only
+  in private runs.
+- **Mood check-ins:** the `mood_escalation` trigger lets a personal agent (the *Wellbeing Buddy*
+  template) check in with its owner by DM when their mood dips: only their own mood, only with
+  Mood Tracker on, at most once every 6 hours. Requires the migration
+  `Backend/migrations/add_agent_mood_trigger.sql`.
+- Agent DMs are stored and encrypted like any DM, count as unread and ring the bell; no email is sent.
 
 ## Tech Stack
 

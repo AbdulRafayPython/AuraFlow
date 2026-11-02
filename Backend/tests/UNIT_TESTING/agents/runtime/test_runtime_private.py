@@ -49,6 +49,7 @@ def test_it_is_stored_as_an_encrypted_dm_from_the_agent(make_db, sent):
     assert out["content"] == "How are you feeling today?" and out["message_type"] == "ai"
     assert out["sender"]["display_name"] == "Aura" and out["sender"]["is_bot"] is True
     assert out["sender"]["public_id"] == "bot-uuid"
+    assert out["sender"]["avatar_url"] and "aura" in out["sender"]["avatar_url"]   # never empty: same as after a reload
     assert out["agent_run_id"] == 42 and out["created_at"] == NOW.isoformat()
 
 

@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from agents.runtime.definitions import DELIVERY_PRIVATE, AgentDefinition
 from agents.runtime.posting import _get_emitter, emit_to_user
 from database import get_db_connection
+from utils import get_avatar_url
 from utils.encryption import decrypt, encrypt
 
 log = logging.getLogger(__name__)
@@ -118,8 +119,9 @@ def deliver_privately(defn: AgentDefinition, user_id: int, content: str, *,
         "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
         "is_read": False,
         "edited_at": None,
+        # The same picture the DM history shows after a reload (a generated one when it has none).
         "sender": {"id": defn.bot_user_id, "public_id": bot_public_id, "username": defn.bot_username, "display_name": defn.name,
-                   "avatar_url": defn.avatar_url, "is_bot": True},
+                   "avatar_url": get_avatar_url(defn.bot_username, defn.avatar_url), "is_bot": True},
         "agent_run_id": run_id,
     }
     _announce(defn, int(user_id), payload, text, bot_public_id)
