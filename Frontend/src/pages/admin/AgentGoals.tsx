@@ -48,7 +48,7 @@ interface AgentStateResponse {
 const AGENT_ORDER = [
   'moderation', 'wellness', 'mood_tracker', 'focus',
   'summarizer', 'knowledge_builder', 'engagement', 'auto_message',
-  'support', 'translator', 'assistant',
+  'support', 'translator',
 ] as const;
 
 const AGENT_META: Record<string, { display: string; icon: string; tagline: string }> = {
@@ -62,7 +62,6 @@ const AGENT_META: Record<string, { display: string; icon: string; tagline: strin
   auto_message:      { display: 'Auto Message',       icon: '👋', tagline: 'Welcome-template bandit.' },
   support:           { display: 'Support',            icon: '🧰', tagline: 'KB-document matching.' },
   translator:        { display: 'Translator',         icon: '🌐', tagline: 'Cross-language relay.' },
-  assistant:         { display: 'Assistant',          icon: '🤖', tagline: 'Per-channel chat memory.' },
 };
 
 /**

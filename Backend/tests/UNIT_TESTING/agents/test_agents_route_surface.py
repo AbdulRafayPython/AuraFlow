@@ -20,7 +20,7 @@ REMOVED = [
     "/focus/metrics", "/focus/recommendations", "/focus/goal",
     "/summarizer/schedule/00000000-0000-0000-0000-000000000000",
     "/summarizer/trigger/00000000-0000-0000-0000-000000000000",
-    "/assistant/joke", "/assistant/motivation", "/translator/languages", "/translator/detect",
+    "/assistant/joke", "/assistant/motivation", "/assistant/ask", "/assistant/memory", "/translator/languages", "/translator/detect",
     "/support/ask", "/support/refresh/00000000-0000-0000-0000-000000000000", "/automessage/welcome/preview",
 ]
 
@@ -35,8 +35,8 @@ KEPT = [
     ("GET", "/engagement/poll/1"), ("POST", "/engagement/poll/1/vote"), ("POST", "/engagement/activity/log"),
     ("GET", "/wellness/check"), ("GET", "/knowledge/base/1"), ("POST", "/knowledge/extract/1"),
     ("POST", "/knowledge/extract"), ("GET", "/knowledge/search"), ("POST", "/focus/analyze"),
-    ("GET", "/catalog"), ("GET", "/actions"), ("GET", "/logs"), ("DELETE", "/assistant/memory"),
-    ("POST", "/assistant/ask"), ("POST", "/translator/translate"), ("POST", "/translator/message/1"),
+    ("GET", "/catalog"), ("GET", "/actions"), ("GET", "/logs"),
+    ("POST", "/translator/translate"), ("POST", "/translator/message/1"),
     ("POST", "/automessage/quick-replies"), ("GET", "/summary-schedules"), ("GET", "/summary-schedules/pending"),
 ]
 

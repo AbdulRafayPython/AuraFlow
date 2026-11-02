@@ -5,7 +5,6 @@ import { Loader2, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useRealtime } from '@/hooks/useRealtime';
 import { aiAgentService, type AgentCatalogEntry } from '@/services/aiAgentService';
-import agentBuilderService from '@/services/agentBuilderService';
 import { ErrorState } from '@/components/app/EmptyState';
 import { ConfirmDialog } from '@/components/modals/ConfirmDialog';
 import {
@@ -42,7 +41,6 @@ const AgentSettingsForm: React.FC<Props> = ({ routeId }) => {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [clearing, setClearing] = useState(false);
 
   const catalogName = CATALOG_NAMES[routeId] ?? routeId;
 
@@ -111,19 +109,6 @@ const AgentSettingsForm: React.FC<Props> = ({ routeId }) => {
     } finally {
       setBusy(false);
       setRemoving(false);
-    }
-  };
-
-  const clearMemory = async () => {
-    setBusy(true);
-    try {
-      await agentBuilderService.clearAuraMemory();
-      toast({ title: 'Memory cleared', description: 'It starts fresh the next time you ask it something.' });
-    } catch (e) {
-      toast({ title: 'Could not clear its memory', description: e instanceof Error ? e.message : undefined, variant: 'destructive' });
-    } finally {
-      setBusy(false);
-      setClearing(false);
     }
   };
 
@@ -222,28 +207,12 @@ const AgentSettingsForm: React.FC<Props> = ({ routeId }) => {
         </button>
         <button type="button" className={btnQuiet} disabled={!dirty || busy} onClick={() => setValues(initial)}>Reset</button>
         {dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
-        {routeId === 'assistant' && turnedOn && (
-          <button type="button" className={cn(btnQuiet, 'ml-auto')} disabled={busy} onClick={() => setClearing(true)}>
-            Clear its memory
-          </button>
-        )}
         {turnedOn && entry && (!isCommunity || communityId) && (
-          <button type="button" className={cn(btnQuiet, routeId === 'assistant' ? '' : 'ml-auto', 'text-destructive')} disabled={busy} onClick={() => setRemoving(true)}>
+          <button type="button" className={cn(btnQuiet, 'ml-auto text-destructive')} disabled={busy} onClick={() => setRemoving(true)}>
             {isCommunity ? 'Remove from community' : 'Turn off'}
           </button>
         )}
       </div>
-
-      <ConfirmDialog
-        isOpen={clearing}
-        title="Clear the assistant's memory?"
-        description="It forgets your last few questions and answers. Your settings stay as they are."
-        confirmText="Clear"
-        isDangerous
-        isLoading={busy}
-        onConfirm={clearMemory}
-        onCancel={() => setClearing(false)}
-      />
 
       <ConfirmDialog
         isOpen={removing}

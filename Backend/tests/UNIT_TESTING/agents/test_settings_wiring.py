@@ -198,22 +198,17 @@ def test_settings_validator_enforces_enum_choices(flask_app_ctx):
     from routes.agents import _validate_agent_settings
 
     coerced, err = _validate_agent_settings(
-        'assistant', {'reply_style': 'verbose'})  # not in enum
+        'summarizer', {'summary_length': 'verbose'})  # not in enum
     assert err is not None
     coerced_ok, err_ok = _validate_agent_settings(
-        'assistant', {'reply_style': 'detailed'})
+        'summarizer', {'summary_length': 'detailed'})
     assert err_ok is None
-    assert coerced_ok == {'reply_style': 'detailed'}
+    assert coerced_ok == {'summary_length': 'detailed'}
 
 
-def test_settings_validator_assistant_no_legacy_tone_key(flask_app_ctx):
-    """The plan's earlier matrix mentioned tone/language/proactivity for
-    the assistant. The actual schema dropped them — make sure they remain
-    rejected (not silently passed through) until they ever come back."""
-    from routes.agents import _validate_agent_settings
+def test_the_retired_assistant_has_no_settings_any_more():
+    """The Assistant was replaced by Aura (L5f); its settings left with it."""
+    from routes.agents import RETIRED_AGENT_TYPES, _SETTINGS_VALIDATORS
 
-    coerced, err = _validate_agent_settings(
-        'assistant', {'tone': 'formal'})
-    assert err is not None
-    resp, status = err
-    assert status == 400
+    assert 'assistant' in RETIRED_AGENT_TYPES
+    assert 'assistant' not in _SETTINGS_VALIDATORS

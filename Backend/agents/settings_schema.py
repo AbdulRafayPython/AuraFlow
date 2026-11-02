@@ -49,7 +49,6 @@ def text(key: str, label: str, help: str, default: str, hidden: bool = False) ->
 SEVERITY = (("low", "Low"), ("medium", "Medium"), ("high", "High"), ("critical", "Critical"))
 SUMMARY_LENGTH = (("brief", "Brief"), ("standard", "Standard"), ("detailed", "Detailed"))
 MOOD_LANGUAGE = (("english", "English"), ("roman_urdu", "Roman Urdu"), ("auto", "Detect automatically"))
-REPLY_STYLE = (("concise", "Short and direct"), ("friendly", "Friendly"), ("detailed", "Detailed"))
 
 FIELDS: Dict[str, List[Dict[str, Any]]] = {
     "moderation": [
@@ -99,14 +98,6 @@ FIELDS: Dict[str, List[Dict[str, Any]]] = {
         toggle("session_reminders", "Remind about focus sessions", "Nudges at the start of a focus session.", True),
         number("analyze_threshold", "Messages before it checks", "It waits until a channel has this many new messages.", 50, 20, 100, 5),
         toggle("daily_reports", "Send a daily focus report", "A short summary once a day.", True),
-    ],
-    "assistant": [
-        toggle("use_gemini", "Use smarter AI wording", "Lets the AI write fuller answers when it is available.", True),
-        choice("reply_style", "Reply style", "How the assistant words its answers.", "concise", REPLY_STYLE),
-        number("max_history", "Earlier messages it remembers", "How many recent turns it keeps in mind.", 5, 1, 10),
-        toggle("allow_jokes", "Tell jokes when asked", "Lets it answer a request for a joke.", True),
-        toggle("allow_motivation", "Share motivation when asked", "Lets it answer a request for a motivational line.", True),
-        toggle("memory_paused", "Pause its memory", "It forgets earlier messages and treats each question fresh.", False),
     ],
     "auto_message": [
         toggle("welcome_enabled", "Welcome new members", "Greets people with a friendly message when they join.", True),

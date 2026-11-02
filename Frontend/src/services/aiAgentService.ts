@@ -110,13 +110,6 @@ export interface FocusSession {
   recommendations: string[];
 }
 
-export interface AssistantReply {
-  success: boolean;
-  reply: string;
-  source: 'deepseek' | 'lexicon' | 'fallback' | 'empty' | string;
-  tag?: string;
-}
-
 export interface TranslationResult {
   success: boolean;
   translated_text: string;
@@ -623,21 +616,6 @@ class AIAgentService {
     }
   }
 
-  /**
-   * Clear the user's rolling assistant conversation memory.
-   * Backend deletes the `assistant:mem:{user_id}` Redis LIST.
-   * Used by the My Assistant panel (Settings → AI Agents).
-   */
-  async clearAssistantMemory(): Promise<{ success: boolean }> {
-    try {
-      const response = await api.del('/api/agents/assistant/memory') as { success?: boolean };
-      return { success: !!response?.success };
-    } catch (error: any) {
-      console.error('[Agent Service] Clear assistant memory error:', error);
-      throw new Error(error.data?.error || error.message || 'Failed to clear assistant memory');
-    }
-  }
-
   async getAgentLogs(params?: { agent_type?: string; community_id?: number; status?: string; page?: number; limit?: number }): Promise<AgentLogsResponse> {
     try {
       const searchParams = new URLSearchParams();
@@ -765,26 +743,6 @@ class AIAgentService {
       await api.del(`/api/agents/my-summaries/${summaryId}`);
     } catch (error: any) {
       throw new Error(error.data?.error || error.message || 'Failed to delete summary');
-    }
-  }
-
-  // =====================================================
-  // AI ASSISTANT AGENT
-  // =====================================================
-  async askAssistant(
-    question: string,
-    opts: { channelId?: number; communityId?: number; context?: string } = {},
-  ): Promise<AssistantReply> {
-    try {
-      const response: any = await api.post('/api/agents/assistant/ask', {
-        question,
-        channel_id: opts.channelId,
-        community_id: opts.communityId,
-        context: opts.context,
-      });
-      return response;
-    } catch (error: any) {
-      throw new Error(error.data?.error || error.message || 'Failed to ask assistant');
     }
   }
 

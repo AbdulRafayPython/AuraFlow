@@ -42,9 +42,6 @@ def _get_agent(name: str):
         elif name == 'wellness':
             from agents.wellness import WellnessAgent
             _agents[name] = WellnessAgent()
-        elif name == 'assistant':
-            from agents.assistant import AssistantAgent
-            _agents[name] = AssistantAgent()
         elif name == 'auto_message':
             from agents.auto_message import AutoMessageAgent
             _agents[name] = AutoMessageAgent()
@@ -69,12 +66,18 @@ AGENT_TYPE_DISPLAY: dict[str, str] = {v: k for k, v in AGENT_TYPE_ALIASES.items(
 # Agents that are inherently per-user and cannot be installed at community
 # scope. The registry's `category` column is used for catalog grouping, but
 # install-gating is a narrower concern: several `personal`-category agents
-# (summarizer, translator, assistant) legitimately run at community scope —
+# (summarizer, translator) legitimately run at community scope —
 # e.g. tasks/agent_tasks.py::auto_summarize_periodic reads
 # `community_agents WHERE agent_type='summarizer'`. Only mood/wellness are
 # truly per-user (they track an individual's sentiment/burnout) and have no
 # community-level dispatch path or UI.
 _PERSONAL_ONLY_AGENTS: set[str] = {'mood', 'wellness'}
+
+# Agents that were replaced: their registry rows and old user/community rows stay in the
+# database untouched, but the app no longer lists, installs or activates them. The Assistant's
+# work (Ask box, /ask, /joke, /motivation, @assistant) is done by Aura now.
+RETIRED_AGENT_TYPES: tuple[str, ...] = ('assistant',)
+_RETIRED_SQL = "(" + ", ".join(f"'{t}'" for t in RETIRED_AGENT_TYPES) + ")"
 
 def _normalize_agent_type(agent_type: str) -> str:
     """Resolve frontend alias â†’ DB agent_type."""
@@ -2360,11 +2363,11 @@ def get_agent_catalog():
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Get all agents from registry
-            cur.execute("""
+            cur.execute(f"""
                 SELECT agent_type, display_name, description, category, icon,
                        default_settings, features, is_active
                 FROM agent_registry
-                WHERE is_active = TRUE
+                WHERE is_active = TRUE AND agent_type NOT IN {_RETIRED_SQL}
                 ORDER BY category, display_name
             """)
             agents = cur.fetchall()
@@ -2475,9 +2478,9 @@ def install_community_agent(community_id):
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Verify agent exists and is a community agent
-            cur.execute("""
+            cur.execute(f"""
                 SELECT agent_type, category, default_settings FROM agent_registry
-                WHERE agent_type = %s AND is_active = TRUE
+                WHERE agent_type = %s AND is_active = TRUE AND agent_type NOT IN {_RETIRED_SQL}
             """, (agent_type,))
             agent = cur.fetchone()
             
@@ -2846,7 +2849,7 @@ def get_community_agent_status(community_id):
         
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT ca.agent_type, ca.enabled, ca.settings, ca.installed_at,
                        ca.last_active, ca.usage_count,
                        ar.display_name, ar.description, ar.icon, ar.category, ar.features,
@@ -2854,7 +2857,7 @@ def get_community_agent_status(community_id):
                 FROM community_agents ca
                 JOIN agent_registry ar ON ca.agent_type = ar.agent_type
                 JOIN users u ON ca.installed_by = u.id
-                WHERE ca.community_id = %s
+                WHERE ca.community_id = %s AND ca.agent_type NOT IN {_RETIRED_SQL}
                 ORDER BY ca.installed_at DESC
             """, (community_id,))
             agents = cur.fetchall()
@@ -2918,9 +2921,9 @@ def activate_personal_agent():
         conn = get_db_connection()
         with conn.cursor() as cur:
             # Verify agent exists and is a personal agent
-            cur.execute("""
+            cur.execute(f"""
                 SELECT agent_type, category, default_settings FROM agent_registry
-                WHERE agent_type = %s AND is_active = TRUE
+                WHERE agent_type = %s AND is_active = TRUE AND agent_type NOT IN {_RETIRED_SQL}
             """, (agent_type,))
             agent = cur.fetchone()
             
@@ -3037,13 +3040,13 @@ def get_personal_agent_status():
         
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT ua.agent_type, ua.enabled, ua.settings, ua.activated_at,
                        ua.last_used, ua.usage_count,
                        ar.display_name, ar.description, ar.icon, ar.features
                 FROM user_agents ua
                 JOIN agent_registry ar ON ua.agent_type = ar.agent_type
-                WHERE ua.user_id = %s
+                WHERE ua.user_id = %s AND ua.agent_type NOT IN {_RETIRED_SQL}
                 ORDER BY ua.activated_at DESC
             """, (user_id,))
             agents = cur.fetchall()
@@ -3138,42 +3141,6 @@ def configure_personal_agent(agent_type):
     finally:
         if conn:
             conn.close()
-
-
-# DELETE /api/agents/assistant/memory
-# Clears the per-user rolling assistant memory (Redis LIST at
-# ``assistant:mem:{user_id}``, see Backend/agents/assistant.py).
-# Powers the "Clear conversation memory" control in the My Assistant
-# panel (frontend F3). No DB hit, no schema change — only Redis state.
-@agents_bp.route('/assistant/memory', methods=['DELETE'])
-@jwt_required()
-def clear_assistant_memory():
-    """Delete the rolling per-user assistant memory."""
-    try:
-        username = get_jwt_identity()
-        user_id = _get_user_id(username)
-        if not user_id:
-            return jsonify({'error': 'User not found'}), 404
-
-        try:
-            from services.redis_client import get_redis
-            r = get_redis()
-        except Exception as exc:
-            print(f"[AGENTS API] clear_assistant_memory: redis unavailable: {exc}")
-            r = None
-
-        if r is not None:
-            try:
-                r.delete(f"assistant:mem:{user_id}")
-            except Exception as exc:
-                print(f"[AGENTS API] clear_assistant_memory: redis delete failed: {exc}")
-                return jsonify({'error': 'Failed to clear memory'}), 500
-
-        return jsonify({'success': True}), 200
-
-    except Exception as e:
-        print(f"[AGENTS API] clear_assistant_memory error: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
 
 
 @agents_bp.route('/logs', methods=['GET'])
@@ -3788,36 +3755,6 @@ def delete_scheduled_summary(summary_id):
     finally:
         if conn:
             conn.close()
-
-
-# =====================================
-# ASSISTANT AGENT ROUTES
-# =====================================
-
-@agents_bp.route('/assistant/ask', methods=['POST'])
-@jwt_required()
-def assistant_ask():
-    """Ask the AI Assistant a question."""
-    try:
-        username = get_jwt_identity()
-        user_id = _get_user_id(username)
-        data = request.get_json(silent=True) or {}
-        question = (data.get('question') or '').strip()
-        if not question:
-            return jsonify({'error': 'question is required'}), 400
-
-        raw_community_id = data.get('community_id')
-        result = _get_agent('assistant').ask(
-            question=question,
-            user_id=user_id,
-            channel_id=data.get('channel_id'),
-            community_id=get_community_id_from_public_id(raw_community_id) if raw_community_id else None,
-            context=data.get('context'),
-        )
-        return jsonify(result), 200
-    except Exception as e:
-        print(f"[AGENTS API] assistant_ask error: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
 
 
 # =====================================

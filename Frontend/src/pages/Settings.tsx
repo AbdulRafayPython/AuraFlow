@@ -1106,7 +1106,7 @@ export default function Settings() {
     return [
       { label: 'User Settings', items: pick('profile', 'privacy', 'blocked') },
       { label: 'App Settings',  items: pick('appearance', 'general', 'notifications') },
-      { label: 'Assistants',    items: pick('agents') },
+      { label: 'Agents',        items: pick('agents') },
       { label: 'Administration', items: pick('community-admin') },
     ].filter((g) => g.items.length > 0);
   }, [tabs]);

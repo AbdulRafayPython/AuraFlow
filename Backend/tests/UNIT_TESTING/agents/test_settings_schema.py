@@ -3,7 +3,7 @@ Agent settings: one definition (agents/settings_schema.py) for the form, the che
 
 OLD_VALIDATORS is a copy of the hand-written checks routes/agents.py used before the schema existed.
 The schema must produce exactly the same checks, so building the form from it changes nothing the
-server accepts.
+server accepts. (The Assistant's entry was removed with the Assistant in L5f.)
 """
 
 from __future__ import annotations
@@ -68,14 +68,6 @@ OLD_VALIDATORS = {
         'analyze_threshold':  (int, 20, 100, None),
         'daily_reports':      (bool, None, None, None),
     },
-    'assistant': {
-        'use_gemini':       (bool, None, None, None),
-        'reply_style':      (str, None, None, ('concise', 'friendly', 'detailed')),
-        'max_history':      (int, 1, 10, None),
-        'allow_jokes':      (bool, None, None, None),
-        'allow_motivation': (bool, None, None, None),
-        'memory_paused':    (bool, None, None, None),
-    },
     'auto_message': {
         'welcome_enabled':         (bool, None, None, None),
         'post_in_default_channel': (bool, None, None, None),
@@ -112,7 +104,6 @@ DEFAULTS = {
     "mood": ("agents.mood_tracker", "_MOOD_DEFAULTS"),
     "wellness": ("agents.wellness", "_WELLNESS_DEFAULTS"),
     "focus": ("agents.focus", "_FOCUS_DEFAULTS"),
-    "assistant": ("agents.assistant", "_ASSISTANT_DEFAULTS"),
     "auto_message": ("agents.auto_message", "_AUTO_MSG_DEFAULTS"),
     "support": ("agents.support", "_SUPPORT_DEFAULTS"),
     "translator": ("agents.translator", "_TRANSLATOR_DEFAULTS"),

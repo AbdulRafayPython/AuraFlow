@@ -54,11 +54,6 @@ const AGENT_CAPABILITIES: Record<string, { features: string[]; automations: stri
     automations: ['Auto analyze every 50 messages', 'Session reminders', 'Daily focus reports'],
     metrics: ['Focus sessions', 'Avg duration', 'Productivity score', 'Goals completed'],
   },
-  assistant: {
-    features: ['Q&A on any topic', 'Jokes & motivation on demand', 'Roman Urdu friendly', 'Per-channel context', 'Lexicon fallback when offline'],
-    automations: ['/ask in chat posts a bot reply', '/help lists available commands'],
-    metrics: ['Questions asked', 'Avg latency', 'Lexicon vs Gemini ratio', 'Top intents'],
-  },
   translator: {
     features: ['14+ supported languages', 'One-click message translation', 'Auto language detection', 'Roman Urdu heuristics', 'Cached results for repeats'],
     automations: ['/translate <lang> <text>', 'Right-click translate on any message'],
@@ -155,14 +150,6 @@ export default function AgentDetails() {
           icon: <Focus className="w-6 h-6" />,
           color: 'orange',
           status: agentStatus.focus || 'active'
-        };
-      case 'assistant':
-        return {
-          name: 'AI Assistant',
-          description: 'Friendly Q&A chatbot — Gemini-powered with offline lexicon fallback',
-          icon: <Brain className="w-6 h-6" />,
-          color: 'violet',
-          status: agentStatus.assistant || 'active'
         };
       case 'translator':
         return {
