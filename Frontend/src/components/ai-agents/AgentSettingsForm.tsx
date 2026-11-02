@@ -5,6 +5,7 @@ import { Loader2, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useRealtime } from '@/hooks/useRealtime';
 import { aiAgentService, type AgentCatalogEntry } from '@/services/aiAgentService';
+import agentBuilderService from '@/services/agentBuilderService';
 import { ErrorState } from '@/components/app/EmptyState';
 import { ConfirmDialog } from '@/components/modals/ConfirmDialog';
 import {
@@ -116,7 +117,7 @@ const AgentSettingsForm: React.FC<Props> = ({ routeId }) => {
   const clearMemory = async () => {
     setBusy(true);
     try {
-      await aiAgentService.clearAssistantMemory();
+      await agentBuilderService.clearAuraMemory();
       toast({ title: 'Memory cleared', description: 'It starts fresh the next time you ask it something.' });
     } catch (e) {
       toast({ title: 'Could not clear its memory', description: e instanceof Error ? e.message : undefined, variant: 'destructive' });

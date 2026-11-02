@@ -462,7 +462,16 @@ function AskPopover({
             </div>
           )}
           <p className="text-xs text-[hsl(var(--theme-text-muted))]">
-            Replies stay private to you until you choose to share.
+            Replies stay private to you. Follow-ups remember your last few questions for 30 minutes.{' '}
+            <button
+              type="button"
+              className="underline hover:text-[hsl(var(--theme-text-primary))]"
+              onClick={() => {
+                void agentBuilderService.clearAuraMemory().then(() => setA(null)).catch(() => undefined);
+              }}
+            >
+              Start over
+            </button>
           </p>
         </div>
       </PopoverContent>
