@@ -21,21 +21,37 @@ _UNAVAILABLE_TEXT = "I can't answer right now because the AI service is not conf
 # (schedules, welcomes, keyword/channel triggers) stay silent when they fail.
 _DIRECT_KINDS = ("mention", "reply")
 # Triggers whose output is a fresh message rather than a reply to someone's message.
-_STANDALONE_KINDS = ("member_joined", "schedule", "api")
+_STANDALONE_KINDS = ("member_joined", "schedule", "api", "channel_silent", "focus_drift")
 
 
 def build_user_message(defn: Any, trigger: Dict[str, Any]) -> str:
     """The text the agent should respond to."""
-    from agents.runtime.triggers import strip_mentions
+    from agents.runtime.triggers import mention_names, strip_mentions
     kind = trigger.get("type")
     if kind == "schedule":
         return trigger.get("prompt") or "Run your scheduled task now."
     if kind == "member_joined":
         return (f"A new member, @{trigger.get('username')}, just joined the community. "
                 "Write a short, friendly welcome message for the channel.")
+    if kind == "channel_silent":
+        minutes = trigger.get("silent_minutes")
+        quiet = f"about {minutes} minutes" if minutes else "a while"
+        return (f"This channel has been quiet for {quiet}. Do what your instructions say for this moment. "
+                "If they do not cover it, write one short, friendly message that could restart the "
+                "conversation, after looking at the recent messages so it fits the channel. "
+                "Reply with only the message itself.")
+    if kind == "focus_drift":
+        old = ", ".join(trigger.get("old_topics") or []) or "an earlier topic"
+        new = ", ".join(trigger.get("new_topics") or []) or "something new"
+        return (f"The conversation in this channel just moved from {old} to {new}. Do what your "
+                "instructions say for this moment. If they do not cover it, write one short, neutral "
+                "message that notes the shift and asks whether to carry on with the earlier topic. "
+                "Reply with only the message itself.")
     if kind == "api":
         return (trigger.get("content") or "").strip() or "Hello"
-    text = strip_mentions(trigger.get("content") or "", defn.bot_username)
+    text = trigger.get("content") or ""
+    for name in mention_names(defn):
+        text = strip_mentions(text, name)
     return text or "Hello"
 
 

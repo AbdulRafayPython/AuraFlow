@@ -3,7 +3,7 @@
 // Plain-English metadata for the raw setting keys the backend stores against
 // each agent. Shared by:
 //   - pages/admin/AgentSettings.tsx     (community-level overrides)
-//   - components/ai-agents/PersonalAgentsPanel.tsx (personal automations)
+//   - components/ai-agents/AgentSettingsForm.tsx (reads the server schema first; this table fills the gaps)
 //
 // Anything not listed falls back to a prettified version of the key, so no
 // surface ever shows a developer-style snake_case name to a normal user.
@@ -11,6 +11,8 @@
 // `min`/`max`/`step` drive slider rendering for numeric keys; `options` drives a
 // <select> for enum keys. They are optional — without them a key renders as a
 // plain number/text input.
+
+import type { SettingField } from '@/lib/settingsSchema';
 
 export interface SettingMeta {
   label: string;
@@ -102,8 +104,25 @@ export const SETTING_META: Record<string, SettingMeta> = {
   memory_ttl_seconds:      { label: 'How long it remembers (seconds)', help: 'A conversation is forgotten after this many seconds of no activity.', min: 300, max: 3600, step: 60 },
 };
 
+// What the server says each setting is (label, help, range, choices). It wins over the table above,
+// so a slider can never offer a value the server then refuses.
+const schemaMeta: Record<string, SettingMeta> = {};
+
+export function registerSettingsSchema(schema: Record<string, SettingField[]>): void {
+  for (const fields of Object.values(schema)) {
+    for (const f of fields) {
+      schemaMeta[f.key] = {
+        label: f.label, help: f.help,
+        ...(f.kind === 'number' ? { min: f.min, max: f.max, step: f.step } : {}),
+        ...(f.kind === 'choice' ? { options: f.options } : {}),
+      };
+    }
+  }
+}
+
 /** Look up meta for a key, falling back to a prettified version of the key. */
 export function settingMeta(key: string): SettingMeta {
+  if (schemaMeta[key]) return schemaMeta[key];
   if (SETTING_META[key]) return SETTING_META[key];
   // Fallback: turn `some_raw_key` into "Some raw key".
   const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());

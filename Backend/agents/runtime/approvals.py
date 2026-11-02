@@ -23,7 +23,7 @@ import logging
 from contextlib import contextmanager
 from typing import Any, Dict, Iterator, List, Optional
 
-from agents.runtime import builtin_tools, write_tools  # noqa: F401  (registers the tools)
+from agents.runtime import builtin_tools, legacy_tools, write_tools  # noqa: F401  (registers the tools)
 from agents.runtime.tools import TOOL_REGISTRY, ToolContext, ToolError, validate_arguments
 from database import get_db_connection
 

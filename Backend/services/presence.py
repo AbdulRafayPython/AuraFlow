@@ -223,10 +223,44 @@ def _monitor_loop():
 # messages table. Channels whose silence has just crossed a 15 / 60 /
 # 240-minute bucket emit one `channel.silent` event — the bucketing
 # keeps the firing rate bounded even if a channel stays silent for days.
+#
+# Silence is measured from the last message a PERSON wrote. Agents' own
+# posts (message_type 'ai') do not count: otherwise every nudge made the
+# channel look awake again, so Engagement's "stop after 3 unanswered
+# nudges" rule never held and dead channels were nudged forever.
+#
+# The once-an-hour-per-bucket guard lives in Redis, so a restart (or a
+# second process running the probe) does not fire every silent channel
+# again at once. Without Redis it falls back to this process's memory.
 
 _SILENCE_BUCKETS_MIN = (15, 60, 240)         # silence thresholds (minutes)
 _SILENCE_PROBE_INTERVAL = 60                  # seconds between probes
-_silence_last_fired: dict = {}                # (channel_id, bucket) -> ts
+_SILENCE_REFIRE_SECONDS = 3600                # at most once an hour per (channel, bucket)
+_silence_last_fired: dict = {}                # fallback when Redis is down: (channel_id, bucket) -> ts
+
+
+def _silence_redis():
+    try:
+        from services.redis_client import get_redis
+        return get_redis()
+    except Exception:
+        return None
+
+
+def _claim_silence(channel_id, bucket, now_ts) -> bool:
+    """True when this (channel, bucket) has not fired in the last hour, and records that it fires now."""
+    r = _silence_redis()
+    if r is not None:
+        try:
+            return bool(r.set(f"presence:silent:{channel_id}:{bucket}", "1",
+                              nx=True, ex=_SILENCE_REFIRE_SECONDS))
+        except Exception as exc:
+            log.debug(f"[PRESENCE] silence claim fell back to memory: {exc}")
+    key = (channel_id, bucket)
+    if now_ts - _silence_last_fired.get(key, 0) < _SILENCE_REFIRE_SECONDS:
+        return False
+    _silence_last_fired[key] = now_ts
+    return True
 
 
 def _silence_probe_loop():
@@ -258,6 +292,7 @@ def _run_silence_probe_once():
                        TIMESTAMPDIFF(MINUTE, MAX(m.created_at), NOW()) AS silent_minutes
                 FROM channels c
                 JOIN messages m ON m.channel_id = c.id
+                WHERE m.sender_id IS NOT NULL AND m.message_type <> 'ai'
                 GROUP BY c.id, c.community_id
                 HAVING silent_minutes BETWEEN 15 AND 10080
             """)
@@ -276,12 +311,9 @@ def _run_silence_probe_once():
         bucket = max((b for b in _SILENCE_BUCKETS_MIN if silent >= b), default=None)
         if bucket is None:
             continue
-        key = (row['channel_id'], bucket)
-        last = _silence_last_fired.get(key, 0)
-        # Re-emit at most once per hour per bucket.
-        if now_ts - last < 3600:
+        # Re-emit at most once per hour per bucket, across restarts and processes.
+        if not _claim_silence(row['channel_id'], bucket, now_ts):
             continue
-        _silence_last_fired[key] = now_ts
         try:
             _agent_bus.publish(_agent_bus.TOPIC_CHANNEL_SILENT, {
                 'channel_id':     row['channel_id'],

@@ -85,6 +85,14 @@ describe('triggers', () => {
       .toBe('On a schedule: Every Friday at 17:00 (Asia/Dubai) in #general');
   });
 
+  it('describes the channel-event triggers', () => {
+    expect(describeTrigger({ type: 'channel_silent', channel_id: null, config: { min_minutes: 240 } }))
+      .toBe('When a channel goes quiet for 4 hours');
+    expect(describeTrigger({ type: 'channel_silent', channel_id: 11, config: {} }, () => 'general'))
+      .toBe('When a channel goes quiet for 15 minutes in #general');
+    expect(describeTrigger({ type: 'focus_drift', channel_id: null, config: {} })).toBe('When the topic changes');
+  });
+
   it('shows the raw cron for custom schedules and falls back to the channel id', () => {
     expect(cronLabel('5 4 * * *')).toBe('cron 5 4 * * *');
     expect(cronLabel(undefined)).toBe('No schedule');

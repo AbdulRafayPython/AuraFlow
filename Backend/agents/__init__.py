@@ -31,7 +31,6 @@ def __getattr__(name: str):
         'EngagementAgent': '.engagement',
         'KnowledgeBuilderAgent': '.knowledge_builder_v2',
         'FocusAgent': '.focus',
-        'AssistantAgent': '.assistant',
         'AutoMessageAgent': '.auto_message',
         'SupportAgent': '.support',
         'TranslatorAgent': '.translator',

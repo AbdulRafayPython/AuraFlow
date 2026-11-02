@@ -1,10 +1,10 @@
-// When an agent wakes up: mention, keywords, schedule, new member, or every message in a channel.
+// When an agent wakes up: mention, keywords, schedule, new member, quiet channel, new topic, or every message in a channel.
 import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import agentBuilderService, { errorMessage } from '@/services/agentBuilderService';
 import {
-  COMMON_TIME_ZONES, CRON_PRESETS, CUSTOM_CRON, TRIGGER_LABELS, describeTrigger, splitKeywords, triggerProblems,
+  COMMON_TIME_ZONES, CRON_PRESETS, CUSTOM_CRON, SILENCE_CHOICES, TRIGGER_LABELS, describeTrigger, splitKeywords, triggerProblems,
 } from '@/lib/agentBuilder';
 import type { AgentTrigger, BuilderAgent, TriggerType } from '@/types/agentBuilder';
 import type { Channel } from '@/types';
@@ -23,7 +23,8 @@ function toDraft(t: AgentTrigger): Draft {
 }
 
 function emptyTrigger(type: TriggerType, defaultChannel: number | null): Draft {
-  const config = type === 'schedule' ? { cron: CRON_PRESETS[0].cron, tz: 'UTC', prompt: 'Post the scheduled update.' } : {};
+  const config = type === 'schedule' ? { cron: CRON_PRESETS[0].cron, tz: 'UTC', prompt: 'Post the scheduled update.' }
+    : type === 'channel_silent' ? { min_minutes: 60 } : {};
   return toDraft({ type, channel_id: type === 'schedule' || type === 'channel_message' ? defaultChannel : null, config, enabled: true });
 }
 
@@ -49,7 +50,7 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
     setDrafts((list) => list.map((d) => (d.key === key ? { ...d, config: { ...d.config, ...change } } : d)));
 
   const available = (Object.keys(TRIGGER_LABELS) as TriggerType[]).filter((t) => {
-    if (t === 'member_joined' && !isCommunityAgent) return false;
+    if ((t === 'member_joined' || t === 'channel_silent' || t === 'focus_drift') && !isCommunityAgent) return false;
     if ((t === 'schedule' || t === 'channel_message') && textChannels.length === 0) return false;
     return true;
   });
@@ -162,6 +163,19 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
             )}
 
             {d.type === 'channel_message' && channelSelect(d, true)}
+            {d.type === 'channel_silent' && (
+              <>
+                <div>
+                  <label className={labelCls}>Quiet for at least</label>
+                  <select className={inputCls} value={d.config.min_minutes ?? 60}
+                          onChange={(e) => patchConfig(d.key, { min_minutes: Number(e.target.value) })}>
+                    {SILENCE_CHOICES.map((c) => <option key={c.minutes} value={c.minutes}>{c.label}</option>)}
+                  </select>
+                </div>
+                {textChannels.length > 0 && channelSelect(d, false)}
+              </>
+            )}
+            {d.type === 'focus_drift' && textChannels.length > 0 && channelSelect(d, false)}
             {(d.type === 'mention' || d.type === 'keyword') && textChannels.length > 0 && channelSelect(d, false)}
           </div>
 

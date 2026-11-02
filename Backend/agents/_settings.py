@@ -20,7 +20,7 @@ Design notes:
 - Best-effort by design. A DB outage MUST NOT take an agent down; we log
   and fall back to ``defaults`` so behaviour matches a never-configured
   user rather than an exception path. This matches the prior idiom in
-  ``Backend/agents/assistant.py::_memory_paused``.
+  the retired Assistant's ``_memory_paused`` (removed).
 - No caching layer. Settings are read once per agent invocation; the
   pooled connection makes that essentially free, and a stale-cache class
   of bug would silently hide UI changes — exactly what this workstream

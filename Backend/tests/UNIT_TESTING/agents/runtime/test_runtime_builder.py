@@ -336,13 +336,13 @@ def test_scheduled_templates_declare_that_they_need_a_channel():
 def test_template_listing_is_json_serialisable_and_complete():
     items = list_templates()
     json.dumps(items)
-    assert {i["key"] for i in items} == {"faq", "welcome", "digest", "standup", "blank"}
+    assert {i["key"] for i in items} == {"faq", "welcome", "digest", "standup", "booster", "recap", "translator", "knowledge", "blank"}
     assert get_template("blank") is BLANK
 
 
 def test_faq_template_is_grounded_in_knowledge():
     faq = get_template("faq")
-    assert faq.tools == ("search_knowledge",) and "ONLY" in faq.instructions
+    assert faq.tools == ("search_community_knowledge", "search_knowledge") and "ONLY" in faq.instructions
 
 
 # ── generator ───────────────────────────────────────────────────────────

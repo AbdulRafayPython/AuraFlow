@@ -34,7 +34,7 @@ import {
   Loader2,
   ChevronRight,
 } from 'lucide-react';
-import { useAIAgents } from '@/contexts/AIAgentContext';
+import { aiAgentService } from '@/services/aiAgentService';
 import KnowledgePanel from './KnowledgePanel';
 import ExplainabilityRow, {
   ExplainabilityRowData,
@@ -369,7 +369,6 @@ function ActivityTab({ channelId, channelName, safetyOnly = false }: ActivityTab
 /* ─── Recap tab — summarizer history ────────────────────────────────────── */
 
 function RecapTab({ channelId }: { channelId: number }) {
-  const { getChannelSummaries, generateSummary } = useAIAgents() as any;
   const [items, setItems] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -377,7 +376,7 @@ function RecapTab({ channelId }: { channelId: number }) {
   const load = async () => {
     setLoading(true);
     try {
-      const data = await getChannelSummaries(channelId);
+      const data = await aiAgentService.getChannelSummaries(channelId);
       setItems(data || []);
     } finally {
       setLoading(false);
@@ -392,7 +391,7 @@ function RecapTab({ channelId }: { channelId: number }) {
   const onGenerate = async () => {
     try {
       setBusy(true);
-      await generateSummary(channelId, 100);
+      await aiAgentService.summarizeChannel(channelId, 100);
       await load();
     } finally {
       setBusy(false);
@@ -478,7 +477,6 @@ function KnowledgeTab({ channelId, channelName }: { channelId: number; channelNa
 /* ─── Focus tab ─────────────────────────────────────────────────────────── */
 
 function FocusTab({ channelId }: { channelId: number }) {
-  const { analyzeFocus } = useAIAgents() as any;
   const [busy, setBusy] = useState(false);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -488,7 +486,7 @@ function FocusTab({ channelId }: { channelId: number }) {
     setBusy(true);
     setError(null);
     try {
-      const r = await analyzeFocus(24, channelId);
+      const r = await aiAgentService.analyzeFocus(24, channelId);
       setData(r);
     } catch (e: any) {
       setError(e?.message || 'Could not analyze focus for this channel.');
@@ -496,7 +494,7 @@ function FocusTab({ channelId }: { channelId: number }) {
     } finally {
       setBusy(false);
     }
-  }, [analyzeFocus, channelId]);
+  }, [channelId]);
 
   // Auto-run analysis when the Focus tab opens (e.g. via the drift card's
   // "Recenter" action) so the section shows results immediately instead of an

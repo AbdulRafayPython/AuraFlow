@@ -306,6 +306,37 @@ def _emit_unread_tracking(socketio, channel_id, community_id, sender_id, message
     
     log.info("[UNREAD-TRACK] _emit_unread_tracking done")
 
+def _aura_command(question: str, user_id: int, channel_id: int, username: str):
+    """/ask, /joke and /motivation: Aura's answer. It is posted only after the command's own
+    message is saved (see ``_post_aura_answer``), as a reply to it, so it stays under the question."""
+    from agents.runtime import aura_ask
+    if not channel_id:
+        return {'type': 'assistant', 'success': False, 'error': 'Aura answers in a channel. Use the Ask box here.'}
+    try:
+        out = aura_ask.ask(user_id, question, channel_id=channel_id, username=username)
+    except aura_ask.AskError as err:
+        return {'type': 'assistant', 'success': False, 'error': err.message}
+    return {'type': 'assistant', 'success': True, 'aura_reply': out['reply']}
+
+
+def _post_aura_answer(command_result: dict, channel_id: int, command_message_id: int) -> None:
+    """Store Aura's answer as a reply to the saved command message and hand the payload to the
+    caller's usual "posted as bot" broadcast."""
+    text = command_result.pop('aura_reply', None)
+    if not text:
+        return
+    from agents.runtime import aura_ask
+    try:
+        payload = aura_ask.post_answer(channel_id, text, reply_to=command_message_id, broadcast=False)
+    except aura_ask.AskError as err:
+        command_result.update(success=False, error=err.message)
+        return
+    if payload is None:
+        command_result.update(success=False, error='The answer could not be posted.')
+        return
+    command_result.update(posted_as_bot=True, bot_payload=payload)
+
+
 def _insert_ai_bot_message(channel_id: int, user_id: int, content: str, author: str = 'AI Bot'):
     """Insert an AI bot message and return a payload the HTTP caller can broadcast.
 
@@ -767,31 +798,15 @@ def handle_ai_command(content: str, username: str, user_id: int, channel_id: int
             if not question:
                 return {'type': 'assistant', 'success': False,
                         'error': 'Usage: /ask <your question>'}
-            from agents.assistant import AssistantAgent
-            r = AssistantAgent().ask(
-                question=question, user_id=user_id,
-                channel_id=channel_id, community_id=community_id,
-            )
-            reply_text = r.get('reply') or "I'm not sure."
-            payload = _insert_ai_bot_message(channel_id, user_id, reply_text, author='AI Assistant')
-            return {'type': 'assistant', 'success': True,
-                    'posted_as_bot': True, 'bot_payload': payload}
+            return _aura_command(question, user_id, channel_id, username)
 
         elif command == '/joke':
-            from agents.assistant import AssistantAgent
-            r = AssistantAgent().random_joke()
-            text = r.get('reply') or r.get('joke') or "Why did the dev cross the road? To refactor the chicken."
-            payload = _insert_ai_bot_message(channel_id, user_id, text, author='AI Assistant')
-            return {'type': 'assistant', 'success': True,
-                    'posted_as_bot': True, 'bot_payload': payload}
+            from agents.runtime.aura_ask import JOKE_PROMPT
+            return _aura_command(JOKE_PROMPT, user_id, channel_id, username)
 
         elif command == '/motivation':
-            from agents.assistant import AssistantAgent
-            r = AssistantAgent().random_motivation()
-            text = r.get('reply') or r.get('quote') or "Keep going. Small steps compound."
-            payload = _insert_ai_bot_message(channel_id, user_id, text, author='AI Assistant')
-            return {'type': 'assistant', 'success': True,
-                    'posted_as_bot': True, 'bot_payload': payload}
+            from agents.runtime.aura_ask import MOTIVATION_PROMPT
+            return _aura_command(MOTIVATION_PROMPT, user_id, channel_id, username)
 
         elif command == '/translate':
             if len(command_parts) < 3:
@@ -1301,6 +1316,7 @@ def send_message():
                         message_id = cur.lastrowid
                         conn.commit()
                         log.info(f"[HTTP] ✅ Command message saved with ID {message_id}")
+                        _post_aura_answer(command_result, channel_id, message_id)
 
                         if socketio:
                             msg_payload = {

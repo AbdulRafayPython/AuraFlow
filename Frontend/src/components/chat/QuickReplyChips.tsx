@@ -11,7 +11,7 @@ import {
   HeartHandshake,
   MessageSquareReply,
 } from 'lucide-react';
-import { useAIAgents } from '@/contexts/AIAgentContext';
+import { aiAgentService } from '@/services/aiAgentService';
 
 interface QuickReplyChipsProps {
   /** Most recent inbound message in the channel — used to derive suggestions */
@@ -51,7 +51,6 @@ export default function QuickReplyChips({
   onPick,
   visible = true,
 }: QuickReplyChipsProps) {
-  const { getQuickReplies } = useAIAgents() as any;
   const [chips, setChips] = useState<string[]>([]);
   const [intent, setIntent] = useState<string>('general');
   const [loading, setLoading] = useState(false);
@@ -74,7 +73,7 @@ export default function QuickReplyChips({
     setLoading(true);
     (async () => {
       try {
-        const r = await getQuickReplies(lastMessage, 3);
+        const r = await aiAgentService.getQuickReplies(lastMessage, 3);
         if (cancelled) return;
         const next = Array.isArray(r?.suggestions) ? r.suggestions.slice(0, 3) : [];
         setChips(next);
@@ -92,7 +91,7 @@ export default function QuickReplyChips({
     return () => {
       cancelled = true;
     };
-  }, [lastMessage, enabled, getQuickReplies]);
+  }, [lastMessage, enabled]);
 
   if (!enabled || hidden || !visible) return null;
   const showSkeleton = loading && chips.length === 0;

@@ -6,7 +6,7 @@ import { channelService } from "@/services/channelService";
 import { useNotifications } from "@/hooks/useNotifications";
 import { Community } from "@/types";
 import { API_SERVER } from "@/config/api";
-import CommunityAgentsTab from "@/components/ai-agents/CommunityAgentsTab";
+import ManageAgentsCard from "@/components/ai-agents/ManageAgentsCard";
 import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
 
 interface CommunitySettingsModalProps {
@@ -388,7 +388,7 @@ export default function CommunitySettingsModal({
           </div>
 
           {activeTab === 'agents' ? (
-            <CommunityAgentsTab communityId={community.id} isAdmin={isOwnerOrAdmin} communityName={community.name} />
+            <ManageAgentsCard communityId={community.id} communityName={community.name} onNavigate={onClose} />
           ) : (
           <>
 

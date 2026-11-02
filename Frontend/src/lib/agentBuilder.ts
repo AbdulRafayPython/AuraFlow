@@ -53,7 +53,20 @@ export const TRIGGER_LABELS: Record<TriggerType, { label: string; hint: string }
   channel_message: { label: 'Every message in a channel', hint: 'Reads every message in one channel. Use sparingly: it costs a run each time.' },
   schedule: { label: 'On a schedule', hint: 'Posts into a channel at set times, e.g. every Friday 17:00.' },
   member_joined: { label: 'When someone joins', hint: 'Welcomes new members of the community.' },
+  channel_silent: { label: 'When a channel goes quiet', hint: 'Posts a message to get the conversation going again. At most once every 30 minutes per channel.' },
+  focus_drift: { label: 'When the topic changes', hint: 'Speaks up when a conversation moves to a new subject. At most once every 30 minutes per channel.' },
 };
+
+/** How long a channel must be quiet. The server reports quiet spells of 15 minutes, 1 hour and 4 hours. */
+export const SILENCE_CHOICES: Array<{ minutes: number; label: string }> = [
+  { minutes: 15, label: '15 minutes' },
+  { minutes: 60, label: '1 hour' },
+  { minutes: 240, label: '4 hours' },
+];
+
+export function silenceLabel(minutes: number | undefined): string {
+  return SILENCE_CHOICES.find((c) => c.minutes === minutes)?.label ?? (minutes ? `${minutes} minutes` : '15 minutes');
+}
 
 export const STATUS_LABELS: Record<AgentStatus, string> = {
   draft: 'Not on yet', active: 'On', paused: 'Paused', archived: 'Archived',
@@ -76,6 +89,12 @@ export const TOOL_LABELS: Record<string, string> = {
   post_message: 'Post a message',
   create_poll: 'Create a poll',
   schedule_reminder: 'Set a reminder',
+  detect_language: 'Detect a language',
+  suggest_quick_replies: 'Suggest quick replies',
+  get_focus_score: 'Check how focused a channel is',
+  get_engagement_ideas: 'Find ideas to liven up a channel',
+  check_message_safety: 'Check text against safety rules',
+  extract_knowledge: 'Save FAQs from a channel',
 };
 
 export function toolLabel(name: string): string {
@@ -109,6 +128,7 @@ export function describeTrigger(t: Pick<AgentTrigger, 'type' | 'channel_id' | 'c
   const c: TriggerConfig = t.config ?? {};
   if (t.type === 'keyword') return `${base}: ${(c.keywords ?? []).join(', ') || 'no words yet'}${where}`;
   if (t.type === 'schedule') return `${base}: ${cronLabel(c.cron)} (${c.tz || 'UTC'})${where}`;
+  if (t.type === 'channel_silent') return `${base} for ${silenceLabel(c.min_minutes)}${where}`;
   return `${base}${where}`;
 }
 

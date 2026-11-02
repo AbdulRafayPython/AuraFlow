@@ -3,11 +3,13 @@ apply_agent_migrations.py — Bring the database Backend/.env points at up to da
 
 Runs, in order, the agent migrations that this database does not have yet:
   add_agent_runs, add_agent_definitions, add_agent_knowledge, add_agent_approvals,
-  add_agent_reminders, add_agent_listings, add_agent_ratings, add_agent_integrations, add_agent_mcp, add_agent_mcp_oauth
+  add_agent_reminders, add_agent_listings, add_agent_ratings, add_agent_integrations, add_agent_mcp, add_agent_mcp_oauth,
+  add_agent_event_triggers
 
 Everything is ADDITIVE: new tables, plus these columns on existing tables (all nullable or defaulted,
 so existing rows are untouched): users.is_bot, messages.agent_run_id, agent_runs.agent_id / trigger_message_id,
-agent_mcp_servers.transport / oauth_json (a table this same script creates).
+agent_mcp_servers.transport / oauth_json (a table this same script creates), and two more allowed values for
+agent_triggers.type (channel_silent, focus_drift: existing values and rows are unchanged).
 It never deletes or rewrites data. Nothing is applied unless you pass --apply.
 
 USAGE (from Backend/, with the venv python):
@@ -27,7 +29,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from database import get_db_connection  # noqa: E402
 
 ORDER = ["add_agent_runs", "add_agent_definitions", "add_agent_knowledge", "add_agent_approvals",
-         "add_agent_reminders", "add_agent_listings", "add_agent_ratings", "add_agent_integrations", "add_agent_mcp", "add_agent_mcp_oauth"]
+         "add_agent_reminders", "add_agent_listings", "add_agent_ratings", "add_agent_integrations", "add_agent_mcp", "add_agent_mcp_oauth",
+         "add_agent_event_triggers"]
 MIGRATIONS = os.path.join(os.path.dirname(__file__), "..", "migrations")
 
 # A migration is skipped when everything it adds is already there.
@@ -42,6 +45,7 @@ MARKERS = {
     "add_agent_integrations": ("table", "agent_webhooks"),
     "add_agent_mcp": ("table", "agent_mcp_servers"),
     "add_agent_mcp_oauth": ("column", ("agent_mcp_servers", "oauth_json")),
+    "add_agent_event_triggers": ("enum", ("agent_triggers", "type", "focus_drift")),
 }
 
 
@@ -53,6 +57,11 @@ def statements(text: str):
 def present(cur, kind: str, what) -> bool:
     if kind == "table":
         cur.execute("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = %s", (what,))
+    elif kind == "enum":                      # (table, column, a value the column must allow)
+        cur.execute("SELECT column_type FROM information_schema.columns WHERE table_schema = DATABASE() "
+                    "AND table_name = %s AND column_name = %s", what[:2])
+        row = cur.fetchone()
+        return bool(row) and f"'{what[2]}'" in str(row.get("column_type") or row.get("COLUMN_TYPE") or "")
     else:
         cur.execute("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() "
                     "AND table_name = %s AND column_name = %s", what)

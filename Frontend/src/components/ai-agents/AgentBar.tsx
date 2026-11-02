@@ -8,7 +8,7 @@
 //
 //   • Ask              → opens an inline assistant popover (assistant agent)
 //   • Translate        → opens an inline translator popover (translator agent)
-//   • Catch me up      → generateSummary on this channel (summarizer)
+//   • Catch me up      → summarizeChannel on this channel (summarizer)
 //   • Search knowledge → opens the rail's Knowledge tab (support / KB)
 //
 // Autonomous interventions (support_suggestion, summary_checkpoint,
@@ -36,11 +36,11 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useAIAgents } from '@/contexts/AIAgentContext';
 import { useRealtime } from '@/hooks/useRealtime';
 import { useToast } from '@/hooks/use-toast';
 import { accentFor } from './AgentAccent';
 import { aiAgentService } from '@/services/aiAgentService';
+import agentBuilderService from '@/services/agentBuilderService';
 import type { Message } from '@/types';
 
 export interface AgentBarProps {
@@ -71,7 +71,7 @@ const ACTIONS: ActionDef[] = [
     label: 'Ask',
     Icon: Sparkles,
     agent: 'assistant',
-    requires: [{ scope: 'personal', types: ['assistant'] }],
+    requires: [],                      // Aura is built in for everyone
   },
   {
     key: 'translate',
@@ -112,13 +112,6 @@ export default function AgentBar({
   onOpenPanel,
   onResultUpdated,
 }: AgentBarProps) {
-  const {
-    getCommunityAgentStatus,
-    getPersonalAgentStatus,
-    generateSummary,
-    askAssistant,
-    translateText,
-  } = useAIAgents() as any;
   const { addLocalMessage } = useRealtime();
   const { toast } = useToast();
 
@@ -132,7 +125,7 @@ export default function AgentBar({
     (async () => {
       try {
         if (communityId) {
-          const installed = await getCommunityAgentStatus(communityId);
+          const installed = await aiAgentService.getCommunityAgentStatus(communityId);
           if (cancelled) return;
           setCommunityActive(
             new Set(
@@ -149,7 +142,7 @@ export default function AgentBar({
       }
 
       try {
-        const personal = await getPersonalAgentStatus();
+        const personal = await aiAgentService.getPersonalAgentStatus();
         if (cancelled) return;
         setPersonalActive(
           new Set(
@@ -165,7 +158,7 @@ export default function AgentBar({
     return () => {
       cancelled = true;
     };
-  }, [communityId, getCommunityAgentStatus, getPersonalAgentStatus]);
+  }, [communityId]);
 
   const isActionReady = (def: ActionDef): boolean => {
     return def.requires.every((req) => {
@@ -188,7 +181,7 @@ export default function AgentBar({
     if (!channelId) return;
     try {
       setBusy('catchup');
-      const r = await generateSummary(channelId, 100);
+      const r = await aiAgentService.summarizeChannel(channelId, 100);
       if (r?.success) {
         toast({ title: 'Caught you up', description: 'See the Recap tab.' });
         onOpenPanel?.('recap');
@@ -249,7 +242,7 @@ export default function AgentBar({
               accent={accent}
               icon={<Icon className="h-4 w-4" />}
               label={def.label}
-              onAsk={(q) => askAssistant(q, { channelId, communityId })}
+              onAsk={(q) => agentBuilderService.askAura(q, channelId)}
             />
           );
         }
@@ -260,7 +253,7 @@ export default function AgentBar({
               accent={accent}
               icon={<Icon className="h-4 w-4" />}
               label={def.label}
-              onTranslate={(text, target) => translateText(text, target)}
+              onTranslate={(text, target) => aiAgentService.translateText(text, target)}
             />
           );
         }
@@ -437,7 +430,7 @@ function AskPopover({
         <div className="space-y-3">
           <h4 className="flex items-center gap-1.5 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
             <Sparkles className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
-            Ask the assistant
+            Ask Aura
           </h4>
           <div className="flex gap-2">
             <Input
@@ -469,7 +462,16 @@ function AskPopover({
             </div>
           )}
           <p className="text-xs text-[hsl(var(--theme-text-muted))]">
-            Replies stay private to you until you choose to share.
+            Replies stay private to you. Follow-ups remember your last few questions for 30 minutes.{' '}
+            <button
+              type="button"
+              className="underline hover:text-[hsl(var(--theme-text-primary))]"
+              onClick={() => {
+                void agentBuilderService.clearAuraMemory().then(() => setA(null)).catch(() => undefined);
+              }}
+            >
+              Start over
+            </button>
           </p>
         </div>
       </PopoverContent>

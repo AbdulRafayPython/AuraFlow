@@ -79,7 +79,7 @@ def test_every_endpoint_needs_a_token(api):
 
 def test_templates_and_tools(api):
     keys = {t["key"] for t in api.call("get", "/templates").get_json()["templates"]}
-    assert keys == {"faq", "welcome", "digest", "standup", "blank"}
+    assert keys == {"faq", "welcome", "digest", "standup", "booster", "recap", "translator", "knowledge", "blank"}
     tools = api.call("get", "/tools").get_json()["tools"]
     assert "search_knowledge" in {t["name"] for t in tools} and {t["name"]: t["risk"] for t in tools}["post_message"] == "write"
 
@@ -120,7 +120,7 @@ def test_create_from_template_uses_its_defaults(api, monkeypatch):
     body = r.get_json()
     assert body["id"] == PID and body["status"] == "draft"
     assert seen["owner_id"] == 7 and seen["community_id"] is None and seen["template_key"] == "faq"
-    assert seen["fields"]["name"] == "FAQ Bot" and seen["fields"]["tools"] == ["search_knowledge"]
+    assert seen["fields"]["name"] == "FAQ Bot" and seen["fields"]["tools"] == ["search_community_knowledge", "search_knowledge"]
     assert [t["type"] for t in seen["triggers"]] == ["mention"]
     assert api.conn.commits == 1
 
@@ -558,3 +558,31 @@ def test_a_down_broker_does_not_lose_the_decision(api, queued):
     queued["broker_down"] = True
     res = api.call("post", "/approvals/5/approve")
     assert res.status_code == 200 and queued["inline"] == [(5,)]
+
+
+def test_channel_event_templates_are_for_communities_only(api, monkeypatch):
+    seen = capture_create(monkeypatch, api)
+    r = api.call("post", "/agents", json={"template": "booster"})
+    assert r.status_code == 201
+    assert seen["triggers"] == [] and any("channel_silent only works for community agents" in n for n in r.get_json()["notes"])
+    seen.clear()
+    monkeypatch.setattr(ab, "get_community_id_from_public_id", lambda p: 3)
+    monkeypatch.setattr(builder, "can_create", lambda cur, uid, cid: True)
+    r = api.call("post", "/agents", json={"template": "booster", "community_id": "comm-uuid"})
+    assert r.status_code == 201
+    assert [t["type"] for t in seen["triggers"]] == ["channel_silent"] and seen["triggers"][0]["config"] == {"min_minutes": 60}
+    assert seen["fields"]["tools"] == ["get_channel_history", "get_engagement_ideas"]
+    seen.clear()
+    r = api.call("post", "/agents", json={"template": "recap", "community_id": "comm-uuid"})
+    assert [t["type"] for t in seen["triggers"]] == ["focus_drift"]
+
+
+def test_translator_and_knowledge_templates_use_the_right_tools(api, monkeypatch):
+    seen = capture_create(monkeypatch, api)
+    api.call("post", "/agents", json={"template": "translator"})
+    assert seen["fields"]["tools"] == ["translate_text", "detect_language", "get_channel_history"]
+    assert [t["type"] for t in seen["triggers"]] == ["mention"]
+    seen.clear()
+    api.call("post", "/agents", json={"template": "knowledge"})
+    assert seen["fields"]["tools"] == ["search_community_knowledge", "extract_knowledge", "get_channel_history"]
+    assert "approval" in seen["fields"]["instructions"]

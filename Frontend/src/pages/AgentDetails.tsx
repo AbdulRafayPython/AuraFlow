@@ -3,14 +3,19 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Brain, Shield, Heart, TrendingUp, BookOpen, Focus,
   Activity, Settings, FileText, TestTube2, AlertTriangle, CheckCircle,
-  Save, X, Power, Loader2, Send, Zap,
+  Loader2, Send, Zap,
   Clock, Hash, BarChart3, RefreshCw, Copy, Check
 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAIAgents } from '@/contexts/AIAgentContext';
 import { aiAgentService, AgentLog } from '@/services/aiAgentService';
+import AgentActivity from '@/components/ai-agents/AgentActivity';
+import AgentSettingsForm from '@/components/ai-agents/AgentSettingsForm';
+import ChannelCoverage from '@/components/ai-agents/ChannelCoverage';
+import SummarySchedules from '@/components/ai-agents/SummarySchedules';
+import { agentNameForRoute, hasActivityPanel } from '@/lib/agentActivity';
 
-type SectionName = 'capabilities' | 'settings' | 'logs' | 'testing';
+type SectionName = 'capabilities' | 'settings' | 'activity' | 'channels' | 'schedules' | 'logs' | 'testing';
 
 // Agent capabilities data
 const AGENT_CAPABILITIES: Record<string, { features: string[]; automations: string[]; metrics: string[] }> = {
@@ -49,11 +54,6 @@ const AGENT_CAPABILITIES: Record<string, { features: string[]; automations: stri
     automations: ['Auto analyze every 50 messages', 'Session reminders', 'Daily focus reports'],
     metrics: ['Focus sessions', 'Avg duration', 'Productivity score', 'Goals completed'],
   },
-  assistant: {
-    features: ['Q&A on any topic', 'Jokes & motivation on demand', 'Roman Urdu friendly', 'Per-channel context', 'Lexicon fallback when offline'],
-    automations: ['/ask in chat posts a bot reply', '/help lists available commands'],
-    metrics: ['Questions asked', 'Avg latency', 'Lexicon vs Gemini ratio', 'Top intents'],
-  },
   translator: {
     features: ['14+ supported languages', 'One-click message translation', 'Auto language detection', 'Roman Urdu heuristics', 'Cached results for repeats'],
     automations: ['/translate <lang> <text>', 'Right-click translate on any message'],
@@ -71,73 +71,6 @@ const AGENT_CAPABILITIES: Record<string, { features: string[]; automations: stri
   },
 };
 
-// Agent settings schema
-const AGENT_SETTINGS: Record<string, { key: string; label: string; type: 'toggle' | 'slider' | 'select'; options?: string[]; min?: number; max?: number; default: any }[]> = {
-  summarizer: [
-    { key: 'auto_summarize', label: 'Auto-summarize on schedule', type: 'toggle', default: true },
-    { key: 'summary_length', label: 'Summary length', type: 'select', options: ['brief', 'standard', 'detailed'], default: 'standard' },
-    { key: 'message_threshold', label: 'Messages before auto-summary', type: 'slider', min: 20, max: 200, default: 100 },
-    { key: 'include_topics', label: 'Include key topics', type: 'toggle', default: true },
-    { key: 'include_action_items', label: 'Include action items', type: 'toggle', default: true },
-  ],
-  mood: [
-    { key: 'track_per_message', label: 'Track mood per message', type: 'toggle', default: true },
-    { key: 'alert_negative_trend', label: 'Alert on negative trends', type: 'toggle', default: true },
-    { key: 'sensitivity', label: 'Detection sensitivity', type: 'slider', min: 1, max: 10, default: 7 },
-    { key: 'language', label: 'Primary language', type: 'select', options: ['english', 'roman_urdu', 'auto'], default: 'auto' },
-  ],
-  moderation: [
-    { key: 'auto_filter', label: 'Auto-filter harmful content', type: 'toggle', default: true },
-    { key: 'severity_threshold', label: 'Action threshold', type: 'select', options: ['low', 'medium', 'high', 'critical'], default: 'medium' },
-    { key: 'notify_admins', label: 'Notify admins on violations', type: 'toggle', default: true },
-    { key: 'max_warnings', label: 'Max warnings before block', type: 'slider', min: 1, max: 10, default: 3 },
-    { key: 'scan_attachments', label: 'Scan message attachments', type: 'toggle', default: false },
-  ],
-  engagement: [
-    { key: 'auto_analyze', label: 'Auto-analyze periodically', type: 'toggle', default: true },
-    { key: 'analysis_interval', label: 'Analysis interval (min)', type: 'slider', min: 10, max: 120, default: 30 },
-    { key: 'track_threads', label: 'Track conversation threads', type: 'toggle', default: true },
-    { key: 'leaderboard', label: 'Enable contributor leaderboard', type: 'toggle', default: true },
-  ],
-  wellness: [
-    { key: 'auto_check', label: 'Periodic wellness checks', type: 'toggle', default: true },
-    { key: 'break_reminders', label: 'Break reminders', type: 'toggle', default: true },
-    { key: 'check_interval_hours', label: 'Check interval (hours)', type: 'slider', min: 1, max: 8, default: 1 },
-    { key: 'burnout_detection', label: 'Burnout risk detection', type: 'toggle', default: true },
-  ],
-  knowledge: [
-    { key: 'auto_extract', label: 'Auto-extract knowledge', type: 'toggle', default: true },
-    { key: 'extraction_interval_hours', label: 'Extraction interval (hours)', type: 'slider', min: 1, max: 12, default: 2 },
-    { key: 'min_quality_score', label: 'Min quality score', type: 'slider', min: 1, max: 10, default: 5 },
-    { key: 'auto_categorize', label: 'Auto-categorize entries', type: 'toggle', default: true },
-  ],
-  focus: [
-    { key: 'auto_analyze', label: 'Auto-analyze focus patterns', type: 'toggle', default: true },
-    { key: 'session_reminders', label: 'Session start reminders', type: 'toggle', default: true },
-    { key: 'daily_report', label: 'Daily focus report', type: 'toggle', default: false },
-    { key: 'default_session_minutes', label: 'Default session length (min)', type: 'slider', min: 15, max: 120, default: 25 },
-  ],
-  assistant: [
-    { key: 'reply_style', label: 'Reply style', type: 'select', options: ['concise', 'balanced', 'detailed'], default: 'concise' },
-    { key: 'use_gemini', label: 'Use Gemini when available', type: 'toggle', default: true },
-    { key: 'max_history', label: 'Recent messages used as context', type: 'slider', min: 0, max: 20, default: 5 },
-  ],
-  translator: [
-    { key: 'default_target', label: 'Default target language', type: 'select', options: ['en', 'ur', 'hi', 'es', 'fr', 'de', 'ar', 'zh-CN', 'pt', 'ru', 'ja', 'tr', 'id', 'bn'], default: 'en' },
-    { key: 'auto_detect', label: 'Auto-detect source language', type: 'toggle', default: true },
-  ],
-  support: [
-    { key: 'use_gemini_polish', label: 'Polish replies with Gemini', type: 'toggle', default: true },
-    { key: 'min_score', label: 'Min relevance to answer (×100)', type: 'slider', min: 5, max: 50, default: 12 },
-    { key: 'max_docs', label: 'Max KB docs indexed', type: 'slider', min: 50, max: 1000, default: 500 },
-  ],
-  auto_message: [
-    { key: 'welcome_enabled', label: 'Auto-welcome new members', type: 'toggle', default: true },
-    { key: 'quick_replies_enabled', label: 'Show quick-reply chips', type: 'toggle', default: true },
-    { key: 'post_in_default_channel', label: 'Post welcome in default channel', type: 'toggle', default: true },
-  ],
-};
-
 export default function AgentDetails() {
   const { agentId } = useParams<{ agentId: string }>();
   const navigate = useNavigate();
@@ -147,13 +80,6 @@ export default function AgentDetails() {
   const [expandedSections, setExpandedSections] = useState<Set<SectionName>>(
     new Set(['capabilities'])
   );
-  const [agentEnabled, setAgentEnabled] = useState(true);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  
-  // Settings state
-  const [settingsValues, setSettingsValues] = useState<Record<string, any>>({});
-  const [savingSettings, setSavingSettings] = useState(false);
-  
   // Logs state
   const [logs, setLogs] = useState<AgentLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -167,15 +93,6 @@ export default function AgentDetails() {
   const [testing, setTesting] = useState(false);
   const [copiedResult, setCopiedResult] = useState(false);
   
-  // Initialize settings defaults
-  useEffect(() => {
-    if (agentId && AGENT_SETTINGS[agentId]) {
-      const defaults: Record<string, any> = {};
-      AGENT_SETTINGS[agentId].forEach(s => { defaults[s.key] = s.default; });
-      setSettingsValues(defaults);
-    }
-  }, [agentId]);
-
   const getAgentConfig = () => {
     switch (agentId) {
       case 'summarizer':
@@ -233,14 +150,6 @@ export default function AgentDetails() {
           icon: <Focus className="w-6 h-6" />,
           color: 'orange',
           status: agentStatus.focus || 'active'
-        };
-      case 'assistant':
-        return {
-          name: 'AI Assistant',
-          description: 'Friendly Q&A chatbot — Gemini-powered with offline lexicon fallback',
-          icon: <Brain className="w-6 h-6" />,
-          color: 'violet',
-          status: agentStatus.assistant || 'active'
         };
       case 'translator':
         return {
@@ -334,37 +243,6 @@ export default function AgentDetails() {
     });
   };
 
-  const handleSave = async () => {
-    setSavingSettings(true);
-    try {
-      // Save via personal agent configuration
-      await aiAgentService.configurePersonalAgent(
-        agentId === 'mood' ? 'mood_tracker' : agentId === 'knowledge' ? 'knowledge_builder' : agentId!,
-        settingsValues,
-        agentEnabled
-      );
-      setHasUnsavedChanges(false);
-    } catch (err) {
-      console.error('Failed to save settings:', err);
-    } finally {
-      setSavingSettings(false);
-    }
-  };
-
-  const handleDiscard = () => {
-    if (agentId && AGENT_SETTINGS[agentId]) {
-      const defaults: Record<string, any> = {};
-      AGENT_SETTINGS[agentId].forEach(s => { defaults[s.key] = s.default; });
-      setSettingsValues(defaults);
-    }
-    setHasUnsavedChanges(false);
-  };
-
-  const updateSetting = (key: string, value: any) => {
-    setSettingsValues(prev => ({ ...prev, [key]: value }));
-    setHasUnsavedChanges(true);
-  };
-
   // Test the agent
   const handleTest = async () => {
     if (!testInput.trim() || !agentId) return;
@@ -419,26 +297,6 @@ export default function AgentDetails() {
               <span className="text-sm font-medium">Back</span>
             </button>
 
-            {/* Save/Discard Controls */}
-            {hasUnsavedChanges && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleDiscard}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))]"
-                >
-                  <X className="w-4 h-4 inline mr-1" />
-                  Discard
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={savingSettings}
-                  className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-1"
-                >
-                  {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save Changes
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Agent Header */}
@@ -468,18 +326,6 @@ export default function AgentDetails() {
                   <span className="capitalize">{agent.status}</span>
                 </div>
 
-                {/* Enable/Disable Toggle */}
-                <button
-                  onClick={() => setAgentEnabled(!agentEnabled)}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all ${
-                    agentEnabled
-                      ? 'bg-success/20 text-success hover:bg-success/30'
-                      : 'bg-muted text-muted-foreground hover:bg-muted'
-                  }`}
-                >
-                  <Power className="w-3.5 h-3.5" />
-                  {agentEnabled ? 'Enabled' : 'Disabled'}
-                </button>
               </div>
               
               <p className="text-sm text-[hsl(var(--theme-text-secondary))]">
@@ -494,6 +340,13 @@ export default function AgentDetails() {
           {[
             { id: 'capabilities', label: 'Capabilities', icon: <CheckCircle className="w-4 h-4" /> },
             { id: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" /> },
+            ...(agentId && hasActivityPanel(agentId)
+              ? [{ id: 'activity', label: 'What it did', icon: <Activity className="w-4 h-4" /> },
+                 { id: 'channels', label: 'Channels', icon: <Hash className="w-4 h-4" /> }]
+              : []),
+            ...(agentId === 'summarizer'
+              ? [{ id: 'schedules', label: 'Daily summaries', icon: <Clock className="w-4 h-4" /> }]
+              : []),
             { id: 'logs', label: 'Logs', icon: <FileText className="w-4 h-4" /> },
             { id: 'testing', label: 'Testing', icon: <TestTube2 className="w-4 h-4" /> }
           ].map(tab => (
@@ -575,83 +428,41 @@ export default function AgentDetails() {
           )}
 
           {/* Settings Section */}
-          {expandedSections.has('settings') && agentId && AGENT_SETTINGS[agentId] && (
+          {expandedSections.has('settings') && agentId && (
             <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default))] shadow-sm">
               <div className="p-6">
-                <div className="flex items-center justify-between mb-5">
-                  <h2 className="text-lg font-semibold text-[hsl(var(--theme-text-primary))]">
-                    Settings
-                  </h2>
-                  {hasUnsavedChanges && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleDiscard}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))] hover:bg-[hsl(var(--theme-bg-hover))]"
-                      >
-                        Reset
-                      </button>
-                      <button
-                        onClick={handleSave}
-                        disabled={savingSettings}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[hsl(var(--theme-accent-primary))] text-white hover:opacity-90 disabled:opacity-50 flex items-center gap-1"
-                      >
-                        {savingSettings ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                        Save
-                      </button>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="space-y-4">
-                  {AGENT_SETTINGS[agentId].map(setting => (
-                    <div key={setting.key} className="flex items-center justify-between p-3.5 rounded-xl bg-[hsl(var(--theme-bg-tertiary)/0.4)] border border-[hsl(var(--theme-border-default)/0.3)]">
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">{setting.label}</p>
-                      </div>
-                      
-                      {setting.type === 'toggle' && (
-                        <button
-                          onClick={() => updateSetting(setting.key, !settingsValues[setting.key])}
-                          className={`relative w-11 h-6 rounded-full transition-colors ${
-                            settingsValues[setting.key] ? 'bg-success' : 'bg-[hsl(var(--theme-bg-tertiary))]'
-                          }`}
-                        >
-                          <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow-sm ${
-                            settingsValues[setting.key] ? 'translate-x-5' : 'translate-x-0'
-                          }`} />
-                        </button>
-                      )}
-                      
-                      {setting.type === 'slider' && (
-                        <div className="flex items-center gap-3 w-48">
-                          <input
-                            type="range"
-                            min={setting.min}
-                            max={setting.max}
-                            value={settingsValues[setting.key] || setting.default}
-                            onChange={e => updateSetting(setting.key, Number(e.target.value))}
-                            className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer bg-[hsl(var(--theme-bg-tertiary))] accent-[hsl(var(--theme-accent-primary))]"
-                          />
-                          <span className="text-xs font-mono text-[hsl(var(--theme-text-muted))] min-w-[2ch] text-right">
-                            {settingsValues[setting.key] || setting.default}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {setting.type === 'select' && (
-                        <select
-                          value={settingsValues[setting.key] || setting.default}
-                          onChange={e => updateSetting(setting.key, e.target.value)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))]"
-                        >
-                          {setting.options?.map(opt => (
-                            <option key={opt} value={opt}>{opt.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <h2 className="mb-5 text-lg font-semibold text-[hsl(var(--theme-text-primary))]">Settings</h2>
+                <AgentSettingsForm routeId={agentId} />
+              </div>
+            </section>
+          )}
+
+          {/* What it did lately */}
+          {expandedSections.has('activity') && agentId && hasActivityPanel(agentId) && (
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default))] shadow-sm">
+              <div className="p-6">
+                <h2 className="mb-5 text-lg font-semibold text-[hsl(var(--theme-text-primary))]">What it did lately</h2>
+                <AgentActivity agentName={agentNameForRoute(agentId)} />
+              </div>
+            </section>
+          )}
+
+          {/* Where it acts */}
+          {expandedSections.has('channels') && agentId && hasActivityPanel(agentId) && (
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default))] shadow-sm">
+              <div className="p-6">
+                <h2 className="mb-5 text-lg font-semibold text-[hsl(var(--theme-text-primary))]">Where it acts</h2>
+                <ChannelCoverage agentType={agentNameForRoute(agentId)} />
+              </div>
+            </section>
+          )}
+
+          {/* Daily summaries */}
+          {expandedSections.has('schedules') && agentId === 'summarizer' && (
+            <section className="rounded-xl border bg-[hsl(var(--theme-bg-secondary)/0.6)] border-[hsl(var(--theme-border-default))] shadow-sm">
+              <div className="p-6">
+                <h2 className="mb-5 text-lg font-semibold text-[hsl(var(--theme-text-primary))]">Daily summaries</h2>
+                <SummarySchedules />
               </div>
             </section>
           )}

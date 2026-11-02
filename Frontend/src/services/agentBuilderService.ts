@@ -54,7 +54,22 @@ export function toPatchBody(values: Partial<AgentFormValues>): Record<string, un
   return channel_ids === undefined ? rest : { ...rest, permissions: { channel_ids } };
 }
 
+export interface AuraAnswer {
+  reply: string;
+  run_id: string;
+  tool_calls: number;
+  source: string;
+}
+
 export const agentBuilderService = {
+  /** The private Ask box: Aura answers you, nothing is posted. Follow-ups work for half an hour. */
+  askAura(question: string, channelId?: number | null): Promise<AuraAnswer> {
+    return http.post<AuraAnswer>(`${BASE}/aura/ask`, { question, ...(channelId ? { channel_id: channelId } : {}) });
+  },
+  /** Forget what Aura remembers of your private questions. */
+  clearAuraMemory(): Promise<{ success: boolean }> {
+    return api.del(`${BASE}/aura/memory`) as unknown as Promise<{ success: boolean }>;
+  },
   async templates(): Promise<AgentTemplate[]> {
     return (await http.get<{ templates: AgentTemplate[] }>(`${BASE}/templates`)).templates;
   },

@@ -258,7 +258,7 @@ export default function Dashboard() {
   // Available commands (priority-ordered; only top N are shown in the picker)
   const allCommands = [
     { command: '/summarize', description: 'Summarize recent messages', usage: '/summarize [count]' },
-    { command: '/ask',       description: 'Ask the AI Assistant',       usage: '/ask <question>' },
+    { command: '/ask',       description: 'Ask Aura',                   usage: '/ask <question>' },
     { command: '/support',   description: 'Ask the community knowledge base', usage: '/support <question>' },
     { command: '/translate', description: 'Translate text',              usage: '/translate <lang> <text>' },
     { command: '/help',      description: 'Show available commands',    usage: '/help' },
@@ -864,7 +864,7 @@ export default function Dashboard() {
     } else if (lowerCmd.startsWith('/support')) {
       setPendingCommand({ agent: 'support', label: 'Searching the knowledge base', displayName: 'Support' });
     } else if (lowerCmd.startsWith('/ask')) {
-      setPendingCommand({ agent: 'assistant', label: 'Thinking through your question', displayName: 'AI Assistant' });
+      setPendingCommand({ agent: 'assistant', label: 'Thinking through your question', displayName: 'Aura' });
     } else if (lowerCmd.startsWith('/translate')) {
       setPendingCommand({ agent: 'translator', label: 'Translating', displayName: 'Translator' });
     } else if (lowerCmd.startsWith('/extract')) {

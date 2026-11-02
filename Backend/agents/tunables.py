@@ -171,24 +171,6 @@ TUNABLES: dict[str, dict[str, dict]] = {
             "help": "Learned reward per welcome template (read-only).",
         },
     },
-    "assistant": {
-        "memory_size": {
-            "default": 5,
-            "type": "int",
-            "min": 2,
-            "max": 10,
-            "label": "Memory Size",
-            "help": "How many recent turns to keep in conversation memory.",
-        },
-        "memory_ttl_seconds": {
-            "default": 1800,
-            "type": "int",
-            "min": 300,
-            "max": 3600,
-            "label": "Memory TTL (seconds)",
-            "help": "How long a conversation memory survives idle.",
-        },
-    },
 }
 
 
