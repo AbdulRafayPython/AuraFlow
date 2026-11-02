@@ -25,6 +25,7 @@ import { useMentionableAgents } from "@/hooks/useMentionableAgents";
 import { useCommunityMembers } from "@/hooks/useCommunityMembers";
 import { useOpenAgent } from "@/components/ai-agents/AgentDetailPane";
 import { AgentAvatar } from "@/components/ai-agents/AgentMessageShell";
+import { AccountMenu } from "./AccountMenu";
 import CommunityMembersAddModal from "@/components/modals/CommunityMembersAddModal";
 import CreateChannelModal from "@/components/modals/CreateChannelModal";
 import ChannelManagementModal from "@/components/modals/ChannelManagementModal";
@@ -468,6 +469,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
             </button>
           </div>
         )}
+        <AccountMenu variant="panel" />
       </aside>
 
       {/* Add Members Modal - Only render when community exists */}

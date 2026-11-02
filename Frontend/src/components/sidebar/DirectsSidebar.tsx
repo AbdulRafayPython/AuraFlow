@@ -12,6 +12,7 @@ import FriendProfileModal from "@/components/modals/FriendProfileModal";
 import { Icon } from "@/components/app/Icon";
 import { SidebarListSkeleton } from "@/components/chat/MessageListSkeleton";
 import AgentLogo from "@/components/ai-agents/AgentLogo";
+import { AccountMenu } from "./AccountMenu";
 
 export interface CommunityFormData {
   name: string;
@@ -262,6 +263,7 @@ export default function DirectsSidebar({ frozen = false, fluid = false }: Direct
             )}
           </div>
         </div>
+        <AccountMenu variant="panel" />
       </aside>
 
       <FriendProfileModal
