@@ -1,7 +1,7 @@
 // REWRITE: ~2k-line page holding chat, composer, command picker and agent UI; split into components/hooks.
 // pages/Dashboard.tsx - Professional Real-time Version with Theme Support
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { Search, Hash, Paperclip, Bot, Sparkles, Sun, Moon, Wifi, WifiOff, Plus, Mic, SmilePlus, X, Reply, Pin, PinOff, Radio, BookOpen, Trash2, Brain, Languages } from "lucide-react";
+import { Search, Hash, Paperclip, Bot, Sparkles, Sun, Moon, Wifi, WifiOff, Plus, Mic, SmilePlus, X, Reply, Pin, PinOff, Radio, BookOpen, Trash2, Brain, Languages, Users } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
@@ -52,6 +52,7 @@ import EngagementCard from "@/components/ai-agents/cards/EngagementCard";
 import { AgentCardFrame } from "@/components/ai-agents/AgentMessageShell";
 import { useOpenAgent } from "@/components/ai-agents/AgentDetailPane";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import MemberList from "@/components/members/MemberList";
 import AgentResultPanel, { AgentResultTab, TranslationHistoryItem } from "@/components/ai-agents/AgentResultPanel";
 import ChannelInterventions from "@/components/ai-agents/ChannelInterventions";
 import QuickReplyChips from "@/components/chat/QuickReplyChips";
@@ -118,6 +119,16 @@ export default function Dashboard() {
   const { open: openRightPane, close: closeRightPane, content: rightPaneContent } = useRightPane();
   const openAgent = useOpenAgent();
   const isWide = useMediaQuery('(min-width: 1024px)');
+  // Member list column (Discord-style): remembered per browser, only on wide screens,
+  // and it gives way while the right pane (thread, Aura, agent) is open.
+  const isXl = useMediaQuery('(min-width: 1280px)');
+  const [membersOpen, setMembersOpen] = useState(() => {
+    try { return localStorage.getItem('auraflow:members-open') !== '0'; } catch { return true; }
+  });
+  const toggleMembers = () => setMembersOpen((open) => {
+    try { localStorage.setItem('auraflow:members-open', open ? '0' : '1'); } catch { /* storage unavailable */ }
+    return !open;
+  });
   // Message whose replies are open in the right pane.
   const [threadParentId, setThreadParentId] = useState<number | null>(null);
   // Bumped after a reaction so the hover toolbar re-reads recent emoji.
@@ -1382,6 +1393,23 @@ export default function Dashboard() {
             </button>
           )}
           
+          {/* Member list toggle */}
+          {currentChannel && (
+            <button
+              onClick={toggleMembers}
+              aria-pressed={membersOpen}
+              aria-label={membersOpen ? 'Hide member list' : 'Show member list'}
+              title={membersOpen ? 'Hide member list' : 'Show member list'}
+              className={`hidden xl:flex p-2 rounded-lg transition-colors ${
+                membersOpen
+                  ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
+                  : 'hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+            </button>
+          )}
+
           {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
@@ -1399,6 +1427,8 @@ export default function Dashboard() {
         </div>
       </header>
 
+      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-w-0 flex-1 flex-col">
       {/* Pinned Message Banner — fixed below header */}
       <PinnedMessageBanner
         pin={activePin}
@@ -1977,6 +2007,15 @@ export default function Dashboard() {
         </div>
       </footer>
       )}
+      </div>
+
+      {currentChannel && membersOpen && isXl && !rightPaneContent && (
+        <MemberList
+          communityId={currentCommunity?.id}
+          onSelectMember={(username, rect) => setProfilePopover({ username, rect })}
+        />
+      )}
+      </div>
 
 
 

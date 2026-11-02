@@ -16,13 +16,13 @@ import { toast } from "sonner";
 import { cn, getAvatarUrl } from "@/lib/utils";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
-import { channelService } from "@/services/channelService";
 import { voiceService } from "@/services/voiceService";
 import { socketService } from "@/services/socketService";
 import { useUnreadCounts } from "@/hooks/useUnreadCounts";
 import { Icon } from "@/components/app/Icon";
 import { SidebarListSkeleton } from "@/components/chat/MessageListSkeleton";
 import { useMentionableAgents } from "@/hooks/useMentionableAgents";
+import { useCommunityMembers } from "@/hooks/useCommunityMembers";
 import { useOpenAgent } from "@/components/ai-agents/AgentDetailPane";
 import { AgentAvatar } from "@/components/ai-agents/AgentMessageShell";
 import CommunityMembersAddModal from "@/components/modals/CommunityMembersAddModal";
@@ -36,15 +36,6 @@ interface ChannelSidebarProps {
   onCommunityManagementModalChange?: (isOpen: boolean) => void;
   /** Fill the container (mobile drawer) instead of the fixed 260px width. */
   fluid?: boolean;
-}
-
-interface CommunityMember {
-  id: number;
-  username: string;
-  email: string;
-  display_name?: string;
-  avatar_url?: string;
-  role: "owner" | "admin" | "member";
 }
 
 export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCommunityManagementModalChange, fluid = false }: ChannelSidebarProps) {
@@ -61,8 +52,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
 
   // Modal & Members State
   const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
-  const [communityMembers, setCommunityMembers] = useState<CommunityMember[]>([]);
-  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const { members: communityMembers, loading: isLoadingMembers, reload: loadMembers } = useCommunityMembers(currentCommunity?.id);
   const [isCreateChannelModalOpen, setIsCreateChannelModalOpen] = useState(false);
   const [selectedChannelForManagement, setSelectedChannelForManagement] = useState<any>(null);
   const [isCommunityManagementOpen, setIsCommunityManagementOpen] = useState(false);
@@ -138,30 +128,6 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceChannels.length, expandedSections.voice]);
-
-  // Fetch community members when current community changes
-  useEffect(() => {
-    if (currentCommunity?.id) {
-      loadMembers();
-    } else {
-      setCommunityMembers([]);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentCommunity?.id]);
-
-  const loadMembers = async () => {
-    if (!currentCommunity?.id) return;
-    setIsLoadingMembers(true);
-    try {
-      const members = await channelService.getCommunityMembers(currentCommunity.id);
-      setCommunityMembers(members);
-    } catch (err: any) {
-      console.error("Failed to load members:", err);
-      // Silent fail - don't show error toast for members loading
-    } finally {
-      setIsLoadingMembers(false);
-    }
-  };
 
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections((prev) => ({

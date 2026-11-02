@@ -72,6 +72,7 @@ export default {
         rail: "var(--rail-width)",
         sidebar: "var(--sidebar-width)",
         "right-pane": "var(--right-pane-width)",
+        members: "var(--members-width)",
       },
       colors: {
         border: "hsl(var(--border))",

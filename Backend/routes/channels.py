@@ -1416,7 +1416,8 @@ def get_community_members():
             # Get all community members
             cur.execute("""
                 SELECT 
-                    u.id, u.username, u.email, u.display_name, u.avatar_url, 
+                    u.id, u.public_id, u.username, u.email, u.display_name, u.avatar_url,
+                    u.status, u.custom_status, u.is_bot,
                     cm.role, cm.joined_at, cm.violation_count,
                     CASE WHEN bu.user_id IS NOT NULL THEN 1 ELSE 0 END as is_blocked
                 FROM community_members cm
@@ -1441,7 +1442,11 @@ def get_community_members():
             'email': m['email'],
             'display_name': m['display_name'] or m['username'],
             'avatar_url': m['avatar_url'] or f"https://api.dicebear.com/7.x/avataaars/svg?seed={m['username']}",
+            'public_id': m['public_id'],
             'role': m['role'],
+            'status': m['status'] or 'offline',
+            'custom_status': m['custom_status'],
+            'is_bot': bool(m['is_bot']),
             'joined_at': m['joined_at'].isoformat() if m['joined_at'] else None,
             'violation_count': m['violation_count'] if membership['role'] == 'owner' else None,
             'is_blocked': bool(m['is_blocked'])
