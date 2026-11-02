@@ -16,7 +16,7 @@ describe("MessageRow", () => {
     expect(html).toContain("Sarah Dev");
     expect(html).toContain("2:14 PM");
     expect(html).toContain("Hello team");
-    expect(html).toContain("rounded-lg"); // 36px rounded-square avatar
+    expect(html).toContain("rounded-full"); // 40px round avatar (Discord-style)
     expect(html).not.toContain("rounded-2xl");
   });
 

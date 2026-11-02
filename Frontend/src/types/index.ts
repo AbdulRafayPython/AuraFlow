@@ -216,6 +216,9 @@ export interface User {
 export interface CommunityMember extends User {
   role: 'owner' | 'admin' | 'member';
   is_blocked?: boolean;
+  /** Last persisted presence; live changes arrive on the `user_status` socket event. */
+  status?: 'online' | 'idle' | 'dnd' | 'offline';
+  custom_status?: string | null;
 }
 
 export interface BlockedUser {

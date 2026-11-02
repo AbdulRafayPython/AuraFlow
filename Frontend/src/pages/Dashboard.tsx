@@ -1,7 +1,7 @@
 // REWRITE: ~2k-line page holding chat, composer, command picker and agent UI; split into components/hooks.
 // pages/Dashboard.tsx - Professional Real-time Version with Theme Support
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { Search, Hash, Paperclip, Bot, Sparkles, Sun, Moon, Wifi, WifiOff, Plus, Mic, SmilePlus, X, Reply, Pin, PinOff, Radio, BookOpen, Trash2, Brain, Languages } from "lucide-react";
+import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from "react";
+import { Search, Hash, Paperclip, Bot, WifiOff, Plus, Mic, SmilePlus, X, Reply, Pin, PinOff, Radio, BookOpen, Trash2, Languages, Users } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
@@ -11,7 +11,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import EmojiPickerButton from "@/components/EmojiPickerButton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import ReactionPicker from "@/components/ReactionPicker";
-import { MessageRow, DayDivider, RepliesLink, NewMessagesLine } from "@/components/chat/MessageRow";
+import { MessageRow, DayDivider, RepliesLink, NewMessagesLine, NewMessagesBar } from "@/components/chat/MessageRow";
 import { MessageListSkeleton } from "@/components/chat/MessageListSkeleton";
 import { MessageToolbar } from "@/components/chat/MessageToolbar";
 import { Composer } from "@/components/chat/Composer";
@@ -52,6 +52,7 @@ import EngagementCard from "@/components/ai-agents/cards/EngagementCard";
 import { AgentCardFrame } from "@/components/ai-agents/AgentMessageShell";
 import { useOpenAgent } from "@/components/ai-agents/AgentDetailPane";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import MemberList from "@/components/members/MemberList";
 import AgentResultPanel, { AgentResultTab, TranslationHistoryItem } from "@/components/ai-agents/AgentResultPanel";
 import ChannelInterventions from "@/components/ai-agents/ChannelInterventions";
 import QuickReplyChips from "@/components/chat/QuickReplyChips";
@@ -88,8 +89,44 @@ function agentSlugFromAuthor(author: unknown): string {
   return 'assistant';
 }
 
+/** 32px channel-header icon button: tooltip, aria-label, pressed state, optional count. */
+function HeaderIconButton({ label, active, onClick, badge = 0, className, children }: {
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+  badge?: number;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={label}
+          aria-pressed={active}
+          className={`relative flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+            active
+              ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
+              : 'text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]'
+          } ${className ?? ''}`}
+        >
+          {children}
+          {badge > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full text-xs font-semibold px-1 bg-[hsl(var(--theme-accent-primary))] text-white">
+              {badge}
+            </span>
+          )}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export default function Dashboard() {
-  const { isDarkMode, toggleTheme, currentTheme, setTheme, themes } = useTheme();
+  const { currentTheme, setTheme, themes } = useTheme();
   const { user: authUser } = useAuth();
   const {
     isConnected,
@@ -118,6 +155,16 @@ export default function Dashboard() {
   const { open: openRightPane, close: closeRightPane, content: rightPaneContent } = useRightPane();
   const openAgent = useOpenAgent();
   const isWide = useMediaQuery('(min-width: 1024px)');
+  // Member list column (Discord-style): remembered per browser, only on wide screens,
+  // and it gives way while the right pane (thread, Aura, agent) is open.
+  const isXl = useMediaQuery('(min-width: 1280px)');
+  const [membersOpen, setMembersOpen] = useState(() => {
+    try { return localStorage.getItem('auraflow:members-open') !== '0'; } catch { return true; }
+  });
+  const toggleMembers = () => setMembersOpen((open) => {
+    try { localStorage.setItem('auraflow:members-open', open ? '0' : '1'); } catch { /* storage unavailable */ }
+    return !open;
+  });
   // Message whose replies are open in the right pane.
   const [threadParentId, setThreadParentId] = useState<number | null>(null);
   // Bumped after a reaction so the hover toolbar re-reads recent emoji.
@@ -755,6 +802,7 @@ export default function Dashboard() {
   // Handle scroll to load more messages
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const element = e.currentTarget;
+    checkUnreadAbove();
     if (element.scrollTop === 0 && !isLoadingMessages) {
       loadMoreMessages();
     }
@@ -1115,6 +1163,24 @@ export default function Dashboard() {
   }
   const quickEmoji = useMemo(() => getRecentEmoji(3), [recentEmojiVersion]);
 
+  // "N new messages" bar: shown while the first unread message is above the viewport,
+  // until it is scrolled into view or marked read.
+  const [unreadAbove, setUnreadAbove] = useState(false);
+  const [newBarDismissed, setNewBarDismissed] = useState<number | null>(null);
+  const checkUnreadAbove = useCallback(() => {
+    const id = entryUnreadRef.current?.firstId;
+    const container = messagesContainerRef.current;
+    const el = id != null ? document.getElementById(`msg-${id}`) : null;
+    setUnreadAbove(!!el && !!container && el.getBoundingClientRect().top < container.getBoundingClientRect().top);
+  }, []);
+  useEffect(() => {
+    // After the list renders and auto-scrolls to the bottom.
+    const t = setTimeout(checkUnreadAbove, 300);
+    return () => clearTimeout(t);
+  }, [visibleMessages.length, currentChannel?.id, checkUnreadAbove]);
+  const firstUnreadMsg = entry?.firstId != null ? visibleMessages.find((m) => m.id === entry.firstId) : undefined;
+  const showNewBar = !!currentChannel && !!firstUnreadMsg && unreadAbove && newBarDismissed !== currentChannel.id;
+
   const openThread = (id: number) => {
     if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
       setThreadParentId(id);
@@ -1273,132 +1339,79 @@ export default function Dashboard() {
               first (normal, harmless) socket handshake on page load — only
               shown once connected, or if a connection that existed before
               actually drops. Nothing to alarm the user about before then. */}
-          {(isConnected || hasConnectedOnce) && (
-            <div className={`ml-2 flex shrink-0 items-center gap-1 px-2 ${
-              isConnected
-                ? "text-success"
-                : "text-destructive"
-            }`}>
-              {isConnected ? (
-                <Wifi className="w-3.5 h-3.5" />
-              ) : (
-                <>
-                  <WifiOff className="w-3.5 h-3.5" />
-                  <span className="text-xs">Reconnecting...</span>
-                </>
-              )}
+          {hasConnectedOnce && !isConnected && (
+            <div className="ml-2 flex shrink-0 items-center gap-1 px-2 text-destructive" role="status">
+              <WifiOff className="w-3.5 h-3.5" />
+              <span className="text-xs">Reconnecting...</span>
             </div>
           )}
         </div>
 
         <div className="flex min-w-0 shrink items-center gap-1 sm:gap-2 pr-2 sm:pr-4">
-          {/* Search Button - Ctrl+K */}
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="hidden md:flex min-w-0 shrink items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-sm border transition-colors bg-[hsl(var(--theme-input-bg))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-muted))] hover:border-[hsl(var(--theme-accent-primary)/0.5)] hover:text-[hsl(var(--theme-text-secondary))] w-56"
-          >
-            <Search className="w-4 h-4 flex-shrink-0" />
-            <span className="min-w-0 flex-1 truncate text-left text-sm">Search messages...</span>
-          </button>
+          {/* Pinned Messages */}
+          {currentChannel && (
+            <HeaderIconButton
+              label="Pinned messages"
+              active={pinsOpen}
+              onClick={() => setPinsOpen(prev => !prev)}
+              badge={pinnedCount}
+            >
+              <Pin className="w-4 h-4" />
+            </HeaderIconButton>
+          )}
+
+          {/* Aura: panel + Assist actions + summaries / knowledge, one menu */}
+          {currentChannel && (
+            <AgentBar
+              channelId={currentChannel.id}
+              channelName={currentChannel.name}
+              communityId={currentCommunity?.id ?? null}
+              onOpenPanel={(tab) => {
+                setAgentPanelTab(tab);
+                setAgentPanelOpen(true);
+              }}
+              panelOpen={auraOpen}
+              onTogglePanel={() => {
+                if (auraOpen) { setAgentPanelOpen(false); setKbPanelOpen(false); }
+                else { setAgentPanelTab(isCommunityAdmin ? 'activity' : 'recap'); setAgentPanelOpen(true); }
+              }}
+              summaryCount={savedSummaries.length}
+              onOpenSummaryHistory={() => setSummaryHistoryOpen(true)}
+              onOpenKnowledgeBase={() => setKbPanelOpen(true)}
+            />
+          )}
 
           {/* Auto-translate language (per-viewer inline translation) */}
           {currentChannel && (
             <LanguageMenu value={translateLang} onChange={setTranslateLang} />
           )}
 
-          {/* Aura: opens the assistant / channel intelligence in the right pane */}
+          {/* Member list toggle */}
           {currentChannel && (
-            <button
-              onClick={() => {
-                if (auraOpen) { setAgentPanelOpen(false); setKbPanelOpen(false); }
-                else { setAgentPanelTab(isCommunityAdmin ? 'activity' : 'recap'); setAgentPanelOpen(true); }
-              }}
-              aria-pressed={auraOpen}
-              title="Aura"
-              aria-label="Aura"
-              className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
-                auraOpen
-                  ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
-                  : 'text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))]'
-              }`}
+            <HeaderIconButton
+              label={membersOpen ? 'Hide member list' : 'Show member list'}
+              active={membersOpen}
+              onClick={toggleMembers}
+              className="hidden xl:flex"
             >
-              <Sparkles className="w-4 h-4" />
-              <span className="hidden xl:inline">Aura</span>
-            </button>
+              <Users className="w-4 h-4" />
+            </HeaderIconButton>
           )}
 
-          {/* Summary History */}
-          {currentChannel && (
-            <button
-              onClick={() => setSummaryHistoryOpen(prev => !prev)}
-              className={`p-2 rounded-lg transition-colors relative ${
-                summaryHistoryOpen
-                  ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
-                  : 'hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]'
-              }`}
-              title="Summary History"
-            >
-              <BookOpen className="w-4 h-4" />
-              {savedSummaries.length > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center rounded-full text-xs font-semibold px-1 bg-[hsl(var(--theme-accent-primary))] text-white">
-                  {savedSummaries.length}
-                </span>
-              )}
-            </button>
-          )}
-
-          {/* Knowledge Base */}
-          {currentChannel && (
-            <button
-              onClick={() => setKbPanelOpen(prev => !prev)}
-              className={`p-2 rounded-lg transition-colors relative ${
-                kbPanelOpen
-                  ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
-                  : 'hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]'
-              }`}
-              title="Knowledge Base"
-            >
-              <Brain className="w-4 h-4" />
-            </button>
-          )}
-
-          {/* Pinned Messages */}
-          {currentChannel && (
-            <button
-              onClick={() => setPinsOpen(prev => !prev)}
-              className={`p-2 rounded-lg transition-colors relative ${
-                pinsOpen
-                  ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
-                  : 'hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]'
-              }`}
-              title="Pinned Messages"
-            >
-              <Pin className="w-4 h-4" />
-              {pinnedCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center rounded-full text-xs font-semibold px-1 bg-[hsl(var(--theme-accent-primary))] text-white">
-                  {pinnedCount}
-                </span>
-              )}
-            </button>
-          )}
-          
-          {/* Theme Toggle */}
+          {/* Search - Ctrl+K */}
           <button
-            onClick={toggleTheme}
-            className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]"
-            title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            onClick={() => setSearchOpen(true)}
+            aria-label="Search messages"
+            className="hidden md:flex min-w-0 shrink items-center gap-2 pl-2 pr-2 h-7 rounded-md text-sm transition-[width,colors] bg-[hsl(var(--theme-input-bg))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-secondary))] w-40 focus-visible:w-56"
           >
-            {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            <span className="min-w-0 flex-1 truncate text-left text-sm">Search</span>
+            <Search className="w-4 h-4 flex-shrink-0" />
           </button>
-          
-          {/* <button
-            className="p-2 rounded-lg transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]"
-          >
-            <Settings className="w-4 h-4" />
-          </button> */}
         </div>
       </header>
 
+      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-w-0 flex-1 flex-col">
       {/* Pinned Message Banner — fixed below header */}
       <PinnedMessageBanner
         pin={activePin}
@@ -1407,19 +1420,13 @@ export default function Dashboard() {
         onJumpToMessage={scrollToMessage}
       />
 
-      {/* AI Agent Bar — only renders if at least one agent is active */}
-      {currentChannel && (
-        <div className="px-3 pt-2">
-          <AgentBar
-            channelId={currentChannel.id}
-            channelName={currentChannel.name}
-            communityId={currentCommunity?.id ?? null}
-            onOpenPanel={(tab) => {
-              setAgentPanelTab(tab);
-              setAgentPanelOpen(true);
-            }}
-          />
-        </div>
+      {showNewBar && firstUnreadMsg && entry && (
+        <NewMessagesBar
+          count={entry.count}
+          since={new Date(firstUnreadMsg.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+          onJump={() => scrollToMessage(firstUnreadMsg.id)}
+          onMarkRead={() => setNewBarDismissed(currentChannel!.id)}
+        />
       )}
 
       {/* Messages */}
@@ -1487,7 +1494,8 @@ export default function Dashboard() {
               {visibleMessages.map((msg, index) => {
                 const prevMsg = visibleMessages[index - 1];
                 const showDateDivider = index !== 0 && startsNewDay(prevMsg, msg);
-                const grouped = !startsGroup(prevMsg, msg);
+                // The "New" line starts a fresh group, so the first unread message has its header.
+                const grouped = !startsGroup(prevMsg, msg) && entryUnreadRef.current?.firstId !== msg.id;
                 const authorName = msg.author || "Unknown User";
                 const replyCount = replyIndex.get(msg.id)?.length ?? 0;
 
@@ -1512,6 +1520,8 @@ export default function Dashboard() {
                             return a ? () => openAgent(a) : undefined;
                           })()}
                           timestamp={formatMessageTime(msg.created_at)}
+                          grouped={grouped}
+                          shortTimeLabel={new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
                         >
                           {msg.reply_to_preview && (
                             <ReplyPreview
@@ -1814,15 +1824,6 @@ export default function Dashboard() {
             accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.zip,.rar,.7z"
           />
 
-          {/* Reply Bar */}
-          {replyingTo && (
-            <ReplyBar
-              message={replyingTo}
-              authorName={replyingTo.author || 'Unknown'}
-              onCancel={() => setReplyingTo(null)}
-            />
-          )}
-
           {/* File Upload Preview */}
           {pendingFile && (
             <FileUploadPreview
@@ -1905,26 +1906,6 @@ export default function Dashboard() {
             />
           )}
 
-          {/* Quick reply chips — last inbound message in the channel */}
-          {currentChannel && (
-            <QuickReplyChips
-              lastMessage={(() => {
-                for (let i = messages.length - 1; i >= 0; i--) {
-                  const m: any = messages[i];
-                  if (m && m.sender_id !== authUser?.id && m.message_type !== 'ai' && m.content) {
-                    return String(m.content).slice(0, 300);
-                  }
-                }
-                return null;
-              })()}
-              enabled={!!currentChannel}
-              onPick={(text) => {
-                setMessage(prev => (prev ? `${prev} ${text}` : text));
-                inputRef.current?.focus();
-              }}
-            />
-          )}
-
           {/* Sending/uploading go over plain HTTP, not the socket, so none of the
               compose controls wait on isConnected: that only gates real-time
               delivery to OTHER users, not your own ability to type and send. */}
@@ -1948,6 +1929,39 @@ export default function Dashboard() {
             }
             disabled={!currentChannel || isSending}
             commandMode={message.startsWith('/')}
+            attached={
+              <>
+                {/* Reply Bar */}
+                {replyingTo && (
+                  <ReplyBar
+                    message={replyingTo}
+                    authorName={replyingTo.author || 'Unknown'}
+                    onCancel={() => setReplyingTo(null)}
+                    attached
+                  />
+                )}
+                {/* Quick reply chips — last inbound message in the channel */}
+                {currentChannel && (
+                  <QuickReplyChips
+                    attached
+                    lastMessage={(() => {
+                      for (let i = messages.length - 1; i >= 0; i--) {
+                        const m: any = messages[i];
+                        if (m && m.sender_id !== authUser?.id && m.message_type !== 'ai' && m.content) {
+                          return String(m.content).slice(0, 300);
+                        }
+                      }
+                      return null;
+                    })()}
+                    enabled={!!currentChannel}
+                    onPick={(text) => {
+                      setMessage(prev => (prev ? `${prev} ${text}` : text));
+                      inputRef.current?.focus();
+                    }}
+                  />
+                )}
+              </>
+            }
             onAttach={() => fileInputRef.current?.click()}
             trailing={
               <>
@@ -1977,6 +1991,15 @@ export default function Dashboard() {
         </div>
       </footer>
       )}
+      </div>
+
+      {currentChannel && membersOpen && isXl && !rightPaneContent && (
+        <MemberList
+          communityId={currentCommunity?.id}
+          onSelectMember={(username, rect) => setProfilePopover({ username, rect })}
+        />
+      )}
+      </div>
 
 
 

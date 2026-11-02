@@ -118,6 +118,7 @@
     /* Layout metrics (P1 shell) */
     --rail-width: 56px;
     --sidebar-width: 260px;
+    --members-width: 240px;
     --right-pane-width: 380px;
 
     /* Motion */

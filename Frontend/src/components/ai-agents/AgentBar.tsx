@@ -1,25 +1,27 @@
 // Frontend/src/components/ai-agents/AgentBar.tsx
 //
-// F2 — Channel Assist strip (the slim version).
+// F2 — Channel Assist, as the channel header's "Aura" menu (Discord-style
+// header: one row, one AI entry point instead of a second toolbar strip).
+// High-intent actions:
 //
-// Per docs/AUTONOMOUS_AGENT_FRONTEND_REDESIGN.md §8.3 + §16/F2, this bar is
-// _not_ where autonomy lives — it is where deliberate user assistance begins.
-// Four high-intent actions:
-//
-//   • Ask              → opens an inline assistant popover (assistant agent)
-//   • Translate        → opens an inline translator popover (translator agent)
+//   • Ask              → assistant popover (assistant agent)
+//   • Translate        → translator popover (translator agent)
 //   • Catch me up      → summarizeChannel on this channel (summarizer)
 //   • Search knowledge → opens the rail's Knowledge tab (support / KB)
+//   • Spark            → engagement content picker (engagement agent)
+//
+// Plus the channel-intelligence entries the header used to carry as separate
+// icons (Aura panel, summary history, knowledge base), passed in by the page.
 //
 // Autonomous interventions (support_suggestion, summary_checkpoint,
 // focus.drift, moderation, per-viewer translation) live INLINE in the
 // message list and on the Channel Intelligence rail — not here.
 //
-// The bar gracefully degrades: each button is enabled only if its underlying
-// agent is installed (community-scoped) or active (personal). If none are
-// reachable for the current channel, the bar hides itself.
+// Each action shows only if its underlying agent is installed
+// (community-scoped) or active (personal). Ask is always there (Aura is
+// built in for everyone).
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Sparkles,
   Languages,
@@ -32,12 +34,24 @@ import {
   BarChart3,
   Snowflake,
   PartyPopper,
+  ChevronDown,
+  Brain,
+  PanelRight,
 } from 'lucide-react';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useRealtime } from '@/hooks/useRealtime';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import { accentFor } from './AgentAccent';
 import { aiAgentService } from '@/services/aiAgentService';
 import agentBuilderService from '@/services/agentBuilderService';
@@ -51,14 +65,23 @@ export interface AgentBarProps {
   onOpenPanel?: (tab: 'activity' | 'recap' | 'knowledge' | 'focus' | 'translations' | 'safety') => void;
   /** Toggle to refresh anything the rail caches. */
   onResultUpdated?: () => void;
+  /** Aura panel (right pane) is open: the trigger shows pressed. */
+  panelOpen?: boolean;
+  /** Toggle the Aura panel. */
+  onTogglePanel?: () => void;
+  /** Saved summaries for this viewer; opens the history panel. */
+  summaryCount?: number;
+  onOpenSummaryHistory?: () => void;
+  onOpenKnowledgeBase?: () => void;
 }
 
 type ActionKey = 'ask' | 'translate' | 'catchup' | 'knowledge' | 'spark';
+type PopoverKey = 'ask' | 'translate' | 'spark';
 
 interface ActionDef {
   key: ActionKey;
   label: string;
-  Icon: React.ComponentType<{ className?: string }>;
+  Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   /** Agent name used by AgentAccent for the icon tint. */
   agent: string;
   /** DB agent_type(s) that must be installed/active for this action. */
@@ -68,14 +91,14 @@ interface ActionDef {
 const ACTIONS: ActionDef[] = [
   {
     key: 'ask',
-    label: 'Ask',
+    label: 'Ask Aura',
     Icon: Sparkles,
     agent: 'assistant',
     requires: [],                      // Aura is built in for everyone
   },
   {
     key: 'translate',
-    label: 'Translate',
+    label: 'Translate text',
     Icon: Languages,
     agent: 'translator',
     requires: [{ scope: 'personal', types: ['translator'] }],
@@ -98,7 +121,7 @@ const ACTIONS: ActionDef[] = [
   },
   {
     key: 'spark',
-    label: 'Spark',
+    label: 'Spark a conversation',
     Icon: Zap,
     agent: 'engagement',
     requires: [{ scope: 'community', types: ['engagement'] }],
@@ -111,6 +134,11 @@ export default function AgentBar({
   communityId,
   onOpenPanel,
   onResultUpdated,
+  panelOpen,
+  onTogglePanel,
+  summaryCount = 0,
+  onOpenSummaryHistory,
+  onOpenKnowledgeBase,
 }: AgentBarProps) {
   const { addLocalMessage } = useRealtime();
   const { toast } = useToast();
@@ -118,6 +146,10 @@ export default function AgentBar({
   const [communityActive, setCommunityActive] = useState<Set<string>>(new Set());
   const [personalActive, setPersonalActive] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<ActionKey | null>(null);
+  const [popover, setPopover] = useState<PopoverKey | null>(null);
+  // An action popover picked from the menu opens only once the menu has fully
+  // closed; opening it earlier lets the menu's close dismiss it again.
+  const pendingPopover = useRef<PopoverKey | null>(null);
 
   // ── Load installed/active state ───────────────────────────────────────
   useEffect(() => {
@@ -204,199 +236,141 @@ export default function AgentBar({
     }
   };
 
-  const openKnowledge = () => {
-    onOpenPanel?.('knowledge');
+  const sendSpark = async (kind: 'starter' | 'poll' | 'icebreaker' | 'pack') => {
+    if (!channelId) return;
+    const r = await aiAgentService.sendEngagementContent(channelId, kind);
+    if (r?.success) {
+      // Render each posted card immediately rather than waiting on
+      // the socket echo (which can be missed when emitted from the
+      // HTTP request thread). addLocalMessage dedups the echo if it
+      // does arrive. A 'pack' posts several items (starter + poll +
+      // icebreaker), each its own interactive card.
+      const items = Array.isArray(r.items) ? r.items : [];
+      for (const it of items) {
+        if (!it?.message_id) continue;
+        addLocalMessage({
+          id: Number(it.message_id),
+          channel_id: Number(it.channel_id ?? channelId),
+          sender_id: 0,
+          content: it.content || '',
+          message_type: 'ai',
+          created_at: it.created_at || new Date().toISOString(),
+          author: it.author || 'Engagement Agent',
+          card: it.card || undefined,
+        } as Message);
+      }
+      toast({ title: 'Posted to the channel ✨', description: 'The engagement agent just shared something.' });
+      onResultUpdated?.();
+      setPopover(null);
+    } else {
+      toast({ title: 'Could not post', description: r?.error || 'Try again.', variant: 'destructive' });
+    }
   };
 
-  if (visible.length === 0) {
-    return null;
-  }
+  const select = (key: ActionKey) => {
+    if (key === 'catchup') void runCatchUp();
+    else if (key === 'knowledge') onOpenPanel?.('knowledge');
+    else pendingPopover.current = key;
+  };
 
   return (
-    <div
-      className={
-        'flex items-center gap-1 overflow-x-auto rounded-md ' +
-        'border border-[hsl(var(--theme-border-default))] ' +
-        'bg-[hsl(var(--theme-bg-secondary))] px-2 py-1.5'
-      }
-      role="toolbar"
-      aria-label="Channel AI assist"
-    >
-      <span className="shrink-0 px-1 text-xs font-medium  text-[hsl(var(--theme-text-muted))]">
-        Assist
-      </span>
-      <span
-        aria-hidden
-        className="mx-1 h-4 w-px shrink-0 bg-[hsl(var(--theme-border-default))]"
-      />
+    <Popover open={popover !== null} onOpenChange={(open) => !open && setPopover(null)}>
+      <DropdownMenu>
+        <PopoverAnchor asChild>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="Aura menu"
+              title="Aura"
+              className={cn(
+                'flex items-center gap-1 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
+                panelOpen
+                  ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
+                  : 'text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]',
+              )}
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              <span className="hidden xl:inline">Aura</span>
+              <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+            </button>
+          </DropdownMenuTrigger>
+        </PopoverAnchor>
+        <DropdownMenuContent
+          align="end"
+          className="w-60"
+          onCloseAutoFocus={(e) => {
+            const key = pendingPopover.current;
+            if (!key) return;
+            pendingPopover.current = null;
+            e.preventDefault();
+            setPopover(key);
+          }}
+        >
+          {onTogglePanel && (
+            <DropdownMenuItem onSelect={onTogglePanel} className="gap-2">
+              <PanelRight className="h-4 w-4" />
+              <span className="flex-1">{panelOpen ? 'Close Aura panel' : 'Open Aura panel'}</span>
+            </DropdownMenuItem>
+          )}
+          {visible.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Assist</DropdownMenuLabel>
+              {visible.map((def) => (
+                <DropdownMenuItem
+                  key={def.key}
+                  onSelect={() => select(def.key)}
+                  disabled={(def.key === 'catchup' || def.key === 'spark') && (!channelId || busy === def.key)}
+                  className="gap-2"
+                >
+                  <def.Icon className="h-4 w-4" style={{ color: accentFor(def.agent) }} />
+                  <span className="flex-1">{def.label}</span>
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
+          {(onOpenSummaryHistory || onOpenKnowledgeBase) && <DropdownMenuSeparator />}
+          {onOpenSummaryHistory && (
+            <DropdownMenuItem onSelect={onOpenSummaryHistory} className="gap-2">
+              <BookOpen className="h-4 w-4" />
+              <span className="flex-1">Summary history</span>
+              {summaryCount > 0 && <span className="text-xs text-muted-foreground">{summaryCount}</span>}
+            </DropdownMenuItem>
+          )}
+          {onOpenKnowledgeBase && (
+            <DropdownMenuItem onSelect={onOpenKnowledgeBase} className="gap-2">
+              <Brain className="h-4 w-4" />
+              <span className="flex-1">Knowledge base</span>
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
-      {visible.map((def) => {
-        const isBusy = busy === def.key;
-        const Icon = def.Icon;
-        const accent = accentFor(def.agent);
-
-        if (def.key === 'ask') {
-          return (
-            <AskPopover
-              key={def.key}
-              accent={accent}
-              icon={<Icon className="h-4 w-4" />}
-              label={def.label}
-              onAsk={(q) => agentBuilderService.askAura(q, channelId)}
-            />
-          );
-        }
-        if (def.key === 'translate') {
-          return (
-            <TranslatePopover
-              key={def.key}
-              accent={accent}
-              icon={<Icon className="h-4 w-4" />}
-              label={def.label}
-              onTranslate={(text, target) => aiAgentService.translateText(text, target)}
-            />
-          );
-        }
-        if (def.key === 'catchup') {
-          return (
-            <AssistButton
-              key={def.key}
-              accent={accent}
-              icon={isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
-              label={def.label}
-              onClick={runCatchUp}
-              disabled={!channelId || isBusy}
-            />
-          );
-        }
-        if (def.key === 'spark') {
-          return (
-            <SparkPopover
-              key={def.key}
-              accent={accent}
-              icon={<Icon className="h-4 w-4" />}
-              label={def.label}
-              disabled={!channelId}
-              onSend={async (kind) => {
-                if (!channelId) return;
-                const r = await aiAgentService.sendEngagementContent(channelId, kind);
-                if (r?.success) {
-                  // Render each posted card immediately rather than waiting on
-                  // the socket echo (which can be missed when emitted from the
-                  // HTTP request thread). addLocalMessage dedups the echo if it
-                  // does arrive. A 'pack' posts several items (starter + poll +
-                  // icebreaker), each its own interactive card.
-                  const items = Array.isArray(r.items) ? r.items : [];
-                  for (const it of items) {
-                    if (!it?.message_id) continue;
-                    addLocalMessage({
-                      id: Number(it.message_id),
-                      channel_id: Number(it.channel_id ?? channelId),
-                      sender_id: 0,
-                      content: it.content || '',
-                      message_type: 'ai',
-                      created_at: it.created_at || new Date().toISOString(),
-                      author: it.author || 'Engagement Agent',
-                      card: it.card || undefined,
-                    } as Message);
-                  }
-                  toast({ title: 'Posted to the channel ✨', description: 'The engagement agent just shared something.' });
-                  onResultUpdated?.();
-                } else {
-                  toast({ title: 'Could not post', description: r?.error || 'Try again.', variant: 'destructive' });
-                }
-              }}
-            />
-          );
-        }
-        // knowledge
-        return (
-          <AssistButton
-            key={def.key}
-            accent={accent}
-            icon={<Icon className="h-4 w-4" />}
-            label={def.label}
-            onClick={openKnowledge}
+      <PopoverContent
+        align="end"
+        className={cn(
+          'border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] shadow-none',
+          popover === 'spark' ? 'w-72 p-2' : 'w-80 p-3',
+        )}
+      >
+        {popover === 'ask' && (
+          <AskBody accent={accentFor('assistant')} onAsk={(q) => agentBuilderService.askAura(q, channelId)} />
+        )}
+        {popover === 'translate' && (
+          <TranslateBody
+            accent={accentFor('translator')}
+            onTranslate={(text, target) => aiAgentService.translateText(text, target)}
           />
-        );
-      })}
-    </div>
+        )}
+        {popover === 'spark' && <SparkBody accent={accentFor('engagement')} onSend={sendSpark} />}
+      </PopoverContent>
+    </Popover>
   );
 }
 
-/* ─── Subcomponents ───────────────────────────────────────────────── */
+/* ─── Popover bodies ──────────────────────────────────────────────── */
 
-interface AssistButtonProps {
-  accent: string;
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-}
-
-function AssistButton({ accent, icon, label, onClick, disabled }: AssistButtonProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      className={
-        'group inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 ' +
-        'text-xs font-medium text-[hsl(var(--theme-text-secondary))] ' +
-        'transition-colors [transition-duration:140ms] ' +
-        'hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))] ' +
-        'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
-      }
-    >
-      <span style={{ color: accent }} className="inline-flex shrink-0 items-center">
-        {icon}
-      </span>
-      <span className="hidden sm:inline">{label}</span>
-    </button>
-  );
-}
-
-function AssistTrigger({
-  accent,
-  icon,
-  label,
-}: {
-  accent: string;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      title={label}
-      className={
-        'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 ' +
-        'text-xs font-medium text-[hsl(var(--theme-text-secondary))] ' +
-        'transition-colors [transition-duration:140ms] ' +
-        'hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]'
-      }
-    >
-      <span style={{ color: accent }} className="inline-flex shrink-0 items-center">
-        {icon}
-      </span>
-      <span className="hidden sm:inline">{label}</span>
-    </button>
-  );
-}
-
-function AskPopover({
-  accent,
-  icon,
-  label,
-  onAsk,
-}: {
-  accent: string;
-  icon: React.ReactNode;
-  label: string;
-  onAsk: (q: string) => Promise<any>;
-}) {
-  const [open, setOpen] = useState(false);
+function AskBody({ accent, onAsk }: { accent: string; onAsk: (q: string) => Promise<any> }) {
   const [q, setQ] = useState('');
   const [a, setA] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -417,82 +391,64 @@ function AskPopover({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <span>
-          <AssistTrigger accent={accent} icon={icon} label={label} />
-        </span>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-80 border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] p-3 shadow-none"
-      >
-        <div className="space-y-3">
-          <h4 className="flex items-center gap-1.5 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
-            <Sparkles className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
-            Ask Aura
-          </h4>
-          <div className="flex gap-2">
-            <Input
-              autoFocus
-              placeholder="What do you want to know?"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-              className="h-8 text-xs"
-            />
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={submit}
-              disabled={loading || !q.trim()}
-              className="h-8 px-2"
-            >
-              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            </Button>
-          </div>
-          {a && (
-            <div className="rounded border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] p-2.5 text-xs leading-5 text-[hsl(var(--theme-text-secondary))] whitespace-pre-wrap">
-              {a}
-            </div>
-          )}
-          <p className="text-xs text-[hsl(var(--theme-text-muted))]">
-            Replies stay private to you. Follow-ups remember your last few questions for 30 minutes.{' '}
-            <button
-              type="button"
-              className="underline hover:text-[hsl(var(--theme-text-primary))]"
-              onClick={() => {
-                void agentBuilderService.clearAuraMemory().then(() => setA(null)).catch(() => undefined);
-              }}
-            >
-              Start over
-            </button>
-          </p>
+    <div className="space-y-3">
+      <h4 className="flex items-center gap-1.5 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
+        <Sparkles className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
+        Ask Aura
+      </h4>
+      <div className="flex gap-2">
+        <Input
+          autoFocus
+          placeholder="What do you want to know?"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          className="h-8 text-xs"
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={submit}
+          disabled={loading || !q.trim()}
+          className="h-8 px-2"
+          aria-label="Ask"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+        </Button>
+      </div>
+      {a && (
+        <div className="rounded border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] p-2.5 text-xs leading-5 text-[hsl(var(--theme-text-secondary))] whitespace-pre-wrap">
+          {a}
         </div>
-      </PopoverContent>
-    </Popover>
+      )}
+      <p className="text-xs text-[hsl(var(--theme-text-muted))]">
+        Replies stay private to you. Follow-ups remember your last few questions for 30 minutes.{' '}
+        <button
+          type="button"
+          className="underline hover:text-[hsl(var(--theme-text-primary))]"
+          onClick={() => {
+            void agentBuilderService.clearAuraMemory().then(() => setA(null)).catch(() => undefined);
+          }}
+        >
+          Start over
+        </button>
+      </p>
+    </div>
   );
 }
 
-function SparkPopover({
+function SparkBody({
   accent,
-  icon,
-  label,
-  disabled,
   onSend,
 }: {
   accent: string;
-  icon: React.ReactNode;
-  label: string;
-  disabled?: boolean;
   onSend: (kind: 'starter' | 'poll' | 'icebreaker' | 'pack') => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
   const OPTIONS: {
@@ -511,74 +467,58 @@ function SparkPopover({
     setBusy(kind);
     try {
       await onSend(kind);
-      setOpen(false);
     } finally {
       setBusy(null);
     }
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild disabled={disabled}>
-        <span>
-          <AssistTrigger accent={accent} icon={icon} label={label} />
-        </span>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-72 border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] p-2 shadow-none"
-      >
-        <h4 className="flex items-center gap-1.5 px-1.5 py-1 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
-          <Zap className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
-          Spark a conversation
-        </h4>
-        <p className="px-1.5 pb-1.5 text-xs text-[hsl(var(--theme-text-muted))]">
-          Posts into this channel for everyone to see.
-        </p>
-        <div className="space-y-1">
-          {OPTIONS.map((opt) => {
-            const isBusy = busy === opt.kind;
-            const OptIcon = opt.Icon;
-            return (
-              <button
-                key={opt.kind}
-                type="button"
-                disabled={!!busy}
-                onClick={() => run(opt.kind)}
-                className={
-                  'flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left ' +
-                  'transition-colors [transition-duration:140ms] ' +
-                  'hover:bg-[hsl(var(--theme-bg-hover))] disabled:opacity-50 disabled:cursor-not-allowed'
-                }
-              >
-                <span style={{ color: accent }} className="mt-0.5 inline-flex shrink-0 items-center">
-                  {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <OptIcon className="h-4 w-4" />}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-xs font-medium text-[hsl(var(--theme-text-primary))]">{opt.label}</span>
-                  <span className="block text-xs leading-4 text-[hsl(var(--theme-text-muted))]">{opt.desc}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <>
+      <h4 className="flex items-center gap-1.5 px-1.5 py-1 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
+        <Zap className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
+        Spark a conversation
+      </h4>
+      <p className="px-1.5 pb-1.5 text-xs text-[hsl(var(--theme-text-muted))]">
+        Posts into this channel for everyone to see.
+      </p>
+      <div className="space-y-1">
+        {OPTIONS.map((opt) => {
+          const isBusy = busy === opt.kind;
+          const OptIcon = opt.Icon;
+          return (
+            <button
+              key={opt.kind}
+              type="button"
+              disabled={!!busy}
+              onClick={() => run(opt.kind)}
+              className={
+                'flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left ' +
+                'transition-colors [transition-duration:140ms] ' +
+                'hover:bg-[hsl(var(--theme-bg-hover))] disabled:opacity-50 disabled:cursor-not-allowed'
+              }
+            >
+              <span style={{ color: accent }} className="mt-0.5 inline-flex shrink-0 items-center">
+                {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <OptIcon className="h-4 w-4" />}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-xs font-medium text-[hsl(var(--theme-text-primary))]">{opt.label}</span>
+                <span className="block text-xs leading-4 text-[hsl(var(--theme-text-muted))]">{opt.desc}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
-function TranslatePopover({
+function TranslateBody({
   accent,
-  icon,
-  label,
   onTranslate,
 }: {
   accent: string;
-  icon: React.ReactNode;
-  label: string;
   onTranslate: (text: string, target: string) => Promise<any>;
 }) {
-  const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [target, setTarget] = useState('en');
   const [out, setOut] = useState<string | null>(null);
@@ -600,74 +540,64 @@ function TranslatePopover({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <span>
-          <AssistTrigger accent={accent} icon={icon} label={label} />
-        </span>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-80 border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] p-3 shadow-none"
-      >
-        <div className="space-y-3">
-          <h4 className="flex items-center gap-1.5 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
-            <Languages className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
-            Translate text
-          </h4>
-          <textarea
-            placeholder="Paste or type text to translate…"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={3}
-            className={
-              'w-full resize-none rounded border border-[hsl(var(--theme-border-default))] ' +
-              'bg-[hsl(var(--theme-bg-secondary))] p-2 text-xs leading-5 ' +
-              'text-[hsl(var(--theme-text-primary))] focus:outline-none focus:ring-1 ' +
-              'focus:ring-[hsl(var(--theme-border-focus))]'
-            }
-          />
-          <div className="flex gap-2">
-            <select
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              className={
-                'flex-1 rounded border border-[hsl(var(--theme-border-default))] ' +
-                'bg-[hsl(var(--theme-bg-secondary))] px-2 py-1.5 text-xs ' +
-                'text-[hsl(var(--theme-text-primary))]'
-              }
-            >
-              <option value="en">English</option>
-              <option value="ur">Urdu</option>
-              <option value="hi">Hindi</option>
-              <option value="es">Spanish</option>
-              <option value="fr">French</option>
-              <option value="de">German</option>
-              <option value="ar">Arabic</option>
-              <option value="zh-CN">Chinese</option>
-              <option value="ja">Japanese</option>
-              <option value="ru">Russian</option>
-              <option value="tr">Turkish</option>
-              <option value="pt">Portuguese</option>
-              <option value="bn">Bengali</option>
-            </select>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={submit}
-              disabled={loading || !text.trim()}
-              className="h-8 px-3"
-            >
-              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Translate'}
-            </Button>
-          </div>
-          {out && (
-            <div className="rounded border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] p-2.5 text-xs leading-5 text-[hsl(var(--theme-text-secondary))] whitespace-pre-wrap">
-              {out}
-            </div>
-          )}
+    <div className="space-y-3">
+      <h4 className="flex items-center gap-1.5 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
+        <Languages className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
+        Translate text
+      </h4>
+      <textarea
+        autoFocus
+        placeholder="Paste or type text to translate…"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={3}
+        className={
+          'w-full resize-none rounded border border-[hsl(var(--theme-border-default))] ' +
+          'bg-[hsl(var(--theme-bg-secondary))] p-2 text-xs leading-5 ' +
+          'text-[hsl(var(--theme-text-primary))] focus:outline-none focus:ring-1 ' +
+          'focus:ring-[hsl(var(--theme-border-focus))]'
+        }
+      />
+      <div className="flex gap-2">
+        <select
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          aria-label="Target language"
+          className={
+            'flex-1 rounded border border-[hsl(var(--theme-border-default))] ' +
+            'bg-[hsl(var(--theme-bg-secondary))] px-2 py-1.5 text-xs ' +
+            'text-[hsl(var(--theme-text-primary))]'
+          }
+        >
+          <option value="en">English</option>
+          <option value="ur">Urdu</option>
+          <option value="hi">Hindi</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="ar">Arabic</option>
+          <option value="zh-CN">Chinese</option>
+          <option value="ja">Japanese</option>
+          <option value="ru">Russian</option>
+          <option value="tr">Turkish</option>
+          <option value="pt">Portuguese</option>
+          <option value="bn">Bengali</option>
+        </select>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={submit}
+          disabled={loading || !text.trim()}
+          className="h-8 px-3"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Translate'}
+        </Button>
+      </div>
+      {out && (
+        <div className="rounded border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] p-2.5 text-xs leading-5 text-[hsl(var(--theme-text-secondary))] whitespace-pre-wrap">
+          {out}
         </div>
-      </PopoverContent>
-    </Popover>
+      )}
+    </div>
   );
 }

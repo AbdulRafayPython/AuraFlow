@@ -187,14 +187,14 @@ def get_user_profile(username):
             shared_communities = []
             if current_user_id and current_user_id != target['id']:
                 cur.execute("""
-                    SELECT c.id, c.name, c.icon, c.color, c.logo_url
+                    SELECT c.id, c.public_id, c.name, c.icon, c.color, c.logo_url
                     FROM communities c
                     JOIN community_members cm1 ON c.id = cm1.community_id AND cm1.user_id = %s
                     JOIN community_members cm2 ON c.id = cm2.community_id AND cm2.user_id = %s
                     LIMIT 5
                 """, (current_user_id, target['id']))
                 shared_communities = [
-                    {'id': c['id'], 'name': c['name'], 'icon': c['icon'],
+                    {'id': c['id'], 'public_id': c['public_id'], 'name': c['name'], 'icon': c['icon'],
                      'color': c['color'], 'logo_url': c['logo_url']}
                     for c in cur.fetchall()
                 ]

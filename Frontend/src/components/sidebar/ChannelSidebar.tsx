@@ -5,26 +5,36 @@ import {
   ChevronDown,
   Hash,
   Volume2,
-  Users,
   Plus,
   Settings as SettingsIcon,
-  Loader2,
   Radio,
   PhoneCall,
+  UserPlus,
+  LogOut,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn, getAvatarUrl } from "@/lib/utils";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
-import { channelService } from "@/services/channelService";
 import { voiceService } from "@/services/voiceService";
 import { socketService } from "@/services/socketService";
 import { useUnreadCounts } from "@/hooks/useUnreadCounts";
 import { Icon } from "@/components/app/Icon";
 import { SidebarListSkeleton } from "@/components/chat/MessageListSkeleton";
 import { useMentionableAgents } from "@/hooks/useMentionableAgents";
+import { useCommunityMembers } from "@/hooks/useCommunityMembers";
 import { useOpenAgent } from "@/components/ai-agents/AgentDetailPane";
 import { AgentAvatar } from "@/components/ai-agents/AgentMessageShell";
+import { AccountMenu } from "./AccountMenu";
+import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
+import { channelService } from "@/services/channelService";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import CommunityMembersAddModal from "@/components/modals/CommunityMembersAddModal";
 import CreateChannelModal from "@/components/modals/CreateChannelModal";
 import ChannelManagementModal from "@/components/modals/ChannelManagementModal";
@@ -36,15 +46,6 @@ interface ChannelSidebarProps {
   onCommunityManagementModalChange?: (isOpen: boolean) => void;
   /** Fill the container (mobile drawer) instead of the fixed 260px width. */
   fluid?: boolean;
-}
-
-interface CommunityMember {
-  id: number;
-  username: string;
-  email: string;
-  display_name?: string;
-  avatar_url?: string;
-  role: "owner" | "admin" | "member";
 }
 
 export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCommunityManagementModalChange, fluid = false }: ChannelSidebarProps) {
@@ -61,11 +62,11 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
 
   // Modal & Members State
   const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
-  const [communityMembers, setCommunityMembers] = useState<CommunityMember[]>([]);
-  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const { members: communityMembers, loading: isLoadingMembers, reload: loadMembers } = useCommunityMembers(currentCommunity?.id);
   const [isCreateChannelModalOpen, setIsCreateChannelModalOpen] = useState(false);
   const [selectedChannelForManagement, setSelectedChannelForManagement] = useState<any>(null);
   const [isCommunityManagementOpen, setIsCommunityManagementOpen] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; channelId?: number } | null>(null);
 
   // Use role directly from currentCommunity (comes from API)
@@ -139,30 +140,6 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceChannels.length, expandedSections.voice]);
 
-  // Fetch community members when current community changes
-  useEffect(() => {
-    if (currentCommunity?.id) {
-      loadMembers();
-    } else {
-      setCommunityMembers([]);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentCommunity?.id]);
-
-  const loadMembers = async () => {
-    if (!currentCommunity?.id) return;
-    setIsLoadingMembers(true);
-    try {
-      const members = await channelService.getCommunityMembers(currentCommunity.id);
-      setCommunityMembers(members);
-    } catch (err: any) {
-      console.error("Failed to load members:", err);
-      // Silent fail - don't show error toast for members loading
-    } finally {
-      setIsLoadingMembers(false);
-    }
-  };
-
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections((prev) => ({
       ...prev,
@@ -225,6 +202,18 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
     navigate('/');
   };
 
+  const leaveCommunity = async () => {
+    if (!currentCommunity) return;
+    try {
+      await channelService.leaveCommunity(currentCommunity.id);
+      toast.success("You have left the community");
+      setShowLeaveConfirm(false);
+      await handleCommunityLeft();
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to leave community");
+    }
+  };
+
   const handleCommunityLeft = async () => {
     setIsCommunityManagementOpen(false);
     onCommunityManagementModalChange?.(false);
@@ -272,21 +261,56 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
         )}
         style={{ background: 'var(--theme-sidebar-gradient)' }}
       >
-        {/* Community Header */}
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
-          <h1 className="truncate text-base font-semibold">
-            {isLoadingCommunities ? "Loading..." : currentCommunity?.name || "Select Community"}
-          </h1>
-          <button
-            type="button"
-            onClick={handleCommunityManagementClick}
-            aria-label="Community settings"
-            title="Community settings"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground"
-          >
-            <Icon icon={SettingsIcon} size="md" />
-          </button>
-        </div>
+        {/* Community header = server menu (Discord-style) */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild disabled={!currentCommunity}>
+            <button
+              type="button"
+              aria-label="Community menu"
+              className="flex h-12 w-full shrink-0 items-center justify-between gap-2 border-b border-border px-4 text-left transition-colors hover:bg-[hsl(var(--theme-bg-hover))] data-[state=open]:bg-[hsl(var(--theme-bg-hover))]"
+            >
+              <h1 className="truncate text-base font-semibold">
+                {isLoadingCommunities ? "Loading..." : currentCommunity?.name || "Select Community"}
+              </h1>
+              <Icon icon={ChevronDown} size="md" className="shrink-0 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" sideOffset={4} className="w-56">
+            <DropdownMenuItem
+              className="gap-2"
+              onSelect={() => {
+                setIsMembersModalOpen(true);
+                onMembersModalChange?.(true);
+              }}
+            >
+              <Icon icon={UserPlus} size="md" />
+              <span className="flex-1">Add members</span>
+              {!isLoadingMembers && <span className="text-xs text-muted-foreground">{communityMembers.length}</span>}
+            </DropdownMenuItem>
+            {canManageChannels && (
+              <DropdownMenuItem className="gap-2" onSelect={() => setIsCreateChannelModalOpen(true)}>
+                <Icon icon={Plus} size="md" />
+                Create channel
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem className="gap-2" onSelect={handleCommunityManagementClick}>
+              <Icon icon={SettingsIcon} size="md" />
+              Community settings
+            </DropdownMenuItem>
+            {userRoleInCommunity !== "owner" && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="gap-2 text-destructive focus:text-destructive"
+                  onSelect={() => setShowLeaveConfirm(true)}
+                >
+                  <Icon icon={LogOut} size="md" />
+                  Leave community
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto px-2 py-3">
@@ -477,32 +501,19 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
           )}
         </div>
 
-        {/* Members */}
-        {currentCommunity && (
-          <div className="shrink-0 border-t border-border p-2">
-            <button
-              type="button"
-              onClick={() => {
-                setIsMembersModalOpen(true);
-                onMembersModalChange?.(true);
-              }}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[hsl(var(--theme-text-secondary))] transition-colors hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground"
-            >
-              <Icon icon={Users} size="md" />
-              <span className="truncate">Members</span>
-              <span className="ml-auto flex items-center">
-                {isLoadingMembers ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <span className="rounded-full bg-[hsl(var(--theme-bg-tertiary))] px-2 text-xs text-[hsl(var(--theme-text-secondary))]">
-                    {communityMembers.length}
-                  </span>
-                )}
-              </span>
-            </button>
-          </div>
-        )}
+        <AccountMenu variant="panel" />
       </aside>
+
+      <ConfirmDialog
+        isOpen={showLeaveConfirm}
+        title="Leave community"
+        description={`Leave ${currentCommunity?.name ?? "this community"}? You will lose access to its channels.`}
+        cancelText="Cancel"
+        confirmText="Leave"
+        isDangerous={true}
+        onConfirm={leaveCommunity}
+        onCancel={() => setShowLeaveConfirm(false)}
+      />
 
       {/* Add Members Modal - Only render when community exists */}
       {currentCommunity && (

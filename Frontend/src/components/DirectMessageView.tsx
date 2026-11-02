@@ -1,7 +1,7 @@
 // REWRITE: ~1.3k lines; duplicates much of the channel chat view in pages/Dashboard.tsx.
 // components/DirectMessageView.tsx - DM conversation view
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video, Sparkles } from 'lucide-react';
+import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video, Sparkles, CircleUser } from 'lucide-react';
 import AgentMessageShell from '@/components/ai-agents/AgentMessageShell';
 import { methodLabel } from '@/components/ai-agents/humanize';
 import { aiAgentService, type DMSummaryResult } from '@/services/aiAgentService';
@@ -39,6 +39,12 @@ import UserProfilePopover from '@/components/profile/UserProfilePopover';
 import { friendService } from '@/services/friendService';
 import type { DirectMessage } from '@/types';
 import AgentLogo from '@/components/ai-agents/AgentLogo';
+import { usePresence } from '@/hooks/usePresence';
+import { useMentionableAgents } from '@/hooks/useMentionableAgents';
+import { useOpenAgent } from '@/components/ai-agents/AgentDetailPane';
+import ProfilePane from '@/components/profile/ProfilePane';
+import { PRESENCE_DOT } from '@/lib/presence';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface DirectMessageViewProps {
   userId: number;
@@ -53,13 +59,30 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   const { friends } = useFriends();
   const { user: currentUser } = useAuth();
   // An agent's bot user: no presence and no calls; it answers what you write by DM.
-  const isBot = !!conversations.find((c) => c.user_id === userId)?.user.is_bot;
+  const conversationUser = conversations.find((c) => c.user_id === userId)?.user;
+  const isBot = !!conversationUser?.is_bot;
+  // The `avatar` prop may be a generated person avatar; an agent's logo uses only its own upload.
+  const agentAvatar = conversationUser?.avatar_url ?? null;
   const { isDarkMode } = useTheme();
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
-  const { open: openRightPane, close: closeRightPane } = useRightPane();
+  const { open: openRightPane, close: closeRightPane, content: rightPaneContent } = useRightPane();
+  const presence = usePresence()(username, userId);
+  // Agent DMs open the agent's detail pane when it is one of the agents you can reach.
+  const agentForDm = useMentionableAgents().find((a) => a.username === username);
+  const openAgent = useOpenAgent();
+  const profileKey = `profile-${userId}`;
+  const profileOpen = rightPaneContent?.key === profileKey || (!!agentForDm && rightPaneContent?.key === `agent-${agentForDm.id}`);
+  const toggleProfile = () => {
+    if (profileOpen) return closeRightPane();
+    if (isBot) {
+      if (agentForDm) openAgent(agentForDm);
+      return;
+    }
+    openRightPane({ key: profileKey, title: displayName || username, body: <ProfilePane username={username} userId={userId} /> });
+  };
   const [threadParentId, setThreadParentId] = useState<number | null>(null);
   const [recentEmojiVersion, setRecentEmojiVersion] = useState(0);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null);
@@ -730,17 +753,19 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
         )}
         <div className="flex items-center gap-3 flex-1">
           {isBot ? (
-            <AgentLogo size="sm" avatarUrl={avatar} username={username} name={displayName} />
+            <AgentLogo size="sm" avatarUrl={agentAvatar} username={username} name={displayName} />
           ) : (
           <div className="relative">
             <img
               src={getAvatarUrl(avatar, username)}
               alt={displayName || username}
-              className="w-8 h-8 rounded-lg object-cover cursor-pointer"
+              className="w-8 h-8 rounded-full object-cover cursor-pointer"
               onClick={(e) => handleProfileClick(username, e)}
             />
-            {/* Online status dot */}
-            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-success rounded-full border-2 border-[hsl(var(--theme-bg-primary))]" />
+            <span
+              aria-label={presence}
+              className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-[3px] border-[hsl(var(--theme-header-bg))] ${PRESENCE_DOT[presence]}`}
+            />
           </div>
           )}
           <div className="flex-1 min-w-0">
@@ -755,8 +780,8 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             {isBot ? (
               <p className="text-xs text-muted-foreground">Agent · messages only you can see</p>
             ) : (
-            <p className="text-xs text-success">
-              Online
+            <p className={`text-xs ${presence === 'online' ? 'text-success' : 'text-muted-foreground'}`}>
+              {{ online: 'Online', idle: 'Idle', dnd: 'Do not disturb', offline: 'Offline' }[presence]}
             </p>
             )}
           </div>
@@ -790,6 +815,25 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
               <Video className="w-[18px] h-[18px]" />
             </button>
             </>)}
+            {(!isBot || agentForDm) && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={toggleProfile}
+                    aria-pressed={profileOpen}
+                    aria-label={profileOpen ? 'Hide profile' : 'Show profile'}
+                    className={`hidden lg:flex p-2 rounded-md transition-colors duration-150 ${
+                      profileOpen
+                        ? 'bg-[hsl(var(--theme-bg-active))] text-[hsl(var(--theme-text-primary))]'
+                        : 'text-[hsl(var(--theme-text-muted))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]'
+                    }`}
+                  >
+                    <CircleUser className="w-[18px] h-[18px]" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{profileOpen ? 'Hide profile' : 'Show profile'}</TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </div>
       </header>
@@ -846,10 +890,17 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                     authorName={authorName}
                     avatarUrl={authorAvatar}
                     username={authorUsername}
+                    // The agent's side of an agent DM: its app logo and APP label, as in the header and DM list.
+                    avatar={!isSent && isBot ? (
+                      <AgentLogo size="md" avatarUrl={agentAvatar} username={username} name={displayName || username} />
+                    ) : undefined}
+                    badge={!isSent && isBot ? (
+                      <span className="rounded bg-[hsl(var(--theme-bg-tertiary))] px-1 text-xs font-semibold text-muted-foreground">APP</span>
+                    ) : undefined}
                     timeLabel={formatTime(msg.created_at)}
                     shortTimeLabel={new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
                     grouped={grouped}
-                    onAuthorClick={isSent ? undefined : (e) => handleProfileClick(authorUsername, e)}
+                    onAuthorClick={isSent ? undefined : isBot ? (agentForDm ? () => openAgent(agentForDm) : undefined) : (e) => handleProfileClick(authorUsername, e)}
                     reactions={
                       dmReactions[msg.id] && dmReactions[msg.id].length > 0 ? (
                         <MessageReactions
@@ -1009,19 +1060,6 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
 
       {/* Input Area */}
       <footer className="flex-shrink-0 bg-[hsl(var(--theme-bg-primary))]">
-        {/* Reply Bar */}
-        {replyingTo && (
-          <ReplyBar
-            message={replyingTo}
-            authorName={
-              replyingTo.sender_id === currentUserId
-                ? (currentUser?.display_name || currentUser?.username || 'You')
-                : (replyingTo.sender?.display_name || replyingTo.sender?.username || displayName || username)
-            }
-            onCancel={() => setReplyingTo(null)}
-          />
-        )}
-
         {/* Hidden file input */}
         <input
           type="file"
@@ -1055,6 +1093,20 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             placeholder={`Message @${displayName || username}`}
             disabled={isSending}
             onAttach={isBot ? undefined : () => fileInputRef.current?.click()}
+            attached={
+              replyingTo && (
+                <ReplyBar
+                  message={replyingTo}
+                  authorName={
+                    replyingTo.sender_id === currentUserId
+                      ? (currentUser?.display_name || currentUser?.username || 'You')
+                      : (replyingTo.sender?.display_name || replyingTo.sender?.username || displayName || username)
+                  }
+                  onCancel={() => setReplyingTo(null)}
+                  attached
+                />
+              )
+            }
             inputProps={{
               onKeyPress: (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {

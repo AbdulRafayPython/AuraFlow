@@ -369,6 +369,7 @@ function MainLayoutInner({ children }: MainLayoutProps) {
                 currentView={currentView}
                 selectedCommunity={currentCommunity?.id.toString()}
                 alerts={false}
+                showAccount={false}
               />
               <div className="min-w-0 flex-1 overflow-hidden">
                 {showChannelSidebar ? (
@@ -428,6 +429,7 @@ function MainLayoutInner({ children }: MainLayoutProps) {
           currentView={currentView}
           selectedCommunity={currentCommunity?.id.toString()}
           frozen={isMembersModalOpen || isCommunityManagementModalOpen}
+          showAccount={!contextualSidebar}
         />
       }
       sidebar={contextualSidebar}

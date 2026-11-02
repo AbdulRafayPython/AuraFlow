@@ -8,9 +8,11 @@ interface ReplyBarProps {
   /** Display name of the user being replied to */
   authorName: string;
   onCancel: () => void;
+  /** Flat row inside the composer box instead of a floating card. */
+  attached?: boolean;
 }
 
-const ReplyBar: React.FC<ReplyBarProps> = ({ message, authorName, onCancel }) => {
+const ReplyBar: React.FC<ReplyBarProps> = ({ message, authorName, onCancel, attached = false }) => {
   const truncated = message.content.length > 120
     ? message.content.slice(0, 120) + '…'
     : message.content;
@@ -27,7 +29,9 @@ const ReplyBar: React.FC<ReplyBarProps> = ({ message, authorName, onCancel }) =>
   const typeLabel = isImageType ? 'Image' : isFileType ? 'File' : isVoiceType ? 'Voice message' : isVideoType ? 'Video' : null;
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2 mx-2 mb-1.5 rounded-xl border-l-[3px] border-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-bg-secondary)/0.6)] shadow-sm transition-all duration-200 animate-in slide-in-from-bottom-1 fade-in">
+    <div className={attached
+      ? "flex items-center gap-3 px-3 py-1.5 bg-[hsl(var(--theme-bg-secondary)/0.6)]"
+      : "flex items-center gap-3 px-3 py-2 mx-2 mb-1.5 rounded-xl border-l-[3px] border-[hsl(var(--theme-accent-primary))] bg-[hsl(var(--theme-bg-secondary)/0.6)] shadow-sm transition-all duration-200 animate-in slide-in-from-bottom-1 fade-in"}>
       {/* Reply Icon */}
       <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-[hsl(var(--theme-accent-primary)/0.1)] flex items-center justify-center">
         <Reply className="w-3.5 h-3.5 rotate-180 text-[hsl(var(--theme-text-accent))]" />
