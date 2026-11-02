@@ -43,7 +43,7 @@ import { usePresence } from '@/hooks/usePresence';
 import { useMentionableAgents } from '@/hooks/useMentionableAgents';
 import { useOpenAgent } from '@/components/ai-agents/AgentDetailPane';
 import ProfilePane from '@/components/profile/ProfilePane';
-import { PRESENCE_DOT } from '@/components/members/MemberList';
+import { PRESENCE_DOT } from '@/lib/presence';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface DirectMessageViewProps {

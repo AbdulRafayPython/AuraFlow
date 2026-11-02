@@ -8,7 +8,7 @@ import { usePresence } from "@/hooks/usePresence";
 import { cn, getAvatarUrl } from "@/lib/utils";
 import { API_SERVER } from "@/config/api";
 import { Icon } from "@/components/app/Icon";
-import { PRESENCE_DOT } from "@/components/members/MemberList";
+import { PRESENCE_DOT } from "@/lib/presence";
 
 const PRESENCE_LABEL = { online: "Online", idle: "Idle", dnd: "Do not disturb", offline: "Offline" } as const;
 

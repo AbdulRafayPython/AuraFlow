@@ -1,19 +1,13 @@
 import * as React from "react";
 import { cn, getAvatarUrl } from "@/lib/utils";
 import { usePresence, type Presence } from "@/hooks/usePresence";
+import { PRESENCE_DOT } from "@/lib/presence";
 import { useCommunityMembers } from "@/hooks/useCommunityMembers";
 import { useMentionableAgents } from "@/hooks/useMentionableAgents";
 import { useOpenAgent } from "@/components/ai-agents/AgentDetailPane";
 import AgentLogo from "@/components/ai-agents/AgentLogo";
 import { SidebarListSkeleton } from "@/components/chat/MessageListSkeleton";
 import type { CommunityMember } from "@/types";
-
-export const PRESENCE_DOT: Record<Presence, string> = {
-  online: "bg-success",
-  idle: "bg-warning",
-  dnd: "bg-destructive",
-  offline: "bg-muted-foreground",
-};
 
 const PRESENCE_LABEL: Record<Presence, string> = {
   online: "Online",

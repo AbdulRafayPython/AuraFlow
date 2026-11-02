@@ -12,7 +12,7 @@ import { Icon } from "@/components/app/Icon";
 import { OPEN_PALETTE_EVENT } from "@/components/app/CommandPalette";
 import { SidebarListSkeleton } from "@/components/chat/MessageListSkeleton";
 import AgentLogo from "@/components/ai-agents/AgentLogo";
-import { PRESENCE_DOT } from "@/components/members/MemberList";
+import { PRESENCE_DOT } from "@/lib/presence";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AccountMenu } from "./AccountMenu";
 

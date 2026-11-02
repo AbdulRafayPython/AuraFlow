@@ -42,7 +42,8 @@ export interface MessageRowProps {
 }
 
 /**
- * One flat message row, used by channels and DMs: 36px rounded-square avatar,
+ * One flat message row, used by channels and DMs: 40px round avatar (agents keep
+ * their 36px app logo),
  * bold name, time, body. No bubbles. Hover tints the row and reveals the
  * toolbar. Hover is pure CSS (`group`), so rows do not re-render on mouse move.
  */
@@ -81,7 +82,7 @@ export function MessageRow({
       data-grouped={grouped || undefined}
       onClick={onClick}
       className={cn(
-        "group relative flex gap-3 px-4 py-0.5 transition-colors duration-100",
+        "group relative flex gap-4 px-4 py-0.5 transition-colors duration-100",
         grouped ? "mt-0" : "mt-3",
         pinned
           ? "border-l-2 border-l-[hsl(var(--theme-accent-primary)/0.6)] bg-[hsl(var(--theme-accent-primary)/0.05)] hover:bg-[hsl(var(--theme-accent-primary)/0.08)]"
@@ -90,7 +91,7 @@ export function MessageRow({
         className,
       )}
     >
-      <div className="w-9 shrink-0 pt-0.5">
+      <div className="w-10 shrink-0 pt-0.5">
         {grouped ? (
           <time className="block select-none text-right text-xs leading-[22px] text-muted-foreground opacity-0 transition-opacity duration-100 group-hover:opacity-100">
             {shortTimeLabel ?? timeLabel}
@@ -102,13 +103,13 @@ export function MessageRow({
             src={getAvatarUrl(avatarUrl, username || authorName)}
             alt=""
             onClick={onAuthorClick}
-            className={cn("h-9 w-9 rounded-lg object-cover", onAuthorClick && "cursor-pointer")}
+            className={cn("h-10 w-10 rounded-full object-cover", onAuthorClick && "cursor-pointer")}
           />
         ) : (
           <div
             onClick={onAuthorClick}
             className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-lg bg-[hsl(var(--theme-bg-tertiary))] text-sm font-semibold text-foreground",
+              "flex h-10 w-10 items-center justify-center rounded-full bg-[hsl(var(--theme-bg-tertiary))] text-sm font-semibold text-foreground",
               onAuthorClick && "cursor-pointer",
             )}
           >
