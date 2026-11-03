@@ -2164,3 +2164,108 @@ def delete_direct_message(message_id):
         if conn:
             conn.close()
 
+
+
+# ── User polls ("Create a poll" in the composer's + menu) ────────────────
+# A poll is a normal message from the person, with the same poll card the
+# Engagement agent posts (engagement_cards + engagement_poll_votes), so voting,
+# tallies and live updates reuse /api/agents/engagement/poll/<id>/vote.
+
+POLL_MIN_OPTIONS, POLL_MAX_OPTIONS = 2, 6
+POLL_QUESTION_MAX, POLL_OPTION_MAX = 200, 80
+
+
+class PollError(ValueError):
+    pass
+
+
+def clean_poll(data):
+    """Return (question, options) from a request body, or raise PollError."""
+    question = str((data or {}).get('question') or '').strip()
+    raw = (data or {}).get('options') or []
+    if not isinstance(raw, list):
+        raise PollError('options must be a list')
+    options, seen = [], set()
+    for o in raw:
+        text = str(o or '').strip()
+        if text and text.lower() not in seen:
+            seen.add(text.lower())
+            options.append(text)
+    if not question:
+        raise PollError('Write a question')
+    if len(question) > POLL_QUESTION_MAX:
+        raise PollError(f'The question can be at most {POLL_QUESTION_MAX} characters')
+    if len(options) < POLL_MIN_OPTIONS:
+        raise PollError(f'Add at least {POLL_MIN_OPTIONS} different answers')
+    if len(options) > POLL_MAX_OPTIONS:
+        raise PollError(f'A poll can have at most {POLL_MAX_OPTIONS} answers')
+    if any(len(o) > POLL_OPTION_MAX for o in options):
+        raise PollError(f'Each answer can be at most {POLL_OPTION_MAX} characters')
+    return question, options
+
+
+@jwt_required()
+def create_poll(channel_id):
+    current_user = get_jwt_identity()
+    try:
+        question, options = clean_poll(request.get_json(silent=True))
+    except PollError as e:
+        return jsonify({'error': str(e)}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, display_name, avatar_url FROM users WHERE username = %s", (current_user,))
+            user = cur.fetchone()
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+            cur.execute(
+                "SELECT c.community_id FROM channels c "
+                "JOIN channel_members cm ON cm.channel_id = c.id "
+                "WHERE c.id = %s AND cm.user_id = %s",
+                (channel_id, user['id']))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({'error': 'Access denied'}), 403
+            community_id = row['community_id']
+            cur.execute("SELECT 1 FROM blocked_users WHERE community_id = %s AND user_id = %s",
+                        (community_id, user['id']))
+            if cur.fetchone():
+                return jsonify({'error': 'You are blocked in this community'}), 403
+
+            # Readable fallback for anything that does not show cards.
+            content = f"📊 {question}\n" + "\n".join(f"{i + 1}. {o}" for i, o in enumerate(options))
+            now = datetime.now()
+            cur.execute(
+                "INSERT INTO messages (channel_id, sender_id, content, message_type, created_at) "
+                "VALUES (%s, %s, %s, 'text', %s)",
+                (channel_id, user['id'], _encrypt(content), now))
+            message_id = cur.lastrowid
+            cur.execute(
+                "INSERT INTO engagement_cards (message_id, channel_id, kind, payload) VALUES (%s, %s, 'poll', %s)",
+                (message_id, channel_id, json.dumps({'question': question, 'options': options})))
+            conn.commit()
+    finally:
+        conn.close()
+
+    card = {'kind': 'poll', 'question': question, 'options': options}
+    payload = {
+        'id': message_id,
+        'channel_id': channel_id,
+        'sender_id': user['id'],
+        'content': content,
+        'message_type': 'text',
+        'reply_to': None,
+        'created_at': now.isoformat(),
+        'author': current_user,
+        'display_name': user.get('display_name') or current_user,
+        'avatar': get_avatar_url(current_user, user.get('avatar_url')),
+        'is_blocked': False,
+        'card': card,
+    }
+    # The cached page has no card for this id yet: drop it so the next open reads the DB.
+    invalidate_channel_messages_cache(channel_id)
+    socketio = current_app.extensions.get('socketio')
+    if socketio:
+        socketio.emit('message_received', payload, room=f"channel_{channel_id}", namespace='/')
+    return jsonify(payload), 201

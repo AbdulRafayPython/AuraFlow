@@ -2,7 +2,7 @@
 // Shows a preview bar above the message input when a file is staged for upload
 
 import React, { useMemo } from 'react';
-import { X, FileText, Image as ImageIcon, Music, Film, Archive, File, Loader2 } from 'lucide-react';
+import { Trash2, FileText, Image as ImageIcon, Music, Film, Archive, File, Loader2 } from 'lucide-react';
 import { isImageFile, isAudioFile, isVideoFile, formatFileSize, getFileExtension } from '@/services/uploadService';
 
 interface FileUploadPreviewProps {
@@ -38,53 +38,45 @@ const FileUploadPreview: React.FC<FileUploadPreviewProps> = ({ file, uploadProgr
     };
   }, [imagePreviewUrl]);
 
+  // A tile above the composer (Discord): big thumbnail or icon, name, size,
+  // a floating remove button, and the upload progress along the bottom.
   return (
-    <div className="mx-1 mb-2 p-3 rounded-lg border flex items-center gap-3 bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))]">
-      {/* Thumbnail / Icon */}
-      {imagePreviewUrl ? (
-        <img
-          src={imagePreviewUrl}
-          alt="preview"
-          className="w-12 h-12 rounded-md object-cover flex-shrink-0"
-        />
-      ) : (
-        <div className="w-12 h-12 rounded-md flex items-center justify-center flex-shrink-0 bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-text-accent))]">
-          {getIcon(file.name)}
+    <div className="mx-1 mb-2 flex" data-testid="upload-tile">
+      <div className="group/tile relative w-48 rounded-lg border border-border bg-[hsl(var(--theme-bg-secondary))] p-2">
+        <div className="flex h-32 items-center justify-center overflow-hidden rounded-md bg-[hsl(var(--theme-bg-tertiary))]">
+          {imagePreviewUrl ? (
+            <img src={imagePreviewUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="text-muted-foreground [&>svg]:h-10 [&>svg]:w-10">{getIcon(file.name)}</span>
+          )}
         </div>
-      )}
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate text-[hsl(var(--theme-text-primary))]">
-          {file.name}
-        </p>
-        <p className="text-xs text-[hsl(var(--theme-text-muted))]">
-          {formatFileSize(file.size)} &middot; {getFileExtension(file.name).toUpperCase()}
+        <p className="mt-2 truncate text-sm font-medium text-foreground" title={file.name}>{file.name}</p>
+        <p className="text-xs text-muted-foreground">
+          {formatFileSize(file.size)} · {getFileExtension(file.name).toUpperCase()}
         </p>
 
-        {/* Progress bar */}
         {isUploading && (
-          <div className="mt-1.5 w-full bg-[hsl(var(--theme-bg-tertiary))] rounded-full h-1.5 overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-300 bg-[hsl(var(--theme-accent-primary))]"
-              style={{ width: `${uploadProgress}%` }}
-            />
+          <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-[hsl(var(--theme-bg-tertiary))]" role="progressbar" aria-valuenow={uploadProgress ?? 0} aria-valuemin={0} aria-valuemax={100}>
+            <div className="h-full rounded-full bg-primary transition-[width] duration-150" style={{ width: `${uploadProgress}%` }} />
           </div>
         )}
-      </div>
 
-      {/* Cancel / Spinner */}
-      {isUploading ? (
-        <Loader2 className="w-5 h-5 animate-spin flex-shrink-0 text-[hsl(var(--theme-text-accent))]" />
-      ) : (
-        <button
-          onClick={onCancel}
-          className="p-1 rounded-md flex-shrink-0 transition-colors hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-primary))]"
-          title="Remove file"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      )}
+        <div className="absolute -right-2 -top-2 flex rounded-md border border-border bg-popover shadow-popover">
+          {isUploading ? (
+            <span className="flex h-8 w-8 items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></span>
+          ) : (
+            <button
+              type="button"
+              onClick={onCancel}
+              aria-label={`Remove ${file.name}`}
+              title="Remove"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-destructive transition-colors duration-100 hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

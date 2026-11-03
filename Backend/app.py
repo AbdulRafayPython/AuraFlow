@@ -44,7 +44,7 @@ from routes.channels import (
     remove_community_logo, remove_community_banner
 )
 from routes.messages import (
-    get_channel_messages, send_message,
+    get_channel_messages, send_message, create_poll,
     get_direct_messages, send_direct_message,
     get_dm_conversations,
     mark_as_read, delete_message, edit_message,
@@ -234,6 +234,7 @@ app.route("/api/channels/community/add-member", methods=["POST"])(add_community_
 # ======================================================================
 app.route("/api/messages/channel/<int:channel_id>", methods=["GET"])(get_channel_messages)
 app.route("/api/messages/send", methods=["POST"])(send_message)
+app.route("/api/channels/<int:channel_id>/polls", methods=["POST"])(create_poll)
 app.route("/api/messages/direct/conversations", methods=["GET"])(get_dm_conversations)
 app.route("/api/messages/direct/<int:user_id>", methods=["GET"])(get_direct_messages)
 app.route("/api/messages/direct/send", methods=["POST"])(send_direct_message)

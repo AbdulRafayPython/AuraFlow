@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Pin } from "lucide-react";
+import { MessagesSquare, Pin } from "lucide-react";
 import { cn, getAvatarUrl } from "@/lib/utils";
 import { Icon } from "@/components/app/Icon";
 
@@ -34,6 +34,8 @@ export interface MessageRowProps {
   reactions?: React.ReactNode;
   /** "3 replies" footer. */
   footer?: React.ReactNode;
+  /** "Replying to" line shown above the message, joined to the avatar by a curved line (Discord). */
+  replyTo?: React.ReactNode;
   /** Floating toolbar. */
   toolbar?: React.ReactNode;
   /** Anchored overlays such as the reaction picker. */
@@ -65,10 +67,13 @@ export function MessageRow({
   children,
   reactions,
   footer,
+  replyTo,
   toolbar,
   overlay,
   className,
 }: MessageRowProps) {
+  // A reply always shows its author: it starts a new group.
+  grouped = grouped && !replyTo;
   const initials = (authorName || "?")
     .split(" ")
     .map((n) => n[0])
@@ -82,7 +87,7 @@ export function MessageRow({
       data-grouped={grouped || undefined}
       onClick={onClick}
       className={cn(
-        "group relative flex gap-4 px-4 py-0.5 transition-colors duration-100",
+        "group relative px-4 py-0.5 transition-colors duration-100",
         grouped ? "mt-0" : "mt-3",
         pinned
           ? "border-l-2 border-l-[hsl(var(--theme-accent-primary)/0.6)] bg-[hsl(var(--theme-accent-primary)/0.05)] hover:bg-[hsl(var(--theme-accent-primary)/0.08)]"
@@ -91,6 +96,17 @@ export function MessageRow({
         className,
       )}
     >
+      {replyTo && (
+        <div className="relative flex h-[22px] min-w-0 items-center pl-14" data-testid="reply-line">
+          {/* Spine: from above the avatar's centre, curving right into the preview. */}
+          <span
+            aria-hidden
+            className="af-spine absolute left-5 top-[11px] h-[15px] w-[30px] rounded-tl-md border-l-2 border-t-2 border-[hsl(var(--theme-text-muted)/0.45)]"
+          />
+          {replyTo}
+        </div>
+      )}
+      <div className="flex gap-4">
       <div className="w-10 shrink-0 pt-0.5">
         {grouped ? (
           <time className="block select-none text-right text-xs leading-[22px] text-muted-foreground opacity-0 transition-opacity duration-100 group-hover:opacity-100">
@@ -144,6 +160,7 @@ export function MessageRow({
         {reactions && <div className="mt-1">{reactions}</div>}
         {footer}
       </div>
+      </div>
 
       {toolbar}
       {overlay}
@@ -163,18 +180,41 @@ export function DayDivider({ label }: { label: string }) {
   );
 }
 
-/** Small "N replies" link under a message; opens the thread pane. */
-export function RepliesLink({ count, onClick }: { count: number; onClick: () => void }) {
+/**
+ * Thread card under a message (Discord): "N replies ›" and the latest reply,
+ * in a quiet bordered box. Opens the thread pane.
+ */
+export function RepliesLink({ count, last, onClick }: {
+  count: number;
+  last?: { author: string; text: string; avatarUrl?: string | null };
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
+      data-testid="thread-card"
       onClick={(e) => {
         e.stopPropagation();
         onClick();
       }}
-      className="mt-1 text-sm font-medium text-[hsl(var(--theme-text-accent))] hover:underline"
+      className="mt-1.5 flex w-full max-w-md flex-col gap-1 rounded-lg border border-border bg-[hsl(var(--theme-bg-secondary))] px-3 py-2 text-left transition-colors duration-100 hover:border-[hsl(var(--theme-border-hover))] hover:bg-[hsl(var(--theme-bg-tertiary))]"
     >
-      {count} {count === 1 ? "reply" : "replies"}
+      <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        <Icon icon={MessagesSquare} size="sm" className="text-muted-foreground" />
+        Thread
+        <span className="font-medium text-[hsl(var(--theme-text-accent))]">
+          {count} {count === 1 ? "reply" : "replies"} ›
+        </span>
+      </span>
+      {last && (
+        <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+          {last.avatarUrl && (
+            <img src={getAvatarUrl(last.avatarUrl, last.author)} alt="" className="h-4 w-4 shrink-0 rounded-full object-cover" />
+          )}
+          <span className="shrink-0 font-medium text-[hsl(var(--theme-text-secondary))]">{last.author}</span>
+          <span className="truncate">{last.text}</span>
+        </span>
+      )}
     </button>
   );
 }

@@ -122,6 +122,15 @@ class ChannelService {
     }
   }
 
+  /** Post a poll (question + 2-6 answers) as your own message in a channel. */
+  async createPoll(channelId: number, question: string, options: string[]): Promise<void> {
+    try {
+      await axios.post(`${API_URL}/${channelId}/polls`, { question, options }, this.getAuthHeaders());
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to post the poll');
+    }
+  }
+
   async deleteChannel(channelId: number): Promise<void> {
     try {
       await axios.delete(`${API_URL}/${channelId}`, this.getAuthHeaders());

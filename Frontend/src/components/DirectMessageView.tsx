@@ -1,7 +1,7 @@
 // REWRITE: ~1.3k lines; duplicates much of the channel chat view in pages/Dashboard.tsx.
 // components/DirectMessageView.tsx - DM conversation view
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video, ScrollText, CircleUser } from 'lucide-react';
+import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video, ScrollText, CircleUser, Upload, Mic } from 'lucide-react';
 import AgentMessageShell from '@/components/ai-agents/AgentMessageShell';
 import { methodLabel } from '@/components/ai-agents/humanize';
 import { aiAgentService, type DMSummaryResult } from '@/services/aiAgentService';
@@ -29,7 +29,7 @@ import FileAttachment from '@/components/chat/FileAttachment';
 import FileUploadPreview from '@/components/chat/FileUploadPreview';
 import ReplyPreview from '@/components/chat/ReplyPreview';
 import ReplyBar from '@/components/chat/ReplyBar';
-import VoiceRecorder from '@/components/chat/VoiceRecorder';
+import VoiceRecorder, { type VoiceRecorderHandle } from '@/components/chat/VoiceRecorder';
 import CallMessageBubble from '@/components/chat/CallMessageBubble';
 import TypingIndicator from '@/components/chat/TypingIndicator';
 import JumpToLatest from '@/components/chat/JumpToLatest';
@@ -97,6 +97,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
   // async image/attachment loads that grow the list height after render).
   const stickToBottomRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const voiceRef = useRef<VoiceRecorderHandle>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [replyingTo, setReplyingTo] = useState<DirectMessage | null>(null);
@@ -887,6 +888,9 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                 ) : (
                   <MessageRow
                     domId={`dm-msg-${msg.id}`}
+                    replyTo={msg.reply_to_preview && editingId !== msg.id ? (
+                      <ReplyPreview preview={msg.reply_to_preview} onClick={() => scrollToMessage(msg.reply_to_preview!.id)} />
+                    ) : undefined}
                     authorName={authorName}
                     avatarUrl={authorAvatar}
                     username={authorUsername}
@@ -968,12 +972,6 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                       </div>
                     ) : (
                       <>
-                        {msg.reply_to_preview && (
-                          <ReplyPreview
-                            preview={msg.reply_to_preview}
-                            onClick={() => scrollToMessage(msg.reply_to_preview!.id)}
-                          />
-                        )}
                         {isFileMessage ? (
                           <div className="w-fit max-w-md">
                             <FileAttachment
@@ -1093,6 +1091,10 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
             placeholder={`Message @${displayName || username}`}
             disabled={isSending}
             onAttach={isBot ? undefined : () => fileInputRef.current?.click()}
+            plusItems={isBot ? undefined : [
+              { key: 'upload', label: 'Upload a file', icon: Upload, onSelect: () => fileInputRef.current?.click() },
+              { key: 'voice', label: 'Record a voice message', icon: Mic, onSelect: () => voiceRef.current?.start() },
+            ]}
             attached={
               replyingTo && (
                 <ReplyBar
@@ -1124,6 +1126,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
                 />
                 {!isBot && (
                   <VoiceRecorder
+                    ref={voiceRef}
                     onSend={handleVoiceSend}
                     disabled={isSending}
                   />
