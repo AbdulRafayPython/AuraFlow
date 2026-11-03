@@ -37,7 +37,7 @@ from routes.channels import (
     # Channel and community management
     update_channel, delete_community, leave_community,
     # Community discovery and joining
-    discover_communities, join_community,
+    discover_communities, join_community, get_community_preview,
     # Community images
     get_community, update_community,
     upload_community_logo, upload_community_banner,
@@ -200,6 +200,7 @@ app.route("/api/users/settings/notifications", methods=["PATCH"])(update_notific
 app.route("/api/channels/communities", methods=["GET"])(get_communities)
 app.route("/api/channels/communities/discover", methods=["GET"])(discover_communities)
 app.route("/api/channels/communities/<uuid:public_id>/join", methods=["POST"])(join_community)
+app.route("/api/channels/communities/<uuid:public_id>/preview", methods=["GET"])(get_community_preview)
 app.route("/api/channels/communities/<uuid:public_id>/channels", methods=["GET"])(get_community_channels)
 app.route("/api/channels/communities/<uuid:public_id>/channels", methods=["POST"])(create_channel)
 app.route("/api/channels/communities", methods=["POST"])(create_community)

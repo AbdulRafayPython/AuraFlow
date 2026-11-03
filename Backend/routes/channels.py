@@ -18,6 +18,48 @@ from PIL import Image
 import io
 
 
+# ── Community privacy, rules and templates ──────────────────────────────
+# public communities are listed in Discover and anyone can join after
+# accepting the rules; private ones are hidden and only admins add members.
+COMMUNITY_VISIBILITIES = ('public', 'private')
+MAX_RULES = 10
+MAX_RULE_LEN = 200
+
+# Channels a new community starts with, per template: (name, type, description).
+COMMUNITY_TEMPLATES = {
+    'own': [('general', 'text', 'General chat')],
+    'study': [('general', 'text', 'General chat'), ('resources', 'text', 'Notes, links and files'),
+              ('homework-help', 'text', 'Ask and answer questions'), ('study-room', 'voice', 'Study together')],
+    'class': [('announcements', 'text', 'Updates for the class'), ('general', 'text', 'General chat'),
+              ('assignments', 'text', 'Deadlines and submissions'), ('resources', 'text', 'Lecture notes and links'),
+              ('lecture-hall', 'voice', 'Live sessions')],
+    'project': [('general', 'text', 'General chat'), ('tasks', 'text', 'Who is doing what'),
+                ('resources', 'text', 'Docs, designs and links'), ('standup', 'voice', 'Daily check-ins')],
+    'club': [('announcements', 'text', 'News from the organisers'), ('general', 'text', 'General chat'),
+             ('events', 'text', 'Upcoming events'), ('meeting-room', 'voice', 'Club meetings')],
+    'friends': [('general', 'text', 'General chat'), ('memes', 'text', 'Fun stuff'),
+                ('plans', 'text', 'Making plans'), ('hangout', 'voice', 'Hang out')],
+}
+
+
+def _normalize_rules(value):
+    """Rules from the client (list or newline-separated text) -> stored text or None.
+    Raises ValueError with a user-facing message when they are out of bounds."""
+    if value is None:
+        return None
+    items = value if isinstance(value, list) else str(value).split('\n')
+    rules = [str(r).strip() for r in items if str(r).strip()]
+    if len(rules) > MAX_RULES:
+        raise ValueError(f'A community can have at most {MAX_RULES} rules')
+    if any(len(r) > MAX_RULE_LEN for r in rules):
+        raise ValueError(f'Each rule can be at most {MAX_RULE_LEN} characters')
+    return '\n'.join(rules) or None
+
+
+def _rules_list(text):
+    return [r for r in (text or '').split('\n') if r.strip()]
+
+
 # ── Lightweight HTTP response cache helpers ──────────────────────────────
 # Used to avoid redundant DB hits for hot read endpoints. Falls back to a
 # no-op if Redis is unavailable.
@@ -269,7 +311,7 @@ def get_communities():
                 SELECT
                     c.id, c.public_id, c.name, c.description, c.icon, c.color,
                     c.logo_url, c.banner_url, cm.role, c.created_at,
-                    c.intelligence_profile,
+                    c.intelligence_profile, c.visibility, c.rules,
                     COALESCE(mc.member_count, 0) as member_count,
                     COALESCE(cc.channel_count, 0) as channel_count
                 FROM communities c
@@ -305,6 +347,8 @@ def get_communities():
                 'color': c['color'],
                 'logo_url': c['logo_url'],
                 'banner_url': c['banner_url'],
+                'visibility': c['visibility'],
+                'rules': _rules_list(c['rules']),
                 'role': c['role'],
                 'created_at': c['created_at'].isoformat() if c['created_at'] else None,
                 'member_count': c['member_count'],
@@ -624,9 +668,19 @@ def create_community():
         description = data.get('description', '')
         icon = data.get('icon', 'AF')
         color = data.get('color', '#8B5CF6')
+        visibility = data.get('visibility', 'public')
+        template = data.get('template', 'own')
 
         if not name:
             return jsonify({'error': 'Name required'}), 400
+        if visibility not in COMMUNITY_VISIBILITIES:
+            return jsonify({'error': 'visibility must be public or private'}), 400
+        if template not in COMMUNITY_TEMPLATES:
+            return jsonify({'error': 'Unknown template'}), 400
+        try:
+            rules = _normalize_rules(data.get('rules'))
+        except ValueError as ve:
+            return jsonify({'error': str(ve)}), 400
 
         conn = get_db_connection()
         with conn.cursor() as cur:
@@ -638,9 +692,9 @@ def create_community():
             # 1. Create community
             new_public_id = str(uuid.uuid4())
             cur.execute("""
-                INSERT INTO communities (public_id, name, description, icon, color, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (new_public_id, name, description, icon, color, user_id))
+                INSERT INTO communities (public_id, name, description, icon, color, created_by, visibility, rules)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (new_public_id, name, description, icon, color, user_id, visibility, rules))
             community_id = cur.lastrowid
             print(f"[INFO] Created community {community_id}: {name}")
 
@@ -651,20 +705,17 @@ def create_community():
             """, (community_id, user_id))
             print(f"[INFO] Added user {user_id} as owner of community {community_id}")
 
-            # 3. Create default "general" channel
-            cur.execute("""
-                INSERT INTO channels (community_id, name, type, description, created_by)
-                VALUES (%s, 'general', 'text', 'General chat', %s)
-            """, (community_id, user_id))
-            general_channel_id = cur.lastrowid
-            print(f"[INFO] Created general channel {general_channel_id}")
-
-            # 🔥 FIX: Add creator to the general channel as member
-            cur.execute("""
-                INSERT INTO channel_members (channel_id, user_id, role)
-                VALUES (%s, %s, 'admin')
-            """, (general_channel_id, user_id))
-            print(f"[INFO] ✅ Added user {user_id} to channel_members for channel {general_channel_id}")
+            # 3. Create the template's starting channels; the creator is admin of each
+            for ch_name, ch_type, ch_desc in COMMUNITY_TEMPLATES[template]:
+                cur.execute("""
+                    INSERT INTO channels (community_id, name, type, description, created_by)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (community_id, ch_name, ch_type, ch_desc, user_id))
+                cur.execute("""
+                    INSERT INTO channel_members (channel_id, user_id, role)
+                    VALUES (%s, %s, 'admin')
+                """, (cur.lastrowid, user_id))
+            print(f"[INFO] Created {len(COMMUNITY_TEMPLATES[template])} channels from template '{template}'")
 
         conn.commit()
         _cache_delete(f"communities:{user_id}")
@@ -678,6 +729,8 @@ def create_community():
             'description': description,
             'icon': icon,
             'color': color,
+            'visibility': visibility,
+            'rules': _rules_list(rules),
             'role': 'owner'
         }), 201
 
@@ -779,6 +832,18 @@ def update_community(community_id):
             if 'color' in data:
                 updates.append("color = %s")
                 values.append(data['color'])
+            if 'visibility' in data:
+                if data['visibility'] not in COMMUNITY_VISIBILITIES:
+                    return jsonify({'error': 'visibility must be public or private'}), 400
+                updates.append("visibility = %s")
+                values.append(data['visibility'])
+            if 'rules' in data:
+                try:
+                    rules_text = _normalize_rules(data['rules'])
+                except ValueError as ve:
+                    return jsonify({'error': str(ve)}), 400
+                updates.append("rules = %s")
+                values.append(rules_text)
             if 'intelligence_profile' in data:
                 profile = data['intelligence_profile']
                 if profile is None:
@@ -812,7 +877,7 @@ def update_community(community_id):
             cur.execute("""
                 SELECT c.id, c.public_id, c.name, c.description, c.icon, c.color,
                        c.logo_url, c.banner_url, c.created_at,
-                       c.intelligence_profile
+                       c.intelligence_profile, c.visibility, c.rules
                 FROM communities c
                 WHERE c.id = %s
             """, (community_id,))
@@ -835,6 +900,8 @@ def update_community(community_id):
             'banner_url': community['banner_url'],
             'created_at': community['created_at'].isoformat() if community['created_at'] else None,
             'intelligence_profile': effective_profile,
+            'visibility': community['visibility'],
+            'rules': _rules_list(community['rules']),
         }), 200
         
     except Exception as e:
@@ -878,6 +945,7 @@ def get_community(community_id):
             cur.execute("""
                 SELECT c.id, c.name, c.description, c.icon, c.color, 
                        c.logo_url, c.banner_url, c.created_at, c.created_by,
+                       c.visibility, c.rules,
                        u.username as creator_username, u.display_name as creator_display_name
                 FROM communities c
                 LEFT JOIN users u ON c.created_by = u.id
@@ -903,6 +971,8 @@ def get_community(community_id):
             'color': community['color'],
             'logo_url': community['logo_url'],
             'banner_url': community['banner_url'],
+            'visibility': community['visibility'],
+            'rules': _rules_list(community['rules']),
             'created_at': community['created_at'].isoformat() if community['created_at'] else None,
             'role': membership['role'],
             'member_count': member_count,
@@ -1945,14 +2015,17 @@ def discover_communities():
                     c.logo_url, c.banner_url, c.created_at,
                     ANY_VALUE(c.intelligence_profile) as intelligence_profile,
                     COUNT(DISTINCT cm.user_id) as member_count,
+                    COUNT(DISTINCT CASE WHEN mu.status IN ('online', 'idle', 'dnd') THEN cm.user_id END) as online_count,
                     ANY_VALUE(u.username) as creator_username,
                     ANY_VALUE(u.display_name) as creator_name,
                     ANY_VALUE(u.avatar_url) as creator_avatar
                 FROM communities c
                 LEFT JOIN community_members cm ON c.id = cm.community_id
+                LEFT JOIN users mu ON mu.id = cm.user_id
                 LEFT JOIN users u ON c.created_by = u.id
                 LEFT JOIN blocked_users bu ON c.id = bu.community_id AND bu.user_id = %s
-                WHERE c.id NOT IN (
+                WHERE c.visibility = 'public'
+                AND c.id NOT IN (
                     SELECT community_id FROM community_members WHERE user_id = %s
                 )
                 AND bu.user_id IS NULL
@@ -1983,6 +2056,8 @@ def discover_communities():
                 'logo_url': c['logo_url'],
                 'banner_url': c['banner_url'],
                 'member_count': c['member_count'],
+                'online_count': c['online_count'],
+                'visibility': 'public',
                 'created_at': c['created_at'].isoformat() if c['created_at'] else None,
                 'intelligence_profile': profile,
                 'creator': {
@@ -1999,6 +2074,85 @@ def discover_communities():
         import traceback
         traceback.print_exc()
         return jsonify({'error': 'Failed to discover communities'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# =====================================
+# COMMUNITY PREVIEW (before joining)
+# =====================================
+@jwt_required()
+@resolve_public_community_id
+def get_community_preview(community_id):
+    """
+    What a community looks like before you join it: details, member and
+    online counts, channel names (not messages) and rules. Public
+    communities, or ones you already belong to; private ones read as
+    not found so they stay hidden.
+    """
+    conn = None
+    try:
+        username = get_jwt_identity()
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            user_id = get_user_id(username, cur)
+            if user_id is None:
+                return jsonify({'error': 'User not found'}), 404
+
+            cur.execute("""
+                SELECT c.id, c.public_id, c.name, c.description, c.icon, c.color,
+                       c.logo_url, c.banner_url, c.visibility, c.rules, c.created_at
+                FROM communities c WHERE c.id = %s
+            """, (community_id,))
+            community = cur.fetchone()
+
+            cur.execute("SELECT 1 FROM community_members WHERE community_id = %s AND user_id = %s",
+                        (community_id, user_id))
+            is_member = cur.fetchone() is not None
+
+            if not community or (community['visibility'] == 'private' and not is_member):
+                return jsonify({'error': 'Community not found'}), 404
+
+            cur.execute("""
+                SELECT COUNT(*) AS member_count,
+                       SUM(CASE WHEN u.status IN ('online', 'idle', 'dnd') THEN 1 ELSE 0 END) AS online_count
+                FROM community_members cm JOIN users u ON u.id = cm.user_id
+                WHERE cm.community_id = %s
+            """, (community_id,))
+            counts = cur.fetchone() or {}
+
+            cur.execute("""
+                SELECT name, type FROM channels WHERE community_id = %s
+                ORDER BY type = 'voice', id
+            """, (community_id,))
+            channels = cur.fetchall()
+
+            cur.execute("SELECT 1 FROM blocked_users WHERE community_id = %s AND user_id = %s",
+                        (community_id, user_id))
+            is_blocked = cur.fetchone() is not None
+
+        return jsonify({
+            'id': community['public_id'],
+            'name': community['name'],
+            'description': community['description'],
+            'icon': community['icon'],
+            'color': community['color'],
+            'logo_url': community['logo_url'],
+            'banner_url': community['banner_url'],
+            'visibility': community['visibility'],
+            'rules': _rules_list(community['rules']),
+            'member_count': int(counts.get('member_count') or 0),
+            'online_count': int(counts.get('online_count') or 0),
+            'channels': [{'name': ch['name'], 'type': ch['type']} for ch in channels],
+            'is_member': is_member,
+            'is_blocked': is_blocked,
+            'created_at': community['created_at'].isoformat() if community['created_at'] else None,
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] get_community_preview: {e}")
+        return jsonify({'error': 'Failed to load community'}), 500
     finally:
         if conn:
             conn.close()
@@ -2028,10 +2182,19 @@ def join_community(community_id):
                 return jsonify({'error': 'User not found'}), 404
 
             # Check if community exists
-            cur.execute("SELECT id, name FROM communities WHERE id = %s", (community_id,))
+            cur.execute("SELECT id, name, visibility, rules FROM communities WHERE id = %s", (community_id,))
             community = cur.fetchone()
             if not community:
                 return jsonify({'error': 'Community not found'}), 404
+
+            # Private communities are invite-only: an admin adds members.
+            if community['visibility'] == 'private':
+                return jsonify({'error': 'This community is invite-only', 'code': 'invite_only'}), 403
+
+            # Communities with rules ask joiners to accept them first.
+            join_body = request.get_json(silent=True) or {}
+            if _rules_list(community['rules']) and join_body.get('accepted_rules') is not True:
+                return jsonify({'error': 'Please accept the community rules to join', 'code': 'rules_required'}), 400
 
             # Check if user is blocked from this community
             cur.execute(

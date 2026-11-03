@@ -342,6 +342,8 @@ CREATE TABLE `communities` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `member_count` int NOT NULL DEFAULT '0' COMMENT 'Denormalized count maintained by application on join/leave',
   `intelligence_profile` json DEFAULT NULL COMMENT 'Subset of {safe,recaps,multilingual}. NULL = use heuristic.',
+  `visibility` enum('public','private') NOT NULL DEFAULT 'public' COMMENT 'public = listed in Discover, anyone can join; private = invite-only',
+  `rules` text COMMENT 'Community rules, one per line; accepted before joining',
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_community_public_id` (`public_id`),
   KEY `created_by` (`created_by`),
