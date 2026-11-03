@@ -14,6 +14,7 @@ import {
 import { useMediaViewer, type MediaItem } from '@/contexts/MediaViewerContext';
 import { cn } from '@/lib/utils';
 import VoicePlayer from './VoicePlayer';
+import VideoPlayer from './VideoPlayer';
 
 interface FileAttachmentProps {
   fileName: string;
@@ -54,7 +55,6 @@ const FileAttachment: React.FC<FileAttachmentProps> = ({
   duration: savedDuration,
 }) => {
   const [imageError, setImageError] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
   const { openMedia } = useMediaViewer();
   const fullUrl = getFileUrl(fileUrl);
   const ext = getFileExtension(fileName);
@@ -82,34 +82,23 @@ const FileAttachment: React.FC<FileAttachmentProps> = ({
     openMedia(createMediaItem());
   }, [openMedia, createMediaItem]);
 
-  // ── Image attachment ──
+  // ── Image attachment ── (Discord: the picture itself, 8px corners, click to view)
   if (isImageFile(fileName) && !imageError) {
     return (
-      <div 
-        className="mt-1 mb-1 max-w-xs sm:max-w-sm relative group cursor-pointer"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+      <button
+        type="button"
         onClick={handleOpenViewer}
+        aria-label={`Open ${fileName}`}
+        className="mt-1 mb-1 block max-w-full cursor-zoom-in overflow-hidden rounded-lg border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:max-w-md"
       >
         <img
           src={fullUrl}
           alt={fileName}
-          className="rounded-xl max-h-[300px] w-auto object-cover transition-all duration-200 group-hover:brightness-90"
+          className="block max-h-[350px] w-auto max-w-full object-contain"
           onError={() => setImageError(true)}
           loading="lazy"
         />
-        {/* Hover overlay with expand icon */}
-        <div className={`absolute inset-0 rounded-xl flex items-center justify-center bg-black/40 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-          <div className="p-2.5 rounded-full bg-white/20">
-            <Expand className="w-5 h-5 text-white" />
-          </div>
-        </div>
-        {fileSize != null && (
-          <span className="text-xs mt-1 block text-[hsl(var(--theme-text-muted))]">
-            {formatFileSize(fileSize)}
-          </span>
-        )}
-      </div>
+      </button>
     );
   }
 
@@ -135,37 +124,7 @@ const FileAttachment: React.FC<FileAttachmentProps> = ({
 
   // ── Video attachment ──
   if (isVideoFile(fileName)) {
-    return (
-      <div 
-        className="mt-1 mb-1 max-w-xs sm:max-w-sm relative group cursor-pointer"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        onClick={handleOpenViewer}
-      >
-        <video
-          preload="metadata"
-          className="rounded-xl max-h-[300px] w-full transition-all duration-200 group-hover:brightness-90"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <source src={fullUrl} type={mimeType || `video/${ext}`} />
-          Your browser does not support video playback.
-        </video>
-        {/* Hover overlay with expand icon */}
-        <div className={`absolute inset-0 rounded-xl flex items-center justify-center bg-black/40 transition-opacity duration-200 pointer-events-none ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-          <div className="p-3 rounded-full bg-white/20">
-            <Expand className="w-6 h-6 text-white" />
-          </div>
-        </div>
-        <div className="flex items-center justify-between mt-1">
-          <span className="text-xs truncate text-[hsl(var(--theme-text-muted))]">{fileName}</span>
-          {fileSize != null && (
-            <span className="text-xs flex-shrink-0 ml-2 text-[hsl(var(--theme-text-muted))]">
-              {formatFileSize(fileSize)}
-            </span>
-          )}
-        </div>
-      </div>
-    );
+    return <VideoPlayer src={fullUrl} type={mimeType || `video/${ext}`} fileName={fileName} />;
   }
 
   // ── Generic file (document, archive, etc.) ──

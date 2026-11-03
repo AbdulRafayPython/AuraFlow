@@ -33,6 +33,8 @@ import { accentFor, agentLabel, type AgentName } from './AgentAccent';
 export type AgentMessageVariant = 'default' | 'skeleton';
 
 export interface AgentMessageShellProps {
+  /** "Replying to" line above the message (see MessageRow). */
+  replyTo?: ReactNode;
   /** Agent name slug: drives icon tint, icon and default label. */
   agentName: string;
   /** Optional override; defaults to agentLabel(agentName). */
@@ -137,6 +139,7 @@ export default function AgentMessageShell({
   onOpenAgent,
   grouped = false,
   shortTimeLabel,
+  replyTo,
 }: AgentMessageShellProps) {
   const label = displayName ?? agentLabel(agentName as AgentName);
 
@@ -146,6 +149,7 @@ export default function AgentMessageShell({
       authorName={label}
       timeLabel={timestamp ?? ''}
       grouped={grouped}
+      replyTo={replyTo}
       shortTimeLabel={shortTimeLabel}
       onAuthorClick={onOpenAgent ? () => onOpenAgent() : undefined}
       avatar={

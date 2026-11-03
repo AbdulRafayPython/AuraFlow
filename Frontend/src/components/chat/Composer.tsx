@@ -1,8 +1,19 @@
 import * as React from "react";
-import { Plus, SendHorizontal } from "lucide-react";
+import { Plus, SendHorizontal, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { applyShortcode, findShortcodeToken, searchShortcodes } from "@/lib/emoji";
 import { Icon } from "@/components/app/Icon";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+/** One choice in the "+" menu (Discord: Upload a File, Create Poll, Use Apps...). */
+export interface ComposerPlusItem {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  onSelect: () => void;
+}
 
 export interface ComposerProps {
   value: string;
@@ -20,6 +31,8 @@ export interface ComposerProps {
   inputProps?: Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "placeholder" | "disabled" | "ref" | "className">;
   /** Click handler for the leading "+" (attach) button. Omit to hide it. */
   onAttach?: () => void;
+  /** When given, "+" opens a menu with these choices instead of the file picker. */
+  plusItems?: ComposerPlusItem[];
   /** Right-side controls: emoji, voice, attach... */
   trailing?: React.ReactNode;
   /** Rendered above the box: upload preview, popups. */
@@ -47,6 +60,7 @@ export function Composer({
   inputRef,
   inputProps,
   onAttach,
+  plusItems,
   trailing,
   above,
   attached,
@@ -141,7 +155,29 @@ export function Composer({
       >
         {attached && <div className="divide-y divide-border border-b border-border empty:hidden">{attached}</div>}
         <div className="relative flex items-center gap-1 px-1.5">
-        {onAttach && (
+        {plusItems && plusItems.length > 0 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                disabled={disabled}
+                aria-label="More options"
+                title="Upload, record, poll and more"
+                className="group flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors duration-100 hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground disabled:opacity-50 data-[state=open]:bg-[hsl(var(--theme-bg-hover))] data-[state=open]:text-foreground"
+              >
+                <Plus className="h-5 w-5 transition-transform duration-150 group-data-[state=open]:rotate-45" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="start" sideOffset={10} className="w-56">
+              {plusItems.map((it) => (
+                <DropdownMenuItem key={it.key} onSelect={it.onSelect}>
+                  <it.icon />
+                  {it.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : onAttach && (
           <button
             type="button"
             onClick={onAttach}

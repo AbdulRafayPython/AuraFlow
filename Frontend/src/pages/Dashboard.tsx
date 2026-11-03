@@ -1,7 +1,7 @@
 // REWRITE: ~2k-line page holding chat, composer, command picker and agent UI; split into components/hooks.
 // pages/Dashboard.tsx - Professional Real-time Version with Theme Support
 import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from "react";
-import { Search, Hash, Paperclip, Bot, WifiOff, Plus, Mic, SmilePlus, X, Reply, Pin, PinOff, Radio, BookOpen, Trash2, Languages, Users } from "lucide-react";
+import { Search, Hash, Paperclip, Bot, WifiOff, Plus, Mic, SmilePlus, X, Reply, Pin, PinOff, Radio, BookOpen, Trash2, Languages, Users, Upload, AtSign, MessagesSquare, BarChart3 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useVoice } from "@/contexts/VoiceContext";
@@ -28,7 +28,8 @@ import FileAttachment from "@/components/chat/FileAttachment";
 import FileUploadPreview from "@/components/chat/FileUploadPreview";
 import ReplyPreview from "@/components/chat/ReplyPreview";
 import ReplyBar from "@/components/chat/ReplyBar";
-import VoiceRecorder from "@/components/chat/VoiceRecorder";
+import VoiceRecorder, { type VoiceRecorderHandle } from "@/components/chat/VoiceRecorder";
+import CreatePollDialog from "@/components/chat/CreatePollDialog";
 import SystemEventMessage from "@/components/chat/SystemEventMessage";
 import { uploadService, validateFile, type UploadProgress } from "@/services/uploadService";
 import SearchModal from "@/components/search/SearchModal";
@@ -186,6 +187,8 @@ export default function Dashboard() {
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const voiceRef = useRef<VoiceRecorderHandle>(null);
+  const [pollOpen, setPollOpen] = useState(false);
 
   // File upload state
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -1520,15 +1523,12 @@ export default function Dashboard() {
                             return a ? () => openAgent(a) : undefined;
                           })()}
                           timestamp={formatMessageTime(msg.created_at)}
+                          replyTo={msg.reply_to_preview ? (
+                            <ReplyPreview preview={msg.reply_to_preview} onClick={() => scrollToMessage(msg.reply_to_preview!.id)} />
+                          ) : undefined}
                           grouped={grouped}
                           shortTimeLabel={new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
                         >
-                          {msg.reply_to_preview && (
-                            <ReplyPreview
-                              preview={msg.reply_to_preview}
-                              onClick={() => scrollToMessage(msg.reply_to_preview!.id)}
-                            />
-                          )}
                           {(msg as any).card ? (
                             <AgentCardFrame><EngagementCard card={(msg as any).card} messageId={msg.id} /></AgentCardFrame>
                           ) : (
@@ -1548,6 +1548,9 @@ export default function Dashboard() {
                       timeLabel={formatMessageTime(msg.created_at)}
                       shortTimeLabel={new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
                       grouped={grouped}
+                      replyTo={msg.reply_to_preview ? (
+                        <ReplyPreview preview={msg.reply_to_preview} onClick={() => scrollToMessage(msg.reply_to_preview!.id)} />
+                      ) : undefined}
                       pinned={!!msg.is_pinned}
                       selected={isMobile && selectedMessageId === msg.id}
                       onAuthorClick={(e) => handleProfileClick(msg.author || authorName, e)}
@@ -1577,7 +1580,17 @@ export default function Dashboard() {
                           />
                         ) : undefined
                       }
-                      footer={replyCount > 0 ? <RepliesLink count={replyCount} onClick={() => openThread(msg.id)} /> : undefined}
+                      footer={replyCount > 0 ? (() => {
+                        const lastId = replyIndex.get(msg.id)?.at(-1);
+                        const lastMsg: any = lastId != null ? messages.find((m) => m.id === lastId) : undefined;
+                        return (
+                          <RepliesLink
+                            count={replyCount}
+                            last={lastMsg ? { author: lastMsg.author || 'Someone', avatarUrl: lastMsg.avatar_url, text: String(lastMsg.content || (lastMsg.attachment ? lastMsg.attachment.file_name : '')).slice(0, 140) } : undefined}
+                            onClick={() => openThread(msg.id)}
+                          />
+                        );
+                      })() : undefined}
                       toolbar={
                         <MessageToolbar
                           quickEmoji={quickEmoji}
@@ -1586,6 +1599,7 @@ export default function Dashboard() {
                           onOpenPicker={() => setReactionPickerMessageId(reactionPickerMessageId === msg.id ? null : msg.id)}
                           actions={[
                             { key: 'reply', label: 'Reply', icon: Reply, onClick: () => handleReply(msg) },
+                            ...(isMobile ? [] : [{ key: 'thread', label: replyCount > 0 ? 'Open thread' : 'Start a thread', icon: MessagesSquare, onClick: () => openThread(msg.id) }]),
                             { key: 'translate', label: 'Translate', icon: Languages, onClick: () => handleTranslateMessage(msg) },
                             {
                               key: 'pin',
@@ -1614,13 +1628,10 @@ export default function Dashboard() {
                       {grouped && msg.is_blocked && (
                         <span className="mr-2 rounded bg-destructive/15 px-1.5 text-xs font-semibold text-destructive">Removed</span>
                       )}
-                      {/* Reply-to preview */}
-                      {msg.reply_to_preview && (
-                        <ReplyPreview
-                          preview={msg.reply_to_preview}
-                          onClick={() => scrollToMessage(msg.reply_to_preview!.id)}
-                        />
-                      )}
+                      {/* A poll someone posted from the + menu */}
+                      {(msg as any).card ? (
+                        <AgentCardFrame><EngagementCard card={(msg as any).card} messageId={msg.id} /></AgentCardFrame>
+                      ) : null}
                       {/* File / Image / Audio / Video attachment */}
                       {msg.attachment && (msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'voice' || msg.message_type === 'video') && (
                         <FileAttachment
@@ -1634,7 +1645,7 @@ export default function Dashboard() {
                         />
                       )}
                       {/* Text content / caption */}
-                      {msg.content && (() => {
+                      {msg.content && !(msg as any).card && (() => {
                         // If there's an attachment, strip the file URL from content to show only caption
                         let displayContent = msg.content;
                         if (msg.attachment) {
@@ -1963,6 +1974,18 @@ export default function Dashboard() {
               </>
             }
             onAttach={() => fileInputRef.current?.click()}
+            plusItems={[
+              { key: 'upload', label: 'Upload a file', icon: Upload, onSelect: () => fileInputRef.current?.click() },
+              { key: 'voice', label: 'Record a voice message', icon: Mic, onSelect: () => voiceRef.current?.start() },
+              { key: 'poll', label: 'Create a poll', icon: BarChart3, onSelect: () => setPollOpen(true) },
+              {
+                key: 'aura', label: 'Ask Aura', icon: AtSign,
+                onSelect: () => {
+                  setMessage((prev) => (prev.startsWith('@aura') ? prev : `@aura ${prev}`));
+                  setTimeout(() => inputRef.current?.focus(), 0);
+                },
+              },
+            ]}
             trailing={
               <>
                 <EmojiPickerButton
@@ -1971,11 +1994,19 @@ export default function Dashboard() {
                   disabled={!currentChannel}
                 />
                 <VoiceRecorder
+                  ref={voiceRef}
                   onSend={handleVoiceSend}
                   disabled={!currentChannel}
                 />
               </>
             }
+          />
+
+          <CreatePollDialog
+            open={pollOpen}
+            onOpenChange={setPollOpen}
+            channelId={currentChannel ? Number(currentChannel.id) : null}
+            channelName={currentChannel?.name}
           />
 
           {/* Only warn about a dropped connection if we were actually

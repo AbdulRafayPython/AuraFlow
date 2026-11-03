@@ -1,82 +1,47 @@
-// components/chat/ReplyPreview.tsx - Compact inline reply reference shown above a message
+// components/chat/ReplyPreview.tsx - the one-line "replying to" reference above a message.
+// Discord-style: no box; @name in the accent colour, then the start of the
+// original message (or what it was: image, voice...). MessageRow draws the
+// curved line that joins it to the avatar. Click jumps to the original.
 import React from 'react';
-import { Reply, ImageIcon, FileIcon, Mic, Video } from 'lucide-react';
+import { FileIcon, ImageIcon, Mic, Video } from 'lucide-react';
 import type { ReplyToPreview } from '@/types';
+import { cn } from '@/lib/utils';
 
 interface ReplyPreviewProps {
   preview: ReplyToPreview;
-  /** When true, uses the accent-colored style (for own sent messages in DMs) */
+  /** Accent style (own messages in accent-coloured contexts). */
   variant?: 'default' | 'accent';
-  /** Scroll-to-parent when clicked */
+  /** Scroll to the original when clicked. */
   onClick?: () => void;
 }
 
+const TYPES: Record<string, { icon: typeof Mic; label: string }> = {
+  image: { icon: ImageIcon, label: 'Click to see the image' },
+  file: { icon: FileIcon, label: 'Click to see the file' },
+  voice: { icon: Mic, label: 'Voice message' },
+  video: { icon: Video, label: 'Click to see the video' },
+};
+
 const ReplyPreview: React.FC<ReplyPreviewProps> = ({ preview, variant = 'default', onClick }) => {
-  const truncated = preview.content.length > 100
-    ? preview.content.slice(0, 100) + '…'
-    : preview.content;
-
-  // Determine message type properties
-  const isImage = preview.message_type === 'image';
-  const isFile = preview.message_type === 'file';
-  const isVoice = preview.message_type === 'voice';
-  const isVideo = preview.message_type === 'video';
-  const hasMediaType = isImage || isFile || isVoice || isVideo;
-
-  // Get appropriate icon
-  const TypeIcon = isImage ? ImageIcon : isFile ? FileIcon : isVoice ? Mic : isVideo ? Video : null;
-  const typeLabel = isImage ? 'Image' : isFile ? 'File' : isVoice ? 'Voice' : isVideo ? 'Video' : null;
-
-  // Check for image preview URL
-  const imageUrl = (preview as any).file_url || (preview as any).attachment_url;
-
+  const kind = TYPES[preview.message_type];
+  const text = preview.content?.trim();
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group flex items-center gap-2 text-xs mb-1.5 pl-2.5 pr-3 py-1.5 rounded-lg max-w-[320px] cursor-pointer transition-all duration-150 ${
-        variant === 'accent'
-          ? 'bg-white/10 hover:bg-white/15 text-white/85 border border-white/10'
-          : 'bg-[hsl(var(--theme-bg-tertiary)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary)/0.8)] text-[hsl(var(--theme-text-secondary))] border border-[hsl(var(--theme-border-subtle))]'
-      }`}
-    >
-      {/* Reply Icon */}
-      <Reply className={`w-3 h-3 flex-shrink-0 rotate-180 transition-colors ${
-        variant === 'accent' 
-          ? 'text-white/60 group-hover:text-white/80' 
-          : 'text-[hsl(var(--theme-text-muted))] group-hover:text-[hsl(var(--theme-text-accent))]'
-      }`} />
-      
-      {/* Image Thumbnail (if replying to image with URL) */}
-      {isImage && imageUrl && (
-        <div className="flex-shrink-0 w-6 h-6 rounded overflow-hidden bg-[hsl(var(--theme-bg-tertiary))]">
-          <img 
-            src={imageUrl} 
-            alt="" 
-            className="w-full h-full object-cover"
-          />
-        </div>
+      title="Jump to the original message"
+      data-testid="reply-preview"
+      className={cn(
+        'group/reply flex min-w-0 max-w-full items-center gap-1.5 text-left text-sm leading-5',
+        variant === 'accent' ? 'text-white/80' : 'text-[hsl(var(--theme-text-secondary))]',
       )}
-      
-      {/* Author Name */}
-      <span className={`font-semibold flex-shrink-0 ${
-        variant === 'accent' 
-          ? 'text-white/95' 
-          : 'text-[hsl(var(--theme-text-accent))]'
-      }`}>
-        {preview.author}
+    >
+      <span className={cn('shrink-0 font-semibold', variant === 'accent' ? 'text-white' : 'text-[hsl(var(--theme-text-accent))]')}>
+        @{preview.author}
       </span>
-      
-      {/* Content or Type Label */}
-      <span className="truncate flex items-center gap-1">
-        {TypeIcon && hasMediaType && (
-          <TypeIcon className={`w-3 h-3 flex-shrink-0 ${
-            variant === 'accent' ? 'text-white/50' : 'text-[hsl(var(--theme-text-muted))]'
-          }`} />
-        )}
-        <span className="truncate">
-          {typeLabel || truncated}
-        </span>
+      {kind && <kind.icon className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />}
+      <span className="truncate opacity-90 transition-opacity duration-100 group-hover/reply:opacity-100">
+        {text && preview.message_type === 'text' ? text : kind ? (text || kind.label) : text || 'Original message'}
       </span>
     </button>
   );
