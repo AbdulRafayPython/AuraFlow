@@ -64,6 +64,7 @@ export default {
     extend: {
       fontFamily: {
         sans: ["'Inter Variable'", "Inter", "-apple-system", "BlinkMacSystemFont", "'Segoe UI'", "Roboto", "sans-serif"],
+        display: ["Anton", "Impact", "'Arial Narrow'", "sans-serif"],
       },
       transitionDuration: {
         DEFAULT: "150ms",

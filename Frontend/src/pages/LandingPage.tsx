@@ -1,4 +1,4 @@
-import { ArrowRight, Hash, Languages, Menu, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Hash, Languages, Menu, ShieldCheck, ScrollText, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import MarketingBrand from '@/components/marketing/MarketingBrand';
@@ -177,7 +177,7 @@ export default function LandingPage() {
               </div>
             </div>
             <aside className="af-home-demo__insight" aria-live="polite">
-              <span className="af-home-demo__insight-icon"><Sparkles size={22} aria-hidden="true" /></span>
+              <span className="af-home-demo__insight-icon"><ScrollText size={22} aria-hidden="true" /></span>
               <div>
                 <p>{preview.eyebrow}</p>
                 <h3>{preview.title}</h3>
@@ -198,7 +198,7 @@ export default function LandingPage() {
           <div className="af-home-features__grid">
             <article className="af-home-feature af-home-feature--main">
               <div className="af-home-feature__copy">
-                <span className="af-home-feature__icon"><Sparkles size={25} aria-hidden="true" /></span>
+                <span className="af-home-feature__icon"><ScrollText size={25} aria-hidden="true" /></span>
                 <h3>Know what you missed.</h3>
                 <p>Get a concise recap of a busy channel before jumping back into the discussion.</p>
               </div>

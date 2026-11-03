@@ -1,6 +1,6 @@
 // "Create an agent": pick where it lives, then a template, or describe it in your own words.
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Sparkles, Wand2 } from 'lucide-react';
+import { Loader2, Bot, PenLine } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { channelService } from '@/services/channelService';
@@ -196,12 +196,12 @@ const CreateAgentDialog: React.FC<Props> = ({ open, onOpenChange, communities, d
                         placeholder="e.g. Answers questions about hostel rules in English and Urdu, politely, and says so when it does not know." />
             </div>
             <button type="button" className={btnGhost} disabled={generating || prompt.trim().length < 5} onClick={() => void generate()}>
-              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenLine className="h-4 w-4" />}
               Draft it for me
             </button>
             {draft && (
               <div className="space-y-2 rounded-lg border border-[hsl(var(--theme-border-default))] p-3 text-sm" data-testid="draft-preview">
-                <div className="flex items-center gap-2 font-semibold"><Sparkles className="h-4 w-4 text-[hsl(var(--theme-text-accent))]" />{draft.draft.name}</div>
+                <div className="flex items-center gap-2 font-semibold"><Bot className="h-4 w-4 text-[hsl(var(--theme-text-accent))]" />{draft.draft.name}</div>
                 <p className="text-[hsl(var(--theme-text-secondary))]">{draft.draft.description}</p>
                 <p className="whitespace-pre-line text-xs text-[hsl(var(--theme-text-muted))]">{draft.draft.instructions}</p>
                 <p className="text-xs text-[hsl(var(--theme-text-muted))]">

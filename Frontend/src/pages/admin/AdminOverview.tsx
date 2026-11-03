@@ -29,7 +29,7 @@ import {
   Brain,
   Shield,
   Heart,
-  Sparkles,
+  ScrollText,
   Zap,
   Eye,
   Clock,
@@ -189,7 +189,7 @@ function AlertItem({ alert }: AlertItemProps) {
 
 // Agent icon mapping
 const agentIcons: Record<string, React.ElementType> = {
-  summarizer: Sparkles,
+  summarizer: ScrollText,
   mood_tracker: Heart,
   moderation: Shield,
   engagement: Zap,

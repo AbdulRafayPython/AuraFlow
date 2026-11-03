@@ -2,7 +2,7 @@
 // server integrations: logo with a status dot, name and tag, one line about it,
 // and the controls on the right (an on/off switch, Manage, and a ⋯ menu).
 import React from 'react';
-import { Loader2 } from 'lucide-react';
+import { Check, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AgentStatus } from '@/types/agentBuilder';
 
@@ -44,7 +44,9 @@ export function OnOffSwitch({ on, busy, disabled, label, title, onChange }: {
           on ? 'translate-x-[19px]' : 'translate-x-[3px]',
         )}
       >
-        {busy && <Loader2 className="h-3 w-3 animate-spin text-[#4e5058]" />}
+        {busy ? <Loader2 className="h-3 w-3 animate-spin text-[#4e5058]" />
+          : on ? <Check className="h-3 w-3 text-success" strokeWidth={3} />
+          : <X className="h-3 w-3 text-[#80848e]" strokeWidth={3} />}
       </span>
     </button>
   );

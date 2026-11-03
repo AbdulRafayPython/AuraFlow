@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Sparkles,
+  Reply,
   X,
   CornerDownLeft,
   Hand,
@@ -135,7 +135,7 @@ export default function QuickReplyChips({
           aria-hidden
           className="relative grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[hsl(var(--acc)/0.14)] text-[hsl(var(--acc))]"
         >
-          <Sparkles className="h-4 w-4" />
+          <Reply className="h-4 w-4" />
           <span className="absolute -right-0.5 -top-0.5 flex h-2 w-2">
             <span className="relative inline-flex h-2 w-2 rounded-full bg-[hsl(var(--acc))] ring-2 ring-[hsl(var(--theme-bg-elevated))]" />
           </span>

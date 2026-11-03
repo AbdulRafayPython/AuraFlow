@@ -51,14 +51,14 @@ function CommunityCard({ community, onOpen }: { community: Community; onOpen: ()
       type="button"
       onClick={onOpen}
       aria-label={`View ${community.name}`}
-      className="group flex flex-col overflow-hidden rounded-xl border border-border bg-[hsl(var(--theme-bg-secondary))] text-left transition-colors duration-150 hover:border-[hsl(var(--theme-border-hover))] hover:bg-[hsl(var(--theme-bg-tertiary))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      className="card-sheen group flex flex-col overflow-hidden rounded-lg border border-border bg-[hsl(var(--theme-bg-secondary))] text-left transition-colors duration-150 hover:border-[hsl(var(--theme-border-hover))] hover:bg-[hsl(var(--theme-bg-tertiary))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
       <div className="relative h-32 w-full shrink-0 overflow-hidden" style={banner ? undefined : { backgroundColor: color }}>
         {banner && (
           <img
             src={banner}
             alt=""
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 motion-reduce:transform-none"
+            className="h-full w-full object-cover"
           />
         )}
       </div>
@@ -243,16 +243,16 @@ export default function DiscoverCommunities() {
           <div className="mx-auto max-w-[1200px] px-4 pb-10 pt-4 sm:px-6">
             {/* Hero */}
             {category === "home" && !searchTerm.trim() && (
-              <section className="group relative isolate overflow-hidden rounded-xl" aria-label="Find your community">
+              <section className="relative isolate overflow-hidden rounded-lg" aria-label="Find your community">
                 <img
                   src="/discover/hero.webp"
                   alt=""
-                  className="absolute inset-0 -z-10 h-full w-full object-cover object-right transition-transform duration-700 ease-out group-hover:scale-[1.03] motion-reduce:transform-none"
+                  className="absolute inset-0 -z-10 h-full w-full object-cover object-right"
                 />
                 <div aria-hidden className="absolute inset-0 -z-10 bg-black/30 sm:bg-transparent" />
                 <div className="flex min-h-[220px] max-w-lg flex-col justify-center px-6 py-8 sm:min-h-[260px] sm:px-10">
-                  <h1 className="text-2xl font-bold leading-tight text-white sm:text-[28px]">Find your community on AuraFlow</h1>
-                  <p className="mt-2 text-base text-white/80">From study groups to tech talks, there is a place for you.</p>
+                  <h1 className="font-display text-5xl uppercase leading-[0.95] tracking-wide text-white sm:text-6xl">Find your<br />people</h1>
+                  <p className="mt-3 text-base text-white/85">From study groups to tech talks, there is a place for you.</p>
                 </div>
               </section>
             )}

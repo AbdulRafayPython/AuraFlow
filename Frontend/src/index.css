@@ -1,5 +1,7 @@
 /* Inter is self-hosted (bundled by Vite from @fontsource-variable/inter). */
 @import '@fontsource-variable/inter/index.css';
+/* Anton: the tall display face for page heroes only. */
+@import '@fontsource/anton/latin-400.css';
 
 @tailwind base;
 @tailwind components;
@@ -385,6 +387,59 @@
 
 @media (prefers-reduced-motion: reduce) {
   .animate-skeleton {
+    animation: none;
+  }
+}
+
+/* Card hover (Discord-style): the card lightens and a thin white light runs
+   once around its edge, starting on the left. No zoom. */
+@property --sheen-angle {
+  syntax: "<angle>";
+  initial-value: 270deg;
+  inherits: false;
+}
+
+@layer components {
+  .card-sheen {
+    position: relative;
+    isolation: isolate;
+  }
+  .card-sheen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(
+      from var(--sheen-angle),
+      transparent 0deg,
+      hsl(var(--foreground) / 0.25) 200deg,
+      hsl(var(--foreground) / 0.9) 300deg,
+      transparent 360deg
+    );
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 150ms ease-out;
+    pointer-events: none;
+  }
+  .card-sheen:hover::after,
+  .card-sheen:focus-visible::after {
+    opacity: 1;
+    animation: card-sheen-run 900ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+}
+
+@keyframes card-sheen-run {
+  from { --sheen-angle: 270deg; }
+  to { --sheen-angle: 630deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-sheen:hover::after,
+  .card-sheen:focus-visible::after {
     animation: none;
   }
 }

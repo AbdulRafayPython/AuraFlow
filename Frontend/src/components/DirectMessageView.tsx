@@ -1,7 +1,7 @@
 // REWRITE: ~1.3k lines; duplicates much of the channel chat view in pages/Dashboard.tsx.
 // components/DirectMessageView.tsx - DM conversation view
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video, Sparkles, CircleUser } from 'lucide-react';
+import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video, ScrollText, CircleUser } from 'lucide-react';
 import AgentMessageShell from '@/components/ai-agents/AgentMessageShell';
 import { methodLabel } from '@/components/ai-agents/humanize';
 import { aiAgentService, type DMSummaryResult } from '@/services/aiAgentService';
@@ -795,7 +795,7 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
               title="Catch me up — summarize this conversation"
               aria-label="Summarize this conversation"
             >
-              <Sparkles className="w-[18px] h-[18px]" />
+              <ScrollText className="w-[18px] h-[18px]" />
             </button>
             {!isBot && (<>
             <button

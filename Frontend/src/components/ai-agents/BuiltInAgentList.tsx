@@ -1,7 +1,7 @@
 // The built-in agents (summarizer, moderation, mood...) in the Agents page, next to Aura.
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { aiAgentService, type AgentCatalogEntry } from '@/services/aiAgentService';
 import { adminService } from '@/services/adminService';
@@ -140,7 +140,7 @@ const BuiltInAgentList: React.FC<Props> = ({ communityId, communityName, query =
             extra={canUpgrade ? (
               <button type="button" className="inline-flex items-center gap-1.5 text-sm font-medium text-[hsl(var(--theme-text-accent))] hover:underline"
                       onClick={() => setUpgrading({ entry, path: twin })}>
-                <Icon icon={Sparkles} size="md" /> {twin.button}
+                <Icon icon={ArrowUpRight} size="md" /> {twin.button}
               </button>
             ) : undefined}
             controls={

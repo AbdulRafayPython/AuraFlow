@@ -9,7 +9,7 @@ import { getAvatarUrl } from "@/lib/utils";
 import { 
   Settings as SettingsIcon, Shield, Bell, Palette, Moon, Sun, Volume2, 
   Download, Ban, Trash2, AlertCircle, User as UserIcon, Camera, X, Save, Mail, 
-  Check, Sparkles, ChevronRight, Edit3, Globe, Eye, EyeOff, Key, Smartphone,
+  Check, ChevronRight, Edit3, Globe, Eye, EyeOff, Key, Smartphone,
   MessageSquare, Users, Zap, Monitor, VolumeX, RefreshCw, Bot,
   Crown, BarChart3, ShieldCheck, ExternalLink
 } from "lucide-react";
@@ -549,7 +549,7 @@ export default function Settings() {
             className="w-20 h-20 rounded-xl flex items-center justify-center relative overflow-hidden"
             style={{ backgroundColor: themes[currentTheme].preview.accent }}
           >
-            <Sparkles className="w-8 h-8 text-white" />
+            <Palette className="w-8 h-8 text-white" />
           </div>
           <div className="flex-1">
             <p className="text-sm text-[hsl(var(--theme-text-muted))] mb-1">Active Theme</p>

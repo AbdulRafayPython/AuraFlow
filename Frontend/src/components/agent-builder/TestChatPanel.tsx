@@ -1,6 +1,6 @@
 // Try the agent before (or after) publishing. Nothing is posted to any channel.
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Send, Sparkles } from 'lucide-react';
+import { Loader2, Send, MessageSquare } from 'lucide-react';
 import agentBuilderService, { errorMessage } from '@/services/agentBuilderService';
 import type { TestResult } from '@/types/agentBuilder';
 import type { Channel } from '@/types';
@@ -56,7 +56,7 @@ const TestChatPanel: React.FC<Props> = ({ agentId, agentName, channels, hasUnsav
     <section className={`${bare ? '' : cardCls} flex h-full min-h-[420px] flex-col`} aria-label="Test chat">
       <header className="border-b border-[hsl(var(--theme-border-default))] px-4 py-3">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
-          <Sparkles className="h-4 w-4 text-[hsl(var(--theme-text-accent))]" /> Try {agentName}
+          <MessageSquare className="h-4 w-4 text-[hsl(var(--theme-text-accent))]" /> Try {agentName}
         </h3>
         <p className={hintCls}>A private test. Nothing is posted to your channels.</p>
         {textChannels.length > 0 && (
