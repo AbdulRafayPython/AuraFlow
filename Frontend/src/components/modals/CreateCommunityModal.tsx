@@ -9,8 +9,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertCircle, ArrowLeft, Camera, Check, ChevronRight, Globe, Hash, ImagePlus, Loader2, Lock, Plus,
-  Volume2, X,
+  AlertCircle, ArrowLeft, Camera, Check, ChevronRight, Globe, Hash, ImagePlus, Loader2, Lock, Plus, Volume2,
 } from "lucide-react";
 import { channelService } from "@/services/channelService";
 import { useRealtime } from "@/hooks/useRealtime";
@@ -18,9 +17,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn, readableTextOn } from "@/lib/utils";
 import type { Community, CommunityTemplate, CommunityVisibility } from "@/types";
 import { ResponsiveModal, ResponsiveModalContent, ResponsiveModalTitle } from "@/components/ui/responsive-modal";
-import {
-  COMMUNITY_TEMPLATES, MAX_RULES, MAX_RULE_LENGTH, templateById, type TemplateChannel,
-} from "@/lib/communityTemplates";
+import { COMMUNITY_TEMPLATES, templateById, type TemplateChannel } from "@/lib/communityTemplates";
+import { PrivacyChoice, RulesEditor } from "@/components/community/CommunityPrivacy";
 
 interface CreateCommunityModalProps {
   isOpen: boolean;
@@ -63,51 +61,6 @@ function ChannelChips({ channels }: { channels: TemplateChannel[] }) {
         </span>
       ))}
     </span>
-  );
-}
-
-function PrivacyOption({
-  selected, onSelect, icon: Icon, title, description, points,
-}: {
-  selected: boolean;
-  onSelect: () => void;
-  icon: typeof Globe;
-  title: string;
-  description: string;
-  points: string[];
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      onClick={onSelect}
-      className={cn(
-        "flex w-full items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-        selected ? "border-primary bg-primary/10" : "border-border hover:border-[hsl(var(--theme-border-hover))] hover:bg-[hsl(var(--theme-bg-hover))]",
-      )}
-    >
-      <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", selected ? "bg-primary text-primary-foreground" : "bg-[hsl(var(--theme-bg-tertiary))] text-foreground")}>
-        <Icon className="h-5 w-5" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-base font-semibold text-foreground">{title}</span>
-        <span className="mt-0.5 block text-sm text-[hsl(var(--theme-text-secondary))]">{description}</span>
-        <ul className="mt-2 space-y-1">
-          {points.map((p) => (
-            <li key={p} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-              <Check className="mt-0.5 h-3 w-3 shrink-0" /> {p}
-            </li>
-          ))}
-        </ul>
-      </span>
-      <span
-        aria-hidden
-        className={cn("mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2", selected ? "border-primary" : "border-muted-foreground")}
-      >
-        {selected && <span className="h-2.5 w-2.5 rounded-full bg-primary" />}
-      </span>
-    </button>
   );
 }
 
@@ -288,26 +241,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
             </div>
           )}
 
-          {step === "privacy" && (
-            <div role="radiogroup" aria-label="Who can join" className="space-y-3">
-              <PrivacyOption
-                selected={visibility === "public"}
-                onSelect={() => setVisibility("public")}
-                icon={Globe}
-                title="Public"
-                description="Anyone on AuraFlow can find and join it."
-                points={["Listed in Discover and search", "People accept your rules before joining"]}
-              />
-              <PrivacyOption
-                selected={visibility === "private"}
-                onSelect={() => setVisibility("private")}
-                icon={Lock}
-                title="Private"
-                description="Only people you add can join."
-                points={["Hidden from Discover and search", "Admins add members from the community menu"]}
-              />
-            </div>
-          )}
+          {step === "privacy" && <PrivacyChoice value={visibility} onChange={setVisibility} />}
 
           {step === "customize" && (
             <div className="space-y-5">
@@ -445,54 +379,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunit
             </div>
           )}
 
-          {step === "rules" && (
-            <div>
-              <ol className="space-y-2">
-                {rules.map((rule, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <span className="mt-2 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--theme-bg-tertiary))] text-xs font-semibold text-muted-foreground">{i + 1}</span>
-                    <div className="min-w-0 flex-1">
-                      <textarea
-                        value={rule}
-                        rows={1}
-                        onChange={(e) => setRules((prev) => prev.map((r, j) => (j === i ? e.target.value.replace(/\n/g, " ").slice(0, MAX_RULE_LENGTH) : r)))}
-                        placeholder="Write a rule"
-                        aria-label={`Rule ${i + 1}`}
-                        className="min-h-9 w-full resize-none rounded-md border border-border bg-[hsl(var(--theme-input-bg))] px-3 py-1.5 text-sm text-foreground outline-none [field-sizing:content] placeholder:text-muted-foreground focus:border-primary"
-                      />
-                      {rule.length >= MAX_RULE_LENGTH - 20 && (
-                        <p className="mt-0.5 text-right text-xs text-muted-foreground">{rule.length}/{MAX_RULE_LENGTH}</p>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setRules((prev) => prev.filter((_, j) => j !== i))}
-                      aria-label={`Remove rule ${i + 1}`}
-                      className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </li>
-                ))}
-              </ol>
-              {rules.length < MAX_RULES ? (
-                <button
-                  type="button"
-                  onClick={() => setRules((prev) => [...prev, ""])}
-                  className="mt-3 flex h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-primary hover:bg-primary/10"
-                >
-                  <Plus className="h-4 w-4" /> Add a rule
-                </button>
-              ) : (
-                <p className="mt-3 text-xs text-muted-foreground">That's the maximum of {MAX_RULES} rules.</p>
-              )}
-              <p className="mt-3 text-xs text-muted-foreground">
-                {cleanRules.length === 0
-                  ? "With no rules, people join straight after the preview."
-                  : `Joiners must tick "I agree" to these ${cleanRules.length} rule${cleanRules.length === 1 ? "" : "s"}.`}
-              </p>
-            </div>
-          )}
+          {step === "rules" && <RulesEditor rules={rules} onChange={setRules} />}
 
           {error && (
             <p role="alert" className="mt-4 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-sm text-destructive">

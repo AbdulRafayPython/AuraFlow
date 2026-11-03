@@ -1,10 +1,11 @@
 // components/modals/CommunitySettingsModal.tsx
 import { useState, useRef, useEffect } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
-import { Camera, Trash2, Loader2, Check, AlertCircle, Bot, Settings as SettingsIcon } from "lucide-react";
+import { Camera, Trash2, Loader2, Check, AlertCircle, Bot, Settings as SettingsIcon, Globe, Lock } from "lucide-react";
 import { channelService } from "@/services/channelService";
 import { useNotifications } from "@/hooks/useNotifications";
-import { Community } from "@/types";
+import type { Community, CommunityVisibility } from "@/types";
+import { PrivacyChoice, RulesEditor } from "@/components/community/CommunityPrivacy";
 import { API_SERVER } from "@/config/api";
 import ManageAgentsCard from "@/components/ai-agents/ManageAgentsCard";
 import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
@@ -39,7 +40,10 @@ export default function CommunitySettingsModal({
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   // AI Agents is the primary, default tab; appearance/general lives behind it.
-  const [activeTab, setActiveTab] = useState<'general' | 'agents'>('agents');
+  const [activeTab, setActiveTab] = useState<'general' | 'agents' | 'privacy'>('agents');
+  const [visibility, setVisibility] = useState<CommunityVisibility>(community?.visibility ?? 'public');
+  const [rules, setRules] = useState<string[]>(community?.rules ?? []);
+  const [savingPrivacy, setSavingPrivacy] = useState(false);
   
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
@@ -162,6 +166,36 @@ export default function CommunitySettingsModal({
       showError({ title: error.message || "Failed to remove banner" });
     } finally {
       setUploadingBanner(false);
+    }
+  };
+
+  // Re-read privacy and rules whenever the dialog opens for a community.
+  useEffect(() => {
+    if (!isOpen || !community) return;
+    setVisibility(community.visibility ?? 'public');
+    setRules(community.rules ?? []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, community?.id]);
+
+  const cleanRules = rules.map((r) => r.trim()).filter(Boolean);
+  const privacyDirty =
+    visibility !== (community?.visibility ?? 'public') ||
+    JSON.stringify(cleanRules) !== JSON.stringify(community?.rules ?? []);
+
+  const handleSavePrivacy = async () => {
+    if (!community) return;
+    setSavingPrivacy(true);
+    try {
+      const updated = await channelService.updateCommunity(community.id, {
+        visibility,
+        rules: visibility === 'public' ? cleanRules : community.rules ?? [],
+      });
+      showSuccess({ title: visibility === 'public' ? 'Community is public' : 'Community is private' });
+      onCommunityUpdated?.({ ...community, ...updated });
+    } catch (error: any) {
+      showError({ title: error.message || "Failed to save privacy settings" });
+    } finally {
+      setSavingPrivacy(false);
     }
   };
 
@@ -385,10 +419,61 @@ export default function CommunitySettingsModal({
               <SettingsIcon className="w-4 h-4" />
               Appearance
             </button>
+            <button
+              onClick={() => setActiveTab('privacy')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${
+                activeTab === 'privacy'
+                  ? 'bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-primary))] shadow-sm'
+                  : 'text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-secondary))]'
+              }`}
+            >
+              {visibility === 'private' ? <Lock className="w-4 h-4" /> : <Globe className="w-4 h-4" />}
+              Privacy &amp; rules
+            </button>
           </div>
 
           {activeTab === 'agents' ? (
             <ManageAgentsCard communityId={community.id} communityName={community.name} onNavigate={onClose} />
+          ) : activeTab === 'privacy' ? (
+            <div className="space-y-6">
+              {!isOwnerOrAdmin && (
+                <p className="text-sm text-muted-foreground">Only owners and admins can change who can join.</p>
+              )}
+              <section>
+                <h3 className="mb-1 text-base font-semibold text-foreground">Who can join?</h3>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  Changing this does not remove anyone. Current members stay either way.
+                </p>
+                <PrivacyChoice value={visibility} onChange={setVisibility} disabled={!isOwnerOrAdmin} />
+              </section>
+              {visibility === 'public' && (
+                <section>
+                  <h3 className="mb-1 text-base font-semibold text-foreground">Rules</h3>
+                  <p className="mb-3 text-sm text-muted-foreground">People read and accept these before they join.</p>
+                  <RulesEditor rules={rules} onChange={setRules} disabled={!isOwnerOrAdmin} />
+                </section>
+              )}
+              {isOwnerOrAdmin && (
+                <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
+                  {privacyDirty && <span className="mr-auto text-xs text-muted-foreground">Unsaved changes</span>}
+                  <button
+                    onClick={() => { setVisibility(community.visibility ?? 'public'); setRules(community.rules ?? []); }}
+                    disabled={!privacyDirty || savingPrivacy}
+                    className="h-9 rounded-md px-3 text-sm font-medium text-[hsl(var(--theme-text-secondary))] hover:text-foreground disabled:opacity-50"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    onClick={handleSavePrivacy}
+                    disabled={!privacyDirty || savingPrivacy}
+                    className="flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {savingPrivacy && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Save changes
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
           <>
 
