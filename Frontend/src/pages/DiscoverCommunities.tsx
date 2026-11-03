@@ -1,24 +1,22 @@
-// Discover communities, laid out like Discord's server discovery: categories
-// in the left column, a hero with the search box, then featured and more
-// communities as banner cards. Agents have their own page (/agents), so this
-// page is only about communities.
+// Discover communities, laid out like Discord's server discovery: a tab bar
+// of categories with search on the right, a hero, then featured and more
+// communities as banner cards. A card opens the join procedure (preview →
+// rules → join); nothing joins on a single click. Agents have their own
+// page (/agents), so this page is only about communities.
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search, Users, Compass, Gamepad2, Music, Film, FlaskConical, GraduationCap,
-  Loader2, Plus, Home, X,
+  Loader2, Home, X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn, readableTextOn } from "@/lib/utils";
 import { channelService } from "@/services/channelService";
 import { useRealtime } from "@/hooks/useRealtime";
 import type { Community } from "@/types";
 import { API_SERVER } from "@/config/api";
 import { matchesCategory, type CategoryId } from "@/lib/communityCategory";
-
-interface DiscoverCommunitiesProps {
-  onClose?: () => void;
-  onJoinCommunity?: (communityId: string) => Promise<void>;
-}
+import { JoinCommunityDialog } from "@/components/community/JoinCommunityDialog";
 
 const CATEGORIES: { id: CategoryId; label: string; icon: typeof Home }[] = [
   { id: "home", label: "Home", icon: Home },
@@ -43,14 +41,19 @@ const formatCount = (count: number) => {
   return count.toString();
 };
 
-function CommunityCard({ community, joining, onJoin }: { community: Community; joining: boolean; onJoin: () => void }) {
+function CommunityCard({ community, onOpen }: { community: Community; onOpen: () => void }) {
   const banner = assetUrl(community.banner_url);
   const logo = assetUrl(community.logo_url);
   const color = community.color || "#5865f2";
   const members = community.member_count || 0;
   return (
-    <article className="group flex flex-col overflow-hidden rounded-xl border border-border bg-[hsl(var(--theme-bg-secondary))] transition-colors duration-150 hover:border-[hsl(var(--theme-border-hover))] hover:bg-[hsl(var(--theme-bg-tertiary))]">
-      <div className="relative h-32 shrink-0 overflow-hidden" style={banner ? undefined : { backgroundColor: color }}>
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`View ${community.name}`}
+      className="group flex flex-col overflow-hidden rounded-xl border border-border bg-[hsl(var(--theme-bg-secondary))] text-left transition-colors duration-150 hover:border-[hsl(var(--theme-border-hover))] hover:bg-[hsl(var(--theme-bg-tertiary))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    >
+      <div className="relative h-32 w-full shrink-0 overflow-hidden" style={banner ? undefined : { backgroundColor: color }}>
         {banner && (
           <img
             src={banner}
@@ -59,8 +62,9 @@ function CommunityCard({ community, joining, onJoin }: { community: Community; j
           />
         )}
       </div>
-      <div className="relative flex flex-1 flex-col px-4 pb-4 pt-9">
-        <span className="absolute -top-7 left-4 flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border-4 border-[hsl(var(--theme-bg-secondary))] text-sm font-bold transition-colors duration-150 group-hover:border-[hsl(var(--theme-bg-tertiary))]"
+      <div className="relative flex w-full flex-1 flex-col px-4 pb-4 pt-9">
+        <span
+          className="absolute -top-7 left-4 flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border-4 border-[hsl(var(--theme-bg-secondary))] text-sm font-bold transition-colors duration-150 group-hover:border-[hsl(var(--theme-bg-tertiary))]"
           style={logo ? undefined : { backgroundColor: color, color: readableTextOn(color) }}
         >
           {logo ? <img src={logo} alt="" className="h-full w-full object-cover" /> : community.icon || initialsOf(community.name)}
@@ -69,38 +73,33 @@ function CommunityCard({ community, joining, onJoin }: { community: Community; j
         <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">
           {community.description || "A community on AuraFlow."}
         </p>
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-success" aria-hidden />
+            {formatCount(community.online_count || 0)} Online
+          </span>
+          <span className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-muted-foreground" aria-hidden />
             {formatCount(members)} {members === 1 ? "Member" : "Members"}
           </span>
-          <button
-            type="button"
-            onClick={onJoin}
-            disabled={joining}
-            aria-label={`Join ${community.name}`}
-            className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-          >
-            {joining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            {joining ? "Joining" : "Join"}
-          </button>
         </div>
       </div>
-    </article>
+    </button>
   );
 }
 
-export default function DiscoverCommunities({ onJoinCommunity }: DiscoverCommunitiesProps) {
+export default function DiscoverCommunities() {
   const navigate = useNavigate();
   const { reloadCommunities } = useRealtime();
   const [communities, setCommunities] = useState<Community[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [category, setCategory] = useState<CategoryId>("home");
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [offset, setOffset] = useState(0);
-  const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Community | null>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -113,8 +112,10 @@ export default function DiscoverCommunities({ onJoinCommunity }: DiscoverCommuni
       setCommunities((prev) => (reset ? results : [...prev, ...results]));
       setOffset(currentOffset + PAGE_SIZE);
       setHasMore(results.length === PAGE_SIZE);
+      setLoadError(false);
     } catch (error) {
       console.error("Error fetching communities:", error);
+      if (reset) setLoadError(true);
     } finally {
       setIsLoading(false);
       setIsLoadingMore(false);
@@ -145,26 +146,15 @@ export default function DiscoverCommunities({ onJoinCommunity }: DiscoverCommuni
     return () => { if (current) observer.unobserve(current); };
   }, [hasMore, isLoading, isLoadingMore, searchTerm, fetchCommunities]);
 
-  const handleJoin = async (communityId: string) => {
-    setJoiningId(communityId);
-    try {
-      if (onJoinCommunity) await onJoinCommunity(communityId);
-      else await channelService.joinCommunity(communityId);
-      setCommunities((prev) => prev.filter((c) => c.id !== communityId));
-      await reloadCommunities();
-      navigate(`/community/${communityId}`);
-    } catch (error) {
-      console.error("Error joining community:", error);
-    } finally {
-      setJoiningId(null);
-    }
+  const handleJoined = async (community: Community) => {
+    setSelected(null);
+    setCommunities((prev) => prev.filter((c) => c.id !== community.id));
+    toast.success(`Welcome to ${community.name}`);
+    await reloadCommunities();
+    navigate(`/community/${community.id}`);
   };
 
   const filtered = useMemo(() => communities.filter((c) => matchesCategory(c, category)), [communities, category]);
-  const counts = useMemo(
-    () => Object.fromEntries(CATEGORIES.map((c) => [c.id, communities.filter((x) => matchesCategory(x, c.id)).length])) as Record<CategoryId, number>,
-    [communities],
-  );
   // Home without a search: the biggest communities are featured, the rest listed below.
   const showFeatured = category === "home" && !searchTerm.trim() && filtered.length > 0;
   const featured = showFeatured
@@ -176,174 +166,165 @@ export default function DiscoverCommunities({ onJoinCommunity }: DiscoverCommuni
   const grid = (list: Community[]) => (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {list.map((c) => (
-        <CommunityCard key={c.id} community={c} joining={joiningId === c.id} onJoin={() => handleJoin(c.id)} />
+        <CommunityCard key={c.id} community={c} onOpen={() => setSelected(c)} />
       ))}
     </div>
   );
 
   return (
     <div className="flex h-full bg-[hsl(var(--theme-bg-primary))]">
-      {/* Categories (Discord's discovery sidebar) */}
+      {/* Discover sections (Discord: Apps / Servers). Agents live on their own page. */}
       <aside
-        aria-label="Discover categories"
+        aria-label="Discover"
         className="hidden w-sidebar shrink-0 flex-col border-r border-border md:flex"
         style={{ background: "var(--theme-sidebar-gradient)" }}
       >
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
-          <Compass className="h-5 w-5 text-muted-foreground" />
-          <h2 className="text-base font-semibold text-foreground">Discover</h2>
+        <div className="flex h-12 shrink-0 items-center px-4">
+          <h2 className="text-lg font-semibold text-foreground">Discover</h2>
         </div>
-        <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
-          {CATEGORIES.map((cat) => {
-            const active = category === cat.id;
-            return (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setCategory(cat.id)}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors duration-150",
-                  active
-                    ? "bg-[hsl(var(--theme-bg-active))] text-foreground"
-                    : "text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground",
-                )}
-              >
-                <cat.icon className="h-5 w-5 shrink-0" />
-                <span className="flex-1 truncate">{cat.label}</span>
-                {!isLoading && cat.id !== "home" && (
-                  <span className="text-xs text-muted-foreground">{counts[cat.id]}</span>
-                )}
-              </button>
-            );
-          })}
+        <nav className="space-y-0.5 px-2">
+          <span
+            aria-current="page"
+            className="flex h-10 items-center gap-3 rounded-md bg-[hsl(var(--theme-bg-active))] px-3 text-sm font-medium text-foreground"
+          >
+            <Users className="h-5 w-5" /> Communities
+          </span>
         </nav>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[1200px] px-4 pb-10 pt-4 sm:px-6">
-          {/* Hero */}
-          <section className="group relative isolate overflow-hidden rounded-xl" aria-label="Find your community">
-            <img
-              src="/discover/hero.webp"
-              alt=""
-              className="absolute inset-0 -z-10 h-full w-full object-cover object-right transition-transform duration-700 ease-out group-hover:scale-[1.03] motion-reduce:transform-none"
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Category tabs + search (Discord's discovery header) */}
+        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-3 sm:px-4">
+          <Compass className="hidden h-5 w-5 shrink-0 text-muted-foreground sm:block" />
+          <nav aria-label="Categories" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-none">
+            {CATEGORIES.map((cat) => {
+              const active = category === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setCategory(cat.id)}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "relative flex h-12 shrink-0 items-center px-3 text-sm font-medium transition-colors duration-150",
+                    active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {cat.label}
+                  {active && <span aria-hidden className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-foreground" />}
+                </button>
+              );
+            })}
+          </nav>
+          <div className="relative w-36 shrink-0 sm:w-56">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(e) => handleSearch(e.target.value)}
+              placeholder="Search"
+              aria-label="Search communities"
+              className="h-8 w-full rounded-md bg-[hsl(var(--theme-input-bg))] pl-8 pr-8 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-primary [&::-webkit-search-cancel-button]:hidden"
             />
-            <div aria-hidden className="absolute inset-0 -z-10 bg-black/30 sm:bg-transparent" />
-            <div className="flex min-h-[240px] max-w-lg flex-col justify-center px-6 py-8 sm:min-h-[280px] sm:px-10">
-              <h1 className="text-2xl font-bold leading-tight text-white sm:text-[28px]">Find your community on AuraFlow</h1>
-              <p className="mt-2 text-base text-white/80">
-                From study groups to tech talks, there is a place for you.
-              </p>
-              <div className="relative mt-5">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-[#5c5e66]" />
-                <input
-                  type="search"
-                  value={searchTerm}
-                  onChange={(e) => handleSearch(e.target.value)}
-                  placeholder="Explore communities"
-                  aria-label="Search communities"
-                  className="h-11 w-full rounded-lg bg-white pl-11 pr-10 text-base text-[#111] shadow-popover outline-none placeholder:text-[#5c5e66] focus:ring-2 focus:ring-primary [&::-webkit-search-cancel-button]:hidden"
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => handleSearch("")}
+                aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[1200px] px-4 pb-10 pt-4 sm:px-6">
+            {/* Hero */}
+            {category === "home" && !searchTerm.trim() && (
+              <section className="group relative isolate overflow-hidden rounded-xl" aria-label="Find your community">
+                <img
+                  src="/discover/hero.webp"
+                  alt=""
+                  className="absolute inset-0 -z-10 h-full w-full object-cover object-right transition-transform duration-700 ease-out group-hover:scale-[1.03] motion-reduce:transform-none"
                 />
-                {searchTerm && (
+                <div aria-hidden className="absolute inset-0 -z-10 bg-black/30 sm:bg-transparent" />
+                <div className="flex min-h-[220px] max-w-lg flex-col justify-center px-6 py-8 sm:min-h-[260px] sm:px-10">
+                  <h1 className="text-2xl font-bold leading-tight text-white sm:text-[28px]">Find your community on AuraFlow</h1>
+                  <p className="mt-2 text-base text-white/80">From study groups to tech talks, there is a place for you.</p>
+                </div>
+              </section>
+            )}
+
+            {isLoading ? (
+              <div className="flex h-64 items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : loadError ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <p className="text-base font-medium text-foreground">Couldn't load communities.</p>
+                <button
+                  type="button"
+                  onClick={() => fetchCommunities(searchTerm.trim(), true)}
+                  className="mt-4 h-8 rounded-md border border-border px-3 text-sm font-medium text-foreground hover:bg-[hsl(var(--theme-bg-hover))]"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <Compass className="mb-4 h-12 w-12 text-muted-foreground" />
+                <p className="text-base font-medium text-foreground">
+                  {searchTerm.trim()
+                    ? `No communities match "${searchTerm.trim()}"${category !== "home" ? ` in ${activeLabel}` : ""}.`
+                    : category === "home"
+                      ? "You've joined every public community."
+                      : `No ${activeLabel} communities to join yet.`}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {searchTerm.trim() ? "Try a different search or category." : "Create one with the + in the left rail."}
+                </p>
+                {(searchTerm || category !== "home") && (
                   <button
                     type="button"
-                    onClick={() => handleSearch("")}
-                    aria-label="Clear search"
-                    className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[#5c5e66] hover:bg-black/5"
+                    onClick={() => { setCategory("home"); if (searchTerm) handleSearch(""); }}
+                    className="mt-4 h-8 rounded-md border border-border px-3 text-sm font-medium text-foreground hover:bg-[hsl(var(--theme-bg-hover))]"
                   >
-                    <X className="h-4 w-4" />
+                    Show all communities
                   </button>
                 )}
               </div>
-            </div>
-          </section>
-
-          {/* Categories on small screens (the sidebar is hidden there) */}
-          <div className="mt-4 flex gap-2 overflow-x-auto scrollbar-none md:hidden">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setCategory(cat.id)}
-                aria-pressed={category === cat.id}
-                className={cn(
-                  "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors",
-                  category === cat.id
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))]",
+            ) : (
+              <>
+                {featured.length > 0 && (
+                  <section className="mt-8" aria-labelledby="featured-heading">
+                    <h2 id="featured-heading" className="mb-4 text-lg font-semibold text-foreground">Featured communities</h2>
+                    {grid(featured)}
+                  </section>
                 )}
-              >
-                <cat.icon className="h-4 w-4" />
-                {cat.label}
-              </button>
-            ))}
+                {rest.length > 0 && (
+                  <section className="mt-8" aria-labelledby="list-heading">
+                    <h2 id="list-heading" className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
+                      {searchTerm.trim() ? `Results for "${searchTerm.trim()}"` : featured.length > 0 ? "More communities" : activeLabel}
+                      <span className="text-sm font-normal text-muted-foreground">{rest.length}</span>
+                    </h2>
+                    {grid(rest)}
+                  </section>
+                )}
+              </>
+            )}
+
+            {hasMore && communities.length > 0 && (
+              <div ref={observerTarget} className="flex justify-center py-8">
+                {isLoadingMore && <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />}
+              </div>
+            )}
           </div>
+        </main>
+      </div>
 
-          {isLoading ? (
-            <div className="flex h-64 items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <Compass className="mb-4 h-12 w-12 text-muted-foreground" />
-              <p className="text-base font-medium text-foreground">
-                {searchTerm.trim()
-                  ? `No communities match "${searchTerm.trim()}"${category !== "home" ? ` in ${activeLabel}` : ""}.`
-                  : category === "home"
-                    ? "No communities to discover yet."
-                    : `No ${activeLabel} communities yet.`}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {searchTerm.trim() ? "Try a different search or category." : "Create one with the + in the left rail."}
-              </p>
-              {(searchTerm || category !== "home") && (
-                <button
-                  type="button"
-                  onClick={() => { setCategory("home"); if (searchTerm) handleSearch(""); }}
-                  className="mt-4 h-8 rounded-md border border-border px-3 text-sm font-medium text-foreground hover:bg-[hsl(var(--theme-bg-hover))]"
-                >
-                  Show all communities
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              {featured.length > 0 && (
-                <section className="mt-8" aria-labelledby="featured-heading">
-                  <h2 id="featured-heading" className="mb-4 text-lg font-semibold text-foreground">Featured communities</h2>
-                  {grid(featured)}
-                </section>
-              )}
-              {rest.length > 0 && (
-                <section className="mt-8" aria-labelledby="list-heading">
-                  <h2 id="list-heading" className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
-                    {searchTerm.trim() ? (
-                      <>Results for "{searchTerm.trim()}"</>
-                    ) : featured.length > 0 ? (
-                      "More communities"
-                    ) : (
-                      activeLabel
-                    )}
-                    <span className="text-sm font-normal text-muted-foreground">{rest.length}</span>
-                  </h2>
-                  {grid(rest)}
-                </section>
-              )}
-            </>
-          )}
-
-          {hasMore && communities.length > 0 && (
-            <div ref={observerTarget} className="flex justify-center py-8">
-              {isLoadingMore && <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />}
-            </div>
-          )}
-
-          <p className="mt-10 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <Users className="h-3.5 w-3.5" /> Joining adds the community to your rail.
-          </p>
-        </div>
-      </main>
+      <JoinCommunityDialog community={selected} onOpenChange={(open) => !open && setSelected(null)} onJoined={handleJoined} />
     </div>
   );
 }

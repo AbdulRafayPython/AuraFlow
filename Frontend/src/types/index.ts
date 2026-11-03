@@ -161,6 +161,24 @@ export interface Community {
   };
   /** Subset of {'safe','recaps','multilingual'} — drives Discover badges. */
   intelligence_profile?: string[];
+  /** public: listed in Discover, anyone can join; private: invite-only. */
+  visibility?: CommunityVisibility;
+  /** Rules shown (and accepted) before joining. */
+  rules?: string[];
+  /** Members currently online (Discover / preview). */
+  online_count?: number;
+}
+
+export type CommunityVisibility = 'public' | 'private';
+
+/** Starting channel sets offered when creating a community (backend COMMUNITY_TEMPLATES). */
+export type CommunityTemplate = 'own' | 'study' | 'class' | 'project' | 'club' | 'friends';
+
+/** What a community looks like before you join it. */
+export interface CommunityPreview extends Community {
+  channels: { name: string; type: 'text' | 'voice' }[];
+  is_member: boolean;
+  is_blocked: boolean;
 }
 
 export interface Channel {
@@ -238,6 +256,9 @@ export interface CreateCommunityPayload {
   description?: string;
   icon?: string;
   color?: string;
+  visibility?: CommunityVisibility;
+  template?: CommunityTemplate;
+  rules?: string[];
   display_name?: string;
   bio?: string;
 }
