@@ -6,7 +6,12 @@ Publish an agent's recipe as a listing; install a listing as a new draft agent.
 What is shared is a *snapshot* (instructions, tools, model tier, and mention / keyword /
 member_joined triggers) taken at publish time. Knowledge files, channels, the avatar and the
 community are never shared, so installing cannot leak anyone's data. Tools that depend on a
-connection someone configured (``mcp_*``) are left out of the snapshot.
+connection someone configured (``mcp_*``) are left out of the snapshot; only the *names* of the
+MCP servers the agent uses are listed (``connections``), so people know what they will need to
+connect themselves. URLs and tokens never leave the agent.
+
+A listing also carries its own look and copy: a persona avatar (``icon_url``), a banner, a
+one-line ``tagline`` and a longer ``overview``.
 
 Everything that decides *whether* is here (and testable without HTTP); the blueprint in
 ``routes/agent_marketplace.py`` is thin.
@@ -15,6 +20,7 @@ Everything that decides *whether* is here (and testable without HTTP); the bluep
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -25,11 +31,18 @@ from agents.runtime.definitions import AgentDefinition
 CATEGORIES = ("support", "community", "productivity", "learning", "fun", "other")
 SHAREABLE_TRIGGERS = ("mention", "keyword", "member_joined")
 MAX_PAGE = 50
+MAX_TAGLINE = 80
+MAX_OVERVIEW = 2000
+
+# Listing images: one of the bundled gallery files, or an upload made through
+# POST /api/agent-marketplace/listings/media.
+_ICON_RE = re.compile(r"^(/agents/personas/[a-z0-9-]{1,40}\.webp|/uploads/agent-listings/[a-f0-9-]{36}\.(png|jpe?g|gif|webp))$")
+_BANNER_RE = re.compile(r"^(/agents/banners/[a-z0-9-]{1,40}\.webp|/uploads/agent-listings/[a-f0-9-]{36}\.(png|jpe?g|gif|webp))$")
 
 
 # ── snapshot ────────────────────────────────────────────────────────────
 
-def build_snapshot(defn: AgentDefinition) -> Dict[str, Any]:
+def build_snapshot(defn: AgentDefinition, mcp_server_names: Optional[List[str]] = None) -> Dict[str, Any]:
     known = set(allowed_tool_names())
     triggers = []
     for t in defn.triggers:
@@ -42,6 +55,7 @@ def build_snapshot(defn: AgentDefinition) -> Dict[str, Any]:
         "name": defn.name, "instructions": defn.instructions, "model_tier": defn.model_tier,
         "tools": [t for t in defn.tools if t in known and not t.startswith("mcp_")],
         "triggers": triggers,
+        "connections": [{"kind": "mcp", "name": n} for n in dict.fromkeys(mcp_server_names or []) if n],
     }
 
 
@@ -68,7 +82,20 @@ def validate_listing(data: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
     category = data.get("category") or "other"
     if category not in CATEGORIES:
         errors.append(f"category must be one of {list(CATEGORIES)}")
-    return {"title": title, "description": description, "category": category}, errors
+    tagline = str(data.get("tagline") or "").strip()
+    if len(tagline) > MAX_TAGLINE:
+        errors.append(f"tagline must be at most {MAX_TAGLINE} characters")
+    overview = str(data.get("overview") or "").strip()
+    if len(overview) > MAX_OVERVIEW:
+        errors.append(f"overview must be at most {MAX_OVERVIEW} characters")
+    icon_url = data.get("icon_url") or None
+    if icon_url is not None and not (isinstance(icon_url, str) and _ICON_RE.match(icon_url)):
+        errors.append("icon_url must be a gallery persona or an uploaded image")
+    banner_url = data.get("banner_url") or None
+    if banner_url is not None and not (isinstance(banner_url, str) and _BANNER_RE.match(banner_url)):
+        errors.append("banner_url must be a gallery banner or an uploaded image")
+    return {"title": title, "description": description, "category": category, "tagline": tagline,
+            "overview": overview or None, "icon_url": icon_url, "banner_url": banner_url}, errors
 
 
 # ── output ──────────────────────────────────────────────────────────────
@@ -82,6 +109,9 @@ def public_view(row: Dict[str, Any], *, viewer_id: Optional[int] = None) -> Dict
         "instructions": snap.get("instructions", ""), "tools": snap.get("tools", []),
         "model_tier": snap.get("model_tier", "fast"),
         "triggers": [t["type"] for t in snap.get("triggers", [])],
+        "connections": [c for c in snap.get("connections", []) if isinstance(c, dict) and c.get("name")],
+        "tagline": row.get("tagline") or "", "overview": row.get("overview") or "",
+        "icon_url": row.get("icon_url"), "banner_url": row.get("banner_url"),
         "rating": round(float(row["rating_avg"]), 1) if row.get("rating_avg") is not None else None,
         "rating_count": int(row.get("rating_count") or 0),
         "my_rating": int(row["my_rating"]) if row.get("my_rating") is not None else None,
@@ -91,6 +121,7 @@ def public_view(row: Dict[str, Any], *, viewer_id: Optional[int] = None) -> Dict
 
 # The first %s is the viewer (for ``my_rating``).
 _SELECT = ("SELECT l.id, l.public_id, l.source_agent_id, l.publisher_user_id, l.title, l.description, l.category, "
+           "l.tagline, l.overview, l.icon_url, l.banner_url, "
            "l.snapshot, l.status, l.installs, l.updated_at, u.username AS publisher_username, "
            "rs.avg_stars AS rating_avg, COALESCE(rs.n, 0) AS rating_count, mine.stars AS my_rating "
            "FROM agent_listings l JOIN users u ON u.id = l.publisher_user_id "
@@ -113,7 +144,7 @@ def get_listing(cur: Any, public_id: str, viewer_id: int = 0) -> Optional[Dict[s
 
 
 def browse(cur: Any, *, viewer_id: int, query: str = "", category: str = "", mine: bool = False,
-           sort: str = "popular", limit: int = 24, offset: int = 0) -> List[Dict[str, Any]]:
+           sort: str = "popular", limit: int = 24, offset: int = 0, connection: str = "") -> List[Dict[str, Any]]:
     where, params = [], [viewer_id]
     if mine:
         where.append("l.publisher_user_id = %s")
@@ -123,6 +154,8 @@ def browse(cur: Any, *, viewer_id: int, query: str = "", category: str = "", min
     if category in CATEGORIES:
         where.append("l.category = %s")
         params.append(category)
+    if connection == "mcp":
+        where.append("JSON_LENGTH(COALESCE(JSON_EXTRACT(l.snapshot, '$.connections'), JSON_ARRAY())) > 0")
     text = (query or "").strip()[:60]
     if text:
         like = "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
@@ -162,18 +195,25 @@ def publish(cur: Any, defn: AgentDefinition, publisher_id: int, clean: Dict[str,
         raise BuilderError("The built-in agent cannot be listed.", 403)
     if len(defn.instructions or "") < 10:
         raise BuilderError("Write the agent's instructions before listing it.", 400)
-    snapshot = json.dumps(build_snapshot(defn), ensure_ascii=False)
+    # Names only: the MCP servers this agent is connected to (never their URL or token).
+    cur.execute("SELECT name FROM agent_mcp_servers WHERE agent_id = %s AND enabled = 1 ORDER BY id", (defn.id,))
+    mcp_names = [r["name"] for r in (cur.fetchall() or []) if r.get("name")]
+    snapshot = json.dumps(build_snapshot(defn, mcp_names), ensure_ascii=False)
+    look = (clean.get("tagline", ""), clean.get("overview"), clean.get("icon_url"), clean.get("banner_url"))
     cur.execute("SELECT public_id FROM agent_listings WHERE source_agent_id = %s", (defn.id,))
     existing = cur.fetchone()
     if existing:
-        cur.execute("UPDATE agent_listings SET title = %s, description = %s, category = %s, snapshot = %s, "
-                    "status = 'published' WHERE public_id = %s",
-                    (clean["title"], clean["description"], clean["category"], snapshot, existing["public_id"]))
+        cur.execute("UPDATE agent_listings SET title = %s, description = %s, category = %s, tagline = %s, "
+                    "overview = %s, icon_url = %s, banner_url = %s, snapshot = %s, status = 'published' "
+                    "WHERE public_id = %s",
+                    (clean["title"], clean["description"], clean["category"], *look, snapshot, existing["public_id"]))
         return existing["public_id"]
     public_id = str(uuid.uuid4())
     cur.execute("INSERT INTO agent_listings (public_id, source_agent_id, publisher_user_id, title, description, "
-                "category, snapshot) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (public_id, defn.id, publisher_id, clean["title"], clean["description"], clean["category"], snapshot))
+                "category, tagline, overview, icon_url, banner_url, snapshot) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (public_id, defn.id, publisher_id, clean["title"], clean["description"], clean["category"],
+                 *look, snapshot))
     return public_id
 
 

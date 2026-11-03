@@ -51,14 +51,16 @@ def test_the_snapshot_shares_the_recipe_and_nothing_private():
     snap = marketplace.build_snapshot(defn())
     assert snap == {"name": "FAQ Bot", "instructions": "Answer fee questions kindly.", "model_tier": "smart",
                     "tools": ["search_knowledge", "post_message"],
-                    "triggers": [{"type": "mention"}, {"type": "keyword", "config": {"keywords": ["fees"]}}]}
+                    "triggers": [{"type": "mention"}, {"type": "keyword", "config": {"keywords": ["fees"]}}],
+                    "connections": []}
     text = json.dumps(snap)
     assert "uploads" not in text and "11" not in text and "channel" not in text
 
 
 def test_validate_listing_accepts_good_input_and_defaults_the_category():
     clean, errors = marketplace.validate_listing({"title": " Fee helper ", "description": "x"})
-    assert errors == [] and clean == {"title": "Fee helper", "description": "x", "category": "other"}
+    assert errors == [] and clean == {"title": "Fee helper", "description": "x", "category": "other", "tagline": "",
+                                      "overview": None, "icon_url": None, "banner_url": None}
 
 
 @pytest.mark.parametrize("data, fragment", [
@@ -342,3 +344,55 @@ def test_taking_a_rating_back_over_http(api):
     assert api.call("delete", f"/listings/{LID}/rating").status_code == 200
     assert any("DELETE FROM agent_listing_ratings" in sql for sql, _ in api.cur.executed)
     assert api.http.delete(f"/api/agent-marketplace/listings/{LID}/rating").status_code == 401
+
+
+# ── listing look (persona, banner, tagline, overview) and MCP connection names ──
+
+def test_the_snapshot_lists_mcp_server_names_only():
+    snap = marketplace.build_snapshot(defn(), ["HubSpot", "Notion", "HubSpot", ""])
+    assert snap["connections"] == [{"kind": "mcp", "name": "HubSpot"}, {"kind": "mcp", "name": "Notion"}]
+    assert "mcp_notion_search" not in snap["tools"]
+
+
+@pytest.mark.parametrize("field, value, ok", [
+    ("icon_url", "/agents/personas/support.webp", True),
+    ("icon_url", "/uploads/agent-listings/0f8b5c2e-1d2a-4b3c-9d4e-5f6a7b8c9d0e.png", True),
+    ("icon_url", "https://evil.example/x.png", False),
+    ("icon_url", "/agents/personas/../../etc.webp", False),
+    ("banner_url", "/agents/banners/learning.webp", True),
+    ("banner_url", "/agents/personas/support.webp", False),
+    ("tagline", "t" * 81, False),
+    ("overview", "o" * 2001, False),
+])
+def test_validate_listing_checks_the_look(field, value, ok):
+    _, errors = marketplace.validate_listing({"title": "ok title", field: value})
+    assert (errors == []) is ok
+
+
+def test_publishing_stores_the_look_and_mcp_names(make_db):
+    _, cur = make_db([("FROM agent_mcp_servers", [{"name": "HubSpot"}]),
+                      ("SELECT public_id FROM agent_listings", None)], [])
+    clean = dict(CLEAN, tagline="Answers fee questions", overview="Long text", icon_url="/agents/personas/support.webp",
+                 banner_url="/agents/banners/support.webp")
+    marketplace.publish(cur, defn(), 7, clean)
+    _, params = cur.sql_containing("INSERT INTO agent_listings")[0]
+    assert params[6:10] == ("Answers fee questions", "Long text", "/agents/personas/support.webp",
+                            "/agents/banners/support.webp")
+    assert json.loads(params[-1])["connections"] == [{"kind": "mcp", "name": "HubSpot"}]
+    mcp_sql, mcp_params = cur.sql_containing("FROM agent_mcp_servers")[0]
+    assert "url" not in mcp_sql.split("FROM")[0] and mcp_params == (5,)
+
+
+def test_public_view_includes_the_look_and_connections():
+    row = listing_row(tagline="Fees, fast", overview="More", icon_url="/agents/personas/support.webp", banner_url=None,
+                      snapshot=json.dumps({"tools": [], "connections": [{"kind": "mcp", "name": "HubSpot"}, {"bad": 1}]}))
+    view = marketplace.public_view(row, viewer_id=1)
+    assert view["tagline"] == "Fees, fast" and view["icon_url"] == "/agents/personas/support.webp"
+    assert view["connections"] == [{"kind": "mcp", "name": "HubSpot"}]
+
+
+def test_browse_can_filter_to_agents_with_mcp_connections(make_db):
+    _, cur = make_db([("FROM agent_listings l", [])], [])
+    marketplace.browse(cur, viewer_id=1, connection="mcp")
+    sql, _ = cur.executed[0]
+    assert "$.connections" in sql

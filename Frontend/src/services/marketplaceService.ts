@@ -1,6 +1,6 @@
 // services/marketplaceService.ts — client for /api/agent-marketplace
 import api from './appService';
-import type { BuilderAgent, MarketplaceCategory, MarketplaceListing } from '@/types/agentBuilder';
+import type { BuilderAgent, ListingInput, MarketplaceCategory, MarketplaceListing } from '@/types/agentBuilder';
 
 const BASE = '/api/agent-marketplace';
 
@@ -19,7 +19,7 @@ export type MarketplaceSort = 'popular' | 'top_rated' | 'newest';
 
 export const SORT_LABELS: Record<MarketplaceSort, string> = { popular: 'Most installed', top_rated: 'Top rated', newest: 'Newest' };
 
-export interface BrowseOptions { q?: string; category?: MarketplaceCategory | ''; mine?: boolean; sort?: MarketplaceSort }
+export interface BrowseOptions { q?: string; category?: MarketplaceCategory | ''; mine?: boolean; sort?: MarketplaceSort; connection?: 'mcp' }
 
 /** Query string for the browse call (empty when nothing is filtered). */
 export function browseQuery(opts: BrowseOptions = {}): string {
@@ -28,6 +28,7 @@ export function browseQuery(opts: BrowseOptions = {}): string {
   if (opts.category) params.set('category', opts.category);
   if (opts.mine) params.set('mine', '1');
   if (opts.sort && opts.sort !== 'popular') params.set('sort', opts.sort);
+  if (opts.connection) params.set('connection', opts.connection);
   const q = params.toString();
   return q ? `?${q}` : '';
 }
@@ -36,8 +37,14 @@ export const marketplaceService = {
   async browse(opts: BrowseOptions = {}): Promise<MarketplaceListing[]> {
     return (await http.get<{ listings: MarketplaceListing[] }>(`${BASE}/listings${browseQuery(opts)}`)).listings;
   },
-  publish(agentId: string, body: { title: string; description: string; category: MarketplaceCategory }): Promise<MarketplaceListing> {
+  publish(agentId: string, body: ListingInput): Promise<MarketplaceListing> {
     return http.post<MarketplaceListing>(`${BASE}/agents/${agentId}/listing`, body);
+  },
+  /** Upload a persona avatar or banner image; returns the url to send with publish. */
+  async uploadMedia(file: File): Promise<string> {
+    const form = new FormData();
+    form.append('file', file);
+    return (await http.post<{ url: string }>(`${BASE}/listings/media`, form)).url;
   },
   rate(listingId: string, stars: number): Promise<MarketplaceListing> {
     return http.put<MarketplaceListing>(`${BASE}/listings/${listingId}/rating`, { stars });

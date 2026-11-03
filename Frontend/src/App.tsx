@@ -41,6 +41,12 @@ const DiscoverCommunities = lazy(() => import('@/pages/DiscoverCommunities'));
 const AgentHub = lazy(() => import('@/pages/AgentHub'));
 const AgentBuilder = lazy(() => import('@/pages/AgentBuilder'));
 const AgentMarketplace = lazy(() => import('@/pages/AgentMarketplace'));
+
+/** Old /agents/marketplace links (including ?agent=...) open the marketplace at /agents. */
+function MarketplaceRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/agents${search}`} replace />;
+}
 const Today = lazy(() => import('@/pages/Today'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
@@ -232,6 +238,11 @@ function AppRouter() {
       } />
       <Route path="/agents" element={
         <MainLayout>
+          <AgentMarketplace />
+        </MainLayout>
+      } />
+      <Route path="/agents/mine" element={
+        <MainLayout>
           <AgentHub />
         </MainLayout>
       } />
@@ -240,11 +251,8 @@ function AppRouter() {
           <Today />
         </MainLayout>
       } />
-      <Route path="/agents/marketplace" element={
-        <MainLayout>
-          <AgentMarketplace />
-        </MainLayout>
-      } />
+      {/* The marketplace moved to /agents; keep old links working. */}
+      <Route path="/agents/marketplace" element={<MarketplaceRedirect />} />
       <Route path="/agents/:agentId" element={
         <MainLayout>
           <AgentBuilder />

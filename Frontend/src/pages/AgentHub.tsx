@@ -38,7 +38,8 @@ const AgentHub: React.FC = () => {
   const [scope, setScope] = useState<string>(MINE);
   const [agents, setAgents] = useState<BuilderAgent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  // /agents/mine?create=1 (the marketplace's "Create an agent") opens the create dialog.
+  const [creating, setCreating] = useState(() => searchParams.get('create') === '1');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [channelNames, setChannelNames] = useState<Record<number, string>>({});
   const { approvals } = useApprovals();
@@ -94,16 +95,16 @@ const AgentHub: React.FC = () => {
   return (
     <div className="flex h-full min-w-0 flex-col bg-background">
       <PageHeader
-        title="Agents"
-        description="Helpers you can @mention in a channel. Add one from the directory or make your own."
+        title="Your agents"
+        description="Helpers you can @mention in a channel. Add one from the marketplace or make your own."
         className="pl-16 md:pl-4"
         actions={
           <>
             <button type="button" className={cn(btnQuiet, 'hidden sm:inline-flex')} onClick={() => navigate('/today')}>
               <Icon icon={CalendarCheck} size="md" /> Today
             </button>
-            <button type="button" className={btnQuiet} onClick={() => navigate('/agents/marketplace')}>
-              <Icon icon={LayoutGrid} size="md" /> Browse directory
+            <button type="button" className={btnQuiet} onClick={() => navigate('/agents')}>
+              <Icon icon={LayoutGrid} size="md" /> Browse marketplace
             </button>
             <button type="button" className={btnMain} onClick={() => setCreating(true)}>
               <Icon icon={Plus} size="md" /> Create agent
@@ -172,7 +173,7 @@ const AgentHub: React.FC = () => {
                 description="Pick a ready-made one from the directory, or describe what you need and we'll set one up."
                 action={
                   <div className="flex flex-wrap justify-center gap-2">
-                    <button type="button" className={btnMain} onClick={() => navigate('/agents/marketplace')}>Browse directory</button>
+                    <button type="button" className={btnMain} onClick={() => navigate('/agents')}>Browse marketplace</button>
                     <button type="button" className={btnQuiet} onClick={() => setCreating(true)}>Create agent</button>
                   </div>
                 }

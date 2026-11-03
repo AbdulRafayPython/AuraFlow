@@ -4,6 +4,8 @@
 # Anyone can browse published listings; only someone who manages an agent can list it;
 # installing creates a new DRAFT agent owned by the installer (same permission and quota
 # rules as creating one from scratch).
+import os
+import uuid
 from typing import Any, Dict
 
 from flask import Blueprint, jsonify, request
@@ -50,8 +52,37 @@ def browse():
             raise BuilderError("limit and offset must be numbers", 400)
         listings = marketplace.browse(
             cur, viewer_id=user_id, query=request.args.get("q", ""), category=request.args.get("category", ""), sort=request.args.get("sort", "popular"),
-            mine=request.args.get("mine") in ("1", "true"), limit=limit, offset=offset)
+            mine=request.args.get("mine") in ("1", "true"), limit=limit, offset=offset,
+            connection=request.args.get("connection", ""))
     return jsonify({"listings": listings}), 200
+
+
+# Listing images (persona avatar or banner) uploaded before publishing. The returned url is
+# what the publish call sends as icon_url / banner_url.
+LISTING_UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads", "agent-listings")
+_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+
+
+@agent_marketplace_bp.route("/listings/media", methods=["POST"])
+@jwt_required()
+def upload_listing_media():
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        raise BuilderError("Choose an image to upload.", 400)
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in _IMAGE_EXTENSIONS:
+        raise BuilderError("Use a PNG, JPG, GIF or WebP image.", 400)
+    data = file.read(_IMAGE_MAX_BYTES + 1)
+    if len(data) > _IMAGE_MAX_BYTES:
+        raise BuilderError("Images must be 5 MB or smaller.", 400)
+    with _db() as (_, cur):
+        _user_id(cur)  # a real, logged-in user
+    os.makedirs(LISTING_UPLOAD_DIR, exist_ok=True)
+    name = f"{uuid.uuid4()}.{ext}"
+    with open(os.path.join(LISTING_UPLOAD_DIR, name), "wb") as fh:
+        fh.write(data)
+    return jsonify({"url": f"/uploads/agent-listings/{name}"}), 201
 
 
 @agent_marketplace_bp.route("/listings/<public_id>", methods=["GET"])

@@ -78,7 +78,7 @@ const AgentBuilder: React.FC = () => {
     try {
       await agentBuilderService.archive(agent.id);
       invalidateMentionableAgents();
-      navigate('/agents');
+      navigate('/agents/mine');
     } catch (e) {
       toast({ title: 'Could not archive', description: errorMessage(e), variant: 'destructive' });
       setBusy(false);
@@ -86,7 +86,7 @@ const AgentBuilder: React.FC = () => {
   };
 
   const back = (
-    <button type="button" className={btnGhost} onClick={() => navigate('/agents')}>
+    <button type="button" className={btnGhost} onClick={() => navigate('/agents/mine')}>
       <ArrowLeft className="h-4 w-4" /> Your agents
     </button>
   );
@@ -139,7 +139,7 @@ const AgentBuilder: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <button type="button" className={btnGhost} disabled={busy || dirty} onClick={() => setSharing(true)}
-                    title={dirty ? 'Save your changes first' : 'Share this agent in the directory'}>
+                    title={dirty ? 'Save your changes first' : 'Share this agent in the marketplace'}>
               <Store className="h-4 w-4" /> Share
             </button>
             <button type="button" className={btnDanger} disabled={busy} onClick={() => void archive()}>
