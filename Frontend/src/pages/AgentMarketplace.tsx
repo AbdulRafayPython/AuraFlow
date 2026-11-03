@@ -18,6 +18,7 @@ import StarRating from '@/components/agent-builder/StarRating';
 import CreateAgentDialog from '@/components/agent-builder/CreateAgentDialog';
 import AgentsNav, { AgentsNavItem } from '@/components/agents/AgentsNav';
 import { useConfirm } from '@/components/modals/ConfirmDialog';
+import AppSelect from '@/components/app/AppSelect';
 import { EmptyState, ErrorState } from '@/components/app/EmptyState';
 import { Icon } from '@/components/app/Icon';
 import { cn } from '@/lib/utils';
@@ -44,7 +45,7 @@ const CATEGORY_HINTS: Record<MarketplaceCategory, string> = {
 const btn = 'inline-flex h-9 items-center justify-center gap-2 rounded-md px-3.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50';
 const btnMain = `${btn} bg-primary text-primary-foreground hover:opacity-90`;
 const btnQuiet = `${btn} border border-border text-foreground hover:bg-[hsl(var(--theme-bg-hover))]`;
-const btnGhost = `${btn} text-foreground hover:bg-[hsl(var(--theme-bg-hover))]`;
+const btnSecondary = `${btn} bg-[hsl(var(--theme-bg-tertiary))] text-foreground hover:bg-[hsl(var(--theme-bg-hover))]`;
 
 const sortListings = (list: MarketplaceListing[], sort: MarketplaceSort) =>
   [...list].sort((a, b) => {
@@ -594,13 +595,13 @@ const AgentMarketplace: React.FC = () => {
               {!isHome && (
                 <label className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
                   Sort
-                  <select
+                  <AppSelect
+                    label="Sort"
+                    className="h-8 w-36"
                     value={sort}
-                    onChange={(e) => setSort(e.target.value as MarketplaceSort)}
-                    className="h-8 rounded-md border border-border bg-[hsl(var(--theme-input-bg))] px-2 text-sm text-foreground"
-                  >
-                    {(Object.keys(SORT_LABELS) as MarketplaceSort[]).map((s) => <option key={s} value={s}>{SORT_LABELS[s]}</option>)}
-                  </select>
+                    onChange={(v) => setSort(v as MarketplaceSort)}
+                    options={(Object.keys(SORT_LABELS) as MarketplaceSort[]).map((s) => ({ value: s, label: SORT_LABELS[s] }))}
+                  />
                 </label>
               )}
             </div>
@@ -716,7 +717,7 @@ const AgentMarketplace: React.FC = () => {
             )}
           </fieldset>
           <DialogFooter>
-            <button type="button" className={btnGhost} onClick={() => setAdding(null)}>Cancel</button>
+            <button type="button" className={btnSecondary} onClick={() => setAdding(null)}>Cancel</button>
             <button type="button" className={btnMain} disabled={busy} onClick={() => void add()}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon icon={Plus} size="md" />} Add agent
             </button>

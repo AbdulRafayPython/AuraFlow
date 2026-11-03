@@ -263,7 +263,7 @@ const AgentBuilder: React.FC = () => {
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void copyMention()}><AtSign className="mr-2 h-4 w-4" /> Copy @{agent.username}</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => void remove()} className="text-destructive focus:bg-destructive focus:text-destructive-foreground">
+              <DropdownMenuItem onSelect={() => void remove()} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
                 <Trash2 className="mr-2 h-4 w-4" /> Delete agent
               </DropdownMenuItem>
             </DropdownMenuContent>

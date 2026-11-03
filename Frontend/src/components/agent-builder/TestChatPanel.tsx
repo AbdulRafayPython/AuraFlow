@@ -4,6 +4,7 @@ import { Loader2, Send, MessageSquare } from 'lucide-react';
 import agentBuilderService, { errorMessage } from '@/services/agentBuilderService';
 import type { TestResult } from '@/types/agentBuilder';
 import type { Channel } from '@/types';
+import AppSelect from '@/components/app/AppSelect';
 import RunTrace from './RunTrace';
 import { btnPrimary, cardCls, hintCls, inputCls } from './styles';
 
@@ -60,11 +61,10 @@ const TestChatPanel: React.FC<Props> = ({ agentId, agentName, channels, hasUnsav
         </h3>
         <p className={hintCls}>A private test. Nothing is posted to your channels.</p>
         {textChannels.length > 0 && (
-          <select className={`${inputCls} mt-2 py-1.5 text-xs`} value={channelId} aria-label="Test in channel"
-                  onChange={(e) => setChannelId(e.target.value ? Number(e.target.value) : '')}>
-            <option value="">No channel (general questions)</option>
-            {textChannels.map((c) => <option key={c.id} value={c.id}>As if asked in # {c.name}</option>)}
-          </select>
+          <AppSelect label="Test in channel" className="mt-2" value={String(channelId)}
+                     onChange={(v) => setChannelId(v ? Number(v) : '')}
+                     options={[{ value: '', label: 'No channel (general questions)' },
+                               ...textChannels.map((c) => ({ value: String(c.id), label: `As if asked in # ${c.name}` }))]} />
         )}
         {hasUnsavedChanges && (
           <p className="mt-2 text-xs text-warning">You have unsaved changes. Save first: the test uses the saved version.</p>

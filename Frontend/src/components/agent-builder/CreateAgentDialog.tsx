@@ -10,6 +10,7 @@ import type { AgentTemplate, BuilderAgent, GeneratedDraft } from '@/types/agentB
 import type { Channel, Community } from '@/types';
 import { btnGhost, btnPrimary, hintCls, inputCls, labelCls } from './styles';
 import AgentLogo from '@/components/ai-agents/AgentLogo';
+import AppSelect from '@/components/app/AppSelect';
 
 type Tab = 'template' | 'describe';
 const PERSONAL = '';
@@ -116,10 +117,8 @@ const CreateAgentDialog: React.FC<Props> = ({ open, onOpenChange, communities, d
 
         <div>
           <label className={labelCls} htmlFor="agent-where">Where should it work?</label>
-          <select id="agent-where" className={inputCls} value={where} onChange={(e) => setWhere(e.target.value)}>
-            <option value={PERSONAL}>Just for me</option>
-            {manageable.map((c) => <option key={c.id} value={c.id}>{c.name} (community)</option>)}
-          </select>
+          <AppSelect id="agent-where" value={where} onChange={setWhere}
+                     options={[{ value: PERSONAL, label: 'Just for me' }, ...manageable.map((c) => ({ value: c.id, label: `${c.name} (community)` }))]} />
           <p className={hintCls}>
             {where ? 'Everyone in the community can mention it once you turn it on.' : 'Only you can talk to it.'}
             {manageable.length === 0 && ' To add one to a community you need to be its owner or an admin.'}
@@ -167,10 +166,9 @@ const CreateAgentDialog: React.FC<Props> = ({ open, onOpenChange, communities, d
                   <div>
                     <label className={labelCls} htmlFor="agent-new-channel">Which channel should it post in?</label>
                     {where ? (
-                      <select id="agent-new-channel" className={inputCls} value={channelId}
-                              onChange={(e) => setChannelId(e.target.value ? Number(e.target.value) : '')}>
-                        {channels.map((c) => <option key={c.id} value={c.id}># {c.name}</option>)}
-                      </select>
+                      <AppSelect id="agent-new-channel" value={String(channelId)}
+                                 onChange={(v) => setChannelId(v ? Number(v) : '')}
+                                 options={channels.map((c) => ({ value: String(c.id), label: `# ${c.name}` }))} />
                     ) : (
                       <p className={hintCls}>Scheduled posts need a community channel. Pick a community above, or add the schedule later.</p>
                     )}
@@ -216,7 +214,7 @@ const CreateAgentDialog: React.FC<Props> = ({ open, onOpenChange, communities, d
           </div>
         )}
 
-        <DialogFooter className="sticky -bottom-6 z-[1]">
+        <DialogFooter className="sticky -bottom-6 z-[1] -mx-6 -mb-6 border-t border-border bg-[hsl(var(--theme-bg-elevated))] px-6 py-4">
           <button type="button" className={btnGhost} onClick={() => onOpenChange(false)}>Cancel</button>
           <button type="button" className={btnPrimary} disabled={!canCreate || creating} onClick={() => void create()}>
             {creating && <Loader2 className="h-4 w-4 animate-spin" />}

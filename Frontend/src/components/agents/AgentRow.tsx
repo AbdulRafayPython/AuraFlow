@@ -2,7 +2,7 @@
 // server integrations: logo with a status dot, name and tag, one line about it,
 // and the controls on the right (an on/off switch, Manage, and a ⋯ menu).
 import React from 'react';
-import { Check, Loader2, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AgentStatus } from '@/types/agentBuilder';
 
@@ -35,7 +35,7 @@ export function OnOffSwitch({ on, busy, disabled, label, title, onChange }: {
       data-testid="agent-switch"
       className={cn(
         'relative inline-flex h-6 w-10 shrink-0 items-center rounded-full transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60',
-        on ? 'bg-success' : 'bg-[hsl(var(--theme-text-muted))]/60',
+        on ? 'bg-primary' : 'bg-[hsl(var(--theme-bg-tertiary))] ring-1 ring-inset ring-[hsl(var(--theme-border-hover))]',
       )}
     >
       <span
@@ -44,9 +44,7 @@ export function OnOffSwitch({ on, busy, disabled, label, title, onChange }: {
           on ? 'translate-x-[19px]' : 'translate-x-[3px]',
         )}
       >
-        {busy ? <Loader2 className="h-3 w-3 animate-spin text-[#4e5058]" />
-          : on ? <Check className="h-3 w-3 text-success" strokeWidth={3} />
-          : <X className="h-3 w-3 text-[#80848e]" strokeWidth={3} />}
+        {busy && <Loader2 className="h-3 w-3 animate-spin text-[#4e5058]" />}
       </span>
     </button>
   );

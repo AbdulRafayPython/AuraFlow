@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Loader2, Lock, Plug, Store, Upload, Wrench } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import AppSelect from '@/components/app/AppSelect';
 import { useToast } from '@/hooks/use-toast';
 import agentBuilderService, { errorMessage } from '@/services/agentBuilderService';
 import marketplaceService, { CATEGORY_LABELS } from '@/services/marketplaceService';
@@ -181,9 +182,8 @@ const ShareAgentDialog: React.FC<Props> = ({ open, onOpenChange, agent }) => {
               </div>
               <div>
                 <label className={labelCls} htmlFor="share-cat">Category</label>
-                <select id="share-cat" className={inputCls} value={category} onChange={(e) => setCategory(e.target.value as MarketplaceCategory)}>
-                  {Object.entries(CATEGORY_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-                </select>
+                <AppSelect id="share-cat" value={category} onChange={(v) => setCategory(v as MarketplaceCategory)}
+                           options={Object.entries(CATEGORY_LABELS).map(([key, label]) => ({ value: key, label }))} />
               </div>
             </div>
           )}
@@ -296,7 +296,7 @@ const ShareAgentDialog: React.FC<Props> = ({ open, onOpenChange, agent }) => {
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border bg-[hsl(var(--theme-bg-tertiary))] px-6 py-4">
+        <div className="flex items-center justify-between gap-2 border-t border-border px-6 py-4">
           {stepIndex > 0 ? (
             <button type="button" className={btnGhost} onClick={back} disabled={busy}><ArrowLeft className="h-4 w-4" /> Back</button>
           ) : (

@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Copy, KeyRound, Loader2, LogIn, Plug, Plus, RefreshCw, Trash2, Webhook } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useConfirm } from '@/components/modals/ConfirmDialog';
+import AppSelect from '@/components/app/AppSelect';
 import agentBuilderService, { errorMessage, MCP_CALLBACK_PATH } from '@/services/agentBuilderService';
 import type { AgentApiKey, AgentWebhook, BuilderAgent, McpServer, WebhookEvent } from '@/types/agentBuilder';
 import { btnDanger, btnGhost, btnPrimary, cardCls, hintCls, inputCls, labelCls } from './styles';
@@ -222,20 +223,19 @@ curl -X POST ${origin}/api/public/v1/invoke \\
           </div>
           <div>
             <label className={labelCls} htmlFor="mcp-auth">How does it log in?</label>
-            <select id="mcp-auth" className={inputCls} value={mcp.auth} onChange={(e) => setMcp({ ...mcp, auth: e.target.value as McpAuth })}>
-              <option value="token">Access token (or none)</option>
-              <option value="oauth">OAuth login (Connect with the provider)</option>
-              {stdioNames.length > 0 && <option value="stdio">A program on this server (admin)</option>}
-            </select>
+            <AppSelect id="mcp-auth" value={mcp.auth} onChange={(v) => setMcp({ ...mcp, auth: v as McpAuth })}
+                       options={[
+                         { value: 'token', label: 'Access token (or none)' },
+                         { value: 'oauth', label: 'Sign in with the provider (OAuth)' },
+                         ...(stdioNames.length > 0 ? [{ value: 'stdio', label: 'A program on this server (admin)' }] : []),
+                       ]} />
           </div>
         </div>
         {mcp.auth === 'stdio' ? (
           <div className="mt-2">
             <label className={labelCls} htmlFor="mcp-stdio">Program</label>
-            <select id="mcp-stdio" className={inputCls} value={mcp.stdio_name} onChange={(e) => setMcp({ ...mcp, stdio_name: e.target.value })}>
-              <option value="">Choose…</option>
-              {stdioNames.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <AppSelect id="mcp-stdio" value={mcp.stdio_name} onChange={(v) => setMcp({ ...mcp, stdio_name: v })} placeholder="Choose a program"
+                       options={stdioNames.map((n) => ({ value: n, label: n }))} />
             <p className={hintCls}>Only programs your server operator allowed. It runs on the API server with a minimal environment.</p>
           </div>
         ) : (
