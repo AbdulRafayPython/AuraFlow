@@ -443,3 +443,69 @@
     animation: none;
   }
 }
+
+/* Emoji picker in the app's colours (Discord-like: dark card, quiet search,
+   accent for the active category). Light and dark both come from tokens. */
+.af-emoji .EmojiPickerReact,
+.af-emoji .EmojiPickerReact.epr-dark-theme {
+  --epr-bg-color: hsl(var(--popover));
+  --epr-dark-bg-color: hsl(var(--popover));
+  --epr-category-label-bg-color: hsl(var(--popover) / 0.96);
+  --epr-dark-category-label-bg-color: hsl(var(--popover) / 0.96);
+  --epr-text-color: hsl(var(--foreground));
+  --epr-dark-text-color: hsl(var(--foreground));
+  --epr-category-label-text-color: hsl(var(--muted-foreground));
+  --epr-hover-bg-color: hsl(var(--theme-bg-hover));
+  --epr-dark-hover-bg-color: hsl(var(--theme-bg-hover));
+  --epr-hover-bg-color-reduced-opacity: hsl(var(--theme-bg-hover) / 0.6);
+  --epr-dark-hover-bg-color-reduced-opacity: hsl(var(--theme-bg-hover) / 0.6);
+  --epr-focus-bg-color: hsl(var(--theme-bg-active));
+  --epr-dark-focus-bg-color: hsl(var(--theme-bg-active));
+  --epr-highlight-color: hsl(var(--primary));
+  --epr-dark-highlight-color: hsl(var(--primary));
+  --epr-category-icon-active-color: hsl(var(--primary));
+  --epr-dark-category-icon-active-color: hsl(var(--primary));
+  --epr-search-input-bg-color: hsl(var(--theme-input-bg));
+  --epr-dark-search-input-bg-color: hsl(var(--theme-input-bg));
+  --epr-search-input-bg-color-active: hsl(var(--theme-input-bg));
+  --epr-dark-search-input-bg-color-active: hsl(var(--theme-input-bg));
+  --epr-search-border-color: hsl(var(--border));
+  --epr-search-border-color-active: hsl(var(--primary));
+  --epr-search-input-border-radius: 8px;
+  --epr-search-input-height: 36px;
+  --epr-search-input-text-color: hsl(var(--foreground));
+  --epr-search-input-placeholder-color: hsl(var(--muted-foreground));
+  --epr-picker-border-color: transparent;
+  --epr-dark-picker-border-color: transparent;
+  --epr-picker-border-radius: 8px;
+  --epr-preview-border-color: hsl(var(--border));
+  --epr-preview-text-color: hsl(var(--foreground));
+  --epr-skin-tone-picker-menu-color: hsl(var(--popover));
+  --epr-dark-skin-tone-picker-menu-color: hsl(var(--popover));
+  --epr-emoji-variation-picker-bg-color: hsl(var(--popover));
+  --epr-dark-emoji-variation-picker-bg-color: hsl(var(--popover));
+  --epr-category-label-height: 32px;
+  font-family: inherit;
+}
+.af-emoji .EmojiPickerReact .epr-emoji-category-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* Recording indicator: the one status that is allowed to pulse, only while recording. */
+.af-rec-ring {
+  animation: af-rec-ring 1.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes af-rec-ring {
+  0% { transform: scale(1); opacity: 0.6; }
+  80%, 100% { transform: scale(2.2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .af-rec-ring { animation: none; opacity: 0; }
+}
+.af-emoji .epr-body {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--theme-text-muted) / 0.35) transparent;
+}

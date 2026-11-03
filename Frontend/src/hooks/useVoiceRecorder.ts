@@ -18,6 +18,8 @@ export interface UseVoiceRecorderReturn extends VoiceRecorderState {
   resumeRecording: () => void;
   cancelRecording: () => void;
   resetRecording: () => void;
+  /** Loudness right now, 0..1 (RMS of the microphone signal). */
+  getLevel: () => number;
 }
 
 const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
@@ -99,8 +101,10 @@ export function useVoiceRecorder(maxDuration = 300): UseVoiceRecorderReturn {
   }, [cleanup]);
 
   // Audio visualization loop
+  // Reads the recorder's own state: React state captured in this callback is
+  // stale when the loop starts right after setState, which stopped the levels.
   const updateVisualization = useCallback(() => {
-    if (!analyserRef.current || !state.isRecording || state.isPaused) return;
+    if (!analyserRef.current || mediaRecorderRef.current?.state !== 'recording') return;
 
     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
     analyserRef.current.getByteFrequencyData(dataArray);
@@ -120,7 +124,7 @@ export function useVoiceRecorder(maxDuration = 300): UseVoiceRecorderReturn {
 
     setState(prev => ({ ...prev, visualizerData }));
     animationFrameRef.current = requestAnimationFrame(updateVisualization);
-  }, [state.isRecording, state.isPaused]);
+  }, []);
 
   const startRecording = useCallback(async () => {
     try {
@@ -325,8 +329,22 @@ export function useVoiceRecorder(maxDuration = 300): UseVoiceRecorderReturn {
     }));
   }, [state.audioUrl]);
 
+  const getLevel = useCallback(() => {
+    const a = analyserRef.current;
+    if (!a) return 0;
+    const buf = new Uint8Array(a.fftSize);
+    a.getByteTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const x = (buf[i] - 128) / 128;
+      sum += x * x;
+    }
+    return Math.min(1, Math.sqrt(sum / buf.length));
+  }, []);
+
   return {
     ...state,
+    getLevel,
     startRecording,
     stopRecording,
     pauseRecording,

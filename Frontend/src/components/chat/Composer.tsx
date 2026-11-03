@@ -140,7 +140,7 @@ export function Composer({
         )}
       >
         {attached && <div className="divide-y divide-border border-b border-border empty:hidden">{attached}</div>}
-        <div className="flex items-center gap-1 px-1.5">
+        <div className="relative flex items-center gap-1 px-1.5">
         {onAttach && (
           <button
             type="button"

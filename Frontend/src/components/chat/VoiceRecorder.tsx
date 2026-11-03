@@ -1,8 +1,23 @@
-// components/chat/VoiceRecorder.tsx - Voice message recording component
-import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square, X, Send, Pause, Play, Trash2 } from 'lucide-react';
+// Voice messages: a mic button in the composer. While recording, the whole
+// input row becomes a recording bar (red dot, timer, a live waveform drawn from
+// the microphone that scrolls in from the right, Trash / Pause / Stop / Send).
+// After Stop, the same bar shows the take in the chat's own VoicePlayer so it
+// can be checked before sending. No animation library: Web Audio + CSS.
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { Loader2, Mic, Pause, Play, SendHorizontal, Square, Trash2 } from 'lucide-react';
 import { useVoiceRecorder } from '@/hooks/useVoiceRecorder';
+import { useToast } from '@/hooks/use-toast';
+import { formatClock, pushLevel } from '@/lib/waveform';
 import { cn } from '@/lib/utils';
+import VoicePlayer from './VoicePlayer';
+
+const LIVE_BARS = 48;
+const SAMPLE_MS = 80;
+
+export interface VoiceRecorderHandle {
+  /** Start recording (the composer's + menu uses this). */
+  start: () => void;
+}
 
 interface VoiceRecorderProps {
   onSend: (audioBlob: Blob, duration: number) => Promise<void>;
@@ -11,359 +26,143 @@ interface VoiceRecorderProps {
   className?: string;
 }
 
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
+const roundBtn = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors duration-100 disabled:opacity-50';
 
-export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
-  onSend,
-  disabled = false,
-  maxDuration = 300,
-  className,
-}) => {
+const VoiceRecorder = forwardRef<VoiceRecorderHandle, VoiceRecorderProps>(({ onSend, disabled = false, maxDuration = 300, className }, ref) => {
+  const { toast } = useToast();
   const {
-    isRecording,
-    isPaused,
-    duration,
-    audioBlob,
-    audioUrl,
-    error,
-    visualizerData,
-    startRecording,
-    stopRecording,
-    pauseRecording,
-    resumeRecording,
-    cancelRecording,
-    resetRecording,
+    isRecording, isPaused, duration, audioBlob, audioUrl, error, getLevel,
+    startRecording, stopRecording, pauseRecording, resumeRecording, cancelRecording, resetRecording,
   } = useVoiceRecorder(maxDuration);
 
-  const [isSending, setIsSending] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackProgress, setPlaybackProgress] = useState(0);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const [levels, setLevels] = useState<number[]>([]);
+  const [sending, setSending] = useState(false);
+  const sendAfterStop = useRef(false);
 
-  // Show preview after recording stops
+  useImperativeHandle(ref, () => ({ start: () => { if (!disabled && !isRecording) void begin(); } }));
+
   useEffect(() => {
-    if (audioBlob && !isRecording) {
-      setShowPreview(true);
+    if (error) toast({ title: 'Could not use the microphone', description: error, variant: 'destructive' });
+  }, [error, toast]);
+
+  // One bar every 80 ms from the current loudness: the waveform "draws itself".
+  useEffect(() => {
+    if (!isRecording || isPaused) return;
+    // A timer, not requestAnimationFrame, so it keeps drawing in a background tab.
+    const id = window.setInterval(() => {
+      setLevels((l) => pushLevel(l, Math.sqrt(Math.min(1, getLevel() * 2.5)), LIVE_BARS));
+    }, SAMPLE_MS);
+    return () => window.clearInterval(id);
+  }, [isRecording, isPaused, getLevel]);
+
+  // "Send" pressed while still recording: stop, then send as soon as the take exists.
+  useEffect(() => {
+    if (audioBlob && !isRecording && sendAfterStop.current) {
+      sendAfterStop.current = false;
+      void send();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioBlob, isRecording]);
 
-  // Audio playback handlers for preview
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+  async function begin() {
+    setLevels([]);
+    await startRecording();
+  }
 
-    const handleTimeUpdate = () => {
-      if (audio.duration) {
-        setPlaybackProgress((audio.currentTime / audio.duration) * 100);
-      }
-    };
-
-    const handleEnded = () => {
-      setIsPlaying(false);
-      setPlaybackProgress(0);
-    };
-
-    audio.addEventListener('timeupdate', handleTimeUpdate);
-    audio.addEventListener('ended', handleEnded);
-
-    return () => {
-      audio.removeEventListener('timeupdate', handleTimeUpdate);
-      audio.removeEventListener('ended', handleEnded);
-    };
-  }, [audioUrl]);
-
-  const handleMicClick = async () => {
-    if (disabled) return;
-    
-    if (isRecording) {
-      // Stop recording and show preview
-      await stopRecording();
-    } else if (showPreview) {
-      // Already have a recording, do nothing (use send button)
-    } else {
-      // Start new recording
-      await startRecording();
-    }
-  };
-
-  const handleSend = async () => {
-    if (!audioBlob || isSending) return;
-    
-    setIsSending(true);
+  async function send() {
+    if (!audioBlob || sending) return;
+    setSending(true);
     try {
       await onSend(audioBlob, duration);
-      // Reset after successful send
-      setShowPreview(false);
-      setIsPlaying(false);
-      setPlaybackProgress(0);
       resetRecording();
-    } catch (err) {
-      console.error('[VoiceRecorder] Failed to send:', err);
+      setLevels([]);
+    } catch {
+      // The page shows the upload error; keep the take so it can be sent again.
     } finally {
-      setIsSending(false);
+      setSending(false);
     }
-  };
+  }
 
-  const handleCancel = () => {
-    setShowPreview(false);
-    setIsPlaying(false);
-    setPlaybackProgress(0);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
+  const discard = () => {
+    sendAfterStop.current = false;
     cancelRecording();
+    setLevels([]);
   };
 
-  const handlePauseResume = () => {
-    if (isPaused) {
-      resumeRecording();
-    } else {
-      pauseRecording();
-    }
-  };
+  const bar = 'absolute inset-0 z-10 flex items-center gap-2 rounded-lg bg-[hsl(var(--theme-input-bg))] px-1.5 duration-150 animate-in fade-in-0 slide-in-from-right-2';
 
-  const togglePreviewPlayback = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (isPlaying) {
-      audio.pause();
-      setIsPlaying(false);
-    } else {
-      audio.play();
-      setIsPlaying(true);
-    }
-  };
-
-  // ─────────────────────────────────────────────────────────────
-  // Recording Mode UI
-  // ─────────────────────────────────────────────────────────────
   if (isRecording) {
+    const shown = Array.from({ length: LIVE_BARS - levels.length }, () => 0).concat(levels);
     return (
-      <div className={cn(
-        "flex items-center gap-3 px-3 py-2.5 rounded-2xl",
-        "bg-destructive/10",
-        "border border-red-500/20",
-        "shadow-sm shadow-red-500/5",
-        "animate-in slide-in-from-right-2 duration-300",
-        className
-      )}>
-        {/* Cancel button */}
-        <button
-          onClick={handleCancel}
-          className={cn(
-            "p-1.5 -ml-0.5 rounded-full",
-            "text-red-400/70 hover:text-red-400",
-            "hover:bg-red-500/10",
-            "transition-all duration-200"
-          )}
-          title="Cancel recording"
-        >
-          <Trash2 className="w-4 h-4" />
+      <div className={cn(bar, className)} role="group" aria-label="Recording a voice message" data-testid="voice-recording">
+        <button type="button" onClick={discard} aria-label="Delete recording" title="Delete"
+                className={cn(roundBtn, 'text-muted-foreground hover:bg-destructive/10 hover:text-destructive')}>
+          <Trash2 className="h-4 w-4" />
         </button>
-
-        {/* Recording indicator dot + Visualizer */}
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          {/* Pulsing recording dot */}
-          <div className={cn(
-            "w-2 h-2 rounded-full bg-red-500 flex-shrink-0",
-            !isPaused && "opacity-80"
-          )} />
-
-          {/* Waveform visualizer */}
-          <div className="flex items-center justify-center gap-[3px] h-7 flex-1 max-w-[100px]">
-            {visualizerData.slice(0, 16).map((value, index) => (
-              <div
-                key={index}
-                className={cn(
-                  "w-[3px] rounded-full transition-all duration-100 ease-out",
-                  isPaused ? "bg-red-400/30" : "bg-red-400"
-                )}
-                style={{
-                  height: `${Math.max(3, value * 24)}px`,
-                  opacity: isPaused ? 0.5 : 0.5 + value * 0.5,
-                }}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Duration timer */}
-        <div className={cn(
-          "flex items-center gap-1.5 px-2 py-1 rounded-lg",
-          "bg-red-500/10",
-          "font-mono text-sm tabular-nums tracking-tight",
-          isPaused ? "text-red-300/70" : "text-red-400"
-        )}>
-          <span>{formatDuration(duration)}</span>
-        </div>
-
-        {/* Pause/Resume button */}
-        <button
-          onClick={handlePauseResume}
-          className={cn(
-            "p-2 rounded-xl",
-            "text-red-400 hover:text-red-300",
-            "bg-red-500/10 hover:bg-red-500/20",
-            "transition-all duration-200"
-          )}
-          title={isPaused ? "Resume" : "Pause"}
-        >
-          {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-        </button>
-
-        {/* Stop/Send button */}
-        <button
-          onClick={async () => await stopRecording()}
-          className={cn(
-            "p-2.5 rounded-xl",
-            "bg-red-500 hover:bg-red-600",
-            "text-white shadow-sm",
-            "transition-all duration-200",
-            "hover:shadow-md hover:shadow-red-500/25",
-            "active:scale-95"
-          )}
-          title="Stop recording"
-        >
-          <Square className="w-4 h-4" />
-        </button>
-      </div>
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // Preview Mode UI (after recording, before sending)
-  // ─────────────────────────────────────────────────────────────
-  if (showPreview && audioBlob) {
-    return (
-      <div className={cn(
-        "flex items-center gap-2.5 pl-2 pr-2.5 py-2 rounded-2xl",
-        "bg-[hsl(var(--theme-accent-primary)/0.08)]",
-        "border border-[hsl(var(--theme-accent-primary)/0.2)]",
-        "shadow-sm",
-        "animate-in slide-in-from-right-2 duration-300",
-        className
-      )}>
-        {/* Hidden audio element */}
-        <audio
-          ref={audioRef}
-          src={audioUrl || undefined}
-          preload="metadata"
-          className="hidden"
-        />
-
-        {/* Discard button */}
-        <button
-          onClick={handleCancel}
-          className={cn(
-            "p-1.5 rounded-full",
-            "text-[hsl(var(--theme-text-muted))]",
-            "hover:text-red-400 hover:bg-red-500/10",
-            "transition-all duration-200"
-          )}
-          title="Discard recording"
-        >
-          <X className="w-4 h-4" />
-        </button>
-
-        {/* Play/Pause toggle */}
-        <button
-          onClick={togglePreviewPlayback}
-          className={cn(
-            "p-2 rounded-xl flex-shrink-0",
-            "bg-[hsl(var(--theme-accent-primary))]",
-            "text-white",
-            "hover:bg-[hsl(var(--theme-accent-secondary))]",
-            "transition-all duration-200",
-            "shadow-sm hover:shadow-md hover:shadow-[hsl(var(--theme-accent-primary)/0.25)]",
-            "active:scale-95"
-          )}
-          title={isPlaying ? "Pause" : "Play"}
-        >
-          {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-        </button>
-
-        {/* Progress bar + Duration */}
-        <div className="flex items-center gap-2.5 flex-1 min-w-0">
-          {/* Progress track */}
-          <div className="flex-1 h-1.5 rounded-full bg-[hsl(var(--theme-text-muted)/0.15)] overflow-hidden">
-            <div 
-              className="h-full rounded-full bg-[hsl(var(--theme-accent-primary))] transition-all duration-150 ease-out"
-              style={{ width: `${playbackProgress}%` }}
+        <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden>
+          {!isPaused && <span className="af-rec-ring absolute inline-flex h-full w-full rounded-full bg-destructive" />}
+          <span className={cn('relative inline-flex h-2.5 w-2.5 rounded-full', isPaused ? 'bg-[hsl(var(--theme-text-muted))]' : 'bg-destructive')} />
+        </span>
+        <span className="w-10 shrink-0 text-sm font-semibold tabular-nums text-foreground" aria-live="off">{formatClock(duration)}</span>
+        <div className="flex h-7 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden" aria-hidden>
+          {shown.map((l, i) => (
+            <span
+              key={i}
+              className={cn('w-[3px] shrink-0 rounded-full transition-[height] duration-100 ease-out',
+                isPaused ? 'bg-[hsl(var(--theme-text-muted)/0.4)]' : 'bg-[hsl(var(--theme-text-secondary))]')}
+              style={{ height: `${Math.max(3, l * 26)}px` }}
             />
-          </div>
-
-          {/* Duration label */}
-          <span className="text-xs font-mono tabular-nums text-[hsl(var(--theme-text-muted))] flex-shrink-0">
-            {formatDuration(duration)}
-          </span>
+          ))}
         </div>
-
-        {/* Send button */}
-        <button
-          onClick={handleSend}
-          disabled={isSending}
-          className={cn(
-            "p-2.5 rounded-xl flex-shrink-0",
-            "bg-[hsl(var(--theme-accent-primary))]",
-            "text-white",
-            "hover:bg-[hsl(var(--theme-accent-secondary))]",
-            "transition-all duration-200",
-            "shadow-sm hover:shadow-md hover:shadow-[hsl(var(--theme-accent-primary)/0.25)]",
-            "disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none",
-            "active:scale-95"
-          )}
-          title="Send voice message"
-        >
-          <Send className="w-4 h-4" />
+        <button type="button" onClick={isPaused ? resumeRecording : pauseRecording}
+                aria-label={isPaused ? 'Resume recording' : 'Pause recording'} title={isPaused ? 'Resume' : 'Pause'}
+                className={cn(roundBtn, 'text-muted-foreground hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground')}>
+          {isPaused ? <Play className="h-4 w-4 fill-current" /> : <Pause className="h-4 w-4 fill-current" />}
+        </button>
+        <button type="button" onClick={() => void stopRecording()} aria-label="Stop and listen" title="Stop and listen"
+                className={cn(roundBtn, 'text-muted-foreground hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground')}>
+          <Square className="h-3.5 w-3.5 fill-current" />
+        </button>
+        <button type="button" onClick={() => { sendAfterStop.current = true; void stopRecording(); }}
+                aria-label="Send voice message" title="Send"
+                className={cn(roundBtn, 'bg-primary text-primary-foreground hover:opacity-90')}>
+          <SendHorizontal className="h-4 w-4" />
         </button>
       </div>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // Default State - Mic Button
-  // ─────────────────────────────────────────────────────────────
+  if (audioBlob && audioUrl) {
+    return (
+      <div className={cn(bar, className)} role="group" aria-label="Voice message ready to send" data-testid="voice-preview">
+        <button type="button" onClick={discard} disabled={sending} aria-label="Delete recording" title="Delete"
+                className={cn(roundBtn, 'text-muted-foreground hover:bg-destructive/10 hover:text-destructive')}>
+          <Trash2 className="h-4 w-4" />
+        </button>
+        <VoicePlayer src={audioUrl} duration={duration} compact className="flex-1" />
+        <button type="button" onClick={() => void send()} disabled={sending} aria-label="Send voice message" title="Send"
+                className={cn(roundBtn, 'bg-primary text-primary-foreground hover:opacity-90')}>
+          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className={cn("relative", className)}>
-      <button
-        onClick={handleMicClick}
-        disabled={disabled}
-        className={cn(
-          "p-2 rounded-xl",
-          "text-[hsl(var(--theme-text-muted))]",
-          "hover:text-[hsl(var(--theme-text-primary))]",
-          "hover:bg-[hsl(var(--theme-bg-hover))]",
-          "transition-all duration-200",
-          "disabled:opacity-40 disabled:cursor-not-allowed",
-          error && "text-red-400 hover:text-red-300"
-        )}
-        title={error || "Record voice message"}
-      >
-        <Mic className="w-5 h-5" />
-      </button>
-      
-      {/* Error tooltip */}
-      {error && (
-        <div className={cn(
-          "absolute bottom-full right-0 mb-2",
-          "px-3 py-2 rounded-xl",
-          "text-xs max-w-[220px] whitespace-normal leading-relaxed",
-          "bg-red-500/95 text-white",
-          "shadow-lg shadow-red-500/20",
-          "animate-in fade-in slide-in-from-bottom-1 duration-200"
-        )}>
-          {error}
-        </div>
-      )}
-    </div>
+    <button
+      type="button"
+      onClick={() => void begin()}
+      disabled={disabled}
+      aria-label="Record a voice message"
+      title="Record a voice message"
+      className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-100 hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <Mic className="h-5 w-5" />
+    </button>
   );
-};
+});
+
+VoiceRecorder.displayName = 'VoiceRecorder';
 
 export default VoiceRecorder;
+export { VoiceRecorder };
