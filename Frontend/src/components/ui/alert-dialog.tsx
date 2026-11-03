@@ -50,11 +50,11 @@ const AlertDialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDiv
 );
 AlertDialogHeader.displayName = "AlertDialogHeader";
 
-/** Discord-style footer bar: a tinted strip along the bottom edge, buttons on the right. */
+/** Buttons on the right, on the same surface as the modal (Discord's current modals). */
 const AlertDialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "-mx-6 -mb-6 mt-2 flex flex-col-reverse gap-2 rounded-b-xl border-t border-border bg-[hsl(var(--theme-bg-tertiary))] px-6 py-4 sm:flex-row sm:justify-end",
+      "mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
       className,
     )}
     {...props}
@@ -92,7 +92,7 @@ const AlertDialogCancel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Cancel
     ref={ref}
-    className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-9 px-4", className)}
+    className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "h-9 px-4", className)}
     {...props}
   />
 ));

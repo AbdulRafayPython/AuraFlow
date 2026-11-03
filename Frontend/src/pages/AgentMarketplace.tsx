@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft, Bot, Check, ChevronRight, Eye, Hand, KeyRound, LayoutGrid, Loader2, Plug, Plus, Search, Sparkles,
+  ArrowLeft, Bot, Check, ChevronRight, Eye, Hand, KeyRound, LayoutGrid, Loader2, Plug, Plus, Search,
   Star, Trash2, Webhook, X,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -18,6 +18,7 @@ import StarRating from '@/components/agent-builder/StarRating';
 import CreateAgentDialog from '@/components/agent-builder/CreateAgentDialog';
 import AgentsNav, { AgentsNavItem } from '@/components/agents/AgentsNav';
 import { useConfirm } from '@/components/modals/ConfirmDialog';
+import AppSelect from '@/components/app/AppSelect';
 import { EmptyState, ErrorState } from '@/components/app/EmptyState';
 import { Icon } from '@/components/app/Icon';
 import { cn } from '@/lib/utils';
@@ -44,7 +45,7 @@ const CATEGORY_HINTS: Record<MarketplaceCategory, string> = {
 const btn = 'inline-flex h-9 items-center justify-center gap-2 rounded-md px-3.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50';
 const btnMain = `${btn} bg-primary text-primary-foreground hover:opacity-90`;
 const btnQuiet = `${btn} border border-border text-foreground hover:bg-[hsl(var(--theme-bg-hover))]`;
-const btnGhost = `${btn} text-foreground hover:bg-[hsl(var(--theme-bg-hover))]`;
+const btnSecondary = `${btn} bg-[hsl(var(--theme-bg-tertiary))] text-foreground hover:bg-[hsl(var(--theme-bg-hover))]`;
 
 const sortListings = (list: MarketplaceListing[], sort: MarketplaceSort) =>
   [...list].sort((a, b) => {
@@ -426,7 +427,6 @@ const AgentMarketplace: React.FC = () => {
     return c;
   }, [published]);
   const withMcp = published.filter((l) => l.connections.length > 0).length;
-  const totalInstalls = published.reduce((n, l) => n + l.installs, 0);
 
   const q = query.trim().toLowerCase();
   const visible = useMemo(() => {
@@ -550,46 +550,39 @@ const AgentMarketplace: React.FC = () => {
         ) : (
           <div className="mx-auto max-w-6xl px-4 pb-12 pt-4 sm:px-6">
             {/* Hero */}
-            <section className="group relative isolate overflow-hidden rounded-xl" aria-label="Agent marketplace">
-              <img src="/agents/hero.webp" alt="" className="absolute inset-0 -z-10 h-full w-full object-cover object-right transition-transform duration-700 ease-out group-hover:scale-[1.02] motion-reduce:transform-none" />
+            {/* Like Discord's App Directory: one picture, one big line, one small line. */}
+            <section className="relative isolate overflow-hidden rounded-lg" aria-label="Agent marketplace">
+              <img src="/agents/hero.webp" alt="" className="absolute inset-0 -z-10 h-full w-full object-cover object-right" />
               {/* Below xl the characters sit behind the text: a solid scrim keeps it readable. */}
               <div aria-hidden className="absolute inset-0 -z-10 bg-[#1e1b4b]/75 xl:bg-transparent" />
-              <div className="flex min-h-[260px] max-w-xl flex-col justify-center px-6 py-8 sm:px-10 xl:max-w-[52%]">
-                <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white">
-                  <Sparkles className="h-3.5 w-3.5" /> Agent Marketplace
-                </span>
-                <h1 className="mt-3 text-2xl font-bold leading-tight text-white sm:text-3xl">Hire AI teammates for your community</h1>
-                <p className="mt-2 text-base text-white/80">
-                  Explore agents for support, study, events and more. Add one to yourself or your community in a minute, then connect it to the apps you use.
+              <div className="flex min-h-[240px] flex-col justify-center px-6 py-10 sm:px-10">
+                <h1 className="font-display text-5xl uppercase leading-[0.95] tracking-wide text-white sm:text-6xl">
+                  Find your<br />next agent
+                </h1>
+                <p className="mt-3 max-w-md text-base text-white/85">
+                  Ready-made helpers for support, study and events. Add one to you or your community in a minute.
                 </p>
-                <div className="relative mt-5 max-w-md">
-                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-[#5c5e66]" />
-                  <input
-                    type="search"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search agents, tools or connections"
-                    aria-label="Search agents"
-                    className="h-11 w-full rounded-lg bg-white pl-11 pr-10 text-base text-[#111] shadow-popover outline-none placeholder:text-[#5c5e66] focus:ring-2 focus:ring-primary [&::-webkit-search-cancel-button]:hidden"
-                  />
-                  {query && (
-                    <button type="button" onClick={() => setQuery('')} aria-label="Clear search" className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[#5c5e66] hover:bg-black/5">
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-                {listings !== null && published.length > 0 && (
-                  <dl className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-white">
-                    <div><dt className="sr-only">Agents</dt><dd className="text-sm"><span className="text-lg font-bold">{published.length}</span> agents</dd></div>
-                    <div><dt className="sr-only">Installs</dt><dd className="text-sm"><span className="text-lg font-bold">{totalInstalls}</span> {totalInstalls === 1 ? 'install' : 'installs'}</dd></div>
-                    <div><dt className="sr-only">Categories</dt><dd className="text-sm"><span className="text-lg font-bold">{Object.keys(counts).length}</span> categories</dd></div>
-                  </dl>
-                )}
               </div>
             </section>
 
             {/* Filters */}
             <div className="mt-6 flex flex-wrap items-center gap-3">
+              <div className="relative w-full sm:order-last sm:w-60">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search"
+                  aria-label="Search agents"
+                  className="h-8 w-full rounded-md bg-[hsl(var(--theme-input-bg))] pl-8 pr-8 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary [&::-webkit-search-cancel-button]:hidden"
+                />
+                {query && (
+                  <button type="button" onClick={() => setQuery('')} aria-label="Clear search" className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-foreground">
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
               <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto scrollbar-none">
                 {chip('', 'All')}
                 {categories.filter((c) => counts[c]).map((c) => chip(c, CATEGORY_LABELS[c]))}
@@ -602,13 +595,13 @@ const AgentMarketplace: React.FC = () => {
               {!isHome && (
                 <label className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
                   Sort
-                  <select
+                  <AppSelect
+                    label="Sort"
+                    className="h-8 w-36"
                     value={sort}
-                    onChange={(e) => setSort(e.target.value as MarketplaceSort)}
-                    className="h-8 rounded-md border border-border bg-[hsl(var(--theme-input-bg))] px-2 text-sm text-foreground"
-                  >
-                    {(Object.keys(SORT_LABELS) as MarketplaceSort[]).map((s) => <option key={s} value={s}>{SORT_LABELS[s]}</option>)}
-                  </select>
+                    onChange={(v) => setSort(v as MarketplaceSort)}
+                    options={(Object.keys(SORT_LABELS) as MarketplaceSort[]).map((s) => ({ value: s, label: SORT_LABELS[s] }))}
+                  />
                 </label>
               )}
             </div>
@@ -724,7 +717,7 @@ const AgentMarketplace: React.FC = () => {
             )}
           </fieldset>
           <DialogFooter>
-            <button type="button" className={btnGhost} onClick={() => setAdding(null)}>Cancel</button>
+            <button type="button" className={btnSecondary} onClick={() => setAdding(null)}>Cancel</button>
             <button type="button" className={btnMain} disabled={busy} onClick={() => void add()}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon icon={Plus} size="md" />} Add agent
             </button>

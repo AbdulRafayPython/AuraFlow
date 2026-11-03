@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { OnOffSwitch } from '@/components/agents/AgentRow';
 import { SaveBar } from './AgentSettingsParts';
+import AppSelect from '@/components/app/AppSelect';
 import { useToast } from '@/hooks/use-toast';
 import agentBuilderService, { errorMessage } from '@/services/agentBuilderService';
 import {
@@ -111,12 +112,11 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
   const channelSelect = (d: Draft, required: boolean) => (
     <div>
       <label className={labelCls}>{required ? 'Channel' : 'Only in channel'}</label>
-      <select className={inputCls} value={d.channel_id ?? ''}
-              onChange={(e) => patch(d.key, { channel_id: e.target.value ? Number(e.target.value) : null })}>
-        {!required && <option value="">Any channel it may answer in</option>}
-        {required && d.channel_id == null && <option value="">Pick a channel…</option>}
-        {textChannels.map((c) => <option key={c.id} value={c.id}># {c.name}</option>)}
-      </select>
+      <AppSelect label={required ? 'Channel' : 'Only in channel'} value={d.channel_id == null ? '' : String(d.channel_id)}
+                 placeholder="Pick a channel"
+                 onChange={(v) => patch(d.key, { channel_id: v ? Number(v) : null })}
+                 options={[...(required ? [] : [{ value: '', label: 'Any channel it may answer in' }]),
+                           ...textChannels.map((c) => ({ value: String(c.id), label: `# ${c.name}` }))]} />
     </div>
   );
 
@@ -174,12 +174,11 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
                 <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(240px,1fr))]">
                   <div>
                     <label className={labelCls}>When</label>
-                    <select className={inputCls}
-                            value={CRON_PRESETS.some((p) => p.cron === d.config.cron) ? d.config.cron : CUSTOM_CRON}
-                            onChange={(e) => patchConfig(d.key, { cron: e.target.value === CUSTOM_CRON ? '' : e.target.value })}>
-                      {CRON_PRESETS.map((p) => <option key={p.cron} value={p.cron}>{p.label}</option>)}
-                      <option value={CUSTOM_CRON}>Custom (cron expression)…</option>
-                    </select>
+                    <AppSelect label="When"
+                               value={CRON_PRESETS.some((p) => p.cron === d.config.cron) ? (d.config.cron as string) : CUSTOM_CRON}
+                               onChange={(v) => patchConfig(d.key, { cron: v === CUSTOM_CRON ? '' : v })}
+                               options={[...CRON_PRESETS.map((p) => ({ value: p.cron, label: p.label })),
+                                         { value: CUSTOM_CRON, label: 'Custom (cron expression)' }]} />
                     {!CRON_PRESETS.some((p) => p.cron === d.config.cron) && (
                       <input className={`${inputCls} mt-2 font-mono`} placeholder="0 17 * * 5" value={d.config.cron ?? ''}
                              onChange={(e) => patchConfig(d.key, { cron: e.target.value })} />
@@ -187,10 +186,9 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
                   </div>
                   <div>
                     <label className={labelCls}>Time zone</label>
-                    <select className={inputCls} value={d.config.tz || 'UTC'}
-                            onChange={(e) => patchConfig(d.key, { tz: e.target.value })}>
-                      {Array.from(new Set([d.config.tz || 'UTC', ...COMMON_TIME_ZONES])).map((z) => <option key={z}>{z}</option>)}
-                    </select>
+                    <AppSelect label="Time zone" value={d.config.tz || 'UTC'}
+                               onChange={(v) => patchConfig(d.key, { tz: v })}
+                               options={Array.from(new Set([d.config.tz || 'UTC', ...COMMON_TIME_ZONES])).map((z) => ({ value: z, label: z }))} />
                   </div>
                 </div>
                 {channelSelect(d, true)}
@@ -210,10 +208,9 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
               <>
                 <div>
                   <label className={labelCls}>Quiet for at least</label>
-                  <select className={inputCls} value={d.config.min_minutes ?? 60}
-                          onChange={(e) => patchConfig(d.key, { min_minutes: Number(e.target.value) })}>
-                    {SILENCE_CHOICES.map((c) => <option key={c.minutes} value={c.minutes}>{c.label}</option>)}
-                  </select>
+                  <AppSelect label="Quiet for at least" value={String(d.config.min_minutes ?? 60)}
+                             onChange={(v) => patchConfig(d.key, { min_minutes: Number(v) })}
+                             options={SILENCE_CHOICES.map((c) => ({ value: String(c.minutes), label: c.label }))} />
                 </div>
                 {textChannels.length > 0 && channelSelect(d, false)}
               </>
@@ -223,11 +220,10 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
             {d.type !== 'mood_escalation' && (
             <div>
               <label className={labelCls}>Where it answers</label>
-              <select className={inputCls} value={d.config.delivery ?? 'channel'}
-                      onChange={(e) => patchConfig(d.key, { delivery: e.target.value === 'private' ? 'private' : undefined })}>
-                <option value="channel">In the channel</option>
-                <option value="private">Privately, as a DM to {privateRecipient(d.type)}</option>
-              </select>
+              <AppSelect label="Where it answers" value={d.config.delivery ?? 'channel'}
+                         onChange={(v) => patchConfig(d.key, { delivery: v === 'private' ? 'private' : undefined })}
+                         options={[{ value: 'channel', label: 'In the channel' },
+                                   { value: 'private', label: `Privately, as a DM to ${privateRecipient(d.type)}` }]} />
               {d.config.delivery === 'private' && (
                 <p className={hintCls}>Only reads in private: it cannot post, start polls or set reminders.</p>
               )}

@@ -31,7 +31,7 @@ const SkillsPanel: React.FC<Props> = ({ name, tools, values, set }) => {
           <SettingsCard
             key={g.key}
             title={g.label}
-            hint={g.hint}
+            hint={`${g.hint} ${onCount} of ${items.length} on.`}
             action={
               <button
                 type="button"
@@ -44,18 +44,13 @@ const SkillsPanel: React.FC<Props> = ({ name, tools, values, set }) => {
               </button>
             }
           >
-            <p className="-mt-2 mb-2 text-xs font-medium text-muted-foreground">{onCount} of {items.length} on</p>
             <ul className="divide-y divide-border" data-testid={`skills-${g.key}`}>
               {items.map((t) => {
                 const on = values.tools.includes(t.name);
                 return (
                   <li key={t.name} className="flex items-center gap-3 py-2.5">
                     <div className="min-w-0 flex-1">
-                      <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-foreground">
-                        {toolLabel(t.name)}
-                        {t.risk === 'write' && <span className="rounded bg-warning/15 px-1.5 text-xs font-semibold text-warning">Asks you first</span>}
-                        {t.private_only && <span className="rounded bg-[hsl(var(--theme-bg-tertiary))] px-1.5 text-xs font-semibold text-muted-foreground">DM only</span>}
-                      </p>
+                      <p className="text-sm font-medium text-foreground">{toolLabel(t.name)}</p>
                       <p className="text-sm text-muted-foreground">{toolPlain(t)}</p>
                     </div>
                     <OnOffSwitch on={on} label={toolLabel(t.name)} title={on ? 'On' : 'Off'} onChange={(next) => toggle(t.name, next)} />

@@ -17,14 +17,13 @@ import { ReactNode } from 'react';
 import {
   FileText,
   BookOpen,
-  Sparkles,
+  Bot,
   Languages,
   Heart,
   Target,
   Shield,
   Users,
   MessageSquare,
-  Bot,
   Eye,
 } from 'lucide-react';
 import { MessageRow } from '@/components/chat/MessageRow';
@@ -65,7 +64,7 @@ const ICONS: Record<string, typeof Bot> = {
   summarizer: FileText,
   knowledge_builder: BookOpen,
   knowledge_builder_v2: BookOpen,
-  assistant: Sparkles,
+  assistant: Bot,
   translator: Languages,
   mood_tracker: Heart,
   wellness: Heart,

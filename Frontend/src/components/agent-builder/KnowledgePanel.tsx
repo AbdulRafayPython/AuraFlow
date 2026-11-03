@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import agentBuilderService, { errorMessage } from '@/services/agentBuilderService';
 import type { KnowledgeSource } from '@/types/agentBuilder';
 import type { Channel } from '@/types';
+import AppSelect from '@/components/app/AppSelect';
 import { btnGhost, btnPrimary, cardCls, hintCls, inputCls, labelCls } from './styles';
 
 type Mode = 'text' | 'file' | 'channel';
@@ -121,11 +122,9 @@ const AgentKnowledgePanel: React.FC<Props> = ({ agentId, channels, onChange }) =
           {mode === 'channel' && (
             <div>
               <label className={labelCls} htmlFor="knowledge-channel">Channel</label>
-              <select id="knowledge-channel" className={inputCls} value={channelId}
-                      onChange={(e) => setChannelId(e.target.value ? Number(e.target.value) : '')}>
-                <option value="">Pick a channel…</option>
-                {textChannels.map((c) => <option key={c.id} value={c.id}># {c.name}</option>)}
-              </select>
+              <AppSelect id="knowledge-channel" value={String(channelId)} placeholder="Pick a channel"
+                         onChange={(v) => setChannelId(v ? Number(v) : '')}
+                         options={textChannels.map((c) => ({ value: String(c.id), label: `# ${c.name}` }))} />
               <p className={hintCls}>Copies the latest 300 messages. It does not follow new ones.</p>
             </div>
           )}

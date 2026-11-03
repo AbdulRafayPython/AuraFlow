@@ -26,6 +26,7 @@ import AgentMetricsTiles from '@/components/ai-agents/AgentMetricsTiles';
 import AgentsNav from '@/components/agents/AgentsNav';
 import { AgentRow, OnOffSwitch, SECTION_LABEL, iconBtn, rowBtnQuiet } from '@/components/agents/AgentRow';
 import { useConfirm } from '@/components/modals/ConfirmDialog';
+import AppSelect from '@/components/app/AppSelect';
 import { ErrorState } from '@/components/app/EmptyState';
 import { Icon } from '@/components/app/Icon';
 import { cn } from '@/lib/utils';
@@ -222,15 +223,13 @@ const AgentHub: React.FC = () => {
               </div>
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 Showing
-                <select
-                  aria-label="Show agents from"
-                  className="h-9 max-w-[200px] rounded-md border border-border bg-[hsl(var(--theme-input-bg))] px-2 text-sm text-foreground"
+                <AppSelect
+                  label="Show agents from"
+                  className="w-48"
                   value={scope}
-                  onChange={(e) => setScope(e.target.value)}
-                >
-                  <option value={MINE}>Made by you</option>
-                  {communities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                  onChange={setScope}
+                  options={[{ value: MINE, label: 'Made by you' }, ...communities.map((c) => ({ value: c.id, label: c.name }))]}
+                />
               </label>
             </div>
 
@@ -335,7 +334,7 @@ const AgentHub: React.FC = () => {
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                   onSelect={() => void remove(a)}
-                                  className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
+                                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" /> Delete agent
                                 </DropdownMenuItem>

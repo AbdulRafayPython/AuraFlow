@@ -35,7 +35,7 @@ export function OnOffSwitch({ on, busy, disabled, label, title, onChange }: {
       data-testid="agent-switch"
       className={cn(
         'relative inline-flex h-6 w-10 shrink-0 items-center rounded-full transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60',
-        on ? 'bg-success' : 'bg-[hsl(var(--theme-text-muted))]/60',
+        on ? 'bg-primary' : 'bg-[hsl(var(--theme-bg-tertiary))] ring-1 ring-inset ring-[hsl(var(--theme-border-hover))]',
       )}
     >
       <span

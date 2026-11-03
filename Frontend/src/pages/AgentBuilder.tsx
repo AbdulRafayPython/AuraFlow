@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft, AtSign, BookOpen, Clock, History, Loader2, MessageSquare, MoreHorizontal, Plug, Sparkles, Store, Trash2,
+  ArrowLeft, AtSign, BookOpen, Clock, History, Loader2, MessageSquare, MoreHorizontal, Plug, Store, Trash2,
   UserRound, Wrench,
 } from 'lucide-react';
 import {
@@ -263,7 +263,7 @@ const AgentBuilder: React.FC = () => {
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void copyMention()}><AtSign className="mr-2 h-4 w-4" /> Copy @{agent.username}</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => void remove()} className="text-destructive focus:bg-destructive focus:text-destructive-foreground">
+              <DropdownMenuItem onSelect={() => void remove()} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
                 <Trash2 className="mr-2 h-4 w-4" /> Delete agent
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -340,7 +340,7 @@ const AgentBuilder: React.FC = () => {
 
       <Sheet open={testing} onOpenChange={setTesting}>
         <SheetContent side="right" className="flex w-full flex-col p-0 sm:max-w-md">
-          <SheetTitle className="sr-only"><Sparkles className="h-4 w-4" /> Try {agent.name}</SheetTitle>
+          <SheetTitle className="sr-only">Try {agent.name}</SheetTitle>
           {test}
         </SheetContent>
       </Sheet>

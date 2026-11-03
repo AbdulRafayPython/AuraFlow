@@ -23,7 +23,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Sparkles,
+  MessageCircle,
   Languages,
   FileText,
   BookOpen,
@@ -92,7 +92,7 @@ const ACTIONS: ActionDef[] = [
   {
     key: 'ask',
     label: 'Ask Aura',
-    Icon: Sparkles,
+    Icon: MessageCircle,
     agent: 'assistant',
     requires: [],                      // Aura is built in for everyone
   },
@@ -289,7 +289,7 @@ export default function AgentBar({
                   : 'text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-[hsl(var(--theme-text-primary))]',
               )}
             >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
               <span className="hidden xl:inline">Aura</span>
               <ChevronDown className="h-3.5 w-3.5 opacity-70" />
             </button>
@@ -393,7 +393,7 @@ function AskBody({ accent, onAsk }: { accent: string; onAsk: (q: string) => Prom
   return (
     <div className="space-y-3">
       <h4 className="flex items-center gap-1.5 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
-        <Sparkles className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
+        <MessageCircle className="h-3.5 w-3.5" style={{ color: accent }} aria-hidden />
         Ask Aura
       </h4>
       <div className="flex gap-2">

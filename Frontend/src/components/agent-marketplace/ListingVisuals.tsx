@@ -70,12 +70,12 @@ export function ListingCard({ l, onOpen, featured = false }: { l: MarketplaceLis
       onClick={onOpen}
       data-testid="listing-card"
       aria-label={`View ${l.title}`}
-      className="group flex flex-col overflow-hidden rounded-xl border border-border bg-[hsl(var(--theme-bg-secondary))] text-left transition-colors duration-150 hover:border-[hsl(var(--theme-border-hover))] hover:bg-[hsl(var(--theme-bg-tertiary))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      className="card-sheen group flex flex-col overflow-hidden rounded-lg border border-border bg-[hsl(var(--theme-bg-secondary))] text-left transition-colors duration-150 hover:border-[hsl(var(--theme-border-hover))] hover:bg-[hsl(var(--theme-bg-tertiary))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
       <div className={cn('relative w-full shrink-0 overflow-hidden', featured ? 'h-36' : 'h-24')}>
-        <img src={bannerFor(l)} alt="" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 motion-reduce:transform-none" />
+        <img src={bannerFor(l)} alt="" className="h-full w-full object-cover" />
         {l.status === 'unpublished' && (
-          <span className="absolute right-2 top-2 rounded bg-black/60 px-1.5 text-xs font-medium text-white">Hidden</span>
+          <span className="absolute right-2 top-2 rounded bg-black/60 px-1.5 text-xs font-medium text-white">Not listed</span>
         )}
       </div>
       <div className={cn('relative flex w-full flex-1 flex-col px-4 pb-4', featured ? 'pt-12' : 'pt-10')}>
@@ -84,11 +84,12 @@ export function ListingCard({ l, onOpen, featured = false }: { l: MarketplaceLis
           size={featured ? 'lg' : 'md'}
           className={cn('absolute left-4 border-4 border-[hsl(var(--theme-bg-secondary))] transition-colors duration-150 group-hover:border-[hsl(var(--theme-bg-tertiary))]', featured ? '-top-10' : '-top-7')}
         />
-        <div className="flex items-center gap-2">
-          <h3 className="truncate text-base font-semibold text-foreground">{l.title}</h3>
-          <span className="shrink-0 rounded bg-[hsl(var(--theme-bg-primary))] px-1.5 text-xs font-medium text-muted-foreground">{CATEGORY_LABELS[l.category]}</span>
-        </div>
-        <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">{l.tagline || l.description || 'No description yet.'}</p>
+        <h3 className="truncate text-base font-semibold text-foreground">{l.title}</h3>
+        {/* Plain meta line, like Discord's "Games · Promoted" (no pill). */}
+        <p className="truncate text-xs font-medium text-muted-foreground">
+          {CATEGORY_LABELS[l.category]}{l.publisher && <> · by {l.mine ? 'you' : l.publisher}</>}
+        </p>
+        <p className="mt-2 line-clamp-2 min-h-[2.5rem] text-sm text-[hsl(var(--theme-text-secondary))]">{l.tagline || l.description || 'No description yet.'}</p>
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <Star className={cn('h-3.5 w-3.5', l.rating !== null && 'fill-warning text-warning')} />
@@ -102,9 +103,6 @@ export function ListingCard({ l, onOpen, featured = false }: { l: MarketplaceLis
             <span className="inline-flex items-center gap-1"><Plug className="h-3.5 w-3.5" />{l.connections.map((c) => c.name).join(', ')}</span>
           )}
         </div>
-        {l.publisher && (
-          <p className="mt-2 truncate text-xs text-muted-foreground">by {l.mine ? 'you' : l.publisher}</p>
-        )}
       </div>
     </button>
   );
