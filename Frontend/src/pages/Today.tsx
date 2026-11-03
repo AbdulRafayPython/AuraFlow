@@ -120,7 +120,7 @@ const Today: React.FC = () => {
               <Section title="Your agents in the last 24 hours">
                 {view.agents.length === 0 ? (
                   <EmptyState title="You have no agents yet" action={
-                    <button type="button" onClick={() => navigate('/agents/marketplace')} className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90">
+                    <button type="button" onClick={() => navigate('/agents')} className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90">
                       Browse directory
                     </button>
                   } />

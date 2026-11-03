@@ -78,7 +78,7 @@ const AgentBuilder: React.FC = () => {
     try {
       await agentBuilderService.archive(agent.id);
       invalidateMentionableAgents();
-      navigate('/agents');
+      navigate('/agents/mine');
     } catch (e) {
       toast({ title: 'Could not archive', description: errorMessage(e), variant: 'destructive' });
       setBusy(false);
@@ -86,7 +86,7 @@ const AgentBuilder: React.FC = () => {
   };
 
   const back = (
-    <button type="button" className={btnGhost} onClick={() => navigate('/agents')}>
+    <button type="button" className={btnGhost} onClick={() => navigate('/agents/mine')}>
       <ArrowLeft className="h-4 w-4" /> Your agents
     </button>
   );

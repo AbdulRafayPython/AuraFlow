@@ -15,7 +15,7 @@ const ManageAgentsCard: React.FC<Props> = ({ communityId, communityName, onNavig
   const navigate = useNavigate();
   const go = () => {
     onNavigate?.();
-    navigate(communityId ? `/agents?community=${encodeURIComponent(communityId)}` : '/agents');
+    navigate(communityId ? `/agents/mine?community=${encodeURIComponent(communityId)}` : '/agents/mine');
   };
   return (
     <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-4" data-testid="manage-agents">

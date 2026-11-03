@@ -247,6 +247,27 @@ export interface MarketplaceListing {
   rating_count: number;
   my_rating: number | null;
   updated_at: string | null;
+  /** One line under the name. */
+  tagline: string;
+  /** Longer description shown on the listing page. */
+  overview: string;
+  /** Persona avatar: a gallery file (/agents/personas/...) or an upload. */
+  icon_url: string | null;
+  /** Banner: a gallery file (/agents/banners/...) or an upload. */
+  banner_url: string | null;
+  /** Names of the MCP servers the agent uses; installers connect their own. */
+  connections: { kind: 'mcp'; name: string }[];
+}
+
+/** What a publisher sends when listing an agent. */
+export interface ListingInput {
+  title: string;
+  description: string;
+  category: MarketplaceCategory;
+  tagline?: string;
+  overview?: string;
+  icon_url?: string | null;
+  banner_url?: string | null;
 }
 
 /** One screen of "what needs me and what did my agents do". */
