@@ -416,6 +416,15 @@ def serve_community_image(filename):
     response.headers['Cache-Control'] = 'public, max-age=31536000'
     return response
 
+@app.route("/uploads/agent-listings/<filename>", methods=["GET"])
+def serve_agent_listing_image(filename):
+    """Serve uploaded agent-marketplace listing images (persona avatar, banner)"""
+    upload_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'agent-listings')
+    response = send_from_directory(upload_dir, filename)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Cache-Control'] = 'public, max-age=31536000'
+    return response
+
 # ======================================================================
 # BACKGROUND TASKS - Monitor inactive users
 # ======================================================================
