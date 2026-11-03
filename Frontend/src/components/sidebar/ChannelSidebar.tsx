@@ -26,6 +26,8 @@ import { useCommunityMembers } from "@/hooks/useCommunityMembers";
 import { useOpenAgent } from "@/components/ai-agents/AgentDetailPane";
 import { AgentAvatar } from "@/components/ai-agents/AgentMessageShell";
 import { AccountMenu } from "./AccountMenu";
+import { CommunityBanner } from "./CommunityBanner";
+import { bannerHeight, bannerTextColor } from "@/lib/communityBanner";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 import { channelService } from "@/services/channelService";
 import {
@@ -67,6 +69,11 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
   const [selectedChannelForManagement, setSelectedChannelForManagement] = useState<any>(null);
   const [isCommunityManagementOpen, setIsCommunityManagementOpen] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  // Scroll position of the channel list: the community name sits on the banner
+  // until the banner scrolls away, then becomes a solid header (Discord-style).
+  const [listScrollTop, setListScrollTop] = useState(0);
+  useEffect(() => setListScrollTop(0), [currentCommunity?.id]);
+  const onBanner = !!currentCommunity && listScrollTop < bannerHeight(currentCommunity) - 48;
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; channelId?: number } | null>(null);
 
   // Use role directly from currentCommunity (comes from API)
@@ -261,18 +268,32 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
         )}
         style={{ background: 'var(--theme-sidebar-gradient)' }}
       >
+        {/* Scrollable Content: banner, then channels. The name / server menu stays on top. */}
+        <div
+          className="relative flex-1 overflow-y-auto"
+          onScroll={(e) => setListScrollTop(e.currentTarget.scrollTop)}
+        >
         {/* Community header = server menu (Discord-style) */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild disabled={!currentCommunity}>
             <button
               type="button"
               aria-label="Community menu"
-              className="flex h-12 w-full shrink-0 items-center justify-between gap-2 border-b border-border px-4 text-left transition-colors hover:bg-[hsl(var(--theme-bg-hover))] data-[state=open]:bg-[hsl(var(--theme-bg-hover))]"
+              className={cn(
+                "sticky top-0 z-10 flex h-12 w-full items-center justify-between gap-2 border-b px-4 text-left transition-colors duration-150",
+                onBanner
+                  ? "border-transparent hover:bg-black/15 data-[state=open]:bg-black/15"
+                  : "border-border bg-[hsl(var(--theme-sidebar-bg))] hover:bg-[hsl(var(--theme-bg-hover))] data-[state=open]:bg-[hsl(var(--theme-bg-hover))]",
+              )}
+              style={onBanner ? {
+                color: bannerTextColor(currentCommunity),
+                textShadow: currentCommunity?.banner_url ? "0 1px 3px rgb(0 0 0 / 0.6)" : undefined,
+              } : undefined}
             >
               <h1 className="truncate text-base font-semibold">
                 {isLoadingCommunities ? "Loading..." : currentCommunity?.name || "Select Community"}
               </h1>
-              <Icon icon={ChevronDown} size="md" className="shrink-0 text-muted-foreground" />
+              <Icon icon={ChevronDown} size="md" className={cn("shrink-0", onBanner ? "opacity-90" : "text-muted-foreground")} />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" sideOffset={4} className="w-56">
@@ -312,8 +333,9 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto px-2 py-3">
+        {currentCommunity && <CommunityBanner community={currentCommunity} className="-mt-12" />}
+
+        <div className="px-2 py-3">
           {/* Loading State */}
           {isLoadingCommunities && (
             <SidebarListSkeleton />
@@ -499,6 +521,7 @@ export default function ChannelSidebar({ onNavigate, onMembersModalChange, onCom
               )}
             </div>
           )}
+        </div>
         </div>
 
         <AccountMenu variant="panel" />

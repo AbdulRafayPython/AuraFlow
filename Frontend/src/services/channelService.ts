@@ -5,7 +5,9 @@ import type {
   Channel, 
   Friend, 
   CommunityMember, 
-  CreateCommunityPayload 
+  CreateCommunityPayload,
+  CommunityPreview,
+  CommunityVisibility,
 } from '@/types';
 
 import { API_SERVER } from '@/config/api';
@@ -274,16 +276,35 @@ class ChannelService {
     }
   }
 
-  async joinCommunity(communityId: string): Promise<void> {
+  /**
+   * Join a public community. Communities with rules need `acceptedRules`;
+   * the thrown error carries the server's `code` (invite_only, rules_required).
+   */
+  async joinCommunity(communityId: string, options: { acceptedRules?: boolean } = {}): Promise<void> {
     try {
       await axios.post(
         `${API_URL}/communities/${communityId}/join`,
-        {},
+        options.acceptedRules ? { accepted_rules: true } : {},
         this.getAuthHeaders()
       );
     } catch (error: any) {
       console.error('Error joining community:', error);
-      throw new Error(error.response?.data?.error || 'Failed to join community');
+      const err = new Error(error.response?.data?.error || 'Failed to join community') as Error & { code?: string };
+      err.code = error.response?.data?.code;
+      throw err;
+    }
+  }
+
+  /** Details, counts, channel names and rules of a community, before joining. */
+  async getCommunityPreview(communityId: string): Promise<CommunityPreview> {
+    try {
+      const response = await axios.get<CommunityPreview>(
+        `${API_URL}/communities/${communityId}/preview`,
+        this.getAuthHeaders()
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to load community');
     }
   }
 
@@ -353,6 +374,8 @@ class ChannelService {
     description?: string;
     icon?: string;
     color?: string;
+    visibility?: CommunityVisibility;
+    rules?: string[];
   }): Promise<Community> {
     try {
       const response = await axios.put<Community>(

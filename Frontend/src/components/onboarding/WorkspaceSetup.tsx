@@ -5,6 +5,7 @@ import { Plus, Users, ArrowRight, Loader, ArrowLeft, Building2, Search, UserPlus
 import { useNotifications } from "@/hooks/useNotifications";
 import type { Community } from "@/types";
 import { API_SERVER } from "@/config/api";
+import { JoinCommunityDialog } from "@/components/community/JoinCommunityDialog";
 
 interface WorkspaceSetupProps {
   onContinue: () => void;
@@ -24,7 +25,7 @@ const PRESET_COLORS = [
 
 export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupProps) {
   const { isDarkMode } = useTheme();
-  const { createWorkspace, discoverCommunities, joinCommunity } = useWorkspace();
+  const { createWorkspace, discoverCommunities } = useWorkspace();
   const [mode, setMode] = useState<"choice" | "create" | "join">("choice");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -38,7 +39,6 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
   const [searchQuery, setSearchQuery] = useState("");
   const [availableCommunities, setAvailableCommunities] = useState<Community[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [joiningId, setJoiningId] = useState<number | null>(null);
   
   const { showError, showSuccess } = useNotifications();
 
@@ -132,24 +132,16 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
     }
   };
 
-  const handleJoinCommunity = async (community: Community) => {
-    setJoiningId(community.id);
-    try {
-      await joinCommunity(community.id);
-      showSuccess({
-        title: "Joined Successfully!",
-        description: `You've joined ${community.name}`,
-      });
-      onContinue();
-    } catch (error: any) {
-      console.error("Failed to join community:", error);
-      showError({
-        title: "Failed to Join",
-        description: error.message || "Could not join this workspace. Please try again.",
-      });
-    } finally {
-      setJoiningId(null);
-    }
+  // Joining goes through the same procedure as Discover: preview, rules, join.
+  const [joinTarget, setJoinTarget] = useState<Community | null>(null);
+  const handleJoinCommunity = (community: Community) => setJoinTarget(community);
+  const handleJoined = (community: Community) => {
+    setJoinTarget(null);
+    showSuccess({
+      title: "Joined Successfully!",
+      description: `You've joined ${community.name}`,
+    });
+    onContinue();
   };
 
   return (
@@ -491,10 +483,10 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
                             {/* Join Button */}
                             <button
                               onClick={() => handleJoinCommunity(community)}
-                              disabled={joiningId === community.id}
+                              disabled={joinTarget?.id === community.id}
                               className="px-3 py-1.5 bg-purple-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-medium rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
                             >
-                              {joiningId === community.id ? (
+                              {joinTarget?.id === community.id ? (
                                 <Loader className="w-3 h-3 animate-spin" />
                               ) : (
                                 <UserPlus className="w-3 h-3" />
@@ -524,6 +516,7 @@ export default function WorkspaceSetup({ onContinue, onBack }: WorkspaceSetupPro
           </>
         )}
       </div>
+      <JoinCommunityDialog community={joinTarget} onOpenChange={(open) => !open && setJoinTarget(null)} onJoined={handleJoined} />
     </div>
   );
 }

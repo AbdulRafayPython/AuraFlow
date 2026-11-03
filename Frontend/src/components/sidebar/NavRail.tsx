@@ -14,7 +14,7 @@ import { NotificationButton } from "@/components/NotificationButton";
 import CreateCommunityModal from "@/components/modals/CreateCommunityModal";
 import { AccountMenu } from "./AccountMenu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { CommunityFormData } from "./DirectsSidebar";
+import type { CommunityFormData } from "@/components/modals/CreateCommunityModal";
 
 interface NavRailProps {
   currentView: string;

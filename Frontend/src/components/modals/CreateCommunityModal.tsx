@@ -1,12 +1,24 @@
 // components/modals/CreateCommunityModal.tsx
-import { useMemo, useState, type ChangeEvent } from "react";
+//
+// Creating a community, the Discord way: one dialog, one decision per screen.
+//   1. Template      — what the community is for (sets its starting channels)
+//   2. Who can join? — Public (listed in Discover) or Private (invite-only)
+//   3. Customize     — icon, name, description, optional banner
+//   4. Rules         — public only: what joiners accept before joining
+// Back keeps everything entered. Nothing is created until the last button.
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "../../contexts/ThemeContext";
+import {
+  AlertCircle, ArrowLeft, Camera, Check, ChevronRight, Globe, Hash, ImagePlus, Loader2, Lock, Plus, Volume2,
+} from "lucide-react";
 import { channelService } from "@/services/channelService";
 import { useRealtime } from "@/hooks/useRealtime";
-import type { Community } from "@/types";
-import { Sparkles, ArrowRight, ArrowLeft, UploadCloud } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { cn, readableTextOn } from "@/lib/utils";
+import type { Community, CommunityTemplate, CommunityVisibility } from "@/types";
 import { ResponsiveModal, ResponsiveModalContent, ResponsiveModalTitle } from "@/components/ui/responsive-modal";
+import { COMMUNITY_TEMPLATES, templateById, type TemplateChannel } from "@/lib/communityTemplates";
+import { PrivacyChoice, RulesEditor } from "@/components/community/CommunityPrivacy";
 
 interface CreateCommunityModalProps {
   isOpen: boolean;
@@ -19,493 +31,383 @@ export interface CommunityFormData {
   description: string;
   icon: string;
   color: string;
+  visibility: CommunityVisibility;
+  template: CommunityTemplate;
+  /** Sent only for public communities. */
+  rules?: string[];
 }
 
-const PRESET_COLORS = [
-  '#8B5CF6', // Purple
-  '#3B82F6', // Blue
-  '#10B981', // Green
-  '#F59E0B', // Yellow
-  '#EF4444', // Red
-  '#EC4899', // Pink
-  '#06B6D4', // Cyan
-  '#8B5A3C', // Brown
-];
+type Step = "template" | "privacy" | "customize" | "rules";
+
+const COLORS = ["#8B5CF6", "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#EC4899", "#06B6D4", "#64748B"];
+const NAME_MIN = 2;
+const NAME_MAX = 50;
+const DESCRIPTION_MAX = 200;
+const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+const iconFromName = (name: string) => {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  return (words[0] || "AF").slice(0, 2).toUpperCase();
+};
+
+function ChannelChips({ channels }: { channels: TemplateChannel[] }) {
+  return (
+    <span className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+      {channels.map((ch) => (
+        <span key={`${ch.type}-${ch.name}`} className="inline-flex items-center gap-0.5">
+          {ch.type === "voice" ? <Volume2 className="h-3 w-3" /> : <Hash className="h-3 w-3" />}
+          {ch.name}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export default function CreateCommunityModal({ isOpen, onClose, onCreateCommunity }: CreateCommunityModalProps) {
-  const { isDarkMode } = useTheme();
   const navigate = useNavigate();
-  const { reloadCommunities, selectCommunity } = useRealtime();
-  const [formData, setFormData] = useState<CommunityFormData>({
-    name: '',
-    description: '',
-    icon: 'AF',
-    color: '#8B5CF6',
-  });
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [step, setStep] = useState<1 | 2>(1);
-  const [uploadingAssets, setUploadingAssets] = useState(false);
+  const { reloadCommunities } = useRealtime();
+  const { user } = useAuth();
+  const defaultName = `${(user?.display_name || user?.username || "My").split(" ")[0]}'s community`;
+
+  const [step, setStep] = useState<Step>("template");
+  const [direction, setDirection] = useState<1 | -1>(1);
+  const [template, setTemplate] = useState<CommunityTemplate>("own");
+  const [visibility, setVisibility] = useState<CommunityVisibility>("public");
+  const [name, setName] = useState(defaultName);
+  const [description, setDescription] = useState("");
+  const [color, setColor] = useState(COLORS[0]);
+  const [rules, setRules] = useState<string[]>(templateById("own").rules);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState<false | "creating" | "uploading">(false);
+  const logoInput = useRef<HTMLInputElement>(null);
+  const bannerInput = useRef<HTMLInputElement>(null);
 
-  const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setError('');
+  const logoPreview = useMemo(() => (logoFile ? URL.createObjectURL(logoFile) : null), [logoFile]);
+  const bannerPreview = useMemo(() => (bannerFile ? URL.createObjectURL(bannerFile) : null), [bannerFile]);
+  useEffect(() => () => { if (logoPreview) URL.revokeObjectURL(logoPreview); }, [logoPreview]);
+  useEffect(() => () => { if (bannerPreview) URL.revokeObjectURL(bannerPreview); }, [bannerPreview]);
 
-    // If still on step 1, advance to step 2 instead of submitting
-    if (step === 1) {
-      setStep(2);
-      return;
-    }
-
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setError('Please log in again to create a community.');
-      return;
-    }
-
-    if (!formData.name.trim()) {
-      setError('Community name is required');
-      return;
-    }
-
-    if (formData.name.length < 2 || formData.name.length > 50) {
-      setError('Community name must be between 2 and 50 characters');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const createdCommunity = await onCreateCommunity(formData);
-      const communityId = createdCommunity?.id;
-
-      if (communityId && (logoFile || bannerFile)) {
-        setUploadingAssets(true);
-        try {
-          if (logoFile) {
-            await channelService.uploadCommunityLogo(communityId, logoFile);
-          }
-          if (bannerFile) {
-            await channelService.uploadCommunityBanner(communityId, bannerFile);
-          }
-        } catch (uploadErr: any) {
-          const uploadMsg = uploadErr?.response?.data?.error || uploadErr?.message || 'Upload failed';
-          setError(uploadMsg);
-          return;
-        } finally {
-          setUploadingAssets(false);
-        }
-      }
-
-      // Now that creation + optional uploads are done, refresh and select
-      if (createdCommunity?.id) {
-        try {
-          await reloadCommunities();
-          navigate(`/community/${createdCommunity.id}`);
-        } catch (selErr) {
-          // Non-fatal; still proceed to close
-          console.warn('[CreateCommunityModal] post-create selection failed:', selErr);
-        }
-      }
-
-      setFormData({
-        name: '',
-        description: '',
-        icon: 'AF',
-        color: '#8B5CF6',
-      });
-      clearUploads();
-      setStep(1);
-      onClose();
-    } catch (err: any) {
-      const message = err?.response?.data?.error || err?.message || 'Failed to create community';
-      setError(message.includes('token') ? 'Please log in again to continue.' : message);
-    } finally {
-      setIsLoading(false);
-      setUploadingAssets(false);
-    }
-  };
-
-  const generateIcon = useMemo(() => {
-    if (formData.name.length >= 2) {
-      const words = formData.name.trim().split(' ');
-      if (words.length >= 2) {
-        return (words[0][0] + words[1][0]).toUpperCase();
-      }
-      return formData.name.substring(0, 2).toUpperCase();
-    }
-    return 'AF';
-  }, [formData.name]);
-
-  const handleNameChange = (value: string) => {
-    const newIcon = value.length >= 2 ? (
-      value.trim().split(' ').length >= 2
-        ? (value.trim().split(' ')[0][0] + value.trim().split(' ')[1][0]).toUpperCase()
-        : value.substring(0, 2).toUpperCase()
-    ) : 'AF';
-    setFormData({ ...formData, name: value, icon: newIcon });
-  };
-
-  const handleStep1Enter = (e: React.KeyboardEvent) => {
-    if (step === 1 && e.key === 'Enter') {
-      e.preventDefault();
-      if (formData.name.trim()) setStep(2);
-    }
-  };
-
-  const handleLogoChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Logo must be 5MB or smaller');
-      return;
-    }
-
-    setError('');
-    setLogoFile(file);
-    setLogoPreview(URL.createObjectURL(file));
-  };
-
-  const handleBannerChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Banner must be 5MB or smaller');
-      return;
-    }
-
-    setError('');
-    setBannerFile(file);
-    setBannerPreview(URL.createObjectURL(file));
-  };
-
-  const clearUploads = () => {
+  // Fresh start every time the dialog opens.
+  useEffect(() => {
+    if (!isOpen) return;
+    setStep("template");
+    setDirection(1);
+    setTemplate("own");
+    setVisibility("public");
+    setName(defaultName);
+    setDescription("");
+    setColor(COLORS[0]);
+    setRules(templateById("own").rules);
     setLogoFile(null);
     setBannerFile(null);
-    setLogoPreview(null);
-    setBannerPreview(null);
+    setError("");
+    setBusy(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  const steps: Step[] = visibility === "public" ? ["template", "privacy", "customize", "rules"] : ["template", "privacy", "customize"];
+  const stepIndex = steps.indexOf(step);
+  const isLast = stepIndex === steps.length - 1;
+
+  const go = (next: Step, dir: 1 | -1) => {
+    setError("");
+    setDirection(dir);
+    setStep(next);
+  };
+  const back = () => stepIndex > 0 && go(steps[stepIndex - 1], -1);
+
+  const nameError =
+    name.trim().length < NAME_MIN ? `Name must be at least ${NAME_MIN} characters.` : name.trim().length > NAME_MAX ? `Name can be at most ${NAME_MAX} characters.` : "";
+  const cleanRules = rules.map((r) => r.trim()).filter(Boolean);
+
+  const pickImage = (setter: (f: File | null) => void) => (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return setError("Choose an image file (PNG, JPG, WebP or GIF).");
+    if (file.size > IMAGE_MAX_BYTES) return setError("Images must be 5 MB or smaller.");
+    setError("");
+    setter(file);
   };
 
-  const isBusy = isLoading || uploadingAssets;
+  const create = async () => {
+    if (nameError) {
+      go("customize", -1);
+      setError(nameError);
+      return;
+    }
+    setError("");
+    setBusy("creating");
+    try {
+      const created = await onCreateCommunity({
+        name: name.trim(),
+        description: description.trim(),
+        icon: iconFromName(name),
+        color,
+        visibility,
+        template,
+        rules: visibility === "public" ? cleanRules : undefined,
+      });
+      if (created?.id && (logoFile || bannerFile)) {
+        setBusy("uploading");
+        try {
+          if (logoFile) await channelService.uploadCommunityLogo(created.id, logoFile);
+          if (bannerFile) await channelService.uploadCommunityBanner(created.id, bannerFile);
+        } catch (uploadErr: any) {
+          // The community exists; say so instead of looking like nothing happened.
+          setError(`Community created, but the image upload failed: ${uploadErr?.response?.data?.error || uploadErr?.message || "upload failed"}. You can add it in Community settings.`);
+        }
+      }
+      await reloadCommunities();
+      if (created?.id) navigate(`/community/${created.id}`);
+      onClose();
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err?.message || "Couldn't create the community. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const title: Record<Step, [string, string]> = {
+    template: ["Create your community", "A community is where your group talks, shares and gets things done. Start from scratch or a template."],
+    privacy: ["Who can join?", "This decides whether people can find your community. You can change it later in Community settings."],
+    customize: ["Customize your community", "Give it a name and an icon. You can change them later."],
+    rules: ["Set the rules", "People read and accept these before they join. Keep them short and clear."],
+  };
+  const tpl = templateById(template);
+  const shownLogo = logoPreview;
+  const fg = readableTextOn(color);
 
   return (
-    <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <ResponsiveModalContent size="xl" className="flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[hsl(var(--theme-border-subtle))]">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[hsl(var(--theme-accent-primary))] rounded-xl flex items-center justify-center shadow-md">
-              <Sparkles className="w-[18px] h-[18px] text-white" />
-            </div>
-            <div>
-              <ResponsiveModalTitle className="text-base font-semibold text-[hsl(var(--theme-text-primary))]">
-                Create Community
-              </ResponsiveModalTitle>
-              <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
-                Step {step} of 2 — {step === 1 ? 'Basic Details' : 'Branding'}
-              </p>
-            </div>
-          </div>
-          {/* Close handled by ResponsiveModal */}
+    <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o && !busy) onClose(); }}>
+      <ResponsiveModalContent size="md" className="flex flex-col">
+        {/* Progress */}
+        <div className="flex items-center justify-center gap-1.5 pt-5" aria-label={`Step ${stepIndex + 1} of ${steps.length}`}>
+          {steps.map((s, i) => (
+            <span key={s} className={cn("h-1 rounded-full transition-all duration-150", i === stepIndex ? "w-6 bg-primary" : i < stepIndex ? "w-3 bg-primary/60" : "w-3 bg-[hsl(var(--theme-bg-tertiary))]")} />
+          ))}
         </div>
 
-        {/* Stepper - Refined Progress Indicator */}
-        <div className="px-5 py-3 border-b border-[hsl(var(--theme-border-subtle))] bg-[hsl(var(--theme-bg-secondary)/0.3)]">
-          <div className="flex items-center justify-center gap-2">
-            {[1, 2].map((s) => (
-              <div key={s} className="flex items-center gap-2">
-                <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-200 ${
-                    step === s
-                      ? 'bg-[hsl(var(--theme-accent-primary))] text-white shadow-md'
-                      : step > s
-                        ? 'bg-[hsl(var(--theme-accent-primary)/0.15)] text-[hsl(var(--theme-text-accent))] border border-[hsl(var(--theme-accent-primary)/0.3)]'
-                        : 'bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))] border border-[hsl(var(--theme-border-default))]'
-                  }`}
-                >
-                  {step > s ? '✓' : s}
-                </div>
-                <span className={`text-xs font-medium transition-colors ${
-                  step === s ? 'text-[hsl(var(--theme-text-primary))]' : 'text-[hsl(var(--theme-text-muted))]'
-                }`}>
-                  {s === 1 ? 'Details' : 'Branding'}
-                </span>
-                {s === 1 && (
-                  <div className={`h-0.5 w-12 rounded-full transition-colors duration-300 ${
-                    step > 1 ? 'bg-[hsl(var(--theme-accent-primary))]' : 'bg-[hsl(var(--theme-border-default))]'
-                  }`} />
-                )}
-              </div>
-            ))}
-          </div>
+        <div className="px-6 pt-4 text-center">
+          <ResponsiveModalTitle className="text-xl font-bold text-foreground">{title[step][0]}</ResponsiveModalTitle>
+          <p className="mx-auto mt-1.5 max-w-sm text-sm text-muted-foreground">{title[step][1]}</p>
         </div>
 
-        {/* Body - Scrollable content with custom minimal scrollbar */}
-        <div className="flex-1 overflow-y-auto modal-scrollbar">
-          <form 
-            className="p-5 space-y-5"
-            onKeyDown={(e) => {
-              if (step === 1 && e.key === 'Enter') {
-                e.preventDefault();
-                if (formData.name.trim()) setStep(2);
-              }
-            }}
-          >
-            {/* Error */}
-            {error && (
-              <div className="p-3 bg-red-500/8 border border-red-500/20 rounded-xl flex items-start gap-2.5">
-                <div className="w-4 h-4 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-red-400 text-xs font-bold">!</span>
-                </div>
-                <p className="text-red-400 text-sm leading-relaxed">{error}</p>
-              </div>
-            )}
-
-            {/* Step 1: Details */}
-            {step === 1 && (
-              <div className="space-y-5">
-                {/* Icon Preview - Compact and refined */}
-                <div className="flex items-center gap-3.5 p-3 rounded-xl bg-[hsl(var(--theme-bg-secondary)/0.5)] border border-[hsl(var(--theme-border-subtle))]">
-                  <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center font-semibold text-lg text-white shadow-md transition-all duration-300"
-                    style={{ backgroundColor: formData.color }}
+        <div
+          key={step}
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto px-6 pb-2 pt-5 animate-in fade-in duration-150 motion-reduce:animate-none",
+            direction === 1 ? "slide-in-from-right-2" : "slide-in-from-left-2",
+          )}
+        >
+          {step === "template" && (
+            <div className="space-y-2">
+              {(() => {
+                const own = COMMUNITY_TEMPLATES[0];
+                return (
+                  <button
+                    type="button"
+                    onClick={() => { setTemplate(own.id); setRules(own.rules); go("privacy", 1); }}
+                    className="flex w-full items-center gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-[hsl(var(--theme-bg-hover))]"
                   >
-                    {generateIcon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-[hsl(var(--theme-text-secondary))] leading-snug">
-                      Icon auto-generated from name
-                    </p>
-                    <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
-                      Customize color in next step
-                    </p>
-                  </div>
-                </div>
-
-                {/* Name Field - Refined input styling */}
-                <div className="space-y-1.5">
-                  <label className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
-                      Community Name <span className="text-[hsl(var(--theme-text-accent))] ml-0.5">*</span>
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Plus className="h-5 w-5" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-foreground">{own.label}</span>
+                      <span className="block text-xs text-muted-foreground">{own.hint}</span>
                     </span>
-                    <span className="text-xs text-[hsl(var(--theme-text-muted))] tabular-nums">
-                      {formData.name.length}/50
-                    </span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => handleNameChange(e.target.value)}
-                    onKeyDown={handleStep1Enter}
-                    placeholder="e.g., Product Builders"
-                    maxLength={50}
-                    className="w-full px-3.5 py-2.5 rounded-xl border text-sm transition-all duration-150 bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted)/0.7)] focus:border-[hsl(var(--theme-accent-primary))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))]/15 hover:border-[hsl(var(--theme-border-hover))]"
-                    disabled={isBusy}
-                    autoFocus
-                  />
-                </div>
-
-                {/* Description Field - Cleaner textarea */}
-                <div className="space-y-1.5">
-                  <label className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
-                      Description
-                      <span className="text-[hsl(var(--theme-text-muted))] font-normal text-xs ml-1.5">Optional</span>
-                    </span>
-                    <span className="text-xs text-[hsl(var(--theme-text-muted))] tabular-nums">
-                      {formData.description.length}/200
-                    </span>
-                  </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    onKeyDown={handleStep1Enter}
-                    placeholder="What's your community about?"
-                    rows={3}
-                    maxLength={200}
-                    className="w-full px-3.5 py-2.5 rounded-xl border resize-none text-sm leading-relaxed transition-all duration-150 bg-[hsl(var(--theme-bg-secondary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder-[hsl(var(--theme-text-muted)/0.7)] focus:border-[hsl(var(--theme-accent-primary))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-accent-primary))]/15 hover:border-[hsl(var(--theme-border-hover))]"
-                    disabled={isBusy}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: Branding */}
-            {step === 2 && (
-              <div className="space-y-5">
-                {/* Color Picker - Refined grid */}
-                <div className="space-y-2.5">
-                  <label className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
-                    Community Color
-                  </label>
-                  <div className="grid grid-cols-8 gap-2">
-                    {PRESET_COLORS.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        onClick={() => setFormData({ ...formData, color })}
-                        className={`w-9 h-9 rounded-lg transition-all duration-150
-                          ${formData.color === color 
-                            ? 'ring-2 ring-offset-2 ring-offset-[hsl(var(--theme-bg-elevated))] ring-[hsl(var(--theme-accent-primary))] scale-105' 
-                            : 'hover:scale-105 opacity-80 hover:opacity-100'
-                          }`}
-                        style={{ backgroundColor: color }}
-                        disabled={isBusy}
-                        aria-label={`Select ${color} color`}
-                      />
-                    ))}
-                  </div>
-                  <p className="text-xs text-[hsl(var(--theme-text-muted))]">
-                    Used for badge and avatar background
-                  </p>
-                </div>
-
-                {/* Auto Icon Preview - Compact card */}
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-[hsl(var(--theme-bg-secondary)/0.5)] border border-[hsl(var(--theme-border-subtle))]">
-                  <div
-                    className="w-11 h-11 rounded-xl flex items-center justify-center font-semibold text-base text-white shadow-md transition-colors duration-200"
-                    style={{ backgroundColor: formData.color }}
-                  >
-                    {generateIcon}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-[hsl(var(--theme-text-primary))]">
-                      {formData.name || 'Community Name'}
-                    </p>
-                    <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
-                      Icon preview
-                    </p>
-                  </div>
-                </div>
-                {/* Uploads - Refined upload zones */}
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Logo Upload */}
-                  <div className="rounded-xl border border-dashed p-3 space-y-2 transition-all border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.4)] hover:border-[hsl(var(--theme-border-hover))]">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-[hsl(var(--theme-text-primary))]">Logo</p>
-                      {logoFile && (
-                        <button
-                          type="button"
-                          onClick={() => { setLogoFile(null); setLogoPreview(null); }}
-                          className="text-xs font-medium text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-accent))] transition-colors"
-                          disabled={isBusy}
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                    <label
-                      htmlFor="community-logo-upload"
-                      className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed py-4 cursor-pointer transition-all duration-150 border-[hsl(var(--theme-border-subtle))] hover:border-[hsl(var(--theme-accent-primary)/0.5)] bg-[hsl(var(--theme-bg-tertiary)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary))] ${isBusy ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      {logoPreview ? (
-                        <img src={logoPreview} alt="Logo preview" className="w-12 h-12 rounded-lg object-cover shadow-sm" />
-                      ) : (
-                        <UploadCloud className="w-5 h-5 text-[hsl(var(--theme-text-muted))]" />
-                      )}
-                      <span className="text-xs text-[hsl(var(--theme-text-muted))] text-center px-2 truncate max-w-full">
-                        {logoFile ? logoFile.name : 'Square image'}
-                      </span>
-                    </label>
-                    <input
-                      id="community-logo-upload"
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleLogoChange}
-                      disabled={isBusy}
-                    />
-                  </div>
-
-                  {/* Banner Upload */}
-                  <div className="rounded-xl border border-dashed p-3 space-y-2 transition-all border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary)/0.4)] hover:border-[hsl(var(--theme-border-hover))]">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-[hsl(var(--theme-text-primary))]">Banner</p>
-                      {bannerFile && (
-                        <button
-                          type="button"
-                          onClick={() => { setBannerFile(null); setBannerPreview(null); }}
-                          className="text-xs font-medium text-[hsl(var(--theme-text-muted))] hover:text-[hsl(var(--theme-text-accent))] transition-colors"
-                          disabled={isBusy}
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                    <label
-                      htmlFor="community-banner-upload"
-                      className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed py-4 cursor-pointer transition-all duration-150 border-[hsl(var(--theme-border-subtle))] hover:border-[hsl(var(--theme-accent-primary)/0.5)] bg-[hsl(var(--theme-bg-tertiary)/0.5)] hover:bg-[hsl(var(--theme-bg-tertiary))] ${isBusy ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      {bannerPreview ? (
-                        <img src={bannerPreview} alt="Banner preview" className="w-full h-12 rounded-lg object-cover shadow-sm" />
-                      ) : (
-                        <UploadCloud className="w-5 h-5 text-[hsl(var(--theme-text-muted))]" />
-                      )}
-                      <span className="text-xs text-[hsl(var(--theme-text-muted))] text-center px-2 truncate max-w-full">
-                        {bannerFile ? bannerFile.name : 'Wide image'}
-                      </span>
-                    </label>
-                    <input
-                      id="community-banner-upload"
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleBannerChange}
-                      disabled={isBusy}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Actions - Refined button styling with clear hierarchy */}
-            <div className="flex gap-2.5 pt-3 border-t border-[hsl(var(--theme-border-subtle))] mt-1">
-              <button
-                type="button"
-                onClick={step === 1 ? onClose : () => setStep(1)}
-                disabled={isBusy}
-                className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 bg-[hsl(var(--theme-bg-secondary)/0.8)] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))] border border-[hsl(var(--theme-border-default))] hover:border-[hsl(var(--theme-border-hover))] active:scale-[0.98] disabled:opacity-50"
-              >
-                {step === 1 ? 'Cancel' : (
-                  <span className="flex items-center justify-center gap-1.5">
-                    <ArrowLeft className="w-3.5 h-3.5" /> Back
-                  </span>
-                )}
-              </button>
-
-              {step === 1 ? (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                );
+              })()}
+              <h3 className="px-1 pt-3 text-xs font-medium text-muted-foreground">Start from a template</h3>
+              {COMMUNITY_TEMPLATES.slice(1).map((item) => (
                 <button
+                  key={item.id}
                   type="button"
-                  onClick={() => setStep(2)}
-                  disabled={isBusy || !formData.name.trim()}
-                  className="flex-[1.5] py-2.5 rounded-xl text-sm font-semibold text-white bg-[hsl(var(--theme-accent-primary))] shadow-sm hover:shadow-md hover:shadow-[hsl(var(--theme-accent-primary))/0.25] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+                  onClick={() => { setTemplate(item.id); setRules(item.rules); go("privacy", 1); }}
+                  className="flex w-full items-center gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-[hsl(var(--theme-bg-hover))]"
                 >
-                  <span className="flex items-center justify-center gap-1.5">
-                    Continue <ArrowRight className="w-3.5 h-3.5" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-foreground">{item.label}</span>
+                    <span className="mb-1 block text-xs text-muted-foreground">{item.hint}</span>
+                    <ChannelChips channels={item.channels} />
                   </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={(e) => handleSubmit(e)}
-                  disabled={isBusy || !formData.name.trim()}
-                  className="flex-[1.5] py-2.5 rounded-xl text-sm font-semibold text-white bg-[hsl(var(--theme-accent-primary))] shadow-sm hover:shadow-md hover:shadow-[hsl(var(--theme-accent-primary))/0.25] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
-                >
-                  {isLoading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Creating...
-                    </span>
-                  ) : 'Create Community'}
-                </button>
-              )}
+              ))}
             </div>
-          </form>
+          )}
+
+          {step === "privacy" && <PrivacyChoice value={visibility} onChange={setVisibility} />}
+
+          {step === "customize" && (
+            <div className="space-y-5">
+              <div className="flex flex-col items-center">
+                <button
+                  type="button"
+                  onClick={() => logoInput.current?.click()}
+                  aria-label={shownLogo ? "Change icon" : "Upload an icon"}
+                  className={cn(
+                    "relative flex h-20 w-20 items-center justify-center rounded-2xl text-xl font-bold transition-opacity hover:opacity-90",
+                    !shownLogo && "border-2 border-dashed border-muted-foreground",
+                  )}
+                  style={shownLogo ? undefined : { backgroundColor: `${color}26`, color }}
+                >
+                  {shownLogo ? (
+                    <img src={shownLogo} alt="" className="h-full w-full rounded-2xl object-cover" />
+                  ) : (
+                    <span className="flex flex-col items-center gap-0.5 text-xs font-semibold">
+                      <Camera className="h-5 w-5" /> Upload
+                    </span>
+                  )}
+                  <span className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Plus className="h-4 w-4" />
+                  </span>
+                </button>
+                <input ref={logoInput} type="file" accept="image/*" className="hidden" onChange={pickImage(setLogoFile)} />
+                {shownLogo && (
+                  <button type="button" onClick={() => setLogoFile(null)} className="mt-2 text-xs text-muted-foreground hover:text-foreground">
+                    Remove icon
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="community-name" className="mb-1.5 flex items-center justify-between text-xs font-semibold text-foreground">
+                  <span>Community name <span className="text-destructive">*</span></span>
+                  <span className={cn("font-normal", name.length > NAME_MAX ? "text-destructive" : "text-muted-foreground")}>{name.length}/{NAME_MAX}</span>
+                </label>
+                <input
+                  id="community-name"
+                  autoFocus
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={NAME_MAX + 10}
+                  aria-invalid={!!nameError}
+                  className="h-10 w-full rounded-md border border-border bg-[hsl(var(--theme-input-bg))] px-3 text-sm text-foreground outline-none focus:border-primary"
+                />
+                {name && nameError && <p className="mt-1 text-xs text-destructive">{nameError}</p>}
+              </div>
+
+              <div>
+                <label htmlFor="community-description" className="mb-1.5 flex items-center justify-between text-xs font-semibold text-foreground">
+                  <span>Description <span className="font-normal text-muted-foreground">(optional)</span></span>
+                  <span className="font-normal text-muted-foreground">{description.length}/{DESCRIPTION_MAX}</span>
+                </label>
+                <textarea
+                  id="community-description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value.slice(0, DESCRIPTION_MAX))}
+                  rows={2}
+                  placeholder="What is this community about?"
+                  className="w-full resize-none rounded-md border border-border bg-[hsl(var(--theme-input-bg))] px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {visibility === "public" ? "Shown on Discover and before people join." : "Shown to members."}
+                </p>
+              </div>
+
+              <div>
+                <span className="mb-1.5 block text-xs font-semibold text-foreground">Banner <span className="font-normal text-muted-foreground">(optional)</span></span>
+                <button
+                  type="button"
+                  onClick={() => bannerInput.current?.click()}
+                  className="relative flex h-24 w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-border text-sm text-muted-foreground transition-colors hover:bg-[hsl(var(--theme-bg-hover))]"
+                  style={bannerPreview ? undefined : { backgroundColor: `${color}1a` }}
+                >
+                  {bannerPreview ? (
+                    <img src={bannerPreview} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                  ) : (
+                    <span className="flex items-center gap-2"><ImagePlus className="h-4 w-4" /> Add a banner image</span>
+                  )}
+                </button>
+                <input ref={bannerInput} type="file" accept="image/*" className="hidden" onChange={pickImage(setBannerFile)} />
+                {bannerPreview && (
+                  <button type="button" onClick={() => setBannerFile(null)} className="mt-1 text-xs text-muted-foreground hover:text-foreground">
+                    Remove banner
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <span className="mb-1.5 block text-xs font-semibold text-foreground">Colour</span>
+                <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Colour">
+                  {COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      role="radio"
+                      aria-checked={color === c}
+                      aria-label={c}
+                      onClick={() => setColor(c)}
+                      className={cn("flex h-7 w-7 items-center justify-center rounded-full ring-offset-2 ring-offset-[hsl(var(--theme-bg-primary))]", color === c && "ring-2 ring-foreground")}
+                      style={{ backgroundColor: c, color: readableTextOn(c) }}
+                    >
+                      {color === c && <Check className="h-4 w-4" />}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">Used where there is no icon or banner.</p>
+              </div>
+
+              {/* What people will see */}
+              <div>
+                <span className="mb-1.5 block text-xs font-semibold text-foreground">Preview</span>
+                <div className="overflow-hidden rounded-lg border border-border bg-[hsl(var(--theme-bg-secondary))]">
+                  <div className="h-14" style={bannerPreview ? undefined : { backgroundColor: color }}>
+                    {bannerPreview && <img src={bannerPreview} alt="" className="h-full w-full object-cover" />}
+                  </div>
+                  <div className="relative px-3 pb-3 pt-6">
+                    <span
+                      className="absolute -top-5 left-3 flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border-[3px] border-[hsl(var(--theme-bg-secondary))] text-xs font-bold"
+                      style={shownLogo ? undefined : { backgroundColor: color, color: fg }}
+                    >
+                      {shownLogo ? <img src={shownLogo} alt="" className="h-full w-full object-cover" /> : iconFromName(name)}
+                    </span>
+                    <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-foreground">
+                      {name.trim() || defaultName}
+                      {visibility === "private" ? <Lock className="h-3.5 w-3.5 text-muted-foreground" /> : <Globe className="h-3.5 w-3.5 text-muted-foreground" />}
+                    </p>
+                    <p className="line-clamp-1 text-xs text-muted-foreground">{description.trim() || "No description yet."}</p>
+                    <div className="mt-1.5"><ChannelChips channels={tpl.channels} /></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === "rules" && <RulesEditor rules={rules} onChange={setRules} />}
+
+          {error && (
+            <p role="alert" className="mt-4 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {error}
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-2 border-t border-border bg-[hsl(var(--theme-bg-secondary))] px-6 py-3">
+          {stepIndex > 0 ? (
+            <button type="button" onClick={back} disabled={!!busy} className="flex h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-[hsl(var(--theme-text-secondary))] hover:text-foreground disabled:opacity-50">
+              <ArrowLeft className="h-4 w-4" /> Back
+            </button>
+          ) : (
+            <span className="text-xs text-muted-foreground">Step 1 of {steps.length}</span>
+          )}
+          {step === "template" ? null : (
+            <button
+              type="button"
+              onClick={isLast ? create : () => go(steps[stepIndex + 1], 1)}
+              disabled={!!busy || (step === "customize" && !!nameError)}
+              className="flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              {busy === "creating" ? "Creating…" : busy === "uploading" ? "Uploading images…" : isLast ? "Create community" : "Continue"}
+            </button>
+          )}
         </div>
       </ResponsiveModalContent>
     </ResponsiveModal>
