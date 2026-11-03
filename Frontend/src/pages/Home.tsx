@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRealtime } from '@/hooks/useRealtime';
 import { useToast } from '@/hooks/use-toast';
-import CreateCommunityModal from '@/components/modals/CreateCommunityModal';
+import CreateCommunityModal, { type CommunityFormData } from '@/components/modals/CreateCommunityModal';
 import { PageHeader } from '@/components/app/PageHeader';
 import { Section } from '@/components/app/Section';
 import { EmptyState, ErrorState } from '@/components/app/EmptyState';
@@ -14,12 +14,6 @@ import { API_SERVER } from '@/config/api';
 import { readableTextOn } from '@/lib/utils';
 import type { Community } from '@/types';
 
-interface CommunityFormData {
-  name: string;
-  description: string;
-  icon: string;
-  color: string;
-}
 
 function greeting() {
   const hour = new Date().getHours();
