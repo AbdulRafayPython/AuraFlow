@@ -1,6 +1,13 @@
 // When an agent wakes up: mention, keywords, schedule, new member, quiet channel, new topic, or every message in a channel.
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import {
+  AtSign, CalendarClock, HeartPulse, MessagesSquare, MoonStar, Plus, Shuffle, Tag, Trash2, UserPlus,
+} from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { OnOffSwitch } from '@/components/agents/AgentRow';
+import { SaveBar } from './AgentSettingsParts';
 import { useToast } from '@/hooks/use-toast';
 import agentBuilderService, { errorMessage } from '@/services/agentBuilderService';
 import {
@@ -9,7 +16,12 @@ import {
 } from '@/lib/agentBuilder';
 import type { AgentTrigger, BuilderAgent, TriggerType } from '@/types/agentBuilder';
 import type { Channel } from '@/types';
-import { btnGhost, btnPrimary, cardCls, hintCls, inputCls, labelCls } from './styles';
+import { hintCls, inputCls, labelCls } from './styles';
+
+const ICONS: Record<TriggerType, typeof AtSign> = {
+  mention: AtSign, keyword: Tag, channel_message: MessagesSquare, schedule: CalendarClock,
+  member_joined: UserPlus, channel_silent: MoonStar, focus_drift: Shuffle, mood_escalation: HeartPulse,
+};
 
 interface Draft extends AgentTrigger {
   key: string;
@@ -34,6 +46,15 @@ interface Props {
   agent: BuilderAgent;
   channels: Channel[];
   onSaved: (agent: BuilderAgent) => void;
+}
+
+function TriggerIcon({ type }: { type: TriggerType }) {
+  const TIcon = ICONS[type];
+  return (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[hsl(var(--theme-bg-tertiary))] text-foreground">
+      <TIcon className="h-4 w-4" />
+    </span>
+  );
 }
 
 const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
@@ -63,6 +84,12 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
 
   const problems = drafts.map((d) => triggerProblems(withKeywords(d)));
   const hasProblems = problems.some((p) => p.length > 0);
+  const bodyOf = (list: Draft[]) => JSON.stringify(list.map((raw) => {
+    const d = withKeywords(raw);
+    return { type: d.type, channel_id: d.channel_id, config: d.config, enabled: d.enabled };
+  }));
+  const dirty = bodyOf(drafts) !== bodyOf((agent.triggers ?? []).map(toDraft));
+  const add = (type: TriggerType) => setDrafts((list) => [...list, emptyTrigger(type, textChannels[0]?.id ?? null)]);
 
   const save = async () => {
     setSaving(true);
@@ -73,9 +100,9 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
       });
       const updated = await agentBuilderService.setTriggers(agent.id, body);
       onSaved({ ...agent, ...updated });
-      toast({ title: 'Triggers saved' });
+      toast({ title: 'Changes saved', variant: 'success' });
     } catch (err) {
-      toast({ title: 'Could not save triggers', description: errorMessage(err), variant: 'destructive' });
+      toast({ title: 'Could not save', description: errorMessage(err), variant: 'destructive' });
     } finally {
       setSaving(false);
     }
@@ -96,30 +123,41 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
   return (
     <div className="space-y-4">
       {drafts.length === 0 && (
-        <p className="rounded-md border border-dashed border-[hsl(var(--theme-border-default))] p-4 text-sm text-[hsl(var(--theme-text-muted))]">
-          No triggers yet. An agent needs at least one before you can publish it.
-        </p>
+        <div data-testid="trigger-picker">
+          <p className="mb-3 text-sm text-muted-foreground">It does nothing until you pick at least one. Most agents start with <strong className="text-foreground">When mentioned</strong>.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {available.map((t) => {
+              const TIcon = ICONS[t];
+              return (
+                <button key={t} type="button" onClick={() => add(t)}
+                        className="flex items-start gap-3 rounded-xl border border-border bg-[hsl(var(--theme-bg-secondary))] p-4 text-left transition-colors duration-100 hover:border-primary hover:bg-[hsl(var(--theme-bg-hover))]">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[hsl(var(--theme-bg-tertiary))] text-foreground"><TIcon className="h-4 w-4" /></span>
+                  <span>
+                    <span className="block text-sm font-semibold text-foreground">{TRIGGER_LABELS[t].label}</span>
+                    <span className="block text-sm text-muted-foreground">{TRIGGER_LABELS[t].hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {drafts.map((d, i) => (
-        <div key={d.key} className={`${cardCls} p-4`} data-testid={`trigger-${d.type}`}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h4 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">{TRIGGER_LABELS[d.type].label}</h4>
-              <p className={hintCls}>{TRIGGER_LABELS[d.type].hint}</p>
+        <div key={d.key} className={`rounded-xl border border-border bg-[hsl(var(--theme-bg-secondary))] p-5 ${d.enabled ? '' : 'opacity-70'}`} data-testid={`trigger-${d.type}`}>
+          <div className="flex items-start gap-3">
+            <TriggerIcon type={d.type} />
+            <div className="min-w-0 flex-1">
+              <h4 className="text-base font-semibold text-foreground">{TRIGGER_LABELS[d.type].label}</h4>
+              <p className="text-sm text-muted-foreground">{TRIGGER_LABELS[d.type].hint}</p>
             </div>
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-1.5 text-xs text-[hsl(var(--theme-text-muted))]">
-                <input type="checkbox" className="accent-[hsl(var(--theme-accent-primary))]" checked={d.enabled}
-                       onChange={(e) => patch(d.key, { enabled: e.target.checked })} />
-                On
-              </label>
-              <button type="button" className="text-[hsl(var(--theme-text-muted))] hover:text-destructive"
-                      aria-label={`Remove ${TRIGGER_LABELS[d.type].label}`}
-                      onClick={() => setDrafts((list) => list.filter((x) => x.key !== d.key))}>
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
+            <OnOffSwitch on={d.enabled} label={`${TRIGGER_LABELS[d.type].label} on or off`} title={d.enabled ? 'On' : 'Off'}
+                         onChange={(next) => patch(d.key, { enabled: next })} />
+            <button type="button" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    aria-label={`Remove ${TRIGGER_LABELS[d.type].label}`} title="Remove"
+                    onClick={() => setDrafts((list) => list.filter((x) => x.key !== d.key))}>
+              <Trash2 className="h-4 w-4" />
+            </button>
           </div>
 
           <div className="mt-3 space-y-3">
@@ -184,7 +222,7 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
             {(d.type === 'mention' || d.type === 'keyword') && textChannels.length > 0 && channelSelect(d, false)}
             {d.type !== 'mood_escalation' && (
             <div>
-              <label className={labelCls}>Answer</label>
+              <label className={labelCls}>Where it answers</label>
               <select className={inputCls} value={d.config.delivery ?? 'channel'}
                       onChange={(e) => patchConfig(d.key, { delivery: e.target.value === 'private' ? 'private' : undefined })}>
                 <option value="channel">In the channel</option>
@@ -202,29 +240,42 @@ const TriggerEditor: React.FC<Props> = ({ agent, channels, onSaved }) => {
               {problems[i].map((p) => <li key={p}>{p}</li>)}
             </ul>
           )}
-          <p className="mt-3 text-xs text-[hsl(var(--theme-text-muted))]">{describeTrigger(withKeywords(d), channelName)}</p>
+          <p className="mt-3 rounded-md bg-[hsl(var(--theme-bg-tertiary))] px-3 py-2 text-sm text-[hsl(var(--theme-text-secondary))]">
+            <span className="font-medium text-foreground">In short: </span>{describeTrigger(withKeywords(d), channelName)}
+          </p>
         </div>
       ))}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative">
-          <Plus className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[hsl(var(--theme-text-muted))]" />
-          <select className={`${inputCls} w-auto pl-8 pr-3`} value="" aria-label="Add a trigger"
-                  onChange={(e) => {
-                    if (e.target.value) setDrafts((list) => [...list, emptyTrigger(e.target.value as TriggerType, textChannels[0]?.id ?? null)]);
-                  }}>
-            <option value="">Add a trigger…</option>
-            {available.map((t) => <option key={t} value={t}>{TRIGGER_LABELS[t].label}</option>)}
-          </select>
+      {drafts.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className="inline-flex h-9 items-center gap-2 rounded-md border border-dashed border-border px-3.5 text-sm font-medium text-foreground hover:bg-[hsl(var(--theme-bg-hover))]">
+              <Plus className="h-4 w-4" /> Add another way to reply
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-80">
+            {available.map((t) => {
+              const TIcon = ICONS[t];
+              return (
+                <DropdownMenuItem key={t} onSelect={() => add(t)} className="items-start gap-3 py-2">
+                  <TIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    <span className="block text-sm font-medium">{TRIGGER_LABELS[t].label}</span>
+                    <span className="block text-xs text-muted-foreground">{TRIGGER_LABELS[t].hint}</span>
+                  </span>
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+
+      {dirty && (
+        <div className="-mx-4 sm:-mx-6">
+          {hasProblems && <p className="px-4 text-sm text-warning sm:px-6">Fix the notes in yellow above before saving.</p>}
+          <SaveBar saving={saving} onReset={() => setDrafts((agent.triggers ?? []).map(toDraft))} onSave={() => { if (!hasProblems) void save(); }} />
         </div>
-        <button type="button" className={btnPrimary} disabled={saving || hasProblems} onClick={() => void save()}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Save triggers
-        </button>
-        <button type="button" className={btnGhost} onClick={() => setDrafts((agent.triggers ?? []).map(toDraft))}>
-          Discard changes
-        </button>
-      </div>
+      )}
     </div>
   );
 };

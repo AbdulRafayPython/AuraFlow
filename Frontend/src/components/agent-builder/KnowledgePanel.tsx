@@ -14,9 +14,11 @@ const ICONS = { text: StickyNote, file: FileText, channel: Hash } as const;
 interface Props {
   agentId: string;
   channels: Channel[];
+  /** Tells the page what it knows now (for the setup checklist). */
+  onChange?: (sources: KnowledgeSource[]) => void;
 }
 
-const AgentKnowledgePanel: React.FC<Props> = ({ agentId, channels }) => {
+const AgentKnowledgePanel: React.FC<Props> = ({ agentId, channels, onChange }) => {
   const { toast } = useToast();
   const [sources, setSources] = useState<KnowledgeSource[] | null>(null);
   const [mode, setMode] = useState<Mode>('text');
@@ -29,17 +31,19 @@ const AgentKnowledgePanel: React.FC<Props> = ({ agentId, channels }) => {
 
   const load = useCallback(async () => {
     try {
-      setSources(await agentBuilderService.knowledge(agentId));
+      const list = await agentBuilderService.knowledge(agentId);
+      setSources(list);
+      onChange?.(list);
     } catch (err) {
       setSources([]);
       toast({ title: 'Could not load knowledge', description: errorMessage(err), variant: 'destructive' });
     }
-  }, [agentId, toast]);
+  }, [agentId, toast, onChange]);
 
   useEffect(() => { void load(); }, [load]);
 
   const done = async (message: string) => {
-    toast({ title: message });
+    toast({ title: message, variant: 'success' });
     setTitle('');
     setText('');
     if (fileRef.current) fileRef.current.value = '';
