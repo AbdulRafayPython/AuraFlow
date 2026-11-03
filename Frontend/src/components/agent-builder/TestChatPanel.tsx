@@ -20,11 +20,13 @@ interface Props {
   channels: Channel[];
   /** Unsaved edits would not be used by the test, so the panel says so. */
   hasUnsavedChanges?: boolean;
+  /** No card border: for when the page already frames it (side column, sheet). */
+  bare?: boolean;
 }
 
 let turnId = 0;
 
-const TestChatPanel: React.FC<Props> = ({ agentId, agentName, channels, hasUnsavedChanges }) => {
+const TestChatPanel: React.FC<Props> = ({ agentId, agentName, channels, hasUnsavedChanges, bare = false }) => {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -51,7 +53,7 @@ const TestChatPanel: React.FC<Props> = ({ agentId, agentName, channels, hasUnsav
   };
 
   return (
-    <section className={`${cardCls} flex h-full min-h-[420px] flex-col`} aria-label="Test chat">
+    <section className={`${bare ? '' : cardCls} flex h-full min-h-[420px] flex-col`} aria-label="Test chat">
       <header className="border-b border-[hsl(var(--theme-border-default))] px-4 py-3">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
           <Sparkles className="h-4 w-4 text-[hsl(var(--theme-text-accent))]" /> Try {agentName}
@@ -71,7 +73,15 @@ const TestChatPanel: React.FC<Props> = ({ agentId, agentName, channels, hasUnsav
 
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3" aria-live="polite">
         {turns.length === 0 && (
-          <p className="text-sm text-[hsl(var(--theme-text-muted))]">Ask something it should be able to answer.</p>
+          <div className="space-y-2">
+            <p className="text-sm text-[hsl(var(--theme-text-muted))]">Ask something it should be able to answer. Try one of these:</p>
+            {['What can you help me with?', 'Hi! Who are you?'].map((q) => (
+              <button key={q} type="button" disabled={busy} onClick={() => setInput(q)}
+                      className="block w-full rounded-lg border border-[hsl(var(--theme-border-default))] px-3 py-2 text-left text-sm text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))]">
+                {q}
+              </button>
+            ))}
+          </div>
         )}
         {turns.map((t) => (
           <div key={t.id} className={t.role === 'user' ? 'flex justify-end' : ''}>

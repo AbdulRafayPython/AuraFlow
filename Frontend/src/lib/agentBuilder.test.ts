@@ -211,3 +211,34 @@ describe('describeDue', () => {
     expect(describeDue('nope', now)).toBe('');
   });
 });
+
+describe('agent manage page helpers', () => {
+  it('puts every skill in a group, going by what unknown ones do', async () => {
+    const { toolGroup } = await import('./agentBuilder');
+    expect(toolGroup({ name: 'post_message', risk: 'write' })).toBe('act');
+    expect(toolGroup({ name: 'search_knowledge' })).toBe('answer');
+    expect(toolGroup({ name: 'new_writer', risk: 'write' })).toBe('act');
+    expect(toolGroup({ name: 'new_private', private_only: true })).toBe('private');
+    expect(toolGroup({ name: 'new_reader' })).toBe('other');
+  });
+
+  it('adds a behaviour snippet once, on its own line', async () => {
+    const { addSnippet } = await import('./agentBuilder');
+    expect(addSnippet('', 'Be kind.')).toBe('Be kind.');
+    expect(addSnippet('You help.  ', 'Be kind.')).toBe('You help.\nBe kind.');
+    expect(addSnippet('You help.\nBe kind.', 'Be kind.')).toBe('You help.\nBe kind.');
+  });
+
+  it('works out the setup steps from the agent', async () => {
+    const { setupSteps } = await import('./agentBuilder');
+    const fresh = setupSteps({ instructions: '', triggers: [], knowledge: [], status: 'draft' });
+    expect(fresh.filter((s) => s.done)).toHaveLength(0);
+    const ready = setupSteps({
+      instructions: 'You answer questions about the course.',
+      triggers: [{ type: 'mention', channel_id: null, config: {}, enabled: true }],
+      knowledge: [],
+      status: 'active',
+    });
+    expect(ready.filter((s) => !s.done).map((s) => s.key)).toEqual(['knowledge']);
+  });
+});

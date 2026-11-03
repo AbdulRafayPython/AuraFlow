@@ -20,8 +20,8 @@ export const rowBtnQuiet = `${rowBtn} bg-[hsl(var(--theme-bg-tertiary))] text-fo
 export const iconBtn = 'flex h-8 w-8 items-center justify-center rounded-full bg-[hsl(var(--theme-bg-tertiary))] text-muted-foreground transition-colors duration-100 hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary';
 
 /** A real switch (role="switch"), so "on or off" is one tap and reads out loud correctly. */
-export function OnOffSwitch({ on, busy, disabled, label, onChange }: {
-  on: boolean; busy?: boolean; disabled?: boolean; label: string; onChange: (next: boolean) => void;
+export function OnOffSwitch({ on, busy, disabled, label, title, onChange }: {
+  on: boolean; busy?: boolean; disabled?: boolean; label: string; title?: string; onChange: (next: boolean) => void;
 }) {
   return (
     <button
@@ -29,7 +29,7 @@ export function OnOffSwitch({ on, busy, disabled, label, onChange }: {
       role="switch"
       aria-checked={on}
       aria-label={label}
-      title={on ? 'On — tap to pause' : 'Off — tap to turn on'}
+      title={title ?? (on ? 'On — tap to pause' : 'Off — tap to turn on')}
       disabled={disabled || busy}
       onClick={(e) => { e.stopPropagation(); onChange(!on); }}
       data-testid="agent-switch"

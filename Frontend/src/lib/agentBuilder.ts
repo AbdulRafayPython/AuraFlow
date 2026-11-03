@@ -98,7 +98,92 @@ export const TOOL_LABELS: Record<string, string> = {
   get_engagement_ideas: 'Find ideas to liven up a channel',
   check_message_safety: 'Check text against safety rules',
   extract_knowledge: 'Save FAQs from a channel',
+  search_community_knowledge: 'Search community knowledge',
+  get_community_info: 'Know about the community',
 };
+
+/** One short, plain line per skill (the server's descriptions are written for the model). */
+export const TOOL_PLAIN: Record<string, string> = {
+  get_channel_history: 'Reads the latest messages in a channel.',
+  search_messages: 'Finds older messages by their words.',
+  summarize_channel: 'Sums up a busy channel with key points.',
+  translate_text: 'Translates a message into another language.',
+  search_knowledge: 'Answers from the notes and files you give it.',
+  get_my_mood: 'Sees how you have been feeling lately.',
+  summarize_dm: 'Sums up your DMs with a friend.',
+  get_member_info: "Looks up a member's public profile.",
+  post_message: 'Posts a new message in a channel.',
+  create_poll: 'Starts a poll people can vote on.',
+  schedule_reminder: 'Reminds someone later.',
+  detect_language: 'Tells which language a message is in.',
+  suggest_quick_replies: 'Suggests short replies to a message.',
+  get_focus_score: 'Checks if a chat is staying on topic.',
+  get_engagement_ideas: 'Finds ideas to liven up a quiet channel.',
+  check_message_safety: 'Checks a message against the safety rules.',
+  extract_knowledge: "Saves a channel's FAQs to the knowledge base.",
+  search_community_knowledge: "Answers from the community's saved FAQs.",
+  get_community_info: "Knows the community's name, topic and channels.",
+};
+
+export type ToolGroupKey = 'answer' | 'chat' | 'act' | 'private' | 'other';
+
+/** Skills shown in groups, so people pick from four short lists instead of one long one. */
+export const TOOL_GROUPS: Array<{ key: ToolGroupKey; label: string; hint: string }> = [
+  { key: 'answer', label: 'Answer questions', hint: 'Find and read what it needs to give a good answer.' },
+  { key: 'chat', label: 'Help in conversations', hint: 'Summaries, translations and keeping chats lively.' },
+  { key: 'act', label: 'Take action', hint: 'Changes things in your community. It always asks you first.' },
+  { key: 'private', label: 'Private help', hint: 'Only works when it talks to you by DM.' },
+  { key: 'other', label: 'More', hint: 'Other skills.' },
+];
+
+const GROUP_OF: Record<string, ToolGroupKey> = {
+  search_knowledge: 'answer', search_community_knowledge: 'answer', get_community_info: 'answer',
+  get_member_info: 'answer', search_messages: 'answer', get_channel_history: 'answer',
+  summarize_channel: 'chat', translate_text: 'chat', detect_language: 'chat', suggest_quick_replies: 'chat',
+  get_focus_score: 'chat', get_engagement_ideas: 'chat', check_message_safety: 'chat',
+  post_message: 'act', create_poll: 'act', schedule_reminder: 'act', extract_knowledge: 'act',
+  get_my_mood: 'private', summarize_dm: 'private',
+};
+
+/** Which group a skill sits in; unknown ones go by what they do. */
+export function toolGroup(t: { name: string; risk?: string; private_only?: boolean }): ToolGroupKey {
+  if (GROUP_OF[t.name]) return GROUP_OF[t.name];
+  if (t.private_only) return 'private';
+  if (t.risk === 'write') return 'act';
+  return 'other';
+}
+
+export function toolPlain(t: { name: string; description?: string }): string {
+  return TOOL_PLAIN[t.name] ?? (t.description ? `${t.description.split('.')[0]}.` : '');
+}
+
+/** Ready sentences people can add to "How it behaves" with one click. */
+export const INSTRUCTION_SNIPPETS: Array<{ label: string; text: string }> = [
+  { label: 'Friendly and short', text: 'Be friendly and keep answers short: a few sentences at most.' },
+  { label: "Say when it doesn't know", text: "If you are not sure, say you don't know instead of guessing." },
+  { label: "Reply in the person's language", text: 'Reply in the same language the person wrote in.' },
+  { label: 'Stay on topic', text: 'Only help with questions about this community. Politely decline anything else.' },
+];
+
+/** Add a snippet on its own line, unless it is already there. */
+export function addSnippet(instructions: string, snippet: string): string {
+  if (instructions.includes(snippet)) return instructions;
+  const base = instructions.trimEnd();
+  return base ? `${base}\n${snippet}` : snippet;
+}
+
+export type SetupStepKey = 'instructions' | 'triggers' | 'knowledge' | 'live';
+
+/** The few things that make an agent useful, worked out from the agent itself. */
+export function setupSteps(agent: Pick<BuilderAgent, 'instructions' | 'triggers' | 'knowledge' | 'status'>):
+  Array<{ key: SetupStepKey; label: string; done: boolean; optional?: boolean }> {
+  return [
+    { key: 'instructions', label: 'Tell it what to do', done: (agent.instructions ?? '').trim().length >= 20 },
+    { key: 'triggers', label: 'Choose when it replies', done: (agent.triggers ?? []).some((t) => t.enabled !== false) },
+    { key: 'knowledge', label: 'Give it something to know', done: (agent.knowledge ?? []).length > 0, optional: true },
+    { key: 'live', label: 'Turn it on', done: agent.status === 'active' },
+  ];
+}
 
 export function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? name.replace(/_/g, ' ');
