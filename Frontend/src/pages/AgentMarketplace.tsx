@@ -6,15 +6,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft, Bot, Check, ChevronRight, Eye, Hand, KeyRound, LayoutGrid, Loader2, Plug, Plus, Search, Share2, Sparkles,
+  ArrowLeft, Bot, Check, ChevronRight, Eye, Hand, KeyRound, LayoutGrid, Loader2, Plug, Plus, Search, Sparkles,
   Star, Trash2, Webhook, X,
 } from 'lucide-react';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useRealtime } from '@/hooks/useRealtime';
 import { useToast } from '@/hooks/use-toast';
 import agentBuilderService, { errorMessage } from '@/services/agentBuilderService';
 import marketplaceService, { CATEGORY_LABELS, SORT_LABELS, type MarketplaceSort } from '@/services/marketplaceService';
 import StarRating from '@/components/agent-builder/StarRating';
+import CreateAgentDialog from '@/components/agent-builder/CreateAgentDialog';
+import AgentsNav, { AgentsNavItem } from '@/components/agents/AgentsNav';
+import { useConfirm } from '@/components/modals/ConfirmDialog';
 import { EmptyState, ErrorState } from '@/components/app/EmptyState';
 import { Icon } from '@/components/app/Icon';
 import { cn } from '@/lib/utils';
@@ -41,6 +44,7 @@ const CATEGORY_HINTS: Record<MarketplaceCategory, string> = {
 const btn = 'inline-flex h-9 items-center justify-center gap-2 rounded-md px-3.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50';
 const btnMain = `${btn} bg-primary text-primary-foreground hover:opacity-90`;
 const btnQuiet = `${btn} border border-border text-foreground hover:bg-[hsl(var(--theme-bg-hover))]`;
+const btnGhost = `${btn} text-foreground hover:bg-[hsl(var(--theme-bg-hover))]`;
 
 const sortListings = (list: MarketplaceListing[], sort: MarketplaceSort) =>
   [...list].sort((a, b) => {
@@ -387,6 +391,9 @@ const AgentMarketplace: React.FC = () => {
   const [adding, setAdding] = useState<MarketplaceListing | null>(null);
   const [where, setWhere] = useState(PERSONAL);
   const [busy, setBusy] = useState(false);
+  // "Create an agent" opens right here; leaving the marketplace only happens once it exists.
+  const [creating, setCreating] = useState(false);
+  const confirm = useConfirm();
 
   const load = useCallback(async () => {
     setError(null);
@@ -461,10 +468,17 @@ const AgentMarketplace: React.FC = () => {
   };
 
   const remove = async (l: MarketplaceListing) => {
-    if (!window.confirm(`Remove "${l.title}" from the marketplace? Agents people already added keep working.`)) return;
+    const ok = await confirm({
+      title: `Remove ${l.title} from the marketplace?`,
+      description: 'People can no longer find or add it. Anyone who already added it keeps their copy.',
+      confirmText: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await marketplaceService.remove(l.id);
       setListings((list) => (list ?? []).map((x) => (x.id === l.id ? { ...x, status: 'unpublished' } : x)));
+      toast({ title: `${l.title} was removed from the marketplace`, variant: 'success' });
     } catch (e) {
       toast({ title: 'Could not remove', description: errorMessage(e), variant: 'destructive' });
     }
@@ -482,20 +496,14 @@ const AgentMarketplace: React.FC = () => {
         : `${visible.length} ${visible.length === 1 ? 'agent matches' : 'agents match'} "${query.trim()}".`;
 
   const navItem = (key: Filter, label: string, icon: React.ReactNode, count?: number) => (
-    <button
+    <AgentsNavItem
       key={key || 'home'}
-      type="button"
+      label={label}
+      icon={icon}
+      count={count}
+      active={filter === key && !selected}
       onClick={() => { setQuery(''); go({ c: key, agent: null }); }}
-      aria-current={filter === key && !selected ? 'page' : undefined}
-      className={cn(
-        'flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm transition-colors',
-        filter === key ? 'bg-[hsl(var(--theme-bg-active))] font-medium text-foreground' : 'text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground',
-      )}
-    >
-      {icon}
-      <span className="flex-1 truncate">{label}</span>
-      {count !== undefined && <span className="text-xs text-muted-foreground">{count}</span>}
-    </button>
+    />
   );
 
   const chip = (key: Filter, label: string) => (
@@ -516,31 +524,16 @@ const AgentMarketplace: React.FC = () => {
   return (
     <div className="flex h-full min-w-0 bg-background">
       {/* Left column (Discord's Discover: Apps / Servers) */}
-      <nav aria-label="Agents" className="hidden w-sidebar shrink-0 flex-col border-r border-border md:flex" style={{ background: 'var(--theme-sidebar-gradient)' }}>
-        <div className="flex h-12 shrink-0 items-center px-4">
-          <h2 className="text-lg font-semibold text-foreground">Agents</h2>
-        </div>
-        <div className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
-          {navItem('', 'Marketplace', <Icon icon={LayoutGrid} size="md" />)}
-          <p className="px-2.5 pb-1 pt-4 text-xs font-medium text-muted-foreground">Categories</p>
-          {categories.map((c) => navItem(c, CATEGORY_LABELS[c], <img src={`/agents/banners/${c}.webp`} alt="" className="h-5 w-5 rounded object-cover" />, counts[c] ?? 0))}
-          {withMcp > 0 && navItem(MCP, 'Uses MCP', <Icon icon={Plug} size="md" />, withMcp)}
-          <div className="my-3 h-px bg-border" />
-          <button
-            type="button"
-            onClick={() => navigate('/agents/mine')}
-            className="flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground"
-          >
-            <Icon icon={Bot} size="md" /> Your agents
-          </button>
-          {navItem(MINE, 'Shared by you', <Icon icon={Share2} size="md" />, (listings ?? []).filter((l) => l.mine).length)}
-        </div>
-        <div className="border-t border-border p-3">
-          <button type="button" className={cn(btnMain, 'w-full')} onClick={() => navigate('/agents/mine?create=1')}>
-            <Icon icon={Plus} size="md" /> Create an agent
-          </button>
-        </div>
-      </nav>
+      <AgentsNav
+        current={selected ? null : !filter ? 'marketplace' : filter === MINE ? 'shared' : null}
+        sharedCount={(listings ?? []).filter((l) => l.mine).length}
+        onCreate={() => setCreating(true)}
+        onNavigate={() => setQuery('')}
+      >
+        <p className="px-2.5 pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Categories</p>
+        {categories.map((c) => navItem(c, CATEGORY_LABELS[c], <img src={`/agents/banners/${c}.webp`} alt="" className="h-5 w-5 rounded object-cover" />, counts[c] ?? 0))}
+        {withMcp > 0 && navItem(MCP, 'Uses MCP', <Icon icon={Plug} size="md" />, withMcp)}
+      </AgentsNav>
 
       <main data-marketplace-scroll className="min-w-0 flex-1 overflow-y-auto">
         {selected ? (
@@ -602,6 +595,9 @@ const AgentMarketplace: React.FC = () => {
                 {categories.filter((c) => counts[c]).map((c) => chip(c, CATEGORY_LABELS[c]))}
                 {withMcp > 0 && chip(MCP, 'Uses MCP')}
                 <span className="md:hidden">{chip(MINE, 'Shared by you')}</span>
+                <button type="button" onClick={() => navigate('/agents/mine')} className="h-8 shrink-0 rounded-full border border-border px-3 text-sm font-medium text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] hover:text-foreground md:hidden">
+                  Your agents
+                </button>
               </div>
               {!isHome && (
                 <label className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
@@ -685,8 +681,15 @@ const AgentMarketplace: React.FC = () => {
         )}
       </main>
 
+      <CreateAgentDialog
+        open={creating}
+        onOpenChange={setCreating}
+        communities={communities}
+        onCreated={(agent) => navigate(`/agents/${agent.id}`)}
+      />
+
       <Dialog open={!!adding} onOpenChange={(open) => { if (!open) setAdding(null); }}>
-        <DialogContent className="max-w-md bg-popover text-popover-foreground">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3">
               {adding && <ListingAvatar l={adding} size="md" />}
@@ -720,12 +723,12 @@ const AgentMarketplace: React.FC = () => {
               <p className="mt-2 text-xs text-muted-foreground">To add it to a community you need to be its owner or an admin.</p>
             )}
           </fieldset>
-          <div className="flex justify-end gap-2">
-            <button type="button" className={btnQuiet} onClick={() => setAdding(null)}>Cancel</button>
+          <DialogFooter>
+            <button type="button" className={btnGhost} onClick={() => setAdding(null)}>Cancel</button>
             <button type="button" className={btnMain} disabled={busy} onClick={() => void add()}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon icon={Plus} size="md" />} Add agent
             </button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

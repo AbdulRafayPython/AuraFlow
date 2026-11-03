@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Copy, KeyRound, Loader2, LogIn, Plug, Plus, RefreshCw, Trash2, Webhook } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useConfirm } from '@/components/modals/ConfirmDialog';
 import agentBuilderService, { errorMessage, MCP_CALLBACK_PATH } from '@/services/agentBuilderService';
 import type { AgentApiKey, AgentWebhook, BuilderAgent, McpServer, WebhookEvent } from '@/types/agentBuilder';
 import { btnDanger, btnGhost, btnPrimary, cardCls, hintCls, inputCls, labelCls } from './styles';
@@ -46,6 +47,7 @@ interface Props {
 const IntegrationsPanel: React.FC<Props> = ({ agent, onSaved }) => {
   const agentId = agent.id;
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [keys, setKeys] = useState<AgentApiKey[] | null>(null);
   const [hooks, setHooks] = useState<AgentWebhook[] | null>(null);
   const [servers, setServers] = useState<McpServer[] | null>(null);
@@ -182,8 +184,8 @@ const IntegrationsPanel: React.FC<Props> = ({ agent, onSaved }) => {
               </div>
               {!k.revoked && (
                 <button type="button" className={btnDanger} disabled={busy}
-                        onClick={() => window.confirm(`Revoke "${k.name}"? Anything using it stops working.`)
-                          && void run(() => agentBuilderService.revokeApiKey(agentId, k.id), 'Could not revoke')}>
+                        onClick={() => void confirm({ title: `Revoke ${k.name}?`, description: 'Anything using this key stops working right away.', confirmText: 'Revoke key', danger: true })
+                          .then((ok) => ok && run(() => agentBuilderService.revokeApiKey(agentId, k.id), 'Could not revoke'))}>
                   <Trash2 className="h-4 w-4" /> Revoke
                 </button>
               )}
@@ -297,10 +299,11 @@ curl -X POST ${origin}/api/public/v1/invoke \\
                     <RefreshCw className="h-4 w-4" />
                   </button>
                   <button type="button" className={btnDanger} disabled={busy} aria-label={`Remove ${srv.name}`}
-                          onClick={() => window.confirm(`Remove ${srv.name}? The agent loses its tools.`) && void run(async () => {
+                          onClick={() => void confirm({ title: `Remove ${srv.name}?`, description: 'The agent can no longer use the tools this server gives it.', confirmText: 'Remove', danger: true })
+                            .then((ok) => ok && run(async () => {
                             await agentBuilderService.deleteMcpServer(agentId, srv.id);
                             onSaved(await agentBuilderService.get(agentId));
-                          }, 'Could not remove')}>
+                          }, 'Could not remove'))}>
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>

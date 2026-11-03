@@ -296,7 +296,7 @@ const ShareAgentDialog: React.FC<Props> = ({ open, onOpenChange, agent }) => {
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border px-6 py-3">
+        <div className="flex items-center justify-between gap-2 border-t border-border bg-[hsl(var(--theme-bg-tertiary))] px-6 py-4">
           {stepIndex > 0 ? (
             <button type="button" className={btnGhost} onClick={back} disabled={busy}><ArrowLeft className="h-4 w-4" /> Back</button>
           ) : (

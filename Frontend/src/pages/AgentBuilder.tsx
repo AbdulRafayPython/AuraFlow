@@ -1,7 +1,7 @@
 // Agent Builder: configure, give knowledge to, test and publish one agent.
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Archive, Loader2, Pause, Play, Store } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Loader2, Pause, Play, Store, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { channelService } from '@/services/channelService';
 import agentBuilderService, { errorMessage } from '@/services/agentBuilderService';
@@ -15,6 +15,7 @@ import IntegrationsPanel from '@/components/agent-builder/IntegrationsPanel';
 import StatusChip from '@/components/agent-builder/StatusChip';
 import AgentLogo from '@/components/ai-agents/AgentLogo';
 import ShareAgentDialog from '@/components/agent-builder/ShareAgentDialog';
+import { useConfirm } from '@/components/modals/ConfirmDialog';
 import { btnDanger, btnGhost, btnPrimary, cardCls } from '@/components/agent-builder/styles';
 import type { BuilderAgent, BuilderTool } from '@/types/agentBuilder';
 import type { Channel } from '@/types';
@@ -33,7 +34,13 @@ const AgentBuilder: React.FC = () => {
   const [tools, setTools] = useState<BuilderTool[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('configure');
+  const [searchParams] = useSearchParams();
+  // ?tab=triggers etc. (Your agents' menu links straight to a section).
+  const [tab, setTab] = useState<Tab>(() => {
+    const wanted = searchParams.get('tab');
+    return TABS.some(([t]) => t === wanted) ? (wanted as Tab) : 'configure';
+  });
+  const confirm = useConfirm();
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -73,14 +80,22 @@ const AgentBuilder: React.FC = () => {
   };
 
   const archive = async () => {
-    if (!agent || !window.confirm(`Archive ${agent.name}? It stops answering and disappears from the hub.`)) return;
+    if (!agent) return;
+    const ok = await confirm({
+      title: `Delete ${agent.name}?`,
+      description: `It stops replying and is removed from Your agents. People can no longer mention @${agent.username}.`,
+      confirmText: 'Delete agent',
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await agentBuilderService.archive(agent.id);
       invalidateMentionableAgents();
+      toast({ title: `${agent.name} was deleted`, variant: 'success' });
       navigate('/agents/mine');
     } catch (e) {
-      toast({ title: 'Could not archive', description: errorMessage(e), variant: 'destructive' });
+      toast({ title: 'Could not delete the agent', description: errorMessage(e), variant: 'destructive' });
       setBusy(false);
     }
   };
@@ -143,7 +158,7 @@ const AgentBuilder: React.FC = () => {
               <Store className="h-4 w-4" /> Share
             </button>
             <button type="button" className={btnDanger} disabled={busy} onClick={() => void archive()}>
-              <Archive className="h-4 w-4" /> Archive
+              <Trash2 className="h-4 w-4" /> Delete
             </button>
             {live ? (
               <button type="button" className={btnGhost} disabled={busy} onClick={() => void setLive(false)}>
