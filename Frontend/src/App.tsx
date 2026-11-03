@@ -18,6 +18,7 @@ import AuthPageWrapper from '@/pages/AuthPageWrapper';
 import MainLayout from './components/layout/MainLayout';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from './components/ui/sonner';
+import { ConfirmProvider } from './components/modals/ConfirmDialog';
 import { ModerationToastListener } from './components/ModerationToast';
 import { AgentEventListener } from './components/AgentEventListener';
 import { AgentActivityTimeline } from './components/AgentActivityTimeline';
@@ -293,6 +294,7 @@ export default function App() {
                     <CallProvider>
                     <AIAgentProvider>
                       <AgentModalsProvider>
+                      <ConfirmProvider>
                       <MediaViewerProvider>
                         <BrowserRouter>
                           <Suspense fallback={<PageSpinner />}>
@@ -363,6 +365,7 @@ export default function App() {
                           <Toaster />
                         </BrowserRouter>
                       </MediaViewerProvider>
+                      </ConfirmProvider>
                       </AgentModalsProvider>
                     </AIAgentProvider>
                     </CallProvider>

@@ -1,7 +1,7 @@
 // "Create an agent": pick where it lives, then a template, or describe it in your own words.
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, Sparkles, Wand2 } from 'lucide-react';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { channelService } from '@/services/channelService';
 import agentBuilderService, { errorMessage, type CreateAgentInput } from '@/services/agentBuilderService';
@@ -216,13 +216,13 @@ const CreateAgentDialog: React.FC<Props> = ({ open, onOpenChange, communities, d
           </div>
         )}
 
-        <div className="flex justify-end gap-2 pt-2">
+        <DialogFooter className="sticky -bottom-6 z-[1]">
           <button type="button" className={btnGhost} onClick={() => onOpenChange(false)}>Cancel</button>
           <button type="button" className={btnPrimary} disabled={!canCreate || creating} onClick={() => void create()}>
             {creating && <Loader2 className="h-4 w-4 animate-spin" />}
             Create agent
           </button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
