@@ -101,7 +101,7 @@ export function MessageRow({
           {/* Spine: from above the avatar's centre, curving right into the preview. */}
           <span
             aria-hidden
-            className="absolute left-5 top-[11px] h-[15px] w-[30px] rounded-tl-md border-l-2 border-t-2 border-[hsl(var(--theme-text-muted)/0.45)]"
+            className="af-spine absolute left-5 top-[11px] h-[15px] w-[30px] rounded-tl-md border-l-2 border-t-2 border-[hsl(var(--theme-text-muted)/0.45)]"
           />
           {replyTo}
         </div>

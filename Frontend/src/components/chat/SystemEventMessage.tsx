@@ -1,87 +1,97 @@
-import { UserPlus, UserMinus, UserX, Shield } from "lucide-react";
+import { ArrowLeft, ArrowRight, Shield, UserX } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 /**
- * Parses the system message content to determine the event type and display label.
- * Backend posts messages in the format:
- *   "username joined the community"
- *   "username was added to the community"
- *   "username left the community"
- *   "username was removed from the community"
+ * "Someone joined / was added / left…" as a line in the chat, like Discord's
+ * join message: an arrow in the avatar column, a warm sentence with the name
+ * in bold, the time, and for newcomers a "Wave to say hi" button.
+ *
+ * The backend posts plain sentences:
+ *   "username joined the community" · "username was added to the community"
+ *   "username left the community" · "username was removed from the community"
  *   "username was banned from the community"
  */
-function parseSystemEvent(content: string): {
-  icon: React.ReactNode;
-  label: string;
-  colorClass: string;
-  dotClass: string;
-} {
-  const lower = content.toLowerCase();
 
-  if (lower.includes("banned")) {
-    return {
-      icon: <Shield size={13} />,
-      label: content,
-      colorClass: "text-red-400",
-      dotClass: "bg-red-500",
-    };
-  }
-  if (lower.includes("removed")) {
-    return {
-      icon: <UserX size={13} />,
-      label: content,
-      colorClass: "text-orange-400",
-      dotClass: "bg-orange-500",
-    };
-  }
-  if (lower.includes("left")) {
-    return {
-      icon: <UserMinus size={13} />,
-      label: content,
-      colorClass: "text-[hsl(var(--theme-text-muted))]",
-      dotClass: "bg-[hsl(var(--theme-text-muted))]",
-    };
-  }
-  // joined / added
-  return {
-    icon: <UserPlus size={13} />,
-    label: content,
-    colorClass: "text-emerald-400",
-    dotClass: "bg-emerald-500",
-  };
+export type SystemEventKind = "joined" | "added" | "left" | "removed" | "banned" | "other";
+
+export function parseSystemEvent(content: string): { kind: SystemEventKind; name: string } {
+  const text = (content || "").trim();
+  const m = /^(.+?)\s+(joined|was added to|left|was removed from|was banned from)\b/i.exec(text);
+  if (!m) return { kind: "other", name: "" };
+  const verb = m[2].toLowerCase();
+  const kind: SystemEventKind = verb === "joined" ? "joined"
+    : verb.startsWith("was added") ? "added"
+    : verb === "left" ? "left"
+    : verb.startsWith("was removed") ? "removed"
+    : "banned";
+  return { kind, name: m[1] };
 }
+
+// A few friendly lines, picked by name so the same person always gets the same one.
+const WELCOMES: Array<(n: React.ReactNode) => React.ReactNode> = [
+  (n) => <>Welcome, {n}. We hope you brought snacks.</>,
+  (n) => <>{n} just joined. Say hi!</>,
+  (n) => <>Everyone welcome {n}!</>,
+  (n) => <>{n} hopped into the community.</>,
+  (n) => <>Glad you're here, {n}.</>,
+];
+
+export function welcomeIndex(name: string): number {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return h % WELCOMES.length;
+}
+
+const LOOK: Record<SystemEventKind, { icon: typeof ArrowRight; color: string }> = {
+  joined: { icon: ArrowRight, color: "text-success" },
+  added: { icon: ArrowRight, color: "text-success" },
+  left: { icon: ArrowLeft, color: "text-muted-foreground" },
+  removed: { icon: UserX, color: "text-warning" },
+  banned: { icon: Shield, color: "text-destructive" },
+  other: { icon: ArrowRight, color: "text-muted-foreground" },
+};
 
 interface SystemEventMessageProps {
   content: string;
   timestamp?: string;
+  /** Newcomers only: put a wave for them in the composer. */
+  onWave?: (name: string) => void;
 }
 
-/**
- * Renders a Discord-style system event label inline in the chat feed.
- * Displays as a centered pill with flanking horizontal rules.
- */
-export default function SystemEventMessage({ content, timestamp }: SystemEventMessageProps) {
-  const { icon, label, colorClass, dotClass } = parseSystemEvent(content);
+export default function SystemEventMessage({ content, timestamp, onWave }: SystemEventMessageProps) {
+  const { kind, name } = parseSystemEvent(content);
+  const look = LOOK[kind];
+  const who = <strong className="font-semibold text-foreground">{name}</strong>;
+  const sentence =
+    kind === "joined" ? WELCOMES[welcomeIndex(name)](who)
+    : kind === "added" ? <>{who} was added to the community. Say hi!</>
+    : kind === "left" ? <>{who} left the community.</>
+    : kind === "removed" ? <>{who} was removed from the community.</>
+    : kind === "banned" ? <>{who} was banned from the community.</>
+    : content;
+  const newcomer = kind === "joined" || kind === "added";
 
   return (
-    <div className="flex items-center justify-center gap-3 px-4 py-1 my-1 select-none">
-      {/* Left rule */}
-      <div className="flex-1 h-px bg-[hsl(var(--theme-border-default)/0.4)]" />
-
-      {/* Pill */}
-      <div
-        className={`flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-medium leading-5 ${colorClass} bg-[hsl(var(--theme-bg-secondary)/0.6)] border border-[hsl(var(--theme-border-default)/0.4)]`}
-        title={timestamp}
-      >
-        {/* Colored dot */}
-        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotClass}`} />
-        {/* Icon */}
-        <span className="flex-shrink-0 opacity-80">{icon}</span>
-        {/* Label */}
-        <span>{label}</span>
+    <div className="group flex gap-4 px-4 py-1 transition-colors duration-100 hover:bg-[hsl(var(--theme-bg-hover)/0.5)]" data-testid="system-event">
+      <div className="flex w-10 shrink-0 justify-center pt-0.5">
+        <look.icon className={cn("h-5 w-5", look.color)} aria-hidden />
       </div>
-
-      {/* Right rule */}
-      <div className="flex-1 h-px bg-[hsl(var(--theme-border-default)/0.4)]" />
+      <div className="min-w-0 flex-1">
+        <p className="text-base leading-6 text-[hsl(var(--theme-text-secondary))]">
+          {sentence}
+          {timestamp && <time className="ml-2 text-xs text-muted-foreground">{timestamp}</time>}
+        </p>
+        {newcomer && onWave && name && (
+          <button
+            type="button"
+            onClick={() => onWave(name)}
+            className="mt-1.5 inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-[hsl(var(--theme-bg-secondary))] px-3 text-sm font-medium text-foreground transition-colors duration-100 hover:border-[hsl(var(--theme-border-hover))] hover:bg-[hsl(var(--theme-bg-tertiary))]"
+          >
+            <span className="af-wave text-lg leading-none" aria-hidden>👋</span>
+            Wave to say hi!
+          </button>
+        )}
+      </div>
     </div>
   );
 }

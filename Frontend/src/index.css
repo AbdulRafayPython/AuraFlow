@@ -509,3 +509,49 @@
   scrollbar-width: thin;
   scrollbar-color: hsl(var(--theme-text-muted) / 0.35) transparent;
 }
+
+/* Reply line: hovering the message lights it up and a small glowing dot runs
+   along it, from the avatar up and into the "replying to" text. */
+.af-spine {
+  transition: border-color 150ms ease-out;
+}
+.group:hover > [data-testid="reply-line"] .af-spine,
+.group:focus-within > [data-testid="reply-line"] .af-spine {
+  border-color: hsl(var(--primary) / 0.75);
+}
+.af-spine::after {
+  content: "";
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: hsl(var(--primary));
+  box-shadow: 0 0 6px 2px hsl(var(--primary) / 0.7);
+  /* The line's own shape: up the left edge, round the corner, along the top. */
+  offset-path: path("M -1 13 L -1 5 Q -1 -1 5 -1 L 28 -1");
+  offset-distance: 0%;
+  opacity: 0;
+  pointer-events: none;
+}
+.group:hover > [data-testid="reply-line"] .af-spine::after {
+  animation: af-spine-run 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes af-spine-run {
+  0% { offset-distance: 0%; opacity: 0; }
+  15% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .group:hover > [data-testid="reply-line"] .af-spine::after { animation: none; }
+}
+
+/* The wave on "Wave to say hi!" waves once when you hover the button. */
+.af-wave { display: inline-block; transform-origin: 70% 80%; }
+button:hover > .af-wave { animation: af-wave 700ms ease-in-out 1; }
+@keyframes af-wave {
+  0%, 100% { transform: rotate(0deg); }
+  20%, 60% { transform: rotate(16deg); }
+  40%, 80% { transform: rotate(-10deg); }
+}
+@media (prefers-reduced-motion: reduce) { button:hover > .af-wave { animation: none; } }

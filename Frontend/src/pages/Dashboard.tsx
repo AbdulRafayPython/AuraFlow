@@ -1512,6 +1512,10 @@ export default function Dashboard() {
                       <SystemEventMessage
                         content={msg.content}
                         timestamp={formatMessageTime(msg.created_at)}
+                        onWave={(name) => {
+                          setMessage(`👋 Welcome @${name}!`);
+                          setTimeout(() => inputRef.current?.focus(), 0);
+                        }}
                       />
                     ) : msg.message_type === 'ai' ? (
                       <div id={`msg-${msg.id}`}>
