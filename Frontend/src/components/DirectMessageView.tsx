@@ -1,7 +1,7 @@
 // REWRITE: ~1.3k lines; duplicates much of the channel chat view in pages/Dashboard.tsx.
 // components/DirectMessageView.tsx - DM conversation view
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video, ScrollText, CircleUser, Upload, Mic } from 'lucide-react';
+import { MoreVertical, Trash2, Edit2, ArrowLeft, SmilePlus, Paperclip, Reply, Phone, Video, ScrollText, CircleUser, Upload, Mic } from 'lucide-react';
 import AgentMessageShell from '@/components/ai-agents/AgentMessageShell';
 import { methodLabel } from '@/components/ai-agents/humanize';
 import { aiAgentService, type DMSummaryResult } from '@/services/aiAgentService';
@@ -31,6 +31,7 @@ import ReplyPreview from '@/components/chat/ReplyPreview';
 import ReplyBar from '@/components/chat/ReplyBar';
 import VoiceRecorder, { type VoiceRecorderHandle } from '@/components/chat/VoiceRecorder';
 import CallMessageBubble from '@/components/chat/CallMessageBubble';
+import DmIntro from '@/components/chat/DmIntro';
 import TypingIndicator from '@/components/chat/TypingIndicator';
 import JumpToLatest from '@/components/chat/JumpToLatest';
 import { uploadService, validateFile, type UploadProgress } from '@/services/uploadService';
@@ -55,7 +56,7 @@ interface DirectMessageViewProps {
 }
 
 export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, username, displayName, avatar, onClose }) => {
-  const { conversations, messages, sendMessage, deleteMessage, editMessage, markAsRead, deliverUploadedMessage } = useDirectMessages();
+  const { conversations, messages, loading: messagesLoading, sendMessage, deleteMessage, editMessage, markAsRead, deliverUploadedMessage } = useDirectMessages();
   const { friends } = useFriends();
   const { user: currentUser } = useAuth();
   // An agent's bot user: no presence and no calls; it answers what you write by DM.
@@ -847,19 +848,26 @@ export const DirectMessageView: React.FC<DirectMessageViewProps> = ({ userId, us
         aria-label={`Conversation with ${displayName || username}`}
         className="flex-1 overflow-y-auto overflow-x-hidden py-4 relative"
       >
-        {enrichedMessages.length === 0 ? (
-          <div className="h-full flex items-center justify-center">
-            <div className="text-center space-y-3">
-              <div className="w-16 h-16 mx-auto rounded-full bg-[hsl(var(--theme-bg-secondary))] flex items-center justify-center">
-                <Send className="w-6 h-6 text-[hsl(var(--theme-text-muted)/0.5)] -rotate-45" />
-              </div>
-              <div>
-                <p className="text-base font-medium text-[hsl(var(--theme-text-secondary))]">No messages yet</p>
-                <p className="text-sm mt-1 text-[hsl(var(--theme-text-muted))]">Say hello to {displayName || username}!</p>
-              </div>
-            </div>
-          </div>
-        ) : (
+        {/* The start of the conversation (only once the whole history is here: the list loads the latest 50). */}
+        {!(messagesLoading && enrichedMessages.length === 0) && enrichedMessages.length < 50 && (
+          <DmIntro
+            userId={userId}
+            username={username}
+            displayName={displayName || username}
+            avatarUrl={avatar}
+            botAvatar={isBot ? <AgentLogo size="xl" className="h-20 w-20" avatarUrl={agentAvatar} username={username} name={displayName || username} /> : undefined}
+            empty={enrichedMessages.length === 0 && !isBot}
+            onWave={async () => {
+              try {
+                await sendMessage(userId, '👋');
+              } catch {
+                toast({ title: 'Could not send your wave', variant: 'destructive' });
+              }
+            }}
+            onOpenProfile={() => { if (!profileOpen) toggleProfile(); }}
+          />
+        )}
+        {enrichedMessages.length === 0 ? null : (
           enrichedMessages.map((msg, index) => {
             const prev = enrichedMessages[index - 1];
             const showDateDivider = startsNewDay(prev, msg);
