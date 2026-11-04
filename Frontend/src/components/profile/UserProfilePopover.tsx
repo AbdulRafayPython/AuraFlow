@@ -5,6 +5,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { MessageSquare, UserPlus, Clock, Users, X, Loader2 } from 'lucide-react';
 import { statusService, type UserProfile } from '@/services/statusService';
 import { cn, getAvatarUrl } from '@/lib/utils';
+import { bannerSrc } from "@/components/profile/ProfileCard";
 
 interface UserProfilePopoverProps {
   username: string;
@@ -121,7 +122,7 @@ const UserProfilePopover: React.FC<UserProfilePopoverProps> = ({
         ) : profile ? (
           <>
             {/* Banner / Gradient Header */}
-            <div className="relative h-20 bg-[hsl(var(--theme-accent-primary))]">
+            <div className="relative h-20 bg-[hsl(var(--theme-accent-primary))]" style={bannerSrc(profile.banner_url) ? { backgroundImage: `url("${bannerSrc(profile.banner_url)}")`, backgroundSize: "cover", backgroundPosition: "center" } : profile.banner_color ? { backgroundColor: profile.banner_color } : undefined}>
               <button
                 onClick={onClose}
                 className="absolute top-2 right-2 p-1 rounded-full bg-black/20 hover:bg-black/40 text-white/80 transition-colors"

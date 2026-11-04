@@ -9,6 +9,7 @@ import { cn, getAvatarUrl } from "@/lib/utils";
 import { API_SERVER } from "@/config/api";
 import { Icon } from "@/components/app/Icon";
 import { PRESENCE_DOT } from "@/lib/presence";
+import { bannerSrc } from "@/components/profile/ProfileCard";
 
 const PRESENCE_LABEL = { online: "Online", idle: "Idle", dnd: "Do not disturb", offline: "Offline" } as const;
 
@@ -51,7 +52,7 @@ export function ProfilePane({ username, userId }: { username: string; userId: nu
 
   return (
     <div className="pb-4">
-      <div className="h-16 bg-[hsl(var(--theme-bg-tertiary))]" />
+      <div className="h-16 bg-[hsl(var(--theme-bg-tertiary))]" style={bannerSrc(profile.banner_url) ? { backgroundImage: `url("${bannerSrc(profile.banner_url)}")`, backgroundSize: "cover", backgroundPosition: "center" } : profile.banner_color ? { backgroundColor: profile.banner_color } : undefined} />
       <div className="-mt-10 px-4">
         <span className="relative block h-20 w-20 rounded-full border-[6px] border-[hsl(var(--theme-bg-elevated))]">
           <img src={getAvatarUrl(profile.avatar_url, profile.username)} alt="" className="h-full w-full rounded-full object-cover" />

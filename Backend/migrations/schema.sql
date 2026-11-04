@@ -926,6 +926,8 @@ CREATE TABLE `users` (
   `password` varchar(255) NOT NULL,
   `bio` text,
   `avatar_url` varchar(500) DEFAULT NULL,
+  `banner_url` varchar(500) DEFAULT NULL,
+  `banner_color` varchar(7) DEFAULT NULL,
   `status` enum('online','idle','dnd','offline') DEFAULT 'offline',
   `custom_status` varchar(255) DEFAULT NULL,
   `custom_status_emoji` varchar(10) DEFAULT NULL,

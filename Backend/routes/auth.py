@@ -307,7 +307,7 @@ def get_me():
             # FIX 1: Include 'role' in the SELECT to eliminate the extra query below
             cur.execute(
                 """
-                SELECT id, username, email, display_name, bio, avatar_url,
+                SELECT id, username, email, display_name, bio, avatar_url, banner_url, banner_color,
                       status, custom_status, is_first_login, role
                 FROM users 
                 WHERE username = %s
@@ -516,82 +516,101 @@ def reset_password():
 # Update Profile
 #------------------------------------------------------------------------
 
+PROFILE_IMAGE_TYPES = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
+PROFILE_AVATAR_MAX = 8 * 1024 * 1024
+PROFILE_BANNER_MAX = 10 * 1024 * 1024
+DISPLAY_NAME_MAX = 32
+BIO_MAX = 190
+_HEX_COLOR = __import__('re').compile(r'^#[0-9a-fA-F]{6}$')
+
+
+class ProfileError(ValueError):
+    pass
+
+
+def save_profile_image(file, folder, max_bytes):
+    """Save an uploaded avatar/banner under uploads/<folder>/ with a random name; return its URL path."""
+    import os
+    ext = os.path.splitext(file.filename or '')[1].lower()
+    if ext not in PROFILE_IMAGE_TYPES:
+        raise ProfileError('Use a PNG, JPG, GIF or WEBP image')
+    file.stream.seek(0, os.SEEK_END)
+    size = file.stream.tell()
+    file.stream.seek(0)
+    if size > max_bytes:
+        raise ProfileError(f'The image must be under {max_bytes // (1024 * 1024)} MB')
+    upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', folder)
+    os.makedirs(upload_dir, exist_ok=True)
+    name = f"{uuid.uuid4().hex}{ext}"
+    file.save(os.path.join(upload_dir, name))
+    return f"/uploads/{folder}/{name}"
+
+
+def clean_profile_text(display_name, bio, banner_color):
+    """Trim and check the text fields; raises ProfileError."""
+    if display_name is not None:
+        display_name = display_name.strip()
+        if not display_name:
+            raise ProfileError('Display name cannot be empty')
+        if len(display_name) > DISPLAY_NAME_MAX:
+            raise ProfileError(f'Display name can be at most {DISPLAY_NAME_MAX} characters')
+    if bio is not None:
+        bio = bio.strip()
+        if len(bio) > BIO_MAX:
+            raise ProfileError(f'About me can be at most {BIO_MAX} characters')
+    if banner_color is not None and banner_color != '':
+        if not _HEX_COLOR.match(banner_color):
+            raise ProfileError('Banner colour must look like #5865F2')
+    return display_name, bio, banner_color
+
+
 @jwt_required()
 def update_profile():
-    """Update user profile (display_name, bio, avatar_url) - supports both JSON and file upload"""
+    """Update the profile: display_name, bio (About me), avatar and banner (picture or colour).
+    Takes JSON, or multipart/form-data with `avatar` / `banner` files."""
     current_user = get_jwt_identity()
-    
-    # Check if it's a file upload (multipart/form-data) or JSON
-    if request.content_type and 'multipart/form-data' in request.content_type:
-        # Handle file upload
-        display_name = request.form.get('display_name')
-        bio = request.form.get('bio')
-        avatar_file = request.files.get('avatar')
-        remove_avatar = request.form.get('remove_avatar') == 'true'
-        
-        avatar_url = None
-        
-        if remove_avatar:
-            # Set avatar_url to None to revert to Dicebear
-            avatar_url = None
-        elif avatar_file:
-            # Handle file upload - save to uploads directory
-            import os
-            from werkzeug.utils import secure_filename
-            
-            # Create uploads directory if it doesn't exist
-            upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'avatars')
-            os.makedirs(upload_dir, exist_ok=True)
-            
-            # Generate unique filename
-            ext = os.path.splitext(avatar_file.filename)[1]
-            filename = f"{current_user}_{int(datetime.now().timestamp())}{ext}"
-            filepath = os.path.join(upload_dir, secure_filename(filename))
-            
-            # Save file
-            avatar_file.save(filepath)
-            
-            # Store relative URL path
-            avatar_url = f"/uploads/avatars/{secure_filename(filename)}"
-    else:
-        # Handle JSON request
-        data = request.get_json() or {}
-        display_name = data.get('display_name')
-        bio = data.get('bio')
-        avatar_url = data.get('avatar_url')
-        remove_avatar = data.get('remove_avatar', False)
-        
-        if remove_avatar:
-            avatar_url = None
-    
-    # At least one field must be provided
-    if not any([display_name, bio, avatar_url is not None, remove_avatar]):
-        return jsonify({'error': 'At least one field (display_name, bio, or avatar_url) is required'}), 400
-    
+    fields = {}
+    try:
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            src = request.form
+            if request.files.get('avatar'):
+                fields['avatar_url'] = save_profile_image(request.files['avatar'], 'avatars', PROFILE_AVATAR_MAX)
+            if request.files.get('banner'):
+                fields['banner_url'] = save_profile_image(request.files['banner'], 'banners', PROFILE_BANNER_MAX)
+            truthy = lambda k: src.get(k) == 'true'
+        else:
+            src = request.get_json(silent=True) or {}
+            truthy = lambda k: bool(src.get(k))
+            if 'avatar_url' in src and src.get('avatar_url'):
+                fields['avatar_url'] = src.get('avatar_url')
+
+        if truthy('remove_avatar'):
+            fields['avatar_url'] = None
+        if truthy('remove_banner'):
+            fields['banner_url'] = None
+
+        display_name, bio, banner_color = clean_profile_text(
+            src.get('display_name'), src.get('bio'), src.get('banner_color'))
+        if display_name is not None:
+            fields['display_name'] = display_name
+        if bio is not None:
+            fields['bio'] = bio or None
+        if banner_color is not None:
+            fields['banner_color'] = banner_color or None
+    except ProfileError as e:
+        return jsonify({'error': str(e)}), 400
+
+    if not fields:
+        return jsonify({'error': 'Nothing to update'}), 400
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            # Build dynamic update query based on what fields are provided
-            update_fields = []
-            update_values = []
-            
-            if display_name is not None:
-                update_fields.append('display_name = %s')
-                update_values.append(display_name)
-            
-            if bio is not None:
-                update_fields.append('bio = %s')
-                update_values.append(bio)
-            
-            if avatar_url is not None or remove_avatar:
-                update_fields.append('avatar_url = %s')
-                update_values.append(avatar_url)
-            
-            update_values.append(current_user)
-            
-            query = f"UPDATE users SET {', '.join(update_fields)} WHERE username = %s"
-            cur.execute(query, update_values)
-        
+            cols = ', '.join(f"{k} = %s" for k in fields)
+            cur.execute(f"UPDATE users SET {cols} WHERE username = %s", (*fields.values(), current_user))
+            cur.execute("SELECT display_name, bio, avatar_url, banner_url, banner_color FROM users WHERE username = %s",
+                        (current_user,))
+            row = cur.fetchone() or {}
         conn.commit()
     except Exception as e:
         logging.error(f"Error updating profile: {str(e)}")
@@ -607,7 +626,11 @@ def update_profile():
 
     return jsonify({
         'message': 'Profile updated successfully',
-        'avatar_url': get_avatar_url(current_user, avatar_url) if avatar_url else None
+        'display_name': row.get('display_name'),
+        'bio': row.get('bio'),
+        'avatar_url': get_avatar_url(current_user, row.get('avatar_url')),
+        'banner_url': row.get('banner_url'),
+        'banner_color': row.get('banner_color'),
     }), 200
 
 

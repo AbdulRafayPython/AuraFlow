@@ -1,247 +1,202 @@
-import { useState } from "react";
-import { useTheme } from "@/contexts/ThemeContext";
-import { getAvatarUrl } from "@/lib/utils";
+// A friend's full profile (Discord's profile modal): their banner, avatar,
+// name and About me, plus tabs for what you share: the communities you are
+// both in and the friends you have in common. All from GET /api/status/user/<name>;
+// nothing is made up. Actions: Message, voice / video call, ⋯ Remove / Block.
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Ban, MessageCircle, MoreHorizontal, Phone, UserMinus, Video } from "lucide-react";
 import type { Friend } from "@/types";
-import { MessageCircle, Phone, Video, Ban, UserMinus } from "lucide-react";
-import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
+import { statusService, type UserProfile } from "@/services/statusService";
+import { API_SERVER } from "@/config/api";
+import { cn, getAvatarUrl } from "@/lib/utils";
 import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import ProfileCard from "@/components/profile/ProfileCard";
+import { PRESENCE_LABEL, lastSeenText } from "@/components/friends/presence";
 
 interface FriendProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   friend: Friend | null;
   onMessage?: (friendId: number) => void;
-  onRemove?: (friendId: number) => void;
-  onBlock?: (friendId: number) => void;
+  onCall?: (friend: Friend, kind: "audio" | "video") => void;
+  canCall?: boolean;
+  /** These confirm first (the page owns the confirm dialog). */
+  onRemove?: (friend: Friend) => void;
+  onBlock?: (friend: Friend) => void;
 }
 
-const statusColors = {
-  online: "bg-green-500",
-  idle: "bg-yellow-500",
-  dnd: "bg-red-500",
-  offline: "bg-gray-500",
-};
+type Tab = "about" | "communities" | "friends";
 
-const statusLabels = {
-  online: "Online",
-  idle: "Idle",
-  dnd: "Do Not Disturb",
-  offline: "Offline",
-};
+const assetUrl = (path?: string | null) => (!path ? null : /^https?:\/\//.test(path) ? path : `${API_SERVER}${path}`);
+const iconBtn = "flex h-10 w-10 items-center justify-center rounded-full bg-[hsl(var(--theme-bg-tertiary))] text-foreground transition-colors duration-100 hover:bg-[hsl(var(--theme-bg-hover))] disabled:cursor-not-allowed disabled:opacity-50";
 
 export default function FriendProfileModal({
-  isOpen,
-  onClose,
-  friend,
-  onMessage,
-  onRemove,
-  onBlock,
+  isOpen, onClose, friend, onMessage, onCall, canCall = true, onRemove, onBlock,
 }: FriendProfileModalProps) {
-  const { isDarkMode } = useTheme();
-  const [showMenu, setShowMenu] = useState(false);
-  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
-  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const navigate = useNavigate();
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [tab, setTab] = useState<Tab>("about");
+
+  useEffect(() => {
+    if (!isOpen || !friend) return;
+    let live = true;
+    setProfile(null);
+    setFailed(false);
+    setTab("about");
+    statusService.getUserProfile(friend.username)
+      .then((p) => { if (live) setProfile(p); })
+      .catch(() => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, [isOpen, friend]);
 
   if (!friend) return null;
+  const seen = friend.status === "offline" ? lastSeenText(friend.last_seen) : null;
+  const communities = profile?.shared_communities ?? [];
+  const mutual = profile?.mutual_friends ?? [];
+  const memberSince = profile?.member_since
+    ? new Date(profile.member_since).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })
+    : null;
 
-  const getLastSeenText = (lastSeen?: string) => {
-    if (!lastSeen || friend.status === "online") return null;
-    const date = new Date(lastSeen);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  };
+  const tabBtn = (key: Tab, label: string) => (
+    <button
+      key={key}
+      type="button"
+      role="tab"
+      aria-selected={tab === key}
+      onClick={() => setTab(key)}
+      className={cn(
+        "-mb-px border-b-2 px-1 pb-2 text-sm font-medium transition-colors duration-100",
+        tab === key ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <>
     <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <ResponsiveModalContent size="md" className="overflow-y-auto">
-        {/* Header with Gradient Background */}
-        <div className="relative h-24 bg-[hsl(var(--theme-accent-primary))]">
-          {/* Close handled by ResponsiveModal */}
-        </div>
-
-        {/* Profile Section */}
-        <div className="px-6 pb-5">
-          {/* Avatar */}
-          <div className="flex justify-center -mt-12 mb-3">
-            <div className="relative">
-              <img
-                src={getAvatarUrl(friend.avatar_url, friend.username)}
-                alt={friend.display_name}
-                className="w-24 h-24 rounded-full border-4 shadow-lg object-cover border-[hsl(var(--theme-bg-elevated))]"
-              />
-              <div className={`absolute bottom-2 right-2 w-6 h-6 rounded-full border-3 border-[hsl(var(--theme-bg-elevated))] ${statusColors[friend.status]} shadow-lg`} title={statusLabels[friend.status]} />
-            </div>
+      <ResponsiveModalContent size="md" className="overflow-y-auto p-0">
+        <ProfileCard
+          displayName={profile?.display_name || friend.display_name}
+          username={friend.username}
+          avatarUrl={profile?.avatar_url || friend.avatar_url || friend.avatar}
+          bannerUrl={profile?.banner_url}
+          bannerColor={profile?.banner_color}
+          status={friend.status}
+          statusText={friend.custom_status || (seen ? `Offline · last seen ${seen}` : PRESENCE_LABEL[friend.status])}
+          className="rounded-none"
+        >
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { onMessage?.(friend.id); onClose(); }}
+              className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground transition-opacity duration-100 hover:opacity-90"
+            >
+              <MessageCircle className="h-4 w-4" /> Message
+            </button>
+            <button type="button" className={iconBtn} disabled={!canCall} aria-label="Voice call" title="Voice call"
+                    onClick={() => { onCall?.(friend, "audio"); onClose(); }}>
+              <Phone className="h-4 w-4" />
+            </button>
+            <button type="button" className={iconBtn} disabled={!canCall} aria-label="Video call" title="Video call"
+                    onClick={() => { onCall?.(friend, "video"); onClose(); }}>
+              <Video className="h-4 w-4" />
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className={iconBtn} aria-label="More"><MoreHorizontal className="h-4 w-4" /></button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onSelect={() => { onRemove?.(friend); onClose(); }} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                  <UserMinus /> Remove Friend
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => { onBlock?.(friend); onClose(); }} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                  <Ban /> Block
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
-          {/* User Info */}
-          <div className="text-center mb-4">
-            <h2 className="text-xl font-bold mb-1 text-[hsl(var(--theme-text-primary))]">
-              {friend.display_name}
-            </h2>
-            <p className="text-sm mb-2 text-[hsl(var(--theme-text-muted))]">
-              @{friend.username}
-            </p>
-            <div className="flex items-center justify-center gap-2">
-              <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
-                friend.status === "online"
-                  ? "bg-green-500/20 text-green-400"
-                  : friend.status === "idle"
-                  ? "bg-yellow-500/20 text-yellow-400"
-                  : friend.status === "dnd"
-                  ? "bg-red-500/20 text-red-400"
-                  : "bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))]"
-              }`}>
-                <div className={`w-2 h-2 rounded-full ${statusColors[friend.status]}`} />
-                {statusLabels[friend.status]}
-              </div>
-            </div>
+          <div role="tablist" aria-label="Profile" className="mt-5 flex gap-5 border-b border-border">
+            {tabBtn("about", "About me")}
+            {tabBtn("communities", profile ? `Mutual communities (${communities.length})` : "Mutual communities")}
+            {tabBtn("friends", profile ? `Mutual friends (${mutual.length})` : "Mutual friends")}
+          </div>
 
-            {/* Last Seen */}
-            {getLastSeenText(friend.last_seen) && (
-              <p className="text-xs mt-2 text-[hsl(var(--theme-text-muted))]">
-                Last seen {getLastSeenText(friend.last_seen)}
-              </p>
+          <div className="min-h-[140px] pt-3" data-testid={`profile-tab-${tab}`}>
+            {failed ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">Could not load the rest of the profile.</p>
+            ) : !profile ? (
+              <div role="status" aria-label="Loading profile" className="space-y-2 pt-1">
+                <div className="h-4 w-2/3 rounded bg-[hsl(var(--theme-bg-tertiary))] animate-skeleton" />
+                <div className="h-4 w-1/2 rounded bg-[hsl(var(--theme-bg-tertiary))] animate-skeleton" />
+              </div>
+            ) : tab === "about" ? (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">About me</p>
+                  <p className="mt-1 whitespace-pre-line break-words text-sm text-foreground">
+                    {profile.bio || <span className="text-muted-foreground">{friend.display_name} hasn't written anything yet.</span>}
+                  </p>
+                </div>
+                {memberSince && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Member since</p>
+                    <p className="mt-1 text-sm text-foreground">{memberSince}</p>
+                  </div>
+                )}
+              </div>
+            ) : tab === "communities" ? (
+              communities.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">You are not in any community together yet.</p>
+              ) : (
+                <ul className="-mx-2">
+                  {communities.map((c) => {
+                    const logo = assetUrl(c.logo_url);
+                    return (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          onClick={() => { onClose(); if (c.public_id) navigate(`/community/${c.public_id}`); }}
+                          disabled={!c.public_id}
+                          className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors duration-100 hover:bg-[hsl(var(--theme-bg-hover))]"
+                        >
+                          {logo ? (
+                            <img src={logo} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+                          ) : (
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-white" style={{ backgroundColor: c.color || "#5865F2" }}>
+                              {c.icon || c.name.slice(0, 2).toUpperCase()}
+                            </span>
+                          )}
+                          <span className="truncate text-sm font-medium text-foreground">{c.name}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )
+            ) : mutual.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">No friends in common yet.</p>
+            ) : (
+              <ul className="-mx-2">
+                {mutual.map((m) => (
+                  <li key={m.username} className="flex items-center gap-3 rounded-md px-2 py-2">
+                    <img src={getAvatarUrl(m.avatar_url, m.username)} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-foreground">{m.display_name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">@{m.username}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
-
-          {/* Custom Status */}
-          {friend.custom_status && (
-            <div className="mb-6 p-3 rounded-lg text-center bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))]">
-              <p className="text-sm italic text-[hsl(var(--theme-text-secondary))]">
-                "{friend.custom_status}"
-              </p>
-            </div>
-          )}
-
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-3 mb-4 py-3 border-y border-[hsl(var(--theme-border-default))]">
-            <div className="text-center">
-              <div className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
-                0
-              </div>
-              <div className="text-xs text-[hsl(var(--theme-text-muted))]">
-                Mutual Friends
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
-                0
-              </div>
-              <div className="text-xs text-[hsl(var(--theme-text-muted))]">
-                Communities
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
-                —
-              </div>
-              <div className="text-xs text-[hsl(var(--theme-text-muted))]">
-                Joined
-              </div>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex gap-2 mb-4">
-            <button
-              onClick={() => {
-                if (onMessage) onMessage(friend.id);
-                onClose();
-              }}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-[hsl(var(--theme-accent-primary))] text-white font-medium transition-all "
-            >
-              <MessageCircle className="w-4 h-4" />
-              Message
-            </button>
-            <button className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] font-medium transition-colors">
-              <Phone className="w-4 h-4" />
-              Call
-            </button>
-            <button className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] font-medium transition-colors">
-              <Video className="w-4 h-4" />
-              Video
-            </button>
-          </div>
-
-          {/* More Options */}
-          <div className="relative">
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="w-full py-2 rounded-lg text-sm font-medium transition-colors bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]"
-            >
-              More Options
-            </button>
-
-            {showMenu && (
-              <div className="absolute top-full mt-2 left-0 right-0 rounded-lg shadow-xl border overflow-hidden z-50 bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]">
-                <button
-                  onClick={() => {
-                    setShowRemoveConfirm(true);
-                    setShowMenu(false);
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-500/10 text-red-500 transition-colors"
-                >
-                  <UserMinus className="w-4 h-4" />
-                  Remove Friend
-                </button>
-                <button
-                  onClick={() => {
-                    setShowBlockConfirm(true);
-                    setShowMenu(false);
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-500/10 text-red-500 transition-colors"
-                >
-                  <Ban className="w-4 h-4" />
-                  Block User
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
+        </ProfileCard>
       </ResponsiveModalContent>
     </ResponsiveModal>
-
-    {/* Confirmation Dialogs (siblings so they survive parent close) */}
-    <ConfirmDialog
-      isOpen={showRemoveConfirm}
-      title="Remove Friend?"
-      description={`Are you sure you want to remove ${friend?.display_name} from your friends list? You can add them again later.`}
-      cancelText="Cancel"
-      confirmText="Remove"
-      isDangerous
-      onConfirm={() => {
-        if (onRemove && friend) onRemove(friend.id);
-        setShowRemoveConfirm(false);
-        onClose();
-      }}
-      onCancel={() => setShowRemoveConfirm(false)}
-    />
-    <ConfirmDialog
-      isOpen={showBlockConfirm}
-      title="Block User?"
-      description={`Are you sure you want to block ${friend?.display_name}? They won't be able to send you messages or friend requests.`}
-      cancelText="Cancel"
-      confirmText="Block"
-      isDangerous
-      onConfirm={() => {
-        if (onBlock && friend) onBlock(friend.id);
-        setShowBlockConfirm(false);
-        onClose();
-      }}
-      onCancel={() => setShowBlockConfirm(false)}
-    />
-    </>
   );
 }

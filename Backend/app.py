@@ -405,6 +405,15 @@ def serve_avatar(filename):
     response.headers['Cache-Control'] = 'public, max-age=31536000'
     return response
 
+@app.route("/uploads/banners/<filename>", methods=["GET"])
+def serve_profile_banner(filename):
+    """Serve uploaded profile banners"""
+    upload_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'banners')
+    response = send_from_directory(upload_dir, filename)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Cache-Control'] = 'public, max-age=31536000'
+    return response
+
 # ======================================================================
 # STATIC FILE SERVING - Community uploads (Logo & Banner)
 # ======================================================================

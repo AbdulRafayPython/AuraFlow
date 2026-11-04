@@ -124,35 +124,47 @@ export async function resendVerification(email: string): Promise<ApiResponse> {
   return data;
 }
 
-export async function updateProfile(data: { display_name?: string; bio?: string; avatar_url?: string; avatar?: File; remove_avatar?: boolean }) {
-  // If avatar file is provided, use FormData
-  if (data.avatar || data.remove_avatar) {
-    const formData = new FormData();
-    
-    if (data.display_name) formData.append('display_name', data.display_name);
-    if (data.bio) formData.append('bio', data.bio);
-    if (data.avatar) formData.append('avatar', data.avatar);
-    if (data.remove_avatar) formData.append('remove_avatar', 'true');
-    
-    const token = localStorage.getItem('token');
-    const response = await fetch(`${API_SERVER}${AUTH_PREFIX}/user/profile`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-      body: formData,
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to update profile');
-    }
-    
-    return await response.json();
-  }
-  
-  // Otherwise use JSON
-  return await api.put(`${AUTH_PREFIX}/user/profile`, data);
+/** What the profile settings can change. Files go as multipart; everything else as JSON. */
+export interface ProfileUpdate {
+  display_name?: string;
+  /** "About me"; '' clears it. */
+  bio?: string;
+  avatar_url?: string;
+  avatar?: File;
+  remove_avatar?: boolean;
+  banner?: File;
+  remove_banner?: boolean;
+  /** #RRGGBB, or '' to clear. */
+  banner_color?: string;
+}
+
+export interface ProfileUpdateResult {
+  display_name?: string;
+  bio?: string | null;
+  avatar_url?: string | null;
+  banner_url?: string | null;
+  banner_color?: string | null;
+}
+
+export async function updateProfile(data: ProfileUpdate): Promise<ProfileUpdateResult> {
+  const formData = new FormData();
+  if (data.display_name !== undefined) formData.append('display_name', data.display_name);
+  if (data.bio !== undefined) formData.append('bio', data.bio);
+  if (data.banner_color !== undefined) formData.append('banner_color', data.banner_color);
+  if (data.avatar) formData.append('avatar', data.avatar);
+  if (data.banner) formData.append('banner', data.banner);
+  if (data.remove_avatar) formData.append('remove_avatar', 'true');
+  if (data.remove_banner) formData.append('remove_banner', 'true');
+
+  const token = localStorage.getItem('token');
+  const response = await fetch(`${API_SERVER}${AUTH_PREFIX}/user/profile`, {
+    method: 'PUT',
+    headers: { 'Authorization': `Bearer ${token}` },
+    body: formData,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || 'Failed to update profile');
+  return body;
 }
 
 export const authService = {

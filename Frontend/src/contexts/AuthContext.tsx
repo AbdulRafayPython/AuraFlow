@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
+import type { ProfileUpdate } from '@/services/authService';
 import authService from '../services/authService';
 import { connectSocket, disconnectSocket } from '../socket';
 import { API_URL } from '@/config/api';
@@ -29,6 +30,8 @@ interface User {
   bio?: string;
   avatar?: string;
   avatar_url?: string;
+  banner_url?: string | null;
+  banner_color?: string | null;
   role?: string;
   statusMessage?: string;
   is_first_login?: boolean;
@@ -42,7 +45,7 @@ interface AuthContextType {
   login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => void;
-  updateProfile: (data: { display_name?: string; bio?: string; avatar_url?: string; avatar?: File; remove_avatar?: boolean }) => Promise<void>;
+  updateProfile: (data: ProfileUpdate) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   setUser: (user: User | null) => void; 
   setIsAuthenticated: (auth: boolean) => void;
@@ -239,24 +242,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateProfile = async (data: { display_name?: string; bio?: string; avatar_url?: string; avatar?: File; remove_avatar?: boolean }) => {
+  const updateProfile = async (data: ProfileUpdate) => {
     try {
       const result = await authService.updateProfile(data);
-      
-      // Update user with new data
-      const updates: Partial<User> = {};
-      if (data.display_name !== undefined) updates.display_name = data.display_name;
-      if (data.bio !== undefined) updates.bio = data.bio;
-      
-      // Always update avatar_url based on the result, even if null
-      if ('avatar_url' in result) {
-        updates.avatar_url = result.avatar_url || undefined;
-        updates.avatar = result.avatar_url || undefined; // Also update avatar field
-      }
-      
-      updateUser(updates);
-      
-      return result;
+      // The server answers with the saved values: use them, not what was sent.
+      updateUser({
+        ...(result.display_name !== undefined ? { display_name: result.display_name } : {}),
+        bio: result.bio ?? undefined,
+        avatar_url: result.avatar_url ?? undefined,
+        avatar: result.avatar_url ?? undefined,
+        banner_url: result.banner_url ?? null,
+        banner_color: result.banner_color ?? null,
+      });
     } catch (error) {
       console.error('Failed to update profile:', error);
       throw error;

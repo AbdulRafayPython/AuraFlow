@@ -15,13 +15,14 @@ import {
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
 import AgentsSettingsTab from "@/components/ai-agents/AgentsSettingsTab";
+import ProfileSettingsPanel from "@/components/settings/ProfileSettings";
 import { API_SERVER } from "@/config/api";
 
 export default function Settings() {
   const { isDarkMode, toggleTheme, currentTheme, setTheme, themes } = useTheme();
   const isBasicTheme = currentTheme === 'basic';
   const { blockedUsers, getBlockedUsers, unblockUser } = useFriends();
-  const { user, updateProfile } = useAuth();
+  const { user } = useAuth();
   const { communities } = useRealtime();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"profile" | "appearance" | "general" | "privacy" | "notifications" | "blocked" | "agents" | "community-admin">("profile");
@@ -29,25 +30,6 @@ export default function Settings() {
   const [showUnblockConfirm, setShowUnblockConfirm] = useState(false);
   const [selectedBlockedUserId, setSelectedBlockedUserId] = useState<number | null>(null);
   
-  // Profile state
-  const [displayName, setDisplayName] = useState(user?.display_name || "");
-  const [bio, setBio] = useState(user?.bio || "");
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
-  const [profileError, setProfileError] = useState("");
-  const [profileSuccess, setProfileSuccess] = useState("");
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Update profile state when user changes
-  useEffect(() => {
-    if (user) {
-      setDisplayName(user.display_name || "");
-      setBio(user.bio || "");
-    }
-  }, [user]);
-
   // Load blocked users when tab changes to blocked
   useEffect(() => {
     if (activeTab === "blocked" && blockedUsers.length === 0) {
@@ -77,87 +59,6 @@ export default function Settings() {
     }
   };
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('image/')) {
-        setProfileError('Please select an image file');
-        return;
-      }
-      
-      if (file.size > 5 * 1024 * 1024) {
-        setProfileError('Image size must be less than 5MB');
-        return;
-      }
-      
-      setAvatarFile(file);
-      
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAvatarPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-      setProfileError('');
-    }
-  };
-
-  const removeAvatar = async () => {
-    try {
-      setIsUpdatingProfile(true);
-      await updateProfile({ remove_avatar: true });
-      setAvatarFile(null);
-      setAvatarPreview(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      setProfileSuccess('Profile picture removed');
-      setTimeout(() => setProfileSuccess(''), 3000);
-    } catch (error: any) {
-      setProfileError(error.message || 'Failed to remove profile picture');
-    } finally {
-      setIsUpdatingProfile(false);
-    }
-  };
-
-  const handleProfileUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setProfileError('');
-    setProfileSuccess('');
-    
-    if (!displayName.trim()) {
-      setProfileError('Display name is required');
-      return;
-    }
-
-    setIsUpdatingProfile(true);
-
-    try {
-      await updateProfile({
-        display_name: displayName,
-        bio: bio || undefined,
-        avatar: avatarFile || undefined,
-      });
-      
-      setAvatarFile(null);
-      setAvatarPreview(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      
-      setProfileSuccess('Profile updated successfully!');
-      setIsEditingProfile(false);
-      setTimeout(() => setProfileSuccess(''), 3000);
-    } catch (error: any) {
-      setProfileError(error.message || 'Failed to update profile');
-    } finally {
-      setIsUpdatingProfile(false);
-    }
-  };
-
-  const getAvatarDisplay = () => {
-    if (avatarPreview) return avatarPreview;
-    return getAvatarUrl(user?.avatar_url, user?.username || 'default');
-  };
 
   // Check if user owns any communities
   const ownedCommunities = communities.filter(c => c.role === 'owner');
@@ -273,200 +174,6 @@ export default function Settings() {
       <div className="p-2">
         {children}
       </div>
-    </div>
-  );
-
-  // Profile Settings
-  const ProfileSettings = () => (
-    <div className="space-y-6">
-      {/* Status banners */}
-      {profileSuccess && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-500 text-sm">
-          <Check className="w-4 h-4 flex-shrink-0" />
-          <span>{profileSuccess}</span>
-        </div>
-      )}
-      {profileError && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-red-500/30 bg-red-500/10 text-red-500 text-sm">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <span>{profileError}</span>
-        </div>
-      )}
-
-      {/* ── Identity card ─────────────────────────────────── */}
-      <section className="rounded-xl border border-[hsl(var(--theme-border-default)/0.6)] bg-[hsl(var(--theme-bg-secondary))] overflow-hidden">
-        <div className="px-5 py-5 flex items-start gap-5">
-          {/* Avatar */}
-          <div className="relative flex-shrink-0">
-            <div className="w-20 h-20 rounded-full overflow-hidden ring-1 ring-[hsl(var(--theme-border-default)/0.6)] bg-[hsl(var(--theme-bg-tertiary))]">
-              <img
-                src={getAvatarDisplay()}
-                alt="Profile"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="absolute -bottom-1 -right-1 w-7 h-7 flex items-center justify-center rounded-full border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-secondary))] text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))] transition-colors"
-              title="Change picture"
-            >
-              <Camera className="w-3.5 h-3.5" />
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleAvatarChange}
-              className="hidden"
-            />
-          </div>
-
-          {/* Name block */}
-          <div className="flex-1 min-w-0">
-            {!isEditingProfile ? (
-              <>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="text-base font-semibold tracking-tight text-[hsl(var(--theme-text-primary))] truncate">
-                      {user?.display_name || user?.username}
-                    </h3>
-                    <p className="text-xs text-[hsl(var(--theme-text-muted))] mt-0.5">
-                      @{user?.username}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setIsEditingProfile(true)}
-                    className="flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-medium border border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-bg-hover))] transition-colors"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    Edit
-                  </button>
-                </div>
-                {user?.bio && (
-                  <p className="mt-3 text-sm leading-relaxed text-[hsl(var(--theme-text-secondary))]">
-                    {user.bio}
-                  </p>
-                )}
-                {(avatarPreview || user?.avatar_url) && (
-                  <button
-                    type="button"
-                    onClick={removeAvatar}
-                    disabled={isUpdatingProfile}
-                    className="mt-3 text-xs text-[hsl(var(--theme-text-muted))] hover:text-red-500 transition-colors disabled:opacity-50"
-                  >
-                    Remove picture
-                  </button>
-                )}
-              </>
-            ) : (
-              <form onSubmit={handleProfileUpdate} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-[hsl(var(--theme-text-muted))] mb-1.5">
-                    Display name
-                  </label>
-                  <input
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 rounded-md text-sm border bg-[hsl(var(--theme-bg-tertiary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder:text-[hsl(var(--theme-text-muted))] focus:outline-none focus:border-[hsl(var(--theme-accent-primary))] transition-colors"
-                    placeholder="Your display name"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-[hsl(var(--theme-text-muted))] mb-1.5">
-                    Bio
-                  </label>
-                  <textarea
-                    value={bio}
-                    onChange={(e) => setBio(e.target.value)}
-                    rows={3}
-                    maxLength={500}
-                    placeholder="Tell others about yourself…"
-                    className="w-full px-3 py-2 rounded-md text-sm border bg-[hsl(var(--theme-bg-tertiary))] border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-primary))] placeholder:text-[hsl(var(--theme-text-muted))] focus:outline-none focus:border-[hsl(var(--theme-accent-primary))] resize-none transition-colors"
-                  />
-                  <p className="text-xs mt-1.5 text-[hsl(var(--theme-text-muted))]">
-                    {bio.length}/500
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    type="submit"
-                    disabled={isUpdatingProfile || !displayName.trim()}
-                    className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-medium bg-[hsl(var(--theme-accent-primary))] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
-                  >
-                    {isUpdatingProfile ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        Saving
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-3.5 h-3.5" />
-                        Save
-                      </>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEditingProfile(false);
-                      setDisplayName(user?.display_name || "");
-                      setBio(user?.bio || "");
-                    }}
-                    className="px-4 py-1.5 rounded-full text-xs font-medium border border-[hsl(var(--theme-border-default))] text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Account details list ──────────────────────────── */}
-      <section className="rounded-xl border border-[hsl(var(--theme-border-default)/0.6)] bg-[hsl(var(--theme-bg-secondary))] overflow-hidden">
-        <header className="px-5 pt-4 pb-3 border-b border-[hsl(var(--theme-border-default)/0.4)]">
-          <h3 className="text-sm font-semibold text-[hsl(var(--theme-text-primary))]">
-            Account details
-          </h3>
-        </header>
-        <dl className="divide-y divide-[hsl(var(--theme-border-default)/0.4)]">
-          <div className="px-5 py-3.5 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <Mail className="w-4 h-4 text-[hsl(var(--theme-text-muted))] flex-shrink-0" />
-              <div className="min-w-0">
-                <dt className="text-xs font-medium text-[hsl(var(--theme-text-muted))]">
-                  Email address
-                </dt>
-                <dd className="text-sm text-[hsl(var(--theme-text-primary))] truncate mt-0.5">
-                  {user?.email || 'Not set'}
-                </dd>
-              </div>
-            </div>
-          </div>
-          <div className="px-5 py-3.5 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <UserIcon className="w-4 h-4 text-[hsl(var(--theme-text-muted))] flex-shrink-0" />
-              <div className="min-w-0">
-                <dt className="text-xs font-medium text-[hsl(var(--theme-text-muted))]">
-                  Username
-                </dt>
-                <dd className="text-sm text-[hsl(var(--theme-text-primary))] truncate mt-0.5">
-                  @{user?.username}
-                </dd>
-              </div>
-            </div>
-          </div>
-        </dl>
-      </section>
-
-      {/* Bottom spacing */}
-      <div className="h-4" />
     </div>
   );
 
@@ -1277,7 +984,7 @@ export default function Settings() {
               <div className="mt-4 h-px bg-[hsl(var(--theme-border-default)/0.5)]" />
             </header>
 
-            {activeTab === "profile" && <ProfileSettings />}
+            {activeTab === "profile" && <ProfileSettingsPanel />}
             {activeTab === "appearance" && <AppearanceSettings />}
             {activeTab === "general" && <GeneralSettings />}
             {activeTab === "privacy" && <PrivacySettings />}
