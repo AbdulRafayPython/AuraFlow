@@ -17,6 +17,10 @@ export interface UserProfile {
   member_since: string | null;
   friendship_status: 'none' | 'friends' | 'pending_sent' | 'pending_received';
   mutual_friends_count: number;
+  /** Everyone you are both friends with. */
+  mutual_friends?: { username: string; display_name: string; avatar_url: string }[];
+  banner_url?: string | null;
+  banner_color?: string | null;
   shared_communities: { id: number; public_id?: string; name: string; icon: string; color: string; logo_url: string | null }[];
   is_self: boolean;
 }

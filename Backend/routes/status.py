@@ -136,7 +136,7 @@ def get_user_profile(username):
         with conn.cursor() as cur:
             # Get target user
             cur.execute("""
-                SELECT id, username, display_name, avatar_url, bio,
+                SELECT id, username, display_name, avatar_url, bio, banner_url, banner_color,
                        status, custom_status, custom_status_emoji, last_seen, created_at
                 FROM users WHERE username = %s
             """, (username,))
@@ -168,11 +168,11 @@ def get_user_profile(username):
                     if req:
                         friendship_status = 'pending_sent' if req['sender_id'] == current_user_id else 'pending_received'
 
-            # Count mutual friends
-            mutual_count = 0
+            # Mutual friends: who, not just how many (the profile card lists them).
+            mutual_friends = []
             if current_user_id and current_user_id != target['id']:
                 cur.execute("""
-                    SELECT COUNT(*) AS cnt FROM (
+                    SELECT u.username, u.display_name, u.avatar_url FROM (
                         SELECT friend_id AS fid FROM friends WHERE user_id = %s
                         UNION SELECT user_id AS fid FROM friends WHERE friend_id = %s
                     ) my_friends
@@ -180,8 +180,15 @@ def get_user_profile(username):
                         SELECT friend_id AS fid FROM friends WHERE user_id = %s
                         UNION SELECT user_id AS fid FROM friends WHERE friend_id = %s
                     ) their_friends ON my_friends.fid = their_friends.fid
+                    JOIN users u ON u.id = my_friends.fid
+                    ORDER BY u.display_name
                 """, (current_user_id, current_user_id, target['id'], target['id']))
-                mutual_count = cur.fetchone()['cnt']
+                mutual_friends = [
+                    {'username': r['username'], 'display_name': r['display_name'] or r['username'],
+                     'avatar_url': get_avatar_url(r['username'], r['avatar_url'])}
+                    for r in cur.fetchall()
+                ]
+            mutual_count = len(mutual_friends)
 
             # Get shared communities
             shared_communities = []
@@ -191,7 +198,7 @@ def get_user_profile(username):
                     FROM communities c
                     JOIN community_members cm1 ON c.id = cm1.community_id AND cm1.user_id = %s
                     JOIN community_members cm2 ON c.id = cm2.community_id AND cm2.user_id = %s
-                    LIMIT 5
+                    ORDER BY c.name
                 """, (current_user_id, target['id']))
                 shared_communities = [
                     {'id': c['id'], 'public_id': c['public_id'], 'name': c['name'], 'icon': c['icon'],
@@ -205,6 +212,8 @@ def get_user_profile(username):
             'display_name': target['display_name'],
             'avatar_url': get_avatar_url(target['username'], target['avatar_url']),
             'bio': target['bio'],
+            'banner_url': target.get('banner_url'),
+            'banner_color': target.get('banner_color'),
             'status': target['status'],
             'custom_status': target['custom_status'],
             'custom_status_emoji': target['custom_status_emoji'],
@@ -212,6 +221,7 @@ def get_user_profile(username):
             'member_since': target['created_at'].isoformat() if target['created_at'] else None,
             'friendship_status': friendship_status,
             'mutual_friends_count': mutual_count,
+            'mutual_friends': mutual_friends,
             'shared_communities': shared_communities,
             'is_self': current_username == username,
         }), 200

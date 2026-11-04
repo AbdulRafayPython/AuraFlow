@@ -100,6 +100,8 @@ def format_user_data(user_row):
         'status': user_row.get('status', 'offline'),
         'custom_status': user_row.get('custom_status'),
         'bio': user_row.get('bio'),
+        'banner_url': user_row.get('banner_url'),
+        'banner_color': user_row.get('banner_color'),
         'last_seen': user_row.get('last_seen').isoformat() if user_row.get('last_seen') else None
     }
 
