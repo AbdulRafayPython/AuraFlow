@@ -9,6 +9,8 @@ interface AppShellProps {
   sidebar?: React.ReactNode;
   /** Main column. */
   children: React.ReactNode;
+  /** The floating user panel (desktop): hovers over the bottom of the rail + sidebar. */
+  dock?: React.ReactNode;
   /** Overlays that must sit above the shell (settings modal, mobile nav, drawer). */
   overlay?: React.ReactNode;
   className?: string;
@@ -19,7 +21,7 @@ interface AppShellProps {
  * On mobile the rail and sidebar live in the drawer owned by the caller
  * (passed through `overlay`), so only `children` render in the flow.
  */
-export function AppShell({ rail, sidebar, children, overlay, className }: AppShellProps) {
+export function AppShell({ rail, sidebar, dock, children, overlay, className }: AppShellProps) {
   const pane = useRightPane();
   const paneOpen = !!pane.content;
   const closePane = pane.close;
@@ -36,7 +38,7 @@ export function AppShell({ rail, sidebar, children, overlay, className }: AppShe
 
   return (
     <div
-      className={cn("flex h-screen overflow-hidden text-foreground", className)}
+      className={cn("relative flex h-screen overflow-hidden text-foreground", className)}
       style={{ background: "var(--theme-bg-gradient)" }}
     >
       <nav aria-label="Workspaces" className="hidden w-rail shrink-0 md:flex">
@@ -50,6 +52,11 @@ export function AppShell({ rail, sidebar, children, overlay, className }: AppShe
         <RightPane title={pane.content.title} onClose={pane.close} className="hidden lg:flex">
           {pane.content.body}
         </RightPane>
+      )}
+      {dock && (
+        <div className="absolute bottom-2 left-2 z-30 hidden w-[calc(var(--rail-width)+var(--sidebar-width)-16px)] md:block">
+          {dock}
+        </div>
       )}
       {overlay}
     </div>

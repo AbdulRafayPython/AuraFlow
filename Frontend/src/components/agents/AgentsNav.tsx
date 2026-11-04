@@ -61,6 +61,8 @@ export default function AgentsNav({ current, onCreate, onNavigate, sharedCount, 
           <Icon icon={Plus} size="md" /> Create an agent
         </button>
       </div>
+      {/* Room for the floating user dock. */}
+      <div aria-hidden className="h-[72px] shrink-0" />
     </nav>
   );
 }

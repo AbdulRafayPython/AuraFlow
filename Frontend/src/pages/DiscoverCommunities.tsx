@@ -190,6 +190,8 @@ export default function DiscoverCommunities() {
             <Users className="h-5 w-5" /> Communities
           </span>
         </nav>
+        {/* Room for the floating user dock. */}
+        <div aria-hidden className="mt-auto h-[72px] shrink-0" />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

@@ -249,7 +249,9 @@ export default function DirectsSidebar({ frozen = false, fluid = false }: Direct
           </div>
         )}
       </div>
-      <AccountMenu variant="panel" />
+      {/* Desktop: the floating user dock (AppShell) sits here. Mobile drawer: the panel. */}
+      <div aria-hidden className="hidden h-[72px] shrink-0 md:block" />
+      <AccountMenu variant="panel" className="md:hidden" />
     </aside>
   );
 }

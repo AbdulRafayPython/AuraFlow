@@ -27,8 +27,11 @@ export function Icon({ icon: Glyph, size = "md", filled = false, label, classNam
     <Glyph
       width={px}
       height={px}
-      strokeWidth={1.75}
+      // Active ("filled"): a bolder stroke and a soft tint inside. A solid fill
+      // would swallow the inner lines (the compass turned into a white disc).
+      strokeWidth={filled ? 2.25 : 1.75}
       fill={filled ? "currentColor" : "none"}
+      fillOpacity={filled ? 0.18 : undefined}
       className={cn("shrink-0", className)}
       aria-hidden={label ? undefined : true}
       aria-label={label}
