@@ -134,6 +134,11 @@ export function DirectMessagesProvider({ children }: { children: React.ReactNode
             ? { ...c, last_message: lastMsg, last_message_time: lastMsg.created_at }
             : c
         ));
+      } else {
+        // An empty history: drop a stale preview (e.g. "You: Hello" after that message was deleted).
+        setConversations(prev => prev.map(c =>
+          c.user_id === userId && c.last_message ? { ...c, last_message: undefined } : c
+        ));
       }
 
       // Join DM socket room

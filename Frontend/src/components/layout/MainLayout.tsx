@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "rea
 import { Menu, Home as HomeIcon, Users, Settings } from "lucide-react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import NavRail from "../sidebar/NavRail";
+import { AccountMenu } from "../sidebar/AccountMenu";
 import DirectsSidebar from "../sidebar/DirectsSidebar";
 import ChannelSidebar from "../sidebar/ChannelSidebar";
 import { AppShell } from "../app/AppShell";
@@ -422,14 +423,22 @@ function MainLayoutInner({ children }: MainLayoutProps) {
     </>
   );
 
+  // Pages with a second column (DMs, a community, Agents, Discover) get the
+  // floating user dock across rail + sidebar; the others keep the rail avatar.
+  const shownPath = currentView === "settings" ? lastNonSettingsLocationRef.current.pathname : location.pathname;
+  const hasSecondColumn = !!contextualSidebar || effectiveView === "discover"
+    || (effectiveView === "agents" && /^\/agents(\/mine)?\/?$/.test(shownPath));
+
   return (
     <AppShell
+      dock={hasSecondColumn ? <AccountMenu variant="dock" /> : undefined}
       rail={
         <NavRail
           currentView={currentView}
           selectedCommunity={currentCommunity?.id.toString()}
           frozen={isMembersModalOpen || isCommunityManagementModalOpen}
-          showAccount={!contextualSidebar}
+          showAccount={!hasSecondColumn}
+          className={hasSecondColumn ? "pb-[76px]" : undefined}
         />
       }
       sidebar={contextualSidebar}

@@ -72,8 +72,11 @@ function PanelIconButton({ label, onClick, active, children }: { label: string; 
  * - `panel`: Discord-style user panel at the bottom of the sidebar, with
  *   voice mute/deafen (while in a voice channel) and a settings button.
  * - `rail`: just the avatar, for pages that have no sidebar.
+ * - `dock`: Discord's floating user panel. One card that hovers over the
+ *   bottom of the rail and the sidebar, the same on every page that has a
+ *   sidebar (DMs, a community, Agents, Discover). AppShell places it.
  */
-export function AccountMenu({ variant }: { variant: "panel" | "rail" }) {
+export function AccountMenu({ variant, className }: { variant: "panel" | "rail" | "dock"; className?: string }) {
   const navigate = useNavigate();
   const { isDarkMode, toggleTheme } = useTheme();
   const { logout } = useAuth();
@@ -129,7 +132,8 @@ export function AccountMenu({ variant }: { variant: "panel" | "rail" }) {
       <span
         aria-hidden
         className={cn(
-          "absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-[hsl(var(--theme-sidebar-bg))]",
+          "absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-[3px]",
+          variant === "dock" ? "border-[hsl(var(--theme-bg-elevated))]" : "border-[hsl(var(--theme-sidebar-bg))]",
           STATUS_DOT[userStatus],
         )}
       />
@@ -140,7 +144,8 @@ export function AccountMenu({ variant }: { variant: "panel" | "rail" }) {
     <DropdownMenuContent
       side={variant === "rail" ? "right" : "top"}
       align={variant === "rail" ? "end" : "start"}
-      sideOffset={variant === "rail" ? 12 : 8}
+      sideOffset={variant === "rail" ? 12 : variant === "dock" ? 10 : 8}
+      alignOffset={variant === "dock" ? -6 : 0}
       className="z-[9999] w-64"
     >
       {currentUser && (
@@ -200,10 +205,55 @@ export function AccountMenu({ variant }: { variant: "panel" | "rail" }) {
           </Tooltip>
           {menu}
         </DropdownMenu>
+      ) : variant === "dock" ? (
+        <section
+          aria-label="User area"
+          data-testid="user-dock"
+          className={cn(
+            "flex h-14 items-center gap-1 rounded-xl border border-[hsl(var(--theme-border-default))] bg-[hsl(var(--theme-bg-elevated))] px-2 shadow-popover",
+            className,
+          )}
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Account menu"
+                className="group/me flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1.5 py-1 text-left transition-colors duration-100 hover:bg-[hsl(var(--theme-bg-hover))] data-[state=open]:bg-[hsl(var(--theme-bg-hover))]"
+              >
+                {currentUser ? avatar("h-9 w-9") : <span className="h-9 w-9 shrink-0 rounded-full bg-[hsl(var(--theme-bg-tertiary))]" />}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold leading-5 text-foreground">{displayName}</span>
+                  {/* Status, sliding to @username on hover (as in Discord). */}
+                  <span className="relative block h-4 overflow-hidden text-xs leading-4 text-muted-foreground">
+                    <span className="block truncate transition-transform duration-150 ease-out group-hover/me:-translate-y-full">{statusText}</span>
+                    <span className="absolute inset-x-0 top-full block truncate transition-transform duration-150 ease-out group-hover/me:-translate-y-full">
+                      {currentUser ? `@${currentUser.username}` : ""}
+                    </span>
+                  </span>
+                </span>
+              </button>
+            </DropdownMenuTrigger>
+            {menu}
+          </DropdownMenu>
+          {isInVoiceChannel && (
+            <>
+              <PanelIconButton label={isAudioEnabled ? "Mute" : "Unmute"} onClick={toggleAudio} active={!isAudioEnabled}>
+                <Icon icon={isAudioEnabled ? Mic : MicOff} size="md" />
+              </PanelIconButton>
+              <PanelIconButton label={isDeafened ? "Undeafen" : "Deafen"} onClick={toggleDeaf} active={isDeafened}>
+                <Icon icon={isDeafened ? HeadphoneOff : Headphones} size="md" />
+              </PanelIconButton>
+            </>
+          )}
+          <PanelIconButton label="User settings" onClick={() => navigate("/settings")}>
+            <Icon icon={Settings} size="md" />
+          </PanelIconButton>
+        </section>
       ) : (
         <section
           aria-label="User area"
-          className="flex h-[52px] shrink-0 items-center gap-1 border-t border-border bg-[hsl(var(--theme-bg-secondary))] px-2"
+          className={cn("flex h-[52px] shrink-0 items-center gap-1 border-t border-border bg-[hsl(var(--theme-bg-secondary))] px-2", className)}
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
