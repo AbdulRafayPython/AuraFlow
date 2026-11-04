@@ -1,247 +1,105 @@
-import { useState } from "react";
-import { useTheme } from "@/contexts/ThemeContext";
-import { getAvatarUrl } from "@/lib/utils";
+// A friend's profile (Discord's user profile card): a colour banner, the big
+// avatar with their status, name and @username, their custom status, and the
+// actions: Message, voice and video call, and a ⋯ menu for Remove / Block.
+// Only real data is shown (no placeholder stats).
+import { MessageCircle, MoreHorizontal, Phone, Ban, UserMinus, Video } from "lucide-react";
 import type { Friend } from "@/types";
-import { MessageCircle, Phone, Video, Ban, UserMinus } from "lucide-react";
-import { ConfirmDialog } from "@/components/modals/ConfirmDialog";
+import { getAvatarUrl } from "@/lib/utils";
 import { ResponsiveModal, ResponsiveModalContent } from "@/components/ui/responsive-modal";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { PRESENCE_DOT, PRESENCE_LABEL, lastSeenText } from "@/components/friends/presence";
 
 interface FriendProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   friend: Friend | null;
   onMessage?: (friendId: number) => void;
-  onRemove?: (friendId: number) => void;
-  onBlock?: (friendId: number) => void;
+  /** Starts a call; the page asks first if one is already running. */
+  onCall?: (friend: Friend, kind: "audio" | "video") => void;
+  canCall?: boolean;
+  /** These confirm first (the page owns the confirm dialog). */
+  onRemove?: (friend: Friend) => void;
+  onBlock?: (friend: Friend) => void;
 }
 
-const statusColors = {
-  online: "bg-green-500",
-  idle: "bg-yellow-500",
-  dnd: "bg-red-500",
-  offline: "bg-gray-500",
-};
-
-const statusLabels = {
-  online: "Online",
-  idle: "Idle",
-  dnd: "Do Not Disturb",
-  offline: "Offline",
-};
+const iconBtn = "flex h-10 w-10 items-center justify-center rounded-full bg-[hsl(var(--theme-bg-tertiary))] text-foreground transition-colors duration-100 hover:bg-[hsl(var(--theme-bg-hover))] disabled:cursor-not-allowed disabled:opacity-50";
 
 export default function FriendProfileModal({
-  isOpen,
-  onClose,
-  friend,
-  onMessage,
-  onRemove,
-  onBlock,
+  isOpen, onClose, friend, onMessage, onCall, canCall = true, onRemove, onBlock,
 }: FriendProfileModalProps) {
-  const { isDarkMode } = useTheme();
-  const [showMenu, setShowMenu] = useState(false);
-  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
-  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
-
   if (!friend) return null;
-
-  const getLastSeenText = (lastSeen?: string) => {
-    if (!lastSeen || friend.status === "online") return null;
-    const date = new Date(lastSeen);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  };
+  const seen = friend.status === "offline" ? lastSeenText(friend.last_seen) : null;
 
   return (
-    <>
     <ResponsiveModal open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <ResponsiveModalContent size="md" className="overflow-y-auto">
-        {/* Header with Gradient Background */}
-        <div className="relative h-24 bg-[hsl(var(--theme-accent-primary))]">
-          {/* Close handled by ResponsiveModal */}
-        </div>
-
-        {/* Profile Section */}
-        <div className="px-6 pb-5">
-          {/* Avatar */}
-          <div className="flex justify-center -mt-12 mb-3">
-            <div className="relative">
+      <ResponsiveModalContent size="sm" className="overflow-hidden p-0">
+        <div className="h-24 bg-primary" aria-hidden />
+        <div className="px-5 pb-5">
+          <div className="-mt-12 flex items-end justify-between">
+            <span className="relative">
               <img
                 src={getAvatarUrl(friend.avatar_url, friend.username)}
-                alt={friend.display_name}
-                className="w-24 h-24 rounded-full border-4 shadow-lg object-cover border-[hsl(var(--theme-bg-elevated))]"
+                alt=""
+                className="h-24 w-24 rounded-full border-[6px] border-[hsl(var(--theme-bg-elevated))] object-cover"
               />
-              <div className={`absolute bottom-2 right-2 w-6 h-6 rounded-full border-3 border-[hsl(var(--theme-bg-elevated))] ${statusColors[friend.status]} shadow-lg`} title={statusLabels[friend.status]} />
-            </div>
+              <span
+                title={PRESENCE_LABEL[friend.status]}
+                className={`absolute bottom-1.5 right-1.5 h-5 w-5 rounded-full border-4 border-[hsl(var(--theme-bg-elevated))] ${PRESENCE_DOT[friend.status]}`}
+              />
+            </span>
           </div>
 
-          {/* User Info */}
-          <div className="text-center mb-4">
-            <h2 className="text-xl font-bold mb-1 text-[hsl(var(--theme-text-primary))]">
-              {friend.display_name}
-            </h2>
-            <p className="text-sm mb-2 text-[hsl(var(--theme-text-muted))]">
-              @{friend.username}
+          <h2 className="mt-3 text-xl font-semibold leading-tight text-foreground">{friend.display_name}</h2>
+          <p className="text-sm text-muted-foreground">@{friend.username}</p>
+
+          <div className="mt-4 rounded-lg bg-[hsl(var(--theme-bg-secondary))] p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</p>
+            <p className="mt-1 flex items-center gap-2 text-sm text-foreground">
+              <span className={`h-2.5 w-2.5 rounded-full ${PRESENCE_DOT[friend.status]}`} aria-hidden />
+              {PRESENCE_LABEL[friend.status]}
+              {seen && <span className="text-muted-foreground">· last seen {seen}</span>}
             </p>
-            <div className="flex items-center justify-center gap-2">
-              <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
-                friend.status === "online"
-                  ? "bg-green-500/20 text-green-400"
-                  : friend.status === "idle"
-                  ? "bg-yellow-500/20 text-yellow-400"
-                  : friend.status === "dnd"
-                  ? "bg-red-500/20 text-red-400"
-                  : "bg-[hsl(var(--theme-bg-tertiary))] text-[hsl(var(--theme-text-muted))]"
-              }`}>
-                <div className={`w-2 h-2 rounded-full ${statusColors[friend.status]}`} />
-                {statusLabels[friend.status]}
-              </div>
-            </div>
-
-            {/* Last Seen */}
-            {getLastSeenText(friend.last_seen) && (
-              <p className="text-xs mt-2 text-[hsl(var(--theme-text-muted))]">
-                Last seen {getLastSeenText(friend.last_seen)}
-              </p>
+            {friend.custom_status && (
+              <p className="mt-2 text-sm text-[hsl(var(--theme-text-secondary))]">{friend.custom_status}</p>
             )}
           </div>
 
-          {/* Custom Status */}
-          {friend.custom_status && (
-            <div className="mb-6 p-3 rounded-lg text-center bg-[hsl(var(--theme-bg-secondary))] border border-[hsl(var(--theme-border-default))]">
-              <p className="text-sm italic text-[hsl(var(--theme-text-secondary))]">
-                "{friend.custom_status}"
-              </p>
-            </div>
-          )}
-
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-3 mb-4 py-3 border-y border-[hsl(var(--theme-border-default))]">
-            <div className="text-center">
-              <div className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
-                0
-              </div>
-              <div className="text-xs text-[hsl(var(--theme-text-muted))]">
-                Mutual Friends
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
-                0
-              </div>
-              <div className="text-xs text-[hsl(var(--theme-text-muted))]">
-                Communities
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-[hsl(var(--theme-text-primary))]">
-                —
-              </div>
-              <div className="text-xs text-[hsl(var(--theme-text-muted))]">
-                Joined
-              </div>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex gap-2 mb-4">
+          <div className="mt-4 flex items-center gap-2">
             <button
-              onClick={() => {
-                if (onMessage) onMessage(friend.id);
-                onClose();
-              }}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-[hsl(var(--theme-accent-primary))] text-white font-medium transition-all "
+              type="button"
+              onClick={() => { onMessage?.(friend.id); onClose(); }}
+              className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground transition-opacity duration-100 hover:opacity-90"
             >
-              <MessageCircle className="w-4 h-4" />
-              Message
+              <MessageCircle className="h-4 w-4" /> Message
             </button>
-            <button className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] font-medium transition-colors">
-              <Phone className="w-4 h-4" />
-              Call
+            <button type="button" className={iconBtn} disabled={!canCall} aria-label="Voice call" title="Voice call"
+                    onClick={() => { onCall?.(friend, "audio"); onClose(); }}>
+              <Phone className="h-4 w-4" />
             </button>
-            <button className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-primary))] font-medium transition-colors">
-              <Video className="w-4 h-4" />
-              Video
+            <button type="button" className={iconBtn} disabled={!canCall} aria-label="Video call" title="Video call"
+                    onClick={() => { onCall?.(friend, "video"); onClose(); }}>
+              <Video className="h-4 w-4" />
             </button>
-          </div>
-
-          {/* More Options */}
-          <div className="relative">
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="w-full py-2 rounded-lg text-sm font-medium transition-colors bg-[hsl(var(--theme-bg-secondary))] hover:bg-[hsl(var(--theme-bg-hover))] text-[hsl(var(--theme-text-secondary))]"
-            >
-              More Options
-            </button>
-
-            {showMenu && (
-              <div className="absolute top-full mt-2 left-0 right-0 rounded-lg shadow-xl border overflow-hidden z-50 bg-[hsl(var(--theme-bg-elevated))] border-[hsl(var(--theme-border-default))]">
-                <button
-                  onClick={() => {
-                    setShowRemoveConfirm(true);
-                    setShowMenu(false);
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-500/10 text-red-500 transition-colors"
-                >
-                  <UserMinus className="w-4 h-4" />
-                  Remove Friend
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className={iconBtn} aria-label="More">
+                  <MoreHorizontal className="h-4 w-4" />
                 </button>
-                <button
-                  onClick={() => {
-                    setShowBlockConfirm(true);
-                    setShowMenu(false);
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-red-500/10 text-red-500 transition-colors"
-                >
-                  <Ban className="w-4 h-4" />
-                  Block User
-                </button>
-              </div>
-            )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onSelect={() => { onRemove?.(friend); onClose(); }} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                  <UserMinus /> Remove Friend
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => { onBlock?.(friend); onClose(); }} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                  <Ban /> Block
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
-
       </ResponsiveModalContent>
     </ResponsiveModal>
-
-    {/* Confirmation Dialogs (siblings so they survive parent close) */}
-    <ConfirmDialog
-      isOpen={showRemoveConfirm}
-      title="Remove Friend?"
-      description={`Are you sure you want to remove ${friend?.display_name} from your friends list? You can add them again later.`}
-      cancelText="Cancel"
-      confirmText="Remove"
-      isDangerous
-      onConfirm={() => {
-        if (onRemove && friend) onRemove(friend.id);
-        setShowRemoveConfirm(false);
-        onClose();
-      }}
-      onCancel={() => setShowRemoveConfirm(false)}
-    />
-    <ConfirmDialog
-      isOpen={showBlockConfirm}
-      title="Block User?"
-      description={`Are you sure you want to block ${friend?.display_name}? They won't be able to send you messages or friend requests.`}
-      cancelText="Cancel"
-      confirmText="Block"
-      isDangerous
-      onConfirm={() => {
-        if (onBlock && friend) onBlock(friend.id);
-        setShowBlockConfirm(false);
-        onClose();
-      }}
-      onCancel={() => setShowBlockConfirm(false)}
-    />
-    </>
   );
 }
